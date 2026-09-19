@@ -1,0 +1,6 @@
+build
+CubismSdkForNative*
+models
+thirdParty/glew
+thirdParty/glfw
+CLAUDE.md
