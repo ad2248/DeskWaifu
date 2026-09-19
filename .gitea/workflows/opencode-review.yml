@@ -1,0 +1,32 @@
+name: OpenCode PR Review
+
+on:
+  workflow_run:
+    workflows: ["DeskWaifu CI"]
+    types: [completed]
+
+jobs:
+  review:
+    name: Read-only OpenCode review
+    if: >-
+      gitea.event.workflow_run.conclusion == 'success' &&
+      gitea.event.workflow_run.event == 'pull_request' &&
+      gitea.event.workflow_run.pull_requests[0].number != 0
+    runs-on: opencode-review
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out trusted review workflow
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Review tested PR head
+        env:
+          REVIEW_PR_NUMBER: ${{ gitea.event.workflow_run.pull_requests[0].number }}
+          REVIEW_HEAD_SHA: ${{ gitea.event.workflow_run.head_sha }}
+          REVIEW_CI_URL: ${{ gitea.event.workflow_run.html_url }}
+        run: bash .gitea/scripts/opencode-review.sh
