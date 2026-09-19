@@ -50,23 +50,24 @@ https://github.com/user-attachments/assets/95dfdedc-4957-4bb7-b79f-f3addd97a6db
 | **Wayland development libraries** | `wayland-client`, `wayland-egl`, `wayland-cursor` |
 | **EGL & OpenGL** | `libegl-dev`, `libgl-dev` or equivalent |
 | **wayland-scanner** | Usually part of `wayland-protocols` or `wayland` dev packages |
+| **Qt 6** | `Widgets`, `Network`, and the Qt Wayland platform plugin for the control window |
 | **curl, unzip** | For downloading third-party dependencies (GLEW) |
 
 ### Installing system dependencies
 
 **Arch Linux:**
 ```bash
-sudo pacman -S --needed base-devel cmake pkgconf wayland wayland-protocols libglvnd egl-wayland curl unzip
+sudo pacman -S --needed base-devel cmake pkgconf wayland wayland-protocols libglvnd egl-wayland qt6-base qt6-wayland curl unzip
 ```
 
 **Ubuntu / Debian:**
 ```bash
-sudo apt install build-essential cmake pkg-config libwayland-dev wayland-protocols libegl-dev libgl-dev curl unzip
+sudo apt install build-essential cmake pkg-config libwayland-dev wayland-protocols libegl-dev libgl-dev libglu1-mesa-dev qt6-base-dev qt6-wayland curl unzip
 ```
 
 **Fedora:**
 ```bash
-sudo dnf install gcc-c++ cmake pkgconf-pkg-config wayland-devel wayland-protocols-devel mesa-libEGL-devel mesa-libGL-devel curl unzip
+sudo dnf install gcc-c++ cmake pkgconf-pkg-config wayland-devel wayland-protocols-devel mesa-libEGL-devel mesa-libGL-devel qt6-qtbase-devel qt6-qtwayland curl unzip
 ```
 
 ## Installation
@@ -112,6 +113,8 @@ make -j$(nproc)
 
 The binary will be at `build/bin/waifuland`.
 
+The Qt control window will be at `build/bin/waifuland-control`.
+
 ## Usage
 
 ```bash
@@ -123,7 +126,14 @@ The binary will be at `build/bin/waifuland`.
 
 # Run with a custom config file
 ./build/bin/waifuland --config /path/to/config.json
+
+# Open the Qt control window after starting Waifuland
+./build/bin/waifuland-control
 ```
+
+The control window exposes the same model, expression, motion, lip-sync,
+transform, visibility, skin, and look-at commands as `waifuland-ctl`. Its page
+layout is stored in `control/MainWindow.ui` and can be edited with Qt Designer.
 
 ### Configuration
 

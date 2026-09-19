@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect><x>0</x><y>0</y><width>880</width><height>700</height></rect>
+  </property>
+  <property name="minimumSize">
+   <size><width>720</width><height>560</height></size>
+  </property>
+  <property name="windowTitle"><string>Waifuland Control</string></property>
+  <property name="styleSheet">
+   <string notr="true">QMainWindow { background: #171922; color: #ececf2; }
+QWidget { color: #ececf2; font-size: 14px; }
+QFrame#headerFrame { background: #222633; border-radius: 14px; }
+QLabel#titleLabel { font-size: 27px; font-weight: 700; }
+QLabel#subtitleLabel { color: #aeb4c5; }
+QLabel#connectionLabel { color: #ff8f8f; font-weight: 700; padding: 7px 12px; background: #38252d; border-radius: 11px; }
+QLabel#connectionLabel[connected="true"] { color: #8ce5b1; background: #20372f; }
+QTabWidget::pane { border: 1px solid #34394a; border-radius: 10px; background: #1d202a; }
+QTabBar::tab { background: #222633; padding: 10px 18px; margin-right: 3px; }
+QTabBar::tab:selected { background: #7659d6; }
+QGroupBox { border: 1px solid #383d50; border-radius: 10px; margin-top: 14px; padding-top: 14px; font-weight: 600; }
+QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 5px; }
+QPushButton { background: #7659d6; border: 0; border-radius: 7px; padding: 8px 14px; font-weight: 600; }
+QPushButton:hover { background: #8a70de; }
+QPushButton:disabled { background: #454858; color: #8f93a3; }
+QComboBox, QSpinBox, QDoubleSpinBox, QPlainTextEdit { background: #151720; border: 1px solid #3b4052; border-radius: 6px; padding: 6px; }
+QLabel#currentModelLabel { font-size: 22px; font-weight: 700; color: #c6b8ff; }
+QStatusBar { color: #aeb4c5; }</string>
+  </property>
+  <widget class="QWidget" name="centralWidget">
+   <layout class="QVBoxLayout" name="rootLayout">
+    <property name="leftMargin"><number>18</number></property>
+    <property name="topMargin"><number>18</number></property>
+    <property name="rightMargin"><number>18</number></property>
+    <property name="bottomMargin"><number>18</number></property>
+    <property name="spacing"><number>14</number></property>
+    <item>
+     <widget class="QFrame" name="headerFrame">
+      <layout class="QHBoxLayout" name="headerLayout">
+       <property name="leftMargin"><number>18</number></property>
+       <property name="topMargin"><number>14</number></property>
+       <property name="rightMargin"><number>18</number></property>
+       <property name="bottomMargin"><number>14</number></property>
+       <item>
+        <layout class="QVBoxLayout" name="titleLayout">
+         <item><widget class="QLabel" name="titleLabel"><property name="text"><string>Waifuland Control</string></property></widget></item>
+         <item><widget class="QLabel" name="subtitleLabel"><property name="text"><string>Live2D desktop companion console</string></property></widget></item>
+        </layout>
+       </item>
+       <item><spacer name="headerSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property></spacer></item>
+       <item><widget class="QLabel" name="connectionLabel"><property name="text"><string>Disconnected</string></property><property name="alignment"><set>Qt::AlignCenter</set></property></widget></item>
+       <item><widget class="QPushButton" name="refreshButton"><property name="text"><string>Refresh</string></property></widget></item>
+      </layout>
+     </widget>
+    </item>
+    <item>
+     <widget class="QTabWidget" name="tabWidget">
+      <property name="currentIndex"><number>0</number></property>
+      <widget class="QWidget" name="overviewTab">
+       <attribute name="title"><string>Overview</string></attribute>
+       <layout class="QVBoxLayout" name="overviewLayout">
+        <item>
+         <widget class="QGroupBox" name="statusGroup"><property name="title"><string>Current status</string></property>
+          <layout class="QGridLayout" name="statusLayout">
+           <item row="0" column="0"><widget class="QLabel" name="modelCaption"><property name="text"><string>Model</string></property></widget></item>
+           <item row="0" column="1"><widget class="QLabel" name="currentModelLabel"><property name="text"><string>-</string></property></widget></item>
+           <item row="1" column="0"><widget class="QLabel" name="countCaption"><property name="text"><string>Available models</string></property></widget></item>
+           <item row="1" column="1"><widget class="QLabel" name="modelCountLabel"><property name="text"><string>0</string></property></widget></item>
+           <item row="2" column="0"><widget class="QLabel" name="visibilityCaption"><property name="text"><string>Visibility</string></property></widget></item>
+           <item row="2" column="1"><widget class="QLabel" name="visibilityLabel"><property name="text"><string>-</string></property></widget></item>
+          </layout>
+         </widget>
+        </item>
+        <item>
+         <widget class="QGroupBox" name="quickActionsGroup"><property name="title"><string>Quick actions</string></property>
+          <layout class="QHBoxLayout" name="quickActionsLayout">
+           <item><widget class="QPushButton" name="toggleHiddenButton"><property name="text"><string>Toggle visibility</string></property></widget></item>
+           <item><widget class="QPushButton" name="switchSkinButton"><property name="text"><string>Switch skin</string></property></widget></item>
+           <item><spacer name="quickSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property></spacer></item>
+          </layout>
+         </widget>
+        </item>
+        <item><spacer name="overviewSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer></item>
+       </layout>
+      </widget>
+      <widget class="QWidget" name="modelTab">
+       <attribute name="title"><string>Model</string></attribute>
+       <layout class="QVBoxLayout" name="modelLayout">
+        <item><widget class="QGroupBox" name="modelGroup"><property name="title"><string>Model selection</string></property>
+         <layout class="QGridLayout" name="modelGrid">
+          <item row="0" column="0" colspan="3"><widget class="QComboBox" name="modelCombo"/></item>
+          <item row="1" column="0"><widget class="QPushButton" name="previousModelButton"><property name="text"><string>Previous</string></property></widget></item>
+          <item row="1" column="1"><widget class="QPushButton" name="setModelButton"><property name="text"><string>Load selected</string></property></widget></item>
+          <item row="1" column="2"><widget class="QPushButton" name="nextModelButton"><property name="text"><string>Next</string></property></widget></item>
+         </layout>
+        </widget></item>
+        <item><widget class="QGroupBox" name="expressionGroup"><property name="title"><string>Expression</string></property>
+         <layout class="QHBoxLayout" name="expressionLayout">
+          <item><widget class="QComboBox" name="expressionCombo"/></item>
+          <item><widget class="QPushButton" name="setExpressionButton"><property name="text"><string>Apply expression</string></property></widget></item>
+         </layout>
+        </widget></item>
+        <item><spacer name="modelSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer></item>
+       </layout>
+      </widget>
+      <widget class="QWidget" name="animationTab">
+       <attribute name="title"><string>Animation</string></attribute>
+       <layout class="QVBoxLayout" name="animationLayout">
+        <item><widget class="QGroupBox" name="motionGroup"><property name="title"><string>Motion</string></property>
+         <layout class="QGridLayout" name="motionLayout">
+          <item row="0" column="0" colspan="3"><widget class="QComboBox" name="motionCombo"/></item>
+          <item row="1" column="0"><widget class="QLabel" name="priorityLabel"><property name="text"><string>Priority</string></property></widget></item>
+          <item row="1" column="1"><widget class="QSpinBox" name="prioritySpin"><property name="minimum"><number>1</number></property><property name="maximum"><number>3</number></property><property name="value"><number>2</number></property></widget></item>
+          <item row="1" column="2"><widget class="QPushButton" name="playMotionButton"><property name="text"><string>Play selected</string></property></widget></item>
+          <item row="2" column="2"><widget class="QPushButton" name="randomMotionButton"><property name="text"><string>Random TapBody</string></property></widget></item>
+         </layout>
+        </widget></item>
+        <item><widget class="QGroupBox" name="mouthGroup"><property name="title"><string>External lip sync</string></property>
+         <layout class="QHBoxLayout" name="mouthLayout">
+          <item><widget class="QLabel" name="mouthLabel"><property name="text"><string>Mouth opening</string></property></widget></item>
+          <item><widget class="QDoubleSpinBox" name="mouthSpin"><property name="maximum"><double>1.000000000000000</double></property><property name="singleStep"><double>0.050000000000000</double></property></widget></item>
+          <item><widget class="QPushButton" name="mouthButton"><property name="text"><string>Apply</string></property></widget></item>
+         </layout>
+        </widget></item>
+        <item><spacer name="animationSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer></item>
+       </layout>
+      </widget>
+      <widget class="QWidget" name="transformTab">
+       <attribute name="title"><string>Transform</string></attribute>
+       <layout class="QVBoxLayout" name="transformLayout">
+        <item><widget class="QGroupBox" name="transformGroup"><property name="title"><string>Position and scale</string></property>
+         <layout class="QFormLayout" name="transformForm">
+          <item row="0" column="0"><widget class="QLabel" name="zoomLabel"><property name="text"><string>Zoom</string></property></widget></item>
+          <item row="0" column="1"><widget class="QDoubleSpinBox" name="zoomSpin"><property name="minimum"><double>0.100000000000000</double></property><property name="maximum"><double>10.000000000000000</double></property><property name="singleStep"><double>0.100000000000000</double></property><property name="value"><double>1.000000000000000</double></property></widget></item>
+          <item row="1" column="0"><widget class="QLabel" name="positionXLabel"><property name="text"><string>X offset</string></property></widget></item>
+          <item row="1" column="1"><widget class="QDoubleSpinBox" name="positionXSpin"><property name="minimum"><double>-100.000000000000000</double></property><property name="maximum"><double>100.000000000000000</double></property><property name="singleStep"><double>0.100000000000000</double></property></widget></item>
+          <item row="2" column="0"><widget class="QLabel" name="positionYLabel"><property name="text"><string>Y offset</string></property></widget></item>
+          <item row="2" column="1"><widget class="QDoubleSpinBox" name="positionYSpin"><property name="minimum"><double>-100.000000000000000</double></property><property name="maximum"><double>100.000000000000000</double></property><property name="singleStep"><double>0.100000000000000</double></property></widget></item>
+          <item row="3" column="1"><widget class="QPushButton" name="transformButton"><property name="text"><string>Apply transform</string></property></widget></item>
+         </layout>
+        </widget></item>
+        <item><spacer name="transformSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer></item>
+       </layout>
+      </widget>
+      <widget class="QWidget" name="trackingTab">
+       <attribute name="title"><string>Look</string></attribute>
+       <layout class="QVBoxLayout" name="trackingLayout">
+        <item><widget class="QGroupBox" name="lookGroup"><property name="title"><string>Look-at override</string></property>
+         <layout class="QFormLayout" name="lookForm">
+          <item row="0" column="0"><widget class="QLabel" name="lookXLabel"><property name="text"><string>Horizontal (-1 to 1)</string></property></widget></item>
+          <item row="0" column="1"><widget class="QDoubleSpinBox" name="lookXSpin"><property name="minimum"><double>-1.000000000000000</double></property><property name="maximum"><double>1.000000000000000</double></property><property name="singleStep"><double>0.100000000000000</double></property></widget></item>
+          <item row="1" column="0"><widget class="QLabel" name="lookYLabel"><property name="text"><string>Vertical (-1 to 1)</string></property></widget></item>
+          <item row="1" column="1"><widget class="QDoubleSpinBox" name="lookYSpin"><property name="minimum"><double>-1.000000000000000</double></property><property name="maximum"><double>1.000000000000000</double></property><property name="singleStep"><double>0.100000000000000</double></property></widget></item>
+          <item row="2" column="0"><widget class="QPushButton" name="resetLookButton"><property name="text"><string>Follow cursor</string></property></widget></item>
+          <item row="2" column="1"><widget class="QPushButton" name="lookButton"><property name="text"><string>Apply direction</string></property></widget></item>
+         </layout>
+        </widget></item>
+        <item><spacer name="trackingSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer></item>
+       </layout>
+      </widget>
+      <widget class="QWidget" name="logTab">
+       <attribute name="title"><string>Protocol log</string></attribute>
+       <layout class="QVBoxLayout" name="logLayout">
+        <item><widget class="QPlainTextEdit" name="responseLog"><property name="readOnly"><bool>true</bool></property><property name="placeholderText"><string>IPC responses appear here.</string></property></widget></item>
+       </layout>
+      </widget>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+  <widget class="QStatusBar" name="statusBar"/>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

@@ -33,10 +33,17 @@ jobs:
           ln -s "$WAIFULAND_DEPS_DIR/glew" thirdParty/glew
 
       - name: Configure
-        run: cmake -S . -B build-ci -G Ninja -DCMAKE_BUILD_TYPE=Release
+        run: |
+          cmake -S . -B build-ci -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTING=ON \
+            -DWAIFULAND_BUILD_CONTROL=ON
 
       - name: Build
         run: cmake --build build-ci
+
+      - name: Test Qt IPC client
+        run: ctest --test-dir build-ci --output-on-failure --no-tests=error
 
       - name: Test headless Wayland and IPC
         run: bash scripts/headless-smoke-test.sh build-ci
@@ -46,3 +53,4 @@ jobs:
         run: |
           test ! -f build-ci/test-logs/sway.log || cat build-ci/test-logs/sway.log
           test ! -f build-ci/test-logs/waifuland.log || cat build-ci/test-logs/waifuland.log
+          test ! -f build-ci/test-logs/waifuland-control.log || cat build-ci/test-logs/waifuland-control.log
