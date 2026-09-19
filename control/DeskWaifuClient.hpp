@@ -6,13 +6,13 @@
 #include <QQueue>
 #include <QTimer>
 
-class WaifulandClient : public QObject
+class DeskWaifuClient : public QObject
 {
     Q_OBJECT
 
 public:
-    explicit WaifulandClient(QObject* parent = nullptr);
-    ~WaifulandClient() override;
+    explicit DeskWaifuClient(QObject* parent = nullptr);
+    ~DeskWaifuClient() override;
 
     void connectToServer();
     void sendCommand(const QString& command, const QJsonObject& parameters = {});

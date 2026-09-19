@@ -2,7 +2,7 @@
 
 #include <QMainWindow>
 
-#include "WaifulandClient.hpp"
+#include "DeskWaifuClient.hpp"
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -26,6 +26,6 @@ private:
     void logResponse(const QString& command, const QJsonObject& response);
 
     Ui::MainWindow* ui;
-    WaifulandClient _client;
+    DeskWaifuClient _client;
     bool _backendReadyEmitted = false;
 };

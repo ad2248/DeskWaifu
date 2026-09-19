@@ -6,8 +6,8 @@
 int main(int argc, char* argv[])
 {
     QApplication application(argc, argv);
-    application.setApplicationName(QStringLiteral("Waifuland Control"));
-    application.setOrganizationName(QStringLiteral("Waifuland"));
+    application.setApplicationName(QStringLiteral("DeskWaifu Control"));
+    application.setOrganizationName(QStringLiteral("DeskWaifu"));
 
     MainWindow window;
     window.show();

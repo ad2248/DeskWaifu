@@ -19,14 +19,14 @@
 
 int main(int argc, char* argv[])
 {
-    // waifuland toggle
+    // deskwaifu toggle
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "toggle") == 0 || strcmp(argv[i], "--toggle") == 0) {
-            system("killall -s SIGUSR1 waifuland");
+            system("killall -s SIGUSR1 deskwaifu");
             return 0;
         }
         if (strcmp(argv[i], "focus") == 0 || strcmp(argv[i], "--focus") == 0) {
-            system("killall -s SIGUSR2 waifuland");
+            system("killall -s SIGUSR2 deskwaifu");
             return 0;
         }
     }
@@ -62,13 +62,13 @@ int main(int argc, char* argv[])
     if (modelsDir.empty()) {
         const char *configHome = getenv("XDG_CONFIG_HOME");
         if (configHome && strlen(configHome) > 0) {
-            modelsDir = std::string(configHome) + "/waifuland/models/";
+            modelsDir = std::string(configHome) + "/deskwaifu/models/";
         } else {
             const char *homeDir = getenv("HOME");
             if (!homeDir || strlen(homeDir) == 0) {
                 homeDir = getpwuid(getuid())->pw_dir;
             }
-            modelsDir = std::string(homeDir) + "/.config/waifuland/models/";
+            modelsDir = std::string(homeDir) + "/.config/deskwaifu/models/";
         }
     }
 

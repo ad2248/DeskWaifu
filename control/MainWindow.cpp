@@ -14,7 +14,7 @@ MainWindow::MainWindow(QWidget* parent)
     ui->setupUi(this);
     bindControls();
 
-    connect(&_client, &WaifulandClient::connectionChanged, this,
+    connect(&_client, &DeskWaifuClient::connectionChanged, this,
         [this](bool connected, const QString& message) {
             ui->connectionLabel->setText(connected ? tr("Connected") : tr("Disconnected"));
             ui->connectionLabel->setProperty("connected", connected);
@@ -26,11 +26,11 @@ MainWindow::MainWindow(QWidget* parent)
                 refreshAll();
             }
         });
-    connect(&_client, &WaifulandClient::responseReceived,
+    connect(&_client, &DeskWaifuClient::responseReceived,
         this, &MainWindow::handleResponse);
-    connect(&_client, &WaifulandClient::protocolError, this,
+    connect(&_client, &DeskWaifuClient::protocolError, this,
         [this](const QString& message) { ui->responseLog->appendPlainText(message); });
-    connect(&_client, &WaifulandClient::commandOutcomeUnknown, this,
+    connect(&_client, &DeskWaifuClient::commandOutcomeUnknown, this,
         [this](const QString& command) {
             const QString message = tr("Connection lost: outcome of '%1' is unknown; command was not retried.")
                 .arg(command);

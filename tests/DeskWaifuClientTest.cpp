@@ -1,4 +1,4 @@
-#include "WaifulandClient.hpp"
+#include "DeskWaifuClient.hpp"
 
 #include <QDir>
 #include <QJsonDocument>
@@ -9,7 +9,7 @@
 #include <QTemporaryDir>
 #include <QtTest>
 
-class WaifulandClientTest : public QObject
+class DeskWaifuClientTest : public QObject
 {
     Q_OBJECT
 
@@ -19,18 +19,18 @@ private slots:
     void retriesUnacknowledgedQuery();
 };
 
-void WaifulandClientTest::sendsJsonAndParsesResponse()
+void DeskWaifuClientTest::sendsJsonAndParsesResponse()
 {
     QTemporaryDir runtimeDir;
     QVERIFY(runtimeDir.isValid());
     qputenv("XDG_RUNTIME_DIR", runtimeDir.path().toLocal8Bit());
 
-    const QString socketPath = QDir(runtimeDir.path()).filePath(QStringLiteral("waifuland.sock"));
+    const QString socketPath = QDir(runtimeDir.path()).filePath(QStringLiteral("deskwaifu.sock"));
     QLocalServer server;
     QVERIFY2(server.listen(socketPath), qPrintable(server.errorString()));
 
-    WaifulandClient client;
-    QSignalSpy responseSpy(&client, &WaifulandClient::responseReceived);
+    DeskWaifuClient client;
+    QSignalSpy responseSpy(&client, &DeskWaifuClient::responseReceived);
     client.sendCommand(QStringLiteral("set_model_position"), {
         {QStringLiteral("x"), 0.25},
         {QStringLiteral("y"), -0.5}
@@ -59,18 +59,18 @@ void WaifulandClientTest::sendsJsonAndParsesResponse()
     QCOMPARE(response.value(QStringLiteral("x")).toDouble(), 0.25);
 }
 
-void WaifulandClientTest::doesNotReplayUnacknowledgedMutation()
+void DeskWaifuClientTest::doesNotReplayUnacknowledgedMutation()
 {
     QTemporaryDir runtimeDir;
     QVERIFY(runtimeDir.isValid());
     qputenv("XDG_RUNTIME_DIR", runtimeDir.path().toLocal8Bit());
 
-    const QString socketPath = QDir(runtimeDir.path()).filePath(QStringLiteral("waifuland.sock"));
+    const QString socketPath = QDir(runtimeDir.path()).filePath(QStringLiteral("deskwaifu.sock"));
     QLocalServer server;
     QVERIFY2(server.listen(socketPath), qPrintable(server.errorString()));
 
-    WaifulandClient client;
-    QSignalSpy unknownSpy(&client, &WaifulandClient::commandOutcomeUnknown);
+    DeskWaifuClient client;
+    QSignalSpy unknownSpy(&client, &DeskWaifuClient::commandOutcomeUnknown);
     client.sendCommand(QStringLiteral("toggle_hidden"));
     client.sendCommand(QStringLiteral("get_status"));
 
@@ -96,18 +96,18 @@ void WaifulandClientTest::doesNotReplayUnacknowledgedMutation()
     secondConnection->flush();
 }
 
-void WaifulandClientTest::retriesUnacknowledgedQuery()
+void DeskWaifuClientTest::retriesUnacknowledgedQuery()
 {
     QTemporaryDir runtimeDir;
     QVERIFY(runtimeDir.isValid());
     qputenv("XDG_RUNTIME_DIR", runtimeDir.path().toLocal8Bit());
 
-    const QString socketPath = QDir(runtimeDir.path()).filePath(QStringLiteral("waifuland.sock"));
+    const QString socketPath = QDir(runtimeDir.path()).filePath(QStringLiteral("deskwaifu.sock"));
     QLocalServer server;
     QVERIFY2(server.listen(socketPath), qPrintable(server.errorString()));
 
-    WaifulandClient client;
-    QSignalSpy unknownSpy(&client, &WaifulandClient::commandOutcomeUnknown);
+    DeskWaifuClient client;
+    QSignalSpy unknownSpy(&client, &DeskWaifuClient::commandOutcomeUnknown);
     client.sendCommand(QStringLiteral("get_status"));
 
     QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 2000);
@@ -130,5 +130,5 @@ void WaifulandClientTest::retriesUnacknowledgedQuery()
     secondConnection->flush();
 }
 
-QTEST_GUILESS_MAIN(WaifulandClientTest)
-#include "WaifulandClientTest.moc"
+QTEST_GUILESS_MAIN(DeskWaifuClientTest)
+#include "DeskWaifuClientTest.moc"

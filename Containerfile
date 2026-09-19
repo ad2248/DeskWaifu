@@ -37,8 +37,8 @@ RUN { printf 'Server = %s/$repo/os/$arch\n' "${PACMAN_MIRROR}"; \
     && setcap -r /usr/bin/sway \
     && pacman -Scc --noconfirm
 
-COPY CubismSdkForNative-5-r.5/ /opt/waifuland-deps/CubismSdkForNative-5-r.5/
-COPY thirdParty/glew/ /opt/waifuland-deps/glew/
+COPY CubismSdkForNative-5-r.5/ /opt/deskwaifu-deps/CubismSdkForNative-5-r.5/
+COPY thirdParty/glew/ /opt/deskwaifu-deps/glew/
 
 ENV LIBGL_ALWAYS_SOFTWARE=1 \
     GALLIUM_DRIVER=llvmpipe \

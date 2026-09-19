@@ -19,7 +19,7 @@ jobs:
     timeout-minutes: 30
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: 4
-      WAIFULAND_DEPS_DIR: /opt/waifuland-deps
+      DESKWAIFU_DEPS_DIR: /opt/deskwaifu-deps
     steps:
       - name: Verify runner isolation
         run: test ! -S /var/run/docker.sock
@@ -29,15 +29,15 @@ jobs:
 
       - name: Attach private build dependencies
         run: |
-          ln -s "$WAIFULAND_DEPS_DIR/CubismSdkForNative-5-r.5" CubismSdkForNative-5-r.5
-          ln -s "$WAIFULAND_DEPS_DIR/glew" thirdParty/glew
+          ln -s "$DESKWAIFU_DEPS_DIR/CubismSdkForNative-5-r.5" CubismSdkForNative-5-r.5
+          ln -s "$DESKWAIFU_DEPS_DIR/glew" thirdParty/glew
 
       - name: Configure
         run: |
           cmake -S . -B build-ci -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_TESTING=ON \
-            -DWAIFULAND_BUILD_CONTROL=ON
+            -DDESKWAIFU_BUILD_CONTROL=ON
 
       - name: Build
         run: cmake --build build-ci
@@ -52,5 +52,5 @@ jobs:
         if: failure()
         run: |
           test ! -f build-ci/test-logs/sway.log || cat build-ci/test-logs/sway.log
-          test ! -f build-ci/test-logs/waifuland.log || cat build-ci/test-logs/waifuland.log
-          test ! -f build-ci/test-logs/waifuland-control.log || cat build-ci/test-logs/waifuland-control.log
+          test ! -f build-ci/test-logs/deskwaifu.log || cat build-ci/test-logs/deskwaifu.log
+          test ! -f build-ci/test-logs/deskwaifu-control.log || cat build-ci/test-logs/deskwaifu-control.log
