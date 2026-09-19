@@ -22,6 +22,7 @@ public:
 signals:
     void connectionChanged(bool connected, const QString& message);
     void responseReceived(const QString& command, const QJsonObject& response);
+    void commandOutcomeUnknown(const QString& command);
     void protocolError(const QString& message);
 
 private slots:
@@ -38,9 +39,11 @@ private:
     };
 
     void sendNext();
+    static bool isRetryableQuery(const QString& command);
 
     QLocalSocket _socket;
     QQueue<Request> _requests;
+    Request _inFlight;
     QByteArray _readBuffer;
     QTimer _reconnectTimer;
     bool _waitingForResponse = false;

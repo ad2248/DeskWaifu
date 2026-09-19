@@ -77,10 +77,14 @@ void WaifulandClient::readResponses()
         if (error.error != QJsonParseError::NoError || !document.isObject())
         {
             emit protocolError(tr("Invalid JSON response: %1").arg(error.errorString()));
+            _inFlight = {};
+            _waitingForResponse = false;
+            sendNext();
             continue;
         }
 
-        const QString command = _requests.isEmpty() ? QString() : _requests.dequeue().command;
+        const QString command = _inFlight.command;
+        _inFlight = {};
         _waitingForResponse = false;
         emit responseReceived(command, document.object());
         sendNext();
@@ -96,6 +100,18 @@ void WaifulandClient::handleConnected()
 
 void WaifulandClient::handleDisconnected()
 {
+    if (_waitingForResponse)
+    {
+        if (isRetryableQuery(_inFlight.command))
+        {
+            _requests.prepend(_inFlight);
+        }
+        else
+        {
+            emit commandOutcomeUnknown(_inFlight.command);
+        }
+    }
+    _inFlight = {};
     _waitingForResponse = false;
     _readBuffer.clear();
     emit connectionChanged(false, tr("Disconnected"));
@@ -118,7 +134,18 @@ void WaifulandClient::sendNext()
     {
         return;
     }
-    _socket.write(_requests.head().payload);
+    _inFlight = _requests.dequeue();
+    _socket.write(_inFlight.payload);
     _socket.flush();
     _waitingForResponse = true;
+}
+
+bool WaifulandClient::isRetryableQuery(const QString& command)
+{
+    return command == QStringLiteral("get_status")
+        || command == QStringLiteral("get_available_models")
+        || command == QStringLiteral("get_current_model")
+        || command == QStringLiteral("get_expressions")
+        || command == QStringLiteral("get_motions")
+        || command == QStringLiteral("get_model_position");
 }

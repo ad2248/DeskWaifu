@@ -30,6 +30,13 @@ MainWindow::MainWindow(QWidget* parent)
         this, &MainWindow::handleResponse);
     connect(&_client, &WaifulandClient::protocolError, this,
         [this](const QString& message) { ui->responseLog->appendPlainText(message); });
+    connect(&_client, &WaifulandClient::commandOutcomeUnknown, this,
+        [this](const QString& command) {
+            const QString message = tr("Connection lost: outcome of '%1' is unknown; command was not retried.")
+                .arg(command);
+            ui->responseLog->appendPlainText(message);
+            statusBar()->showMessage(message, 8000);
+        });
 
     _client.connectToServer();
 }
