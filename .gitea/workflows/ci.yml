@@ -1,0 +1,48 @@
+name: DeskWaifu CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, reopened, synchronize]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Arch build and headless Wayland test
+    # This label must map to the digest-pinned deskwaifu-ci image.
+    # Rebuild and publish it with scripts/rebuild-ci-image.sh.
+    runs-on: deskwaifu-arch
+    timeout-minutes: 30
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: 4
+      WAIFULAND_DEPS_DIR: /opt/waifuland-deps
+    steps:
+      - name: Verify runner isolation
+        run: test ! -S /var/run/docker.sock
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Attach private build dependencies
+        run: |
+          ln -s "$WAIFULAND_DEPS_DIR/CubismSdkForNative-5-r.5" CubismSdkForNative-5-r.5
+          ln -s "$WAIFULAND_DEPS_DIR/glew" thirdParty/glew
+
+      - name: Configure
+        run: cmake -S . -B build-ci -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build-ci
+
+      - name: Test headless Wayland and IPC
+        run: bash scripts/headless-smoke-test.sh build-ci
+
+      - name: Print logs after failure
+        if: failure()
+        run: |
+          test ! -f build-ci/test-logs/sway.log || cat build-ci/test-logs/sway.log
+          test ! -f build-ci/test-logs/waifuland.log || cat build-ci/test-logs/waifuland.log

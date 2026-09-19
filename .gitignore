@@ -1,4 +1,5 @@
 build
+build-*
 CubismSdkForNative*
 models
 thirdParty/glew

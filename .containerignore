@@ -1,0 +1,5 @@
+.git
+.gitea
+build
+build-*
+models
