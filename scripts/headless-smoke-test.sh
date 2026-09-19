@@ -110,9 +110,25 @@ assert_ok() {
 
 assert_ok get_status
 assert_ok get_available_models
+assert_ok get_current_model
+assert_ok get_expressions
+assert_ok set_expression --id F01
+assert_ok get_motions
+assert_ok do_motion --group Idle --index 0 --priority 2
+assert_ok set_mouth_y --value 0.5
 assert_ok set_model_zoom --value 1.25
 assert_ok set_model_position --x 0.1 --y -0.1
+assert_ok get_model_position
+assert_ok set_look --x 0.25 --y -0.25
+assert_ok set_look --reset
 assert_ok toggle_hidden
+assert_ok switch_skin
+assert_ok next_model
+assert_ok prev_model
+assert_ok set_model --name Haru
 
 kill -0 "$APP_PID"
-echo "Headless Wayland and IPC smoke test passed"
+timeout 20 "$BUILD_DIR/bin/waifuland-control" --smoke-test \
+    >"$LOG_DIR/waifuland-control.log" 2>&1
+kill -0 "$APP_PID"
+echo "Headless Wayland, Qt control, and IPC smoke test passed"

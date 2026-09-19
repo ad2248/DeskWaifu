@@ -86,14 +86,16 @@ check_pkg_config wayland-client  "libwayland-dev / wayland-devel"
 check_pkg_config wayland-egl     "libwayland-dev / wayland-devel"
 check_pkg_config wayland-cursor  "libwayland-dev / wayland-devel"
 check_pkg_config egl             "libegl-dev / mesa-libEGL-devel"
+check_pkg_config Qt6Widgets      "qt6-base-dev / qt6-qtbase-devel / qt6-base"
+check_pkg_config Qt6Network      "qt6-base-dev / qt6-qtbase-devel / qt6-base"
 
 if [ "$ERRORS" -gt 0 ]; then
     echo ""
     error "$ERRORS missing dependency(ies). Please install them and re-run this script."
     echo ""
-    info  "Arch Linux:       sudo pacman -S --needed base-devel cmake pkgconf wayland wayland-protocols libglvnd egl-wayland curl unzip"
-    info  "Ubuntu / Debian:  sudo apt install build-essential cmake pkg-config libwayland-dev wayland-protocols libegl-dev libgl-dev curl unzip"
-    info  "Fedora:           sudo dnf install gcc-c++ cmake pkgconf-pkg-config wayland-devel wayland-protocols-devel mesa-libEGL-devel mesa-libGL-devel curl unzip"
+    info  "Arch Linux:       sudo pacman -S --needed base-devel cmake pkgconf wayland wayland-protocols libglvnd egl-wayland qt6-base qt6-wayland curl unzip"
+    info  "Ubuntu / Debian:  sudo apt install build-essential cmake pkg-config libwayland-dev wayland-protocols libegl-dev libgl-dev libglu1-mesa-dev qt6-base-dev qt6-wayland curl unzip"
+    info  "Fedora:           sudo dnf install gcc-c++ cmake pkgconf-pkg-config wayland-devel wayland-protocols-devel mesa-libEGL-devel mesa-libGL-devel qt6-qtbase-devel qt6-qtwayland curl unzip"
     exit 1
 fi
 
