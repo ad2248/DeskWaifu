@@ -19,7 +19,6 @@ jobs:
     timeout-minutes: 30
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: 4
-      DESKWAIFU_DEPS_DIR: /opt/deskwaifu-deps
     steps:
       - name: Verify runner isolation
         run: test ! -S /var/run/docker.sock
@@ -29,8 +28,16 @@ jobs:
 
       - name: Attach private build dependencies
         run: |
-          ln -s "$DESKWAIFU_DEPS_DIR/CubismSdkForNative-5-r.5" CubismSdkForNative-5-r.5
-          ln -s "$DESKWAIFU_DEPS_DIR/glew" thirdParty/glew
+          for deps_dir in /opt/*-deps; do
+            if [[ -d "$deps_dir/CubismSdkForNative-5-r.5" && -d "$deps_dir/glew" ]]; then
+              break
+            fi
+            deps_dir=
+          done
+          test -n "$deps_dir"
+          echo "DESKWAIFU_DEPS_DIR=$deps_dir" >> "$GITHUB_ENV"
+          ln -s "$deps_dir/CubismSdkForNative-5-r.5" CubismSdkForNative-5-r.5
+          ln -s "$deps_dir/glew" thirdParty/glew
 
       - name: Configure
         run: |
