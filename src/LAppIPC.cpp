@@ -196,7 +196,7 @@ void LAppIPC::Poll()
                     std::string response = ProcessCommand(line);
                     response += "\n";
                     // Best-effort write
-                    write(fd, response.c_str(), response.size());
+                    send(fd, response.c_str(), response.size(), MSG_NOSIGNAL);
                 }
             }
         }
