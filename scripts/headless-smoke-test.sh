@@ -79,6 +79,25 @@ if [[ ! -S $RUNTIME_DIR/waifuland.sock ]]; then
     exit 1
 fi
 
+for _ in {1..100}; do
+    response=$(timeout 2 ./waifuland-ctl get_status 2>/dev/null || true)
+    if [[ $response == *'"ok":true'* || $response == *'"ok": true'* ]]; then
+        break
+    fi
+    if ! kill -0 "$APP_PID" 2>/dev/null; then
+        echo "Waifuland exited before IPC became responsive" >&2
+        cat "$LOG_DIR/waifuland.log" >&2
+        exit 1
+    fi
+    sleep 0.1
+done
+
+if [[ ${response:-} != *'"ok":true'* && ${response:-} != *'"ok": true'* ]]; then
+    echo "Timed out waiting for a successful IPC response" >&2
+    cat "$LOG_DIR/waifuland.log" >&2
+    exit 1
+fi
+
 assert_ok() {
     local response
     response=$(./waifuland-ctl "$@")
