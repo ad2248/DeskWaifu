@@ -19,7 +19,7 @@ jobs:
 
     steps:
       - name: Check out trusted review workflow
-        uses: actions/checkout@v4
+        uses: https://git.kals.top/actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0
