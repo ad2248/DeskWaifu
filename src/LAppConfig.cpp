@@ -20,14 +20,14 @@ std::string LAppConfig::GetDefaultConfigPath()
     const char* configHome = getenv("XDG_CONFIG_HOME");
     if (configHome && strlen(configHome) > 0)
     {
-        return std::string(configHome) + "/waifuland/config.json";
+        return std::string(configHome) + "/deskwaifu/config.json";
     }
     const char* homeDir = getenv("HOME");
     if (!homeDir || strlen(homeDir) == 0)
     {
         homeDir = getpwuid(getuid())->pw_dir;
     }
-    return std::string(homeDir) + "/.config/waifuland/config.json";
+    return std::string(homeDir) + "/.config/deskwaifu/config.json";
 }
 
 std::string LAppConfig::ExpandTilde(const std::string& path)

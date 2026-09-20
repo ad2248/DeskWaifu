@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Waifuland Install Script
+# DeskWaifu Install Script
 # Checks dependencies, downloads third-party libraries, and builds the project.
 #
 
@@ -188,7 +188,7 @@ fi
 
 # ─── Step 5: Build ───────────────────────────────────────────────────────────
 
-step "Building waifuland (using $NPROC parallel jobs)"
+step "Building deskwaifu (using $NPROC parallel jobs)"
 
 if make -C "$BUILD_DIR" -j"$NPROC" 2>&1; then
     success "Build complete"
@@ -199,7 +199,7 @@ fi
 
 # ─── Done ─────────────────────────────────────────────────────────────────────
 
-BINARY="$BUILD_DIR/bin/waifuland"
+BINARY="$BUILD_DIR/bin/deskwaifu"
 
 echo ""
 echo -e "${GREEN}${BOLD}============================================${RESET}"
@@ -213,6 +213,6 @@ echo -e "    ${BOLD}$BINARY${RESET}"
 echo -e "    ${BOLD}$BINARY --models_dir /path/to/models${RESET}"
 echo ""
 echo -e "  Default model directory:"
-echo -e "    ${BOLD}\$XDG_CONFIG_HOME/waifuland/models/${RESET}"
-echo -e "    ${BOLD}~/.config/waifuland/models/${RESET}"
+echo -e "    ${BOLD}\$XDG_CONFIG_HOME/deskwaifu/models/${RESET}"
+echo -e "    ${BOLD}~/.config/deskwaifu/models/${RESET}"
 echo ""

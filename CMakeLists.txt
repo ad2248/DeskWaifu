@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 # Set app name.
-set(APP_NAME waifuland)
+set(APP_NAME deskwaifu)
 
 # Set directory paths based on the new layout
 set(SDK_ROOT_PATH ${CMAKE_CURRENT_SOURCE_DIR}/CubismSdkForNative-5-r.5)
@@ -21,7 +21,7 @@ set(COMMON_SRC_PATH ${SDK_ROOT_PATH}/Samples/Common)
 project(${APP_NAME})
 
 include(CTest)
-option(WAIFULAND_BUILD_CONTROL "Build the Qt control application" ON)
+option(DESKWAIFU_BUILD_CONTROL "Build the Qt control application" ON)
 
 # Define output directory.
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin)
@@ -127,10 +127,10 @@ execute_process(
 )
 target_include_directories(${APP_NAME} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
 
-if (WAIFULAND_BUILD_CONTROL)
+if (DESKWAIFU_BUILD_CONTROL)
   add_subdirectory(control)
 endif ()
 
-if (BUILD_TESTING AND WAIFULAND_BUILD_CONTROL)
+if (BUILD_TESTING AND DESKWAIFU_BUILD_CONTROL)
   add_subdirectory(tests)
 endif ()

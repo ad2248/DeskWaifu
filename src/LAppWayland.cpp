@@ -287,7 +287,7 @@ bool SetupWaylandContext(WaylandContext* wl, int width, int height) {
     // Choose OVERLAY or TOP for mascot. TOP gives desktop layer. OVERLAY gives full screen layer (above panels).
     wl->layer_surface = zwlr_layer_shell_v1_get_layer_surface(
         wl->layer_shell, wl->surface, nullptr, 
-        ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY, "waifuland");
+        ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY, "deskwaifu");
     
     zwlr_layer_surface_v1_add_listener(wl->layer_surface, &layer_surface_listener, wl);
 
@@ -427,7 +427,7 @@ void SwitchWaylandOutputToMonitor(int hx, int hy) {
     
     g_wl->layer_surface = zwlr_layer_shell_v1_get_layer_surface(
         g_wl->layer_shell, g_wl->surface, output, 
-        ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY, "waifuland");
+        ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY, "deskwaifu");
     
     zwlr_layer_surface_v1_add_listener(g_wl->layer_surface, &layer_surface_listener, g_wl);
     zwlr_layer_surface_v1_set_size(g_wl->layer_surface, 0, 0);

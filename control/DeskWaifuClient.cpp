@@ -1,29 +1,29 @@
-#include "WaifulandClient.hpp"
+#include "DeskWaifuClient.hpp"
 
 #include <QDir>
 #include <QJsonDocument>
 
-WaifulandClient::WaifulandClient(QObject* parent)
+DeskWaifuClient::DeskWaifuClient(QObject* parent)
     : QObject(parent)
 {
     _reconnectTimer.setInterval(1500);
     _reconnectTimer.setSingleShot(true);
 
-    connect(&_socket, &QLocalSocket::connected, this, &WaifulandClient::handleConnected);
-    connect(&_socket, &QLocalSocket::disconnected, this, &WaifulandClient::handleDisconnected);
-    connect(&_socket, &QLocalSocket::readyRead, this, &WaifulandClient::readResponses);
-    connect(&_socket, &QLocalSocket::errorOccurred, this, &WaifulandClient::handleSocketError);
-    connect(&_reconnectTimer, &QTimer::timeout, this, &WaifulandClient::connectToServer);
+    connect(&_socket, &QLocalSocket::connected, this, &DeskWaifuClient::handleConnected);
+    connect(&_socket, &QLocalSocket::disconnected, this, &DeskWaifuClient::handleDisconnected);
+    connect(&_socket, &QLocalSocket::readyRead, this, &DeskWaifuClient::readResponses);
+    connect(&_socket, &QLocalSocket::errorOccurred, this, &DeskWaifuClient::handleSocketError);
+    connect(&_reconnectTimer, &QTimer::timeout, this, &DeskWaifuClient::connectToServer);
 }
 
-WaifulandClient::~WaifulandClient()
+DeskWaifuClient::~DeskWaifuClient()
 {
     disconnect(&_socket, nullptr, this, nullptr);
     _reconnectTimer.stop();
     _socket.abort();
 }
 
-void WaifulandClient::connectToServer()
+void DeskWaifuClient::connectToServer()
 {
     if (_socket.state() != QLocalSocket::UnconnectedState)
     {
@@ -32,7 +32,7 @@ void WaifulandClient::connectToServer()
     _socket.connectToServer(socketPath(), QIODevice::ReadWrite);
 }
 
-void WaifulandClient::sendCommand(const QString& command, const QJsonObject& parameters)
+void DeskWaifuClient::sendCommand(const QString& command, const QJsonObject& parameters)
 {
     QJsonObject request = parameters;
     request.insert(QStringLiteral("command"), command);
@@ -46,20 +46,20 @@ void WaifulandClient::sendCommand(const QString& command, const QJsonObject& par
     sendNext();
 }
 
-bool WaifulandClient::isConnected() const
+bool DeskWaifuClient::isConnected() const
 {
     return _socket.state() == QLocalSocket::ConnectedState;
 }
 
-QString WaifulandClient::socketPath() const
+QString DeskWaifuClient::socketPath() const
 {
     const QByteArray runtimeDir = qgetenv("XDG_RUNTIME_DIR");
     return runtimeDir.isEmpty()
-        ? QStringLiteral("/tmp/waifuland.sock")
-        : QDir(QString::fromLocal8Bit(runtimeDir)).filePath(QStringLiteral("waifuland.sock"));
+        ? QStringLiteral("/tmp/deskwaifu.sock")
+        : QDir(QString::fromLocal8Bit(runtimeDir)).filePath(QStringLiteral("deskwaifu.sock"));
 }
 
-void WaifulandClient::readResponses()
+void DeskWaifuClient::readResponses()
 {
     _readBuffer += _socket.readAll();
     while (true)
@@ -91,14 +91,14 @@ void WaifulandClient::readResponses()
     }
 }
 
-void WaifulandClient::handleConnected()
+void DeskWaifuClient::handleConnected()
 {
     _reconnectTimer.stop();
     emit connectionChanged(true, tr("Connected to %1").arg(socketPath()));
     sendNext();
 }
 
-void WaifulandClient::handleDisconnected()
+void DeskWaifuClient::handleDisconnected()
 {
     if (_waitingForResponse)
     {
@@ -118,7 +118,7 @@ void WaifulandClient::handleDisconnected()
     _reconnectTimer.start();
 }
 
-void WaifulandClient::handleSocketError(QLocalSocket::LocalSocketError error)
+void DeskWaifuClient::handleSocketError(QLocalSocket::LocalSocketError error)
 {
     Q_UNUSED(error)
     emit connectionChanged(false, _socket.errorString());
@@ -128,7 +128,7 @@ void WaifulandClient::handleSocketError(QLocalSocket::LocalSocketError error)
     }
 }
 
-void WaifulandClient::sendNext()
+void DeskWaifuClient::sendNext()
 {
     if (!isConnected() || _waitingForResponse || _requests.isEmpty())
     {
@@ -140,7 +140,7 @@ void WaifulandClient::sendNext()
     _waitingForResponse = true;
 }
 
-bool WaifulandClient::isRetryableQuery(const QString& command)
+bool DeskWaifuClient::isRetryableQuery(const QString& command)
 {
     return command == QStringLiteral("get_status")
         || command == QStringLiteral("get_available_models")

@@ -62,11 +62,11 @@ bool LAppIPC::Initialize()
     const char* runtimeDir = getenv("XDG_RUNTIME_DIR");
     if (runtimeDir && strlen(runtimeDir) > 0)
     {
-        _socketPath = std::string(runtimeDir) + "/waifuland.sock";
+        _socketPath = std::string(runtimeDir) + "/deskwaifu.sock";
     }
     else
     {
-        _socketPath = "/tmp/waifuland.sock";
+        _socketPath = "/tmp/deskwaifu.sock";
     }
 
     // Remove stale socket

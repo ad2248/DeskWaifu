@@ -1,8 +1,8 @@
 /**
- * @brief IPC server for controlling Waifuland from external programs.
+ * @brief IPC server for controlling DeskWaifu from external programs.
  *
  * Listens on a Unix domain socket and accepts newline-delimited JSON commands.
- * Socket path: $XDG_RUNTIME_DIR/waifuland.sock (fallback: /tmp/waifuland.sock)
+ * Socket path: $XDG_RUNTIME_DIR/deskwaifu.sock (fallback: /tmp/deskwaifu.sock)
  */
 
 #pragma once

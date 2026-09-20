@@ -7,8 +7,8 @@ IMAGE_REPO=kals/deskwaifu-ci
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$(dirname "$SCRIPT_DIR")"
 CONTAINERFILE="$SOURCE_DIR/Containerfile"
-PACMAN_MIRROR=${WAIFULAND_PACMAN_MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/archlinux}
-BOX_HOST=${WAIFULAND_BOX_HOST:-box}
+PACMAN_MIRROR=${DESKWAIFU_PACMAN_MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/archlinux}
+BOX_HOST=${DESKWAIFU_BOX_HOST:-box}
 
 if ! command -v podman >/dev/null 2>&1; then
     echo "Error: podman is required" >&2
@@ -39,8 +39,8 @@ podman run --rm "$IMAGE" bash -ceu '
     wayland-scanner --version
     sway --version
     pkgconf --modversion Qt6Core Qt6Widgets Qt6WaylandClient
-    test -f /opt/waifuland-deps/CubismSdkForNative-5-r.5/Core/include/Live2DCubismCore.h
-    test -f /opt/waifuland-deps/glew/include/GL/glew.h
+    test -f /opt/deskwaifu-deps/CubismSdkForNative-5-r.5/Core/include/Live2DCubismCore.h
+    test -f /opt/deskwaifu-deps/glew/include/GL/glew.h
     test ! -S /var/run/docker.sock
 '
 

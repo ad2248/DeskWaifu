@@ -1,4 +1,4 @@
-# Waifuland
+# DeskWaifu
 
 > **Disclaimer:** This repository is "vibe coded". Please use with caution.
 
@@ -7,7 +7,7 @@ A Linux desktop Live2D model viewer that renders Live2D characters as transparen
 Live2D models float on your desktop with click-through transparency — only the model itself receives input. Built with the Live2D Cubism SDK for Native, OpenGL (EGL), and native Wayland (no X11, no GLFW windowing).
 
 <!-- Screenshot or GIF placeholder: place a demo image/gif here -->
-<!-- ![Waifuland Demo](docs/demo.gif) -->
+<!-- ![DeskWaifu Demo](docs/demo.gif) -->
 
 
 https://github.com/user-attachments/assets/95dfdedc-4957-4bb7-b79f-f3addd97a6db
@@ -19,6 +19,7 @@ https://github.com/user-attachments/assets/95dfdedc-4957-4bb7-b79f-f3addd97a6db
 - [Features](#features)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
+- [Upgrading from Waifuland](#upgrading-from-waifuland)
 - [Usage](#usage)
 - [IPC API](#ipc-api)
 - [Model Setup](#model-setup)
@@ -75,8 +76,8 @@ sudo dnf install gcc-c++ cmake pkgconf-pkg-config wayland-devel wayland-protocol
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/shinkuan/waifuland.git
-cd waifuland
+git clone https://git.kals.top/kals/DeskWaifu.git
+cd DeskWaifu
 ```
 
 ### 2. Download the Live2D Cubism SDK
@@ -85,7 +86,7 @@ cd waifuland
 2. Download **Cubism SDK for Native**
 3. Extract it into the project root directory:
    ```
-   waifuland/
+   DeskWaifu/
    ├── CubismSdkForNative-5-r.5/   <-- extracted SDK here
    ├── CMakeLists.txt
    ├── src/
@@ -111,33 +112,52 @@ cmake ..
 make -j$(nproc)
 ```
 
-The binary will be at `build/bin/waifuland`.
+The binary will be at `build/bin/deskwaifu`.
 
-The Qt control window will be at `build/bin/waifuland-control`.
+The Qt control window will be at `build/bin/deskwaifu-control`.
+
+## Upgrading from Waifuland
+
+The DeskWaifu rename changes user-facing paths and identifiers. Existing data is
+not migrated automatically:
+
+- Move the contents of `$XDG_CONFIG_HOME/waifuland/` (or
+  `~/.config/waifuland/`) to the corresponding `deskwaifu/` directory to keep
+  your `config.json` and downloaded models.
+- Update scripts and launchers to use `deskwaifu`, `deskwaifu-control`, and
+  `deskwaifu-ctl`. The IPC socket is now `$XDG_RUNTIME_DIR/deskwaifu.sock`.
+- Update compositor rules that match the layer-shell namespace from
+  `waifuland` to `deskwaifu`.
+- Update key bindings such as `killall -s SIGUSR1 waifuland` to target
+  `deskwaifu`; current Hyprland examples are shown below.
+- Stop any running Waifuland instance and remove its stale
+  `$XDG_RUNTIME_DIR/waifuland.sock` (or `/tmp/waifuland.sock`) before starting
+  DeskWaifu. After confirming the migration, remove the old `waifuland/`
+  configuration directory.
 
 ## Usage
 
 ```bash
-# Run with default model directory (~/.config/waifuland/models/)
-./build/bin/waifuland
+# Run with default model directory (~/.config/deskwaifu/models/)
+./build/bin/deskwaifu
 
 # Run with a custom model directory
-./build/bin/waifuland --models_dir /path/to/your/models
+./build/bin/deskwaifu --models_dir /path/to/your/models
 
 # Run with a custom config file
-./build/bin/waifuland --config /path/to/config.json
+./build/bin/deskwaifu --config /path/to/config.json
 
-# Open the Qt control window after starting Waifuland
-./build/bin/waifuland-control
+# Open the Qt control window after starting DeskWaifu
+./build/bin/deskwaifu-control
 ```
 
 The control window exposes the same model, expression, motion, lip-sync,
-transform, visibility, skin, and look-at commands as `waifuland-ctl`. Its page
+transform, visibility, skin, and look-at commands as `deskwaifu-ctl`. Its page
 layout is stored in `control/MainWindow.ui` and can be edited with Qt Designer.
 
 ### Configuration
 
-Waifuland reads a JSON config file from `$XDG_CONFIG_HOME/waifuland/config.json` (fallback: `~/.config/waifuland/config.json`). Override the path with `--config <path>`.
+DeskWaifu reads a JSON config file from `$XDG_CONFIG_HOME/deskwaifu/config.json` (fallback: `~/.config/deskwaifu/config.json`). Override the path with `--config <path>`.
 
 Example `config.json`:
 
@@ -183,7 +203,7 @@ All fields are optional. Missing fields use their default values. If the config 
 
 ### Compositor Compatibility
 
-Waifuland runs on any Wayland compositor that supports the `wlr-layer-shell` protocol. Some features require compositor-specific IPC and are only available on Hyprland:
+DeskWaifu runs on any Wayland compositor that supports the `wlr-layer-shell` protocol. Some features require compositor-specific IPC and are only available on Hyprland:
 
 | Feature | Hyprland | Sway | Other wlroots |
 |---|---|---|---|
@@ -201,11 +221,11 @@ The compositor is auto-detected at startup. Feature availability is logged to th
 You can hide and show your Live2D model (along with its click-through input region) by sending a `SIGUSR1` signal to the background process. When hidden, it uses virtually no resources.
 
 ```bash
-kill -SIGUSR1 $(pgrep -x waifuland)
+kill -SIGUSR1 $(pgrep -x deskwaifu)
 # Or
-killall -s SIGUSR1 waifuland
+killall -s SIGUSR1 deskwaifu
 # Or using the included toggle command:
-./build/bin/waifuland toggle
+./build/bin/deskwaifu toggle
 ```
 
 ### Move to Focused Monitor
@@ -213,36 +233,36 @@ killall -s SIGUSR1 waifuland
 Move the model to whichever monitor currently has focus by sending a `SIGUSR2` signal. This works on Hyprland and Sway.
 
 ```bash
-kill -SIGUSR2 $(pgrep -x waifuland)
+kill -SIGUSR2 $(pgrep -x deskwaifu)
 # Or
-killall -s SIGUSR2 waifuland
+killall -s SIGUSR2 deskwaifu
 # Or using the included focus command:
-./build/bin/waifuland focus
+./build/bin/deskwaifu focus
 ```
 
 **Hyprland keybind examples**  
 Add these to your `~/.config/hypr/hyprland.conf`:
 ```ini
-# Toggle waifuland visibility with Super + W
-bind = SUPER, W, exec, killall -s SIGUSR1 waifuland
-# Move waifuland to focused monitor with Super + Shift + W
-bind = SUPER SHIFT, W, exec, killall -s SIGUSR2 waifuland
+# Toggle deskwaifu visibility with Super + W
+bind = SUPER, W, exec, killall -s SIGUSR1 deskwaifu
+# Move deskwaifu to focused monitor with Super + Shift + W
+bind = SUPER SHIFT, W, exec, killall -s SIGUSR2 deskwaifu
 ```
 
 ## IPC API
 
-Waifuland exposes a Unix domain socket for external control by scripts and programs.
+DeskWaifu exposes a Unix domain socket for external control by scripts and programs.
 
-- **Socket path:** `$XDG_RUNTIME_DIR/waifuland.sock` (fallback: `/tmp/waifuland.sock`)
+- **Socket path:** `$XDG_RUNTIME_DIR/deskwaifu.sock` (fallback: `/tmp/deskwaifu.sock`)
 - **Protocol:** Newline-delimited JSON — send `{"command":"<name>", ...}\n`, receive `{"ok":true, ...}\n`
 - **Requires:** `socat` (install via your package manager)
 
 ### CLI Client
 
-A convenience CLI client `waifuland-ctl` is included in the project root:
+A convenience CLI client `deskwaifu-ctl` is included in the project root:
 
 ```bash
-./waifuland-ctl <command> [--key value ...]
+./deskwaifu-ctl <command> [--key value ...]
 ```
 
 ### Available Commands
@@ -252,7 +272,7 @@ A convenience CLI client `waifuland-ctl` is included in the project root:
 Returns current model, zoom, position, and visibility.
 
 ```bash
-./waifuland-ctl get_status
+./deskwaifu-ctl get_status
 ```
 
 ```json
@@ -271,7 +291,7 @@ Returns current model, zoom, position, and visibility.
 #### `get_available_models` — List all discovered models
 
 ```bash
-./waifuland-ctl get_available_models
+./deskwaifu-ctl get_available_models
 ```
 
 ```json
@@ -284,7 +304,7 @@ Returns current model, zoom, position, and visibility.
 #### `get_current_model` — Get current model name and index
 
 ```bash
-./waifuland-ctl get_current_model
+./deskwaifu-ctl get_current_model
 ```
 
 ```json
@@ -299,10 +319,10 @@ Returns current model, zoom, position, and visibility.
 
 ```bash
 # By name
-./waifuland-ctl set_model --name "AnotherModel"
+./deskwaifu-ctl set_model --name "AnotherModel"
 
 # By index
-./waifuland-ctl set_model --index 2
+./deskwaifu-ctl set_model --index 2
 ```
 
 ```json
@@ -314,7 +334,7 @@ Returns current model, zoom, position, and visibility.
 #### `next_model` — Switch to next model
 
 ```bash
-./waifuland-ctl next_model
+./deskwaifu-ctl next_model
 ```
 
 ```json
@@ -326,7 +346,7 @@ Returns current model, zoom, position, and visibility.
 #### `prev_model` — Switch to previous model
 
 ```bash
-./waifuland-ctl prev_model
+./deskwaifu-ctl prev_model
 ```
 
 ```json
@@ -338,7 +358,7 @@ Returns current model, zoom, position, and visibility.
 #### `get_expressions` — List expressions for current model
 
 ```bash
-./waifuland-ctl get_expressions
+./deskwaifu-ctl get_expressions
 ```
 
 ```json
@@ -351,7 +371,7 @@ Returns current model, zoom, position, and visibility.
 #### `set_expression` — Set expression by ID
 
 ```bash
-./waifuland-ctl set_expression --id "happy.exp3.json"
+./deskwaifu-ctl set_expression --id "happy.exp3.json"
 ```
 
 ```json
@@ -363,7 +383,7 @@ Returns current model, zoom, position, and visibility.
 #### `get_motions` — List motions for current model
 
 ```bash
-./waifuland-ctl get_motions
+./deskwaifu-ctl get_motions
 ```
 
 ```json
@@ -380,13 +400,13 @@ Returns current model, zoom, position, and visibility.
 
 ```bash
 # Play a specific motion by group and index
-./waifuland-ctl do_motion --group "TapBody" --index 0
+./deskwaifu-ctl do_motion --group "TapBody" --index 0
 
 # Play with custom priority (default: 2 = Normal)
-./waifuland-ctl do_motion --group "Idle" --index 0 --priority 3
+./deskwaifu-ctl do_motion --group "Idle" --index 0 --priority 3
 
 # Play a random TapBody motion (omit group)
-./waifuland-ctl do_motion
+./deskwaifu-ctl do_motion
 ```
 
 ```json
@@ -400,7 +420,7 @@ Returns current model, zoom, position, and visibility.
 Value range: `0.0` (closed) to `1.0` (fully open). Send continuously for real-time lipsync.
 
 ```bash
-./waifuland-ctl set_mouth_y --value 0.8
+./deskwaifu-ctl set_mouth_y --value 0.8
 ```
 
 ```json
@@ -414,7 +434,7 @@ Value range: `0.0` (closed) to `1.0` (fully open). Send continuously for real-ti
 Value range: `0.1` to `10.0`.
 
 ```bash
-./waifuland-ctl set_model_zoom --value 1.5
+./deskwaifu-ctl set_model_zoom --value 1.5
 ```
 
 ```json
@@ -426,7 +446,7 @@ Value range: `0.1` to `10.0`.
 #### `set_model_position` — Set model position offset
 
 ```bash
-./waifuland-ctl set_model_position --x 0.5 --y -0.3
+./deskwaifu-ctl set_model_position --x 0.5 --y -0.3
 ```
 
 ```json
@@ -438,7 +458,7 @@ Value range: `0.1` to `10.0`.
 #### `get_model_position` — Get current position and zoom
 
 ```bash
-./waifuland-ctl get_model_position
+./deskwaifu-ctl get_model_position
 ```
 
 ```json
@@ -453,7 +473,7 @@ Value range: `0.1` to `10.0`.
 #### `toggle_hidden` — Toggle window visibility
 
 ```bash
-./waifuland-ctl toggle_hidden
+./deskwaifu-ctl toggle_hidden
 ```
 
 ```json
@@ -466,7 +486,7 @@ Value range: `0.1` to `10.0`.
 #### `switch_skin` — Switch model skin/outfit
 
 ```bash
-./waifuland-ctl switch_skin
+./deskwaifu-ctl switch_skin
 ```
 
 ```json
@@ -479,10 +499,10 @@ Value range: `0.1` to `10.0`.
 
 ```bash
 # Set look direction (x, y range: -1.0 to 1.0)
-./waifuland-ctl set_look --x 0.5 --y 0.3
+./deskwaifu-ctl set_look --x 0.5 --y 0.3
 
 # Reset to default (follow cursor)
-./waifuland-ctl set_look --reset
+./deskwaifu-ctl set_look --reset
 ```
 
 ```json
@@ -493,17 +513,17 @@ Value range: `0.1` to `10.0`.
 
 ### Raw Socket Usage
 
-You can also communicate directly with the socket without `waifuland-ctl`:
+You can also communicate directly with the socket without `deskwaifu-ctl`:
 
 ```bash
 # Using socat
-echo '{"command":"get_status"}' | socat - UNIX-CONNECT:$XDG_RUNTIME_DIR/waifuland.sock
+echo '{"command":"get_status"}' | socat - UNIX-CONNECT:$XDG_RUNTIME_DIR/deskwaifu.sock
 
 # Using Python
 python3 -c "
 import socket, json
 sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-sock.connect('$XDG_RUNTIME_DIR/waifuland.sock')
+sock.connect('$XDG_RUNTIME_DIR/deskwaifu.sock')
 sock.send(b'{\"command\":\"get_status\"}\n')
 print(sock.recv(4096).decode())
 sock.close()
@@ -515,7 +535,7 @@ sock.close()
 Place Live2D models in your models directory. Each model should be in its own subfolder containing a `.model3.json` file:
 
 ```
-~/.config/waifuland/models/
+~/.config/deskwaifu/models/
 ├── MyModel/
 │   ├── MyModel.model3.json
 │   ├── MyModel.moc3
@@ -525,12 +545,12 @@ Place Live2D models in your models directory. Each model should be in its own su
     └── ...
 ```
 
-The default models directory is `$XDG_CONFIG_HOME/waifuland/models/` (fallback: `~/.config/waifuland/models/`). Override it with the `--models_dir` flag.
+The default models directory is `$XDG_CONFIG_HOME/deskwaifu/models/` (fallback: `~/.config/deskwaifu/models/`). Override it with the `--models_dir` flag.
 
 ## Architecture
 
 ```
-waifuland/
+deskwaifu/
 ├── src/                    # Application source code
 │   ├── main.cpp            # Entry point, CLI argument parsing
 │   ├── LAppConfig.*        # JSON config file reader (singleton)
