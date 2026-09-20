@@ -24,7 +24,7 @@ jobs:
         run: test ! -S /var/run/docker.sock
 
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: https://git.kals.top/actions/checkout@v4
 
       - name: Attach private build dependencies
         run: |
