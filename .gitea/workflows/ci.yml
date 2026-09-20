@@ -34,7 +34,10 @@ jobs:
             fi
             deps_dir=
           done
-          test -n "$deps_dir"
+          test -n "$deps_dir" || {
+            echo "::error::No /opt/*-deps directory with CubismSdkForNative-5-r.5 and glew found" >&2
+            exit 1
+          }
           echo "DESKWAIFU_DEPS_DIR=$deps_dir" >> "$GITHUB_ENV"
           ln -s "$deps_dir/CubismSdkForNative-5-r.5" CubismSdkForNative-5-r.5
           ln -s "$deps_dir/glew" thirdParty/glew

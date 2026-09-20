@@ -2,7 +2,7 @@
 set -euo pipefail
 
 BUILD_DIR=${1:-build-ci}
-DEPS_DIR=${DESKWAIFU_DEPS_DIR:-/opt/deskwaifu-deps}
+DEPS_DIR=${DESKWAIFU_DEPS_DIR:-}
 RUNTIME_DIR=${XDG_RUNTIME_DIR:-/tmp/deskwaifu-runtime}
 LOG_DIR="$BUILD_DIR/test-logs"
 SWAY_PID=
@@ -19,6 +19,19 @@ cleanup() {
     fi
 }
 trap cleanup EXIT
+
+if [[ -z $DEPS_DIR ]]; then
+    for candidate in /opt/*-deps; do
+        if [[ -d "$candidate/CubismSdkForNative-5-r.5/Samples/Resources" ]]; then
+            DEPS_DIR=$candidate
+            break
+        fi
+    done
+fi
+if [[ ! -d "$DEPS_DIR/CubismSdkForNative-5-r.5/Samples/Resources" ]]; then
+    echo "No /opt/*-deps directory with Cubism SDK resources found; set DESKWAIFU_DEPS_DIR" >&2
+    exit 1
+fi
 
 mkdir -p "$LOG_DIR"
 install -d -m 0700 "$RUNTIME_DIR"

@@ -19,6 +19,7 @@ https://github.com/user-attachments/assets/95dfdedc-4957-4bb7-b79f-f3addd97a6db
 - [Features](#features)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
+- [Upgrading from Waifuland](#upgrading-from-waifuland)
 - [Usage](#usage)
 - [IPC API](#ipc-api)
 - [Model Setup](#model-setup)
@@ -75,8 +76,8 @@ sudo dnf install gcc-c++ cmake pkgconf-pkg-config wayland-devel wayland-protocol
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/shinkuan/deskwaifu.git
-cd deskwaifu
+git clone https://git.kals.top/kals/DeskWaifu.git
+cd DeskWaifu
 ```
 
 ### 2. Download the Live2D Cubism SDK
@@ -114,6 +115,21 @@ make -j$(nproc)
 The binary will be at `build/bin/deskwaifu`.
 
 The Qt control window will be at `build/bin/deskwaifu-control`.
+
+## Upgrading from Waifuland
+
+The DeskWaifu rename changes user-facing paths and identifiers. Existing data is
+not migrated automatically:
+
+- Move the contents of `$XDG_CONFIG_HOME/waifuland/` (or
+  `~/.config/waifuland/`) to the corresponding `deskwaifu/` directory to keep
+  your `config.json` and downloaded models.
+- Update scripts and launchers to use `deskwaifu`, `deskwaifu-control`, and
+  `deskwaifu-ctl`. The IPC socket is now `$XDG_RUNTIME_DIR/deskwaifu.sock`.
+- Update compositor rules that match the layer-shell namespace from
+  `waifuland` to `deskwaifu`.
+- Update key bindings such as `killall -s SIGUSR1 waifuland` to target
+  `deskwaifu`; current Hyprland examples are shown below.
 
 ## Usage
 
