@@ -373,6 +373,42 @@ std::string LAppIPC::ProcessCommand(const std::string& json)
         return "{\"ok\":true}";
     }
 
+    if (command == "get_hotkeys" || command == "trigger_hotkey")
+    {
+        LAppModel* model = mgr->GetModel(0);
+        if (!model) return "{\"ok\":false,\"error\":\"no model loaded\"}";
+        auto& hotkeys = model->Hotkeys();
+        if (command == "trigger_hotkey")
+        {
+            if (JsonGetString(json, "model_token") != hotkeys.Token())
+                return "{\"ok\":false,\"error\":\"Model changed; refresh hotkeys before triggering\"}";
+            std::string error;
+            if (!hotkeys.Trigger(JsonGetString(json, "id"), error))
+                return "{\"ok\":false,\"error\":\"" + JsonEscape(error) + "\"}";
+        }
+        std::ostringstream out;
+        out << "{\"ok\":true,\"model_token\":\"" << hotkeys.Token()
+            << "\",\"warning\":\"" << JsonEscape(hotkeys.Error()) << "\",\"hotkeys\":[";
+        bool first = true;
+        for (const auto& binding : hotkeys.Bindings())
+        {
+            if (!first) out << ',';
+            first = false;
+            out << "{\"id\":\"" << JsonEscape(binding.id) << "\",\"name\":\"" << JsonEscape(binding.name)
+                << "\",\"action\":\"" << JsonEscape(binding.action) << "\",\"file\":\"" << JsonEscape(binding.file)
+                << "\",\"reason\":\"" << JsonEscape(binding.reason) << "\",\"enabled\":" << (binding.enabled ? "true" : "false")
+                << ",\"active\":" << (hotkeys.IsActive(binding) ? "true" : "false") << ",\"keys\":[";
+            for (size_t i = 0; i < binding.keys.size(); ++i)
+            {
+                if (i) out << ',';
+                out << '"' << JsonEscape(binding.keys[i]) << '"';
+            }
+            out << "]}";
+        }
+        out << "]}";
+        return out.str();
+    }
+
     // ── get_expressions ──
     if (command == "get_expressions")
     {

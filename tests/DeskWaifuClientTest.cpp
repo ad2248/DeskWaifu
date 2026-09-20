@@ -16,6 +16,7 @@ class DeskWaifuClientTest : public QObject
 private slots:
     void sendsJsonAndParsesResponse();
     void doesNotReplayUnacknowledgedMutation();
+    void doesNotReplayUnacknowledgedMutation_data();
     void retriesUnacknowledgedQuery();
 };
 
@@ -61,6 +62,7 @@ void DeskWaifuClientTest::sendsJsonAndParsesResponse()
 
 void DeskWaifuClientTest::doesNotReplayUnacknowledgedMutation()
 {
+    QFETCH(QString, command);
     QTemporaryDir runtimeDir;
     QVERIFY(runtimeDir.isValid());
     qputenv("XDG_RUNTIME_DIR", runtimeDir.path().toLocal8Bit());
@@ -71,7 +73,8 @@ void DeskWaifuClientTest::doesNotReplayUnacknowledgedMutation()
 
     DeskWaifuClient client;
     QSignalSpy unknownSpy(&client, &DeskWaifuClient::commandOutcomeUnknown);
-    client.sendCommand(QStringLiteral("toggle_hidden"));
+    client.sendCommand(command);
+    client.sendCommand(QStringLiteral("trigger_hotkey"));
     client.sendCommand(QStringLiteral("get_status"));
 
     QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 2000);
@@ -79,11 +82,11 @@ void DeskWaifuClientTest::doesNotReplayUnacknowledgedMutation()
     QVERIFY(firstConnection);
     QTRY_VERIFY_WITH_TIMEOUT(firstConnection->canReadLine(), 2000);
     const QJsonObject firstRequest = QJsonDocument::fromJson(firstConnection->readLine()).object();
-    QCOMPARE(firstRequest.value(QStringLiteral("command")).toString(), QStringLiteral("toggle_hidden"));
+    QCOMPARE(firstRequest.value(QStringLiteral("command")).toString(), command);
 
     firstConnection->disconnectFromServer();
     QTRY_COMPARE_WITH_TIMEOUT(unknownSpy.count(), 1, 2000);
-    QCOMPARE(unknownSpy.takeFirst().at(0).toString(), QStringLiteral("toggle_hidden"));
+    QCOMPARE(unknownSpy.takeFirst().at(0).toString(), command);
 
     QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 4000);
     QLocalSocket* secondConnection = server.nextPendingConnection();
@@ -94,6 +97,13 @@ void DeskWaifuClientTest::doesNotReplayUnacknowledgedMutation()
 
     secondConnection->write("{\"ok\":true}\n");
     secondConnection->flush();
+}
+
+void DeskWaifuClientTest::doesNotReplayUnacknowledgedMutation_data()
+{
+    QTest::addColumn<QString>("command");
+    QTest::newRow("visibility") << QStringLiteral("toggle_hidden");
+    QTest::newRow("model-hotkey") << QStringLiteral("trigger_hotkey");
 }
 
 void DeskWaifuClientTest::retriesUnacknowledgedQuery()

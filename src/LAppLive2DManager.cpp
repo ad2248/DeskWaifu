@@ -451,6 +451,8 @@ void LAppLive2DManager::ChangeScene(Csm::csmInt32 index)
     // 表示モデルリストを更新
     _models.Clear();
     _models.PushBack(_modelCache[index]);
+    // Cached models must not retain hotkey switches or accept an old panel token.
+    _modelCache[index]->Hotkeys().Reset();
 
     // モデル数が4を超える場合、現在と次以外のキャッシュを解放
     EvictExcessModels();

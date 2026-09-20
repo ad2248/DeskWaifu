@@ -7,6 +7,7 @@ RUNTIME_DIR=${XDG_RUNTIME_DIR:-/tmp/deskwaifu-runtime}
 LOG_DIR="$BUILD_DIR/test-logs"
 SWAY_PID=
 APP_PID=
+CONFIG_DIR=
 
 cleanup() {
     if [[ -n ${APP_PID} ]]; then
@@ -16,6 +17,9 @@ cleanup() {
     if [[ -n ${SWAY_PID} ]]; then
         kill "$SWAY_PID" 2>/dev/null || true
         wait "$SWAY_PID" 2>/dev/null || true
+    fi
+    if [[ -n ${CONFIG_DIR} ]]; then
+        rm -rf "$CONFIG_DIR"
     fi
 }
 trap cleanup EXIT
@@ -37,6 +41,9 @@ install -d -m 0700 "$RUNTIME_DIR"
 rm -f "$RUNTIME_DIR"/wayland-* "$RUNTIME_DIR/deskwaifu.sock"
 
 export XDG_RUNTIME_DIR="$RUNTIME_DIR"
+CONFIG_DIR=$(mktemp -d "$RUNTIME_DIR/hotkey-config.XXXXXX")
+export XDG_CONFIG_HOME="$CONFIG_DIR"
+python3 tests/hotkey_smoke.py prepare "$DEPS_DIR/CubismSdkForNative-5-r.5/Samples/Resources/Haru"
 export WLR_BACKENDS=headless
 export WLR_LIBINPUT_NO_DEVICES=1
 export WLR_RENDERER=pixman
@@ -69,7 +76,7 @@ fi
 wayland-info >/dev/null
 
 "$BUILD_DIR/bin/deskwaifu" \
-    --models_dir "$DEPS_DIR/CubismSdkForNative-5-r.5/Samples/Resources" \
+    --models_dir "$XDG_CONFIG_HOME/deskwaifu/models" \
     >"$LOG_DIR/deskwaifu.log" 2>&1 &
 APP_PID=$!
 
@@ -138,6 +145,7 @@ assert_ok switch_skin
 assert_ok next_model
 assert_ok prev_model
 assert_ok set_model --name Haru
+python3 tests/hotkey_smoke.py check
 
 kill -0 "$APP_PID"
 timeout 20 "$BUILD_DIR/bin/deskwaifu-control" --smoke-test \

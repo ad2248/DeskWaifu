@@ -96,6 +96,7 @@ void LAppModel::LoadAssets(const csmChar* dir, const csmChar* fileName)
     DeleteBuffer(buffer, path.GetRawString());
 
     SetupModel(setting);
+    _hotkeys.Load(dir, fileName);
 
     if (_model == NULL)
     {
@@ -166,10 +167,9 @@ void LAppModel::SetupModel(ICubismModelSetting* setting)
             }
         }
         
-        // 2. Auto-discover standalone .exp3.json files in the model folder and Expressions/ subfolder
-        const csmChar* exprSearchDirs[] = { "", "Expressions/" };
-        for (int d = 0; d < 2; d++) {
-            csmString searchDir = _modelHomeDir + exprSearchDirs[d];
+        // 2. Auto-discover standalone expressions, including VTube Studio's exp/ folder.
+        for (const auto& directory : ModelHotkeys::ExpressionDirectories()) {
+            csmString searchDir = _modelHomeDir + directory.c_str();
             DIR* pDir = opendir(searchDir.GetRawString());
             if (pDir != NULL) {
                 struct dirent* ent;
@@ -542,6 +542,11 @@ void LAppModel::Update()
     _opacity = _model->GetModelOpacity();
 
     _updateScheduler.OnLateUpdate(_model, deltaTimeSeconds);
+
+    // Apply persistent hotkey expressions after the transient expression pipeline.
+    // LoadParameters above restores the base each frame, so Add never accumulates.
+    _hotkeys.Update(deltaTimeSeconds);
+    _hotkeys.Apply(_model);
 
     // External mouth Y override (IPC lipsync)
     if (LAppIPC::HasExternalMouthY())

@@ -7,6 +7,8 @@ qt_add_executable(deskwaifu-control
   MainWindow.ui
   DeskWaifuClient.cpp
   DeskWaifuClient.hpp
+  HotkeyPanel.cpp
+  HotkeyPanel.hpp
 )
 
 target_link_libraries(deskwaifu-control PRIVATE
