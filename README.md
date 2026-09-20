@@ -86,7 +86,7 @@ cd DeskWaifu
 2. Download **Cubism SDK for Native**
 3. Extract it into the project root directory:
    ```
-   deskwaifu/
+   DeskWaifu/
    ├── CubismSdkForNative-5-r.5/   <-- extracted SDK here
    ├── CMakeLists.txt
    ├── src/
@@ -130,6 +130,10 @@ not migrated automatically:
   `waifuland` to `deskwaifu`.
 - Update key bindings such as `killall -s SIGUSR1 waifuland` to target
   `deskwaifu`; current Hyprland examples are shown below.
+- Stop any running Waifuland instance and remove its stale
+  `$XDG_RUNTIME_DIR/waifuland.sock` (or `/tmp/waifuland.sock`) before starting
+  DeskWaifu. After confirming the migration, remove the old `waifuland/`
+  configuration directory.
 
 ## Usage
 

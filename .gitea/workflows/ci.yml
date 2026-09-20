@@ -26,19 +26,25 @@ jobs:
       - name: Check out repository
         uses: https://git.kals.top/actions/checkout@v4
 
+      - name: Verify renamed identifiers
+        run: |
+          legacy_name=waifu""land
+          ! grep -RIn "$legacy_name" . \
+            --exclude=README.md \
+            --exclude-dir=.git \
+            --exclude-dir=build-ci
+
       - name: Attach private build dependencies
         run: |
-          for deps_dir in /opt/*-deps; do
-            if [[ -d "$deps_dir/CubismSdkForNative-5-r.5" && -d "$deps_dir/glew" ]]; then
-              break
-            fi
-            deps_dir=
-          done
-          test -n "$deps_dir" || {
-            echo "::error::No /opt/*-deps directory with CubismSdkForNative-5-r.5 and glew found" >&2
+          deps_dir=$(bash scripts/find-deps-dir.sh) || {
+            echo "::error::Unable to locate private build dependencies" >&2
             exit 1
           }
-          echo "DESKWAIFU_DEPS_DIR=$deps_dir" >> "$GITHUB_ENV"
+          {
+            echo "DESKWAIFU_DEPS_DIR<<EOF"
+            echo "$deps_dir"
+            echo "EOF"
+          } >> "$GITHUB_ENV"
           ln -s "$deps_dir/CubismSdkForNative-5-r.5" CubismSdkForNative-5-r.5
           ln -s "$deps_dir/glew" thirdParty/glew
 

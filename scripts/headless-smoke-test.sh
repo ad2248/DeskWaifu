@@ -21,15 +21,14 @@ cleanup() {
 trap cleanup EXIT
 
 if [[ -z $DEPS_DIR ]]; then
-    for candidate in /opt/*-deps; do
-        if [[ -d "$candidate/CubismSdkForNative-5-r.5/Samples/Resources" ]]; then
-            DEPS_DIR=$candidate
-            break
-        fi
-    done
+    DEPS_DIR=$(bash "$(dirname "$0")/find-deps-dir.sh") || {
+        echo "Set DESKWAIFU_DEPS_DIR to a complete dependency directory" >&2
+        exit 1
+    }
 fi
-if [[ ! -d "$DEPS_DIR/CubismSdkForNative-5-r.5/Samples/Resources" ]]; then
-    echo "No /opt/*-deps directory with Cubism SDK resources found; set DESKWAIFU_DEPS_DIR" >&2
+if [[ ! -d "$DEPS_DIR/CubismSdkForNative-5-r.5/Samples/Resources" ||
+      ! -d "$DEPS_DIR/glew" ]]; then
+    echo "DESKWAIFU_DEPS_DIR must contain CubismSdkForNative-5-r.5 and glew" >&2
     exit 1
 fi
 
