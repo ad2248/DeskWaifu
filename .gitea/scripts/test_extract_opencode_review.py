@@ -1,5 +1,7 @@
 import importlib.util
 import json
+import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -9,6 +11,7 @@ from pathlib import Path
 sys.dont_write_bytecode = True
 EXTRACTOR = Path(__file__).with_name("extract-opencode-review.py")
 REVIEW_SCRIPT = Path(__file__).with_name("opencode-review.sh")
+REVIEW_ACTION = Path(__file__).with_name("opencode-review-action.sh")
 SPEC = importlib.util.spec_from_file_location("extract_opencode_review", EXTRACTOR)
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
@@ -45,9 +48,50 @@ class ExtractReviewTest(unittest.TestCase):
         script = REVIEW_SCRIPT.read_text(encoding="utf-8")
 
         self.assertIn("--agent build", script)
-        self.assertIn('"tea api *": "allow"', script)
-        self.assertIn('"tea issues *": "allow"', script)
-        self.assertIn("提交 APPROVE 评审", script)
+        self.assertIn('"steps": 8', script)
+        self.assertIn('".gitea/scripts/opencode-review-action.sh *": "allow"', script)
+        self.assertIn('OPENCODE_CONFIG="$workdir/opencode.json"', script)
+        self.assertIn('--dir "$repo_root"', script)
+        self.assertIn("last events follow", script)
+
+    def test_approve_action_checks_head_and_targets_tested_commit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            log = directory / "tea.log"
+            tea = directory / "tea"
+            tea.write_text(
+                "#!/usr/bin/env bash\n"
+                "printf '%s\\n' \"$*\" >> \"$TEA_LOG\"\n"
+                "if [[ \"$*\" != *'-X POST'* ]]; then\n"
+                "  printf '{\"head\":{\"sha\":\"%s\"}}\\n' \"$REVIEW_HEAD_SHA\"\n"
+                "fi\n",
+                encoding="utf-8",
+            )
+            tea.chmod(0o755)
+            env = os.environ | {
+                "PATH": f"{directory}:{os.environ['PATH']}",
+                "TEA_LOG": str(log),
+                "GITHUB_REPOSITORY": "kals/DeskWaifu",
+                "REVIEW_REPO_ROOT": "/trusted/checkout",
+                "REVIEW_PR_NUMBER": "14",
+                "REVIEW_HEAD_SHA": "abc1234",
+                "REVIEW_MARKER": "<!-- opencode-review:abc1234 -->",
+            }
+
+            result = subprocess.run(
+                ["bash", str(REVIEW_ACTION), "approve", "review passed"],
+                check=True,
+                capture_output=True,
+                env=env,
+                text=True,
+            )
+
+            calls = log.read_text(encoding="utf-8")
+            self.assertEqual("approved abc1234\n", result.stdout)
+            self.assertIn("/repos/kals/DeskWaifu/pulls/14 --login reviewer --repo /trusted/checkout", calls)
+            self.assertIn("commit_id=abc1234", calls)
+            self.assertIn("event=APPROVE", calls)
+            self.assertIn("opencode-review:abc1234", calls)
 
 
 if __name__ == "__main__":
