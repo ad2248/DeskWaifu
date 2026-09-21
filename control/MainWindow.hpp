@@ -1,12 +1,14 @@
 #pragma once
 
 #include <QMainWindow>
+#include <QJsonArray>
 
 #include "DeskWaifuClient.hpp"
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
+class HotkeyPanel;
 
 class MainWindow : public QMainWindow
 {
@@ -26,6 +28,11 @@ private:
     void logResponse(const QString& command, const QJsonObject& response);
 
     Ui::MainWindow* ui;
+    HotkeyPanel* _hotkeys;
     DeskWaifuClient _client;
     bool _backendReadyEmitted = false;
+    QString _hotkeyModelToken;
+    QJsonObject _lastHotkeyResponse;
+    bool _hotkeyQueryPending = false;
+    void requestHotkeys();
 };

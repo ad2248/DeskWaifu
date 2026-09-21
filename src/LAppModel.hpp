@@ -16,6 +16,7 @@
 
 #include "LAppWavFileHandler_Common.hpp"
 #include "LAppModel_Common.hpp"
+#include "ModelHotkeys.hpp"
 
 /**
  * @brief ユーザーが実際に使用するモデルの実装クラス<br>
@@ -29,6 +30,7 @@ public:
      * @brief Switch to the next skin by cycling through motion groups
      */
     void SwitchSkin();
+    ModelHotkeys& Hotkeys() { return _hotkeys; }
 
     /**
      * @brief コンストラクタ
@@ -155,6 +157,7 @@ protected:
     void DoDraw();
 
 private:
+    ModelHotkeys _hotkeys;
     /**
      * @brief model3.jsonからモデルを生成する。<br>
      *         model3.jsonの記述に従ってモデル生成、モーション、物理演算などのコンポーネント生成を行う。

@@ -1,5 +1,7 @@
 #include "MainWindow.hpp"
 #include "ui_MainWindow.h"
+#include "HotkeyPanel.hpp"
+#include <QTimer>
 
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -12,10 +14,30 @@ MainWindow::MainWindow(QWidget* parent)
     , ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
+    _hotkeys = new HotkeyPanel(this);
+    ui->tabWidget->insertTab(2, _hotkeys, tr("Hotkeys"));
+    connect(_hotkeys, &HotkeyPanel::triggered, this, [this](const QString& id) {
+        if (_client.isConnected() && !_hotkeyModelToken.isEmpty())
+            _client.sendCommand(QStringLiteral("trigger_hotkey"), {
+                {QStringLiteral("id"), id}, {QStringLiteral("model_token"), _hotkeyModelToken}});
+    });
+    auto* hotkeyTimer = new QTimer(this);
+    hotkeyTimer->setInterval(1500);
+    connect(hotkeyTimer, &QTimer::timeout, this, [this] {
+        if (_client.isConnected() && isActiveWindow()) requestHotkeys();
+    });
+    hotkeyTimer->start();
     bindControls();
 
     connect(&_client, &DeskWaifuClient::connectionChanged, this,
         [this](bool connected, const QString& message) {
+            _hotkeys->setConnected(connected);
+            if (!connected)
+            {
+                _hotkeyModelToken.clear();
+                _lastHotkeyResponse = {};
+                _hotkeyQueryPending = false;
+            }
             ui->connectionLabel->setText(connected ? tr("Connected") : tr("Disconnected"));
             ui->connectionLabel->setProperty("connected", connected);
             ui->connectionLabel->style()->unpolish(ui->connectionLabel);
@@ -106,13 +128,37 @@ void MainWindow::refreshAll()
     _client.sendCommand(QStringLiteral("get_current_model"));
     _client.sendCommand(QStringLiteral("get_available_models"));
     _client.sendCommand(QStringLiteral("get_expressions"));
+    requestHotkeys();
     _client.sendCommand(QStringLiteral("get_motions"));
     _client.sendCommand(QStringLiteral("get_model_position"));
 }
 
 void MainWindow::handleResponse(const QString& command, const QJsonObject& response)
 {
-    logResponse(command, response);
+    if (command != QStringLiteral("get_hotkeys") || response != _lastHotkeyResponse)
+        logResponse(command, response);
+    if (command == QStringLiteral("get_hotkeys") || command == QStringLiteral("trigger_hotkey"))
+    {
+        if (command == QStringLiteral("get_hotkeys")) _hotkeyQueryPending = false;
+        if (response.value(QStringLiteral("ok")).toBool())
+        {
+            if (response != _lastHotkeyResponse)
+            {
+                if (_hotkeyModelToken != response.value(QStringLiteral("model_token")).toString())
+                    _hotkeys->resetInput();
+                _hotkeys->setBindings(response.value(QStringLiteral("hotkeys")).toArray(), response.value(QStringLiteral("warning")).toString());
+                _hotkeyModelToken = response.value(QStringLiteral("model_token")).toString();
+                _lastHotkeyResponse = response;
+            }
+        }
+        else if (command == QStringLiteral("get_hotkeys"))
+        {
+            _hotkeyModelToken.clear();
+            _lastHotkeyResponse = {};
+            _hotkeys->setBindings({}, response.value(QStringLiteral("error")).toString());
+        }
+        else requestHotkeys();
+    }
     if (!response.value(QStringLiteral("ok")).toBool())
     {
         statusBar()->showMessage(response.value(QStringLiteral("error")).toString(), 5000);
@@ -187,4 +233,11 @@ void MainWindow::logResponse(const QString& command, const QJsonObject& response
 {
     const QString json = QString::fromUtf8(QJsonDocument(response).toJson(QJsonDocument::Compact));
     ui->responseLog->appendPlainText(QStringLiteral("%1  %2").arg(command, json));
+}
+
+void MainWindow::requestHotkeys()
+{
+    if (_hotkeyQueryPending) return;
+    _hotkeyQueryPending = true;
+    _client.sendCommand(QStringLiteral("get_hotkeys"));
 }

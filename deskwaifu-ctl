@@ -44,6 +44,8 @@ if [ $# -lt 1 ]; then
     echo "  prev_model            Switch to previous model"
     echo "  get_expressions       List expressions for current model"
     echo "  set_expression        Set expression (--id)"
+    echo "  get_hotkeys           List model hotkeys and model token"
+    echo "  trigger_hotkey        Toggle a model expression (--id, --model_token)"
     echo "  get_motions           List motions for current model"
     echo "  do_motion             Play motion (--group, --index, --priority)"
     echo "  set_mouth_y           Set mouth Y for lipsync (--value 0.0-1.0)"

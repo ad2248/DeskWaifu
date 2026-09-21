@@ -201,6 +201,34 @@ All fields are optional. Missing fields use their default values. If the config 
 | **Middle-click** | Switch skin (if any) |
 | **Scroll wheel** | Zoom in/out |
 
+### Model hotkeys in the control panel
+
+The **Hotkeys** tab lists all entries from the current model's matching
+`.vtube.json` file (for example, `桃小奈.model3.json` and `桃小奈.vtube.json`).
+Each row shows the name, keys, action, current state and a **Toggle** button.
+Empty names fall back to the expression filename. Missing files, disabled
+entries, unsupported actions/keys and conflicting bindings are displayed in the list.
+
+- Keys work across the control panel's tabs while its window is active. There
+  are no global keyboard bindings, even for entries marked `IsGlobal` in VTube Studio.
+- **Tab and Shift+Tab never move keyboard focus in the panel.** Tab executes a
+  matching model binding, or does nothing when unbound. Holding a key does not
+  repeatedly toggle the expression.
+- Other keys retain their normal behavior while editing text, numbers or combo boxes.
+- `ToggleExpression` supports independent persistent switches, fade transitions
+  and optional timed deactivation. Turning off one switch does not clear others,
+  and the ordinary `emotion_timeout` does not clear persistent switches.
+- Expression files are resolved from the configured folder, the model root,
+  `Expressions/`, or `exp/`. Persistent effects are blended in configuration order
+  after ordinary expressions, using their `Add`, `Multiply` or `Overwrite` mode.
+- Release-to-deactivate bindings and actions other than `ToggleExpression` are
+  currently shown as unsupported. Buttons remain usable when only the keyboard
+  mapping is unsupported or conflicting.
+- Loading a different model refreshes the list and resets expression switches.
+
+For example, 桃小奈's **Tab → 水印** binding toggles the watermark expression;
+pressing Tab again removes that expression's contribution.
+
 ### Compositor Compatibility
 
 DeskWaifu runs on any Wayland compositor that supports the `wlr-layer-shell` protocol. Some features require compositor-specific IPC and are only available on Hyprland:
@@ -266,6 +294,21 @@ A convenience CLI client `deskwaifu-ctl` is included in the project root:
 ```
 
 ### Available Commands
+
+#### `get_hotkeys` / `trigger_hotkey` — Model hotkeys
+
+`get_hotkeys` returns `hotkeys`, a `model_token`, and an optional `warning`.
+Each entry contains `id`, `name`, `file`, `action`, `keys`, `enabled`, `active`
+and `reason` (empty when the backend supports it).
+
+```bash
+./deskwaifu-ctl get_hotkeys
+./deskwaifu-ctl trigger_hotkey --id <HotkeyID> --model_token <model_token>
+```
+
+`trigger_hotkey` returns the updated list. Use the token from the latest query;
+stale tokens, unknown IDs and unavailable actions return an error. Toggles must
+not be retried automatically if the connection drops before acknowledgement.
 
 #### `get_status` — Get general status
 

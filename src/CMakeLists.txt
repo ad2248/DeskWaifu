@@ -30,6 +30,7 @@ LAppWaylandRegion.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/LAppLive2DManager.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/LAppLive2DManager.hpp
       ${CMAKE_CURRENT_SOURCE_DIR}/LAppModel.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/ModelHotkeys.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/LAppModel.hpp
       ${CMAKE_CURRENT_SOURCE_DIR}/LAppPal.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/LAppPal.hpp
