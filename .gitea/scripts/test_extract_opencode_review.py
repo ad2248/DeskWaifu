@@ -7,8 +7,9 @@ from pathlib import Path
 
 
 sys.dont_write_bytecode = True
-SCRIPT = Path(__file__).with_name("extract-opencode-review.py")
-SPEC = importlib.util.spec_from_file_location("extract_opencode_review", SCRIPT)
+EXTRACTOR = Path(__file__).with_name("extract-opencode-review.py")
+REVIEW_SCRIPT = Path(__file__).with_name("opencode-review.sh")
+SPEC = importlib.util.spec_from_file_location("extract_opencode_review", EXTRACTOR)
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 
@@ -39,6 +40,14 @@ class ExtractReviewTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "incomplete review"):
             MODULE.extract_review(source)
+
+    def test_review_agent_can_approve_pull_requests(self):
+        script = REVIEW_SCRIPT.read_text(encoding="utf-8")
+
+        self.assertIn("--agent build", script)
+        self.assertIn('"tea api *": "allow"', script)
+        self.assertIn('"tea issues *": "allow"', script)
+        self.assertIn("提交 APPROVE 评审", script)
 
 
 if __name__ == "__main__":
