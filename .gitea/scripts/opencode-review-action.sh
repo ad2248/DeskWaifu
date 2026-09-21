@@ -6,6 +6,7 @@ repo_root="${REVIEW_REPO_ROOT:?missing REVIEW_REPO_ROOT}"
 pr_number="${REVIEW_PR_NUMBER:?missing REVIEW_PR_NUMBER}"
 tested_sha="${REVIEW_HEAD_SHA:?missing REVIEW_HEAD_SHA}"
 marker="${REVIEW_MARKER:?missing REVIEW_MARKER}"
+approval_file="${REVIEW_APPROVAL_FILE:?missing REVIEW_APPROVAL_FILE}"
 
 current_head() {
   tea api "/repos/${repo}/pulls/${pr_number}" \
@@ -41,10 +42,7 @@ case "$action" in
   approve)
     test "$#" -eq 2 || { echo "usage: $0 approve BODY" >&2; exit 2; }
     require_current_head
-    printf -v body '%s\n%s' "$marker" "$2"
-    tea api "/repos/${repo}/pulls/${pr_number}/reviews" \
-      --login reviewer --repo "$repo_root" -X POST \
-      -f body="$body" -f commit_id="$tested_sha" -f event=APPROVE >/dev/null
+    printf '%s\n%s\n' "$marker" "$2" > "$approval_file"
     printf 'approved %s\n' "$tested_sha"
     ;;
   *)
