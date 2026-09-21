@@ -54,10 +54,18 @@ class ExtractReviewTest(unittest.TestCase):
         self.assertIn('--dir "$repo_root"', script)
         self.assertIn("last events follow", script)
 
-    def test_approve_action_checks_head_and_targets_tested_commit(self):
+    def test_final_review_uses_approval_signal(self):
+        script = REVIEW_SCRIPT.read_text(encoding="utf-8")
+
+        self.assertIn('export REVIEW_APPROVAL_FILE="$approval_file"', script)
+        self.assertIn('test ! -f "$approval_file" || review_event=APPROVE', script)
+        self.assertIn('"event": event', script)
+
+    def test_approve_action_checks_head_and_records_signal(self):
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)
             log = directory / "tea.log"
+            approval = directory / "approved"
             tea = directory / "tea"
             tea.write_text(
                 "#!/usr/bin/env bash\n"
@@ -76,6 +84,7 @@ class ExtractReviewTest(unittest.TestCase):
                 "REVIEW_PR_NUMBER": "14",
                 "REVIEW_HEAD_SHA": "abc1234",
                 "REVIEW_MARKER": "<!-- opencode-review:abc1234 -->",
+                "REVIEW_APPROVAL_FILE": str(approval),
             }
 
             result = subprocess.run(
@@ -89,9 +98,11 @@ class ExtractReviewTest(unittest.TestCase):
             calls = log.read_text(encoding="utf-8")
             self.assertEqual("approved abc1234\n", result.stdout)
             self.assertIn("/repos/kals/DeskWaifu/pulls/14 --login reviewer --repo /trusted/checkout", calls)
-            self.assertIn("commit_id=abc1234", calls)
-            self.assertIn("event=APPROVE", calls)
-            self.assertIn("opencode-review:abc1234", calls)
+            self.assertNotIn("-X POST", calls)
+            self.assertEqual(
+                "<!-- opencode-review:abc1234 -->\nreview passed\n",
+                approval.read_text(encoding="utf-8"),
+            )
 
 
 if __name__ == "__main__":
