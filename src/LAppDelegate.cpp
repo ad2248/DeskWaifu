@@ -390,6 +390,11 @@ void LAppDelegate::SetMousePosition(double x, double y)
 
 void LAppDelegate::OnScrollCallBack(void* window, double xoffset, double yoffset)
 {
+    if (_view == NULL)
+    {
+        return;
+    }
+
     const float scaleFactor = 1.0f + static_cast<float>(yoffset) * 0.1f;
     const float anchorX = _view->TransformScreenX(_mouseX);
     const float anchorY = _view->TransformScreenY(_mouseY);
