@@ -7,7 +7,7 @@ on:
 
 jobs:
   review:
-    name: Read-only OpenCode review
+    name: OpenCode review
     if: >-
       gitea.event.workflow_run.conclusion == 'success' &&
       gitea.event.workflow_run.event == 'pull_request' &&
