@@ -9,7 +9,10 @@
 #include <iostream>
 
 // --- Wayland Pointer Handlers ---
-static void pointer_handle_enter(void *data, struct wl_pointer *wl_pointer, uint32_t serial, struct wl_surface *surface, wl_fixed_t surface_x, wl_fixed_t surface_y) {}
+static void pointer_handle_enter(void *data, struct wl_pointer *wl_pointer, uint32_t serial, struct wl_surface *surface, wl_fixed_t surface_x, wl_fixed_t surface_y) {
+    LAppDelegate::GetInstance()->SetMousePosition(
+        wl_fixed_to_double(surface_x), wl_fixed_to_double(surface_y));
+}
 static void pointer_handle_leave(void *data, struct wl_pointer *wl_pointer, uint32_t serial, struct wl_surface *surface) {}
 static void pointer_handle_motion(void *data, struct wl_pointer *wl_pointer, uint32_t time, wl_fixed_t surface_x, wl_fixed_t surface_y) {
     double x = wl_fixed_to_double(surface_x);

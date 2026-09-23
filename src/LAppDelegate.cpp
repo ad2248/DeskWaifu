@@ -21,6 +21,7 @@
 #include "LAppLive2DManager.hpp"
 #include "LAppTextureManager.hpp"
 #include "LAppIPC.hpp"
+#include "ModelTransform.hpp"
 
 using namespace Csm;
 using namespace std;
@@ -342,8 +343,7 @@ void LAppDelegate::OnMouseCallBack(void* window, int button, int action, int mod
 
 void LAppDelegate::OnMouseCallBack(void* window, double x, double y)
 {
-    _mouseX = static_cast<float>(x);
-    _mouseY = static_cast<float>(y);
+    SetMousePosition(x, y);
 
     if (_view == NULL)
     {
@@ -382,12 +382,28 @@ void LAppDelegate::OnMouseCallBack(void* window, double x, double y)
     }
 }
 
+void LAppDelegate::SetMousePosition(double x, double y)
+{
+    _mouseX = static_cast<float>(x);
+    _mouseY = static_cast<float>(y);
+}
+
 void LAppDelegate::OnScrollCallBack(void* window, double xoffset, double yoffset)
 {
-    float scale = 1.0f + (yoffset * 0.1f);
-    _modelScale *= scale;
-    if (_modelScale < 0.1f) _modelScale = 0.1f;
-    if (_modelScale > 10.0f) _modelScale = 10.0f;
+    if (_view == NULL)
+    {
+        return;
+    }
+
+    const float scaleFactor = 1.0f + static_cast<float>(yoffset) * 0.1f;
+    const float anchorX = _view->TransformScreenX(_mouseX);
+    const float anchorY = _view->TransformScreenY(_mouseY);
+    const ModelTransform transform = ZoomModelAroundPoint(
+        {_modelScale, _modelX, _modelY}, anchorX, anchorY, _modelScale * scaleFactor);
+
+    _modelScale = transform.scale;
+    _modelX = transform.x;
+    _modelY = transform.y;
 }
 
 void LAppDelegate::GetClientSize(int& rWidth, int& rHeight)

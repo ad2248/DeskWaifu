@@ -71,6 +71,8 @@ public:
     */
     void OnMouseCallBack(void* window, double x, double y);
 
+    void SetMousePosition(double x, double y);
+
     /**
      * @brief   ウィンドウクライアント領域の幅、高さ取得
      */
