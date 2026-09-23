@@ -20,3 +20,8 @@ set_target_properties(deskwaifu-control PROPERTIES
   AUTOUIC ON
   AUTOMOC ON
 )
+
+install(TARGETS deskwaifu-control
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT DeskWaifu)
+install(FILES deskwaifu-control.desktop
+  DESTINATION ${CMAKE_INSTALL_DATADIR}/applications COMPONENT DeskWaifu)

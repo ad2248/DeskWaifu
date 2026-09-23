@@ -73,14 +73,33 @@ sudo dnf install gcc-c++ cmake pkgconf-pkg-config wayland-devel wayland-protocol
 
 ## Installation
 
-### 1. Clone the repository
+### Arch Linux package (makepkg)
+
+An AUR-style `deskwaifu-git` recipe is available in `packaging/aur/`:
+
+```bash
+sudo pacman -S --needed base-devel git
+git clone https://git.kals.top/kals/DeskWaifu.git
+cd DeskWaifu/packaging/aur
+makepkg -si
+```
+
+This builds the latest `main` for x86_64 and installs `deskwaifu`,
+`deskwaifu-control`, `deskwaifu-ctl`, and a control-panel application-menu entry.
+The SDK and GLEW are downloaded automatically. See
+[packaging instructions and license information](packaging/aur/README.md).
+The recipe is usable locally; this does not imply it has been published to AUR.
+
+### Building from source
+
+#### 1. Clone the repository
 
 ```bash
 git clone https://git.kals.top/kals/DeskWaifu.git
 cd DeskWaifu
 ```
 
-### 2. Download the Live2D Cubism SDK
+#### 2. Download the Live2D Cubism SDK
 
 1. Go to [https://www.live2d.com/en/sdk/about/](https://www.live2d.com/en/sdk/about/)
 2. Download **Cubism SDK for Native**
@@ -94,7 +113,7 @@ cd DeskWaifu
    ```
 4. If the folder name differs from `CubismSdkForNative-5-r.5`, update `SDK_ROOT_PATH` in `CMakeLists.txt`.
 
-### 3. Build
+#### 3. Build
 
 Use the install script (recommended):
 
@@ -115,6 +134,15 @@ make -j$(nproc)
 The binary will be at `build/bin/deskwaifu`.
 
 The Qt control window will be at `build/bin/deskwaifu-control`.
+
+To install a source build system-wide (default prefix: `/usr/local`):
+
+```bash
+sudo cmake --install build --component DeskWaifu
+```
+
+The component selects only the application commands and desktop entry, excluding
+third-party development files. `install.sh` itself only builds the project.
 
 ## Upgrading from Waifuland
 
