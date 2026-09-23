@@ -19,6 +19,7 @@ set(COMMON_SRC_PATH ${SDK_ROOT_PATH}/Samples/Common)
 
 # Set project.
 project(${APP_NAME})
+include(GNUInstallDirs)
 
 include(CTest)
 option(DESKWAIFU_BUILD_CONTROL "Build the Qt control application" ON)
@@ -103,6 +104,11 @@ add_executable(${APP_NAME} ${PROTOCOL_SOURCES})
 add_subdirectory(${COMMON_SRC_PATH} ${CMAKE_CURRENT_BINARY_DIR}/src/Common)
 # Add our source files in ./src
 add_subdirectory(src)
+
+install(TARGETS ${APP_NAME}
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT DeskWaifu)
+install(PROGRAMS deskwaifu-ctl
+  DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT DeskWaifu)
 
 # Link libraries to app.
 target_link_libraries(${APP_NAME}

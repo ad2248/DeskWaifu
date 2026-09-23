@@ -1,0 +1,62 @@
+# Maintainer: kals
+# Cubism SDK is downloaded from Live2D. See README.md for its license terms.
+pkgname=deskwaifu-git
+pkgver=r52.g1ddfd09
+pkgrel=1
+pkgdesc='Live2D desktop characters for Wayland with a Qt control panel'
+arch=('x86_64')
+url='https://git.kals.top/kals/DeskWaifu'
+license=('LicenseRef-Live2D-Open-Software' 'LicenseRef-Live2D-Proprietary' 'BSD-3-Clause' 'MIT' 'Unlicense')
+depends=('glibc' 'gcc-libs' 'wayland' 'libglvnd' 'qt6-base' 'qt6-wayland' 'bash' 'socat' 'psmisc')
+makedepends=('git' 'cmake' 'ninja')
+checkdepends=('desktop-file-utils')
+provides=('deskwaifu')
+conflicts=('deskwaifu')
+_sdk=CubismSdkForNative-5-r.5
+_glew=glew-2.3.1
+source=(
+  'deskwaifu::git+https://git.kals.top/kals/DeskWaifu.git#branch=main'
+  "https://cubism.live2d.com/sdk-native/bin/${_sdk}.zip"
+  "https://github.com/nigels-com/glew/releases/download/${_glew}/${_glew}.zip"
+)
+sha256sums=(
+  'SKIP'
+  '7ff3a4bbc19c0a8728965aa522ab77eb11b252916453e68a8a78d3b71188bb12'
+  '09e0083ae46930aba9b53e72c92ee1a557e24ed393526fec26cb0ebabd834720'
+)
+
+pkgver() {
+  cd "$srcdir/deskwaifu"
+  printf 'r%s.g%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}
+
+prepare() {
+  ln -sfn "$srcdir/$_sdk" "$srcdir/deskwaifu/$_sdk"
+  ln -sfn "$srcdir/$_glew" "$srcdir/deskwaifu/thirdParty/glew"
+}
+
+build() {
+  cmake -S "$srcdir/deskwaifu" -B "$srcdir/build" -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=/usr \
+    -DCMAKE_INSTALL_LIBDIR=lib \
+    -DBUILD_TESTING=ON \
+    -DDESKWAIFU_BUILD_CONTROL=ON
+  cmake --build "$srcdir/build"
+}
+
+check() {
+  QT_QPA_PLATFORM=offscreen ctest --test-dir "$srcdir/build" --output-on-failure --no-tests=error
+  desktop-file-validate "$srcdir/deskwaifu/control/deskwaifu-control.desktop"
+}
+
+package() {
+  # Restrict installation to the application: GLEW's install rules also ship
+  # development headers/libraries, which belong to the system glew package.
+  DESTDIR="$pkgdir" cmake --install "$srcdir/build" --component DeskWaifu
+  install -Dm644 "$srcdir/deskwaifu/README.md" "$pkgdir/usr/share/doc/deskwaifu/README.md"
+  install -Dm644 "$srcdir/$_sdk/LICENSE.md" "$pkgdir/usr/share/licenses/$pkgname/Live2D-SDK.md"
+  install -Dm644 "$srcdir/$_sdk/Core/LICENSE.md" "$pkgdir/usr/share/licenses/$pkgname/Live2D-Core.md"
+  install -Dm644 "$srcdir/$_sdk/Framework/LICENSE.md" "$pkgdir/usr/share/licenses/$pkgname/Live2D-Framework.md"
+  install -Dm644 "$srcdir/$_glew/LICENSE.txt" "$pkgdir/usr/share/licenses/$pkgname/GLEW.txt"
+}

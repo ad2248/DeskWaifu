@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=DeskWaifu Control
+Name[zh_CN]=DeskWaifu 控制面板
+Comment=Control a running DeskWaifu desktop character
+Comment[zh_CN]=控制已运行的 DeskWaifu 桌面角色
+Exec=deskwaifu-control
+TryExec=deskwaifu-control
+Icon=preferences-desktop
+Terminal=false
+Categories=Utility;Qt;
