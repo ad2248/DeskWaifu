@@ -58,7 +58,7 @@ class ExtractReviewTest(unittest.TestCase):
         script = REVIEW_SCRIPT.read_text(encoding="utf-8")
 
         self.assertIn('export REVIEW_APPROVAL_FILE="$approval_file"', script)
-        self.assertIn('test ! -f "$approval_file" || review_event=APPROVE', script)
+        self.assertIn('test ! -f "$approval_file" || review_event=APPROVED', script)
         self.assertIn('"event": event', script)
 
     def test_approve_action_checks_head_and_records_signal(self):
