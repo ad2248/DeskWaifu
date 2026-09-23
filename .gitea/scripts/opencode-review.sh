@@ -147,7 +147,8 @@ test "$current_sha" = "$tested_sha" || {
 }
 
 review_event=COMMENT
-test ! -f "$approval_file" || review_event=APPROVE
+# Gitea API 的批准事件枚举值是 APPROVED；APPROVE 会被当作未提交的 PENDING review。
+test ! -f "$approval_file" || review_event=APPROVED
 
 python3 - "$workdir/review.md" "$workdir/payload.json" "$marker" "$tested_sha" "$ci_url" "$review_event" <<'PY'
 import json, sys
