@@ -18,6 +18,17 @@ MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 
 
+def review_event_values(script: str) -> list[str]:
+    assignments = (
+        line for line in script.splitlines() if not line.lstrip().startswith("#")
+    )
+    events = []
+    for line in assignments:
+        for value in re.findall(r"\breview_event\s*=\s*([^\s;#]+)", line):
+            events.append(value.strip("'\""))
+    return events
+
+
 class ExtractReviewTest(unittest.TestCase):
     def write_events(self, *texts: str) -> Path:
         directory = tempfile.TemporaryDirectory()
@@ -63,12 +74,24 @@ class ExtractReviewTest(unittest.TestCase):
 
     def test_review_events_follow_gitea_api_contract(self):
         script = REVIEW_SCRIPT.read_text(encoding="utf-8")
-        events = re.findall(r"\breview_event\s*=\s*([^\s;#]+)", script)
+        events = review_event_values(script)
 
         self.assertTrue(events, "No review_event assignments found")
         for event in events:
             with self.subTest(event=event):
                 self.assertIn(event, {"APPROVED", "COMMENT", "REQUEST_CHANGES", "PENDING"})
+
+    def test_review_event_extraction_ignores_comments_and_quotes(self):
+        self.assertEqual(
+            review_event_values(
+                "# review_event=INVALID\n"
+                "  # review_event=INVALID\n"
+                "review_event=COMMENT\n"
+                "review_event=\"APPROVED\"\n"
+                "review_event='REQUEST_CHANGES'\n"
+            ),
+            ["COMMENT", "APPROVED", "REQUEST_CHANGES"],
+        )
 
     def test_approve_action_checks_head_and_records_signal(self):
         with tempfile.TemporaryDirectory() as directory:
