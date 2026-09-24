@@ -2,6 +2,7 @@
 #include "ModelInputDispatch.hpp"
 #include "ModelKeyboardGrab.hpp"
 #include "ModelHotkeyTrigger.hpp"
+#include "ModelHotkeys.hpp"
 
 #include <QtTest>
 
@@ -11,18 +12,15 @@ class ModelKeyboardTest : public QObject
 private slots:
     void keyDispatchHandlesGrabFocusRepeatAndAmbiguity()
     {
-        struct Binding
-        {
-            std::string id, reason;
-            std::vector<std::string> keys;
-            bool enabled = true;
-        };
-        std::vector<Binding> bindings{{"action-1", "", {"A"}, true}};
+        std::vector<ModelHotkeys::Binding> bindings(1);
+        bindings[0].id = "action-1";
+        bindings[0].keys = {"A"};
         ModelKeyboard keyboard;
         QCOMPARE(DecideModelKey(keyboard, false, KEY_A, true, &bindings).action,
             ModelKeyDecision::None);
         QCOMPARE(DecideModelKey(keyboard, true, KEY_A, true,
-            static_cast<const std::vector<Binding>*>(nullptr)).action, ModelKeyDecision::None);
+            static_cast<const std::vector<ModelHotkeys::Binding>*>(nullptr)).action,
+            ModelKeyDecision::None);
         QVERIFY(!keyboard.Key(KEY_A, true)); // no model still updates pressed keys
         keyboard.Reset();
 
@@ -31,7 +29,10 @@ private slots:
         QCOMPARE(first.bindingId, std::string("action-1"));
         QCOMPARE(DecideModelKey(keyboard, true, KEY_A, true, &bindings).action,
             ModelKeyDecision::None); // repeat
-        bindings.push_back({"action-2", "", {"A"}, true});
+        ModelHotkeys::Binding duplicate;
+        duplicate.id = "action-2";
+        duplicate.keys = {"A"};
+        bindings.push_back(duplicate);
         QCOMPARE(DecideModelKey(keyboard, true, KEY_A, false, &bindings).action,
             ModelKeyDecision::None);
         QCOMPARE(DecideModelKey(keyboard, true, KEY_A, true, &bindings).action,
@@ -41,13 +42,43 @@ private slots:
         QVERIFY(keyboard.Key(KEY_A, true)); // Esc cleared held keys
 
         keyboard.Reset();
-        bindings = {{"disabled", "", {"B"}, false}};
+        ModelHotkeys::Binding disabled;
+        disabled.id = "disabled";
+        disabled.keys = {"B"};
+        disabled.enabled = false;
+        bindings = {disabled};
         QCOMPARE(DecideModelKey(keyboard, true, KEY_B, true, &bindings).action,
             ModelKeyDecision::None);
         keyboard.Reset();
-        bindings = {{"conflict", "duplicate chord", {"C"}, true}};
+        ModelHotkeys::Binding conflict;
+        conflict.id = "conflict";
+        conflict.reason = "duplicate chord";
+        conflict.keys = {"C"};
+        bindings = {conflict};
         QCOMPARE(DecideModelKey(keyboard, true, KEY_C, true, &bindings).action,
             ModelKeyDecision::None);
+
+        ModelHotkeys::Binding chord;
+        chord.id = "ctrl-a";
+        chord.keys = {"Ctrl", "A"};
+        bindings = {chord};
+        keyboard.Reset();
+        QCOMPARE(DecideModelKey(keyboard, true, KEY_LEFTCTRL, true, &bindings).action,
+            ModelKeyDecision::None);
+        const auto completedChord = DecideModelKey(keyboard, true, KEY_A, true, &bindings);
+        QCOMPARE(completedChord.action, ModelKeyDecision::Trigger);
+        QCOMPARE(completedChord.bindingId, std::string("ctrl-a"));
+        QCOMPARE(DecideModelKey(keyboard, true, KEY_LEFTCTRL, false, &bindings).action,
+            ModelKeyDecision::None);
+        QCOMPARE(DecideModelKey(keyboard, true, KEY_A, true, &bindings).action,
+            ModelKeyDecision::None); // auto-repeat after chord trigger
+        QCOMPARE(DecideModelKey(keyboard, true, KEY_A, false, &bindings).action,
+            ModelKeyDecision::None);
+        QCOMPARE(DecideModelKey(keyboard, true, KEY_LEFTCTRL, true, &bindings).action,
+            ModelKeyDecision::None);
+        const auto retriggeredChord = DecideModelKey(keyboard, true, KEY_A, true, &bindings);
+        QCOMPARE(retriggeredChord.action, ModelKeyDecision::Trigger);
+        QCOMPARE(retriggeredChord.bindingId, std::string("ctrl-a"));
     }
 
     void pendingTapDispatchSuppressesBothClicksOfDoubleClick()

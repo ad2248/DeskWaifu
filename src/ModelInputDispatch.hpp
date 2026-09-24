@@ -1,5 +1,8 @@
 #pragma once
 
+#include <cstdint>
+#include <string>
+
 #include "ModelKeyboard.hpp"
 
 struct ModelKeyDecision
