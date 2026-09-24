@@ -365,7 +365,7 @@ void LAppDelegate::FlushPendingTap()
     _view->OnTouchesEnded(x, y);
 }
 
-void LAppDelegate::OnKeyboardLeave()
+void LAppDelegate::ResetKeyboardState()
 {
     _keyboard.Reset();
 }

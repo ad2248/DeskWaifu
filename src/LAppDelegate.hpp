@@ -74,7 +74,7 @@ public:
 
     void SetMousePosition(double x, double y);
     void OnModelKey(uint32_t code, bool pressed);
-    void OnKeyboardLeave();
+    void ResetKeyboardState();
 
     /**
      * @brief   ウィンドウクライアント領域の幅、高さ取得
