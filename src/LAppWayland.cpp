@@ -11,7 +11,7 @@
 
 static void ApplyLayerKeyboardInteractivity(WaylandContext* wl) {
     zwlr_layer_surface_v1_set_keyboard_interactivity(wl->layer_surface,
-        wl->keyboardGrabbed ? ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE
+        wl->keyboardSurface.IsGrabbed() ? ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE
                             : ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE);
 }
 
@@ -62,7 +62,8 @@ static void keyboard_enter(void*, wl_keyboard*, uint32_t, wl_surface*, wl_array*
 }
 static void keyboard_leave(void* data, wl_keyboard*, uint32_t, wl_surface*) {
     // The compositor may revoke focus (e.g. on lock); allow a later double-click to regrab.
-    if (!SetModelKeyboardGrab(static_cast<WaylandContext*>(data), false))
+    if (SetModelKeyboardGrab(static_cast<WaylandContext*>(data), false)
+        != KeyboardSurfaceLifecycle::GrabResult::Changed)
         LAppDelegate::GetInstance()->ResetKeyboardState();
 }
 static void keyboard_key(void*, wl_keyboard*, uint32_t, uint32_t, uint32_t key, uint32_t state) {
@@ -88,7 +89,7 @@ static void seat_handle_capabilities(void *data, struct wl_seat *seat, uint32_t 
         wl->keyboard = wl_seat_get_keyboard(seat);
         wl_keyboard_add_listener(wl->keyboard, &keyboard_listener, wl);
     } else if (!(caps & WL_SEAT_CAPABILITY_KEYBOARD) && wl->keyboard) {
-        if (!SetModelKeyboardGrab(wl, false))
+        if (SetModelKeyboardGrab(wl, false) != KeyboardSurfaceLifecycle::GrabResult::Changed)
             LAppDelegate::GetInstance()->ResetKeyboardState();
         wl_keyboard_destroy(wl->keyboard);
         wl->keyboard = nullptr;
@@ -113,8 +114,7 @@ static void layer_surface_configure(void *data, struct zwlr_layer_surface_v1 *su
         wl_egl_window_resize(wl->egl_window, wl->width, wl->height, 0, 0);
     }
     
-    wl->configured = true;
-    if (TakePendingKeyboardInteractivity(wl->keyboardInteractivityDirty)) {
+    if (wl->keyboardSurface.OnConfigure()) {
         // A focus change while the new layer was awaiting its first configure
         // must only be committed after this configure has been acknowledged.
         ApplyLayerKeyboardInteractivity(wl);
@@ -267,6 +267,7 @@ bool GetGlobalCursorPosition(int& x, int& y) {
 
 bool SetupWaylandContext(WaylandContext* wl, int width, int height) {
     g_wl = wl;
+    wl->keyboardSurface.Reset();
     wl->display = wl_display_connect(nullptr);
     if (!wl->display) {
         LAppPal::PrintLogLn("Failed to connect to Wayland display\n");
@@ -359,20 +360,25 @@ bool SetupWaylandContext(WaylandContext* wl, int width, int height) {
     return true;
 }
 
-bool SetModelKeyboardGrab(WaylandContext* wl, bool grabbed) {
-    if (!wl || !UpdateKeyboardGrabState(wl->keyboardGrabbed, grabbed,
-        wl->layer_surface != nullptr, wl->keyboard != nullptr)) return false;
+KeyboardSurfaceLifecycle::GrabResult SetModelKeyboardGrab(WaylandContext* wl, bool grabbed) {
+    using Result = KeyboardSurfaceLifecycle::GrabResult;
+    if (!wl) return Result::Rejected;
+    const Result result = wl->keyboardSurface.SetGrabbed(grabbed,
+        wl->layer_surface != nullptr, wl->keyboard != nullptr);
+    if (result != Result::Changed) return result;
     if (wl->layer_surface) {
-        if (!DeferKeyboardInteractivity(wl->configured, wl->keyboardInteractivityDirty)) {
+        if (!wl->keyboardSurface.RequestInteractivityUpdate()) {
             ApplyLayerKeyboardInteractivity(wl);
             wl_surface_commit(wl->surface);
         }
     }
     if (!grabbed) LAppDelegate::GetInstance()->ResetKeyboardState();
-    return true;
+    return result;
 }
 
 void CleanWaylandContext(WaylandContext* wl) {
+    if (!wl) return;
+    wl->keyboardSurface.Reset();
     if (wl->egl_display != EGL_NO_DISPLAY) {
         eglMakeCurrent(wl->egl_display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
         if (wl->egl_surface != EGL_NO_SURFACE) eglDestroySurface(wl->egl_display, wl->egl_surface);
@@ -464,8 +470,7 @@ void SwitchWaylandOutputToMonitor(int hx, int hy) {
     }
     LAppPal::PrintLogLn("[Wayland] Switching output from %d to %d", g_wl->current_output_index, target_idx);
     g_wl->current_output_index = target_idx;
-    g_wl->configured = false;
-    g_wl->keyboardInteractivityDirty = false;
+    g_wl->keyboardSurface.BeginSurface();
     
     if (g_wl->egl_surface != EGL_NO_SURFACE) {
         eglDestroySurface(g_wl->egl_display, g_wl->egl_surface);

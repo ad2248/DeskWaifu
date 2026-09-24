@@ -1,30 +1,51 @@
 #pragma once
 
-// Releasing a stale grab must work even after the layer surface or seat vanishes.
-inline bool CanChangeKeyboardGrab(bool current, bool requested,
-    bool hasSurface, bool hasKeyboard)
+class KeyboardSurfaceLifecycle
 {
-    return current != requested && (!requested || (hasSurface && hasKeyboard));
-}
+public:
+    enum class GrabResult { Changed, Unchanged, Rejected };
 
-inline bool UpdateKeyboardGrabState(bool& current, bool requested,
-    bool hasSurface, bool hasKeyboard)
-{
-    if (!CanChangeKeyboardGrab(current, requested, hasSurface, hasKeyboard)) return false;
-    current = requested;
-    return true;
-}
+    GrabResult SetGrabbed(bool requested, bool hasSurface, bool hasKeyboard)
+    {
+        if (requested == _grabbed) return GrabResult::Unchanged;
+        if (requested && (!hasSurface || !hasKeyboard)) return GrabResult::Rejected;
+        _grabbed = requested;
+        return GrabResult::Changed;
+    }
 
-inline bool DeferKeyboardInteractivity(bool configured, bool& dirty)
-{
-    if (configured) return false;
-    dirty = true;
-    return true;
-}
+    bool IsGrabbed() const { return _grabbed; }
+    bool IsConfigured() const { return _configured; }
 
-inline bool TakePendingKeyboardInteractivity(bool& dirty)
-{
-    if (!dirty) return false;
-    dirty = false;
-    return true;
-}
+    // A replacement layer surface must wait for its first configure.
+    void BeginSurface() { _configured = false; _interactivityDirty = false; }
+
+    // Returns true when the caller must defer protocol changes until configure.
+    bool RequestInteractivityUpdate()
+    {
+        if (_configured) return false;
+        _interactivityDirty = true;
+        return true;
+    }
+
+    // Called for every configure; only the first configure after a deferred
+    // state change asks the caller to apply and commit keyboard interactivity.
+    bool OnConfigure()
+    {
+        _configured = true;
+        const bool apply = _interactivityDirty;
+        _interactivityDirty = false;
+        return apply;
+    }
+
+    void Reset()
+    {
+        _grabbed = false;
+        _configured = false;
+        _interactivityDirty = false;
+    }
+
+private:
+    bool _grabbed = false;
+    bool _configured = false;
+    bool _interactivityDirty = false;
+};
