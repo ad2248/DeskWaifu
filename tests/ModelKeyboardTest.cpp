@@ -70,6 +70,15 @@ private slots:
         QCOMPARE(completedChord.bindingId, std::string("ctrl-a"));
         QCOMPARE(DecideModelKey(keyboard, true, KEY_LEFTCTRL, false, &bindings).action,
             ModelKeyDecision::None);
+        QCOMPARE(DecideModelKey(keyboard, true, KEY_A, true, &bindings).action,
+            ModelKeyDecision::None); // auto-repeat after chord trigger
+        QCOMPARE(DecideModelKey(keyboard, true, KEY_A, false, &bindings).action,
+            ModelKeyDecision::None);
+        QCOMPARE(DecideModelKey(keyboard, true, KEY_LEFTCTRL, true, &bindings).action,
+            ModelKeyDecision::None);
+        const auto retriggeredChord = DecideModelKey(keyboard, true, KEY_A, true, &bindings);
+        QCOMPARE(retriggeredChord.action, ModelKeyDecision::Trigger);
+        QCOMPARE(retriggeredChord.bindingId, std::string("ctrl-a"));
     }
 
     void pendingTapDispatchSuppressesBothClicksOfDoubleClick()
