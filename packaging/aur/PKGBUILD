@@ -54,7 +54,7 @@ package() {
   # Restrict installation to the application: GLEW's install rules also ship
   # development headers/libraries, which belong to the system glew package.
   DESTDIR="$pkgdir" cmake --install "$srcdir/build" --component DeskWaifu
-  install -Dm644 "$srcdir/deskwaifu/README.md" "$pkgdir/usr/share/doc/deskwaifu/README.md"
+  install -Dm644 "$srcdir/deskwaifu/README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
   install -Dm644 "$srcdir/$_sdk/LICENSE.md" "$pkgdir/usr/share/licenses/$pkgname/Live2D-SDK.md"
   install -Dm644 "$srcdir/$_sdk/Core/LICENSE.md" "$pkgdir/usr/share/licenses/$pkgname/Live2D-Core.md"
   install -Dm644 "$srcdir/$_sdk/Framework/LICENSE.md" "$pkgdir/usr/share/licenses/$pkgname/Live2D-Framework.md"
