@@ -73,6 +73,8 @@ public:
             && x - _x > -Distance && x - _x < Distance
             && y - _y > -Distance && y - _y < Distance;
     }
+    // Only call for a non-drag release. On drag, flush/take the pending tap
+    // instead of calling Release, so a dragged gesture cannot count as a click.
     Result Release(uint32_t time, int x, int y)
     {
         if (IsSecondClick(time, x, y))
