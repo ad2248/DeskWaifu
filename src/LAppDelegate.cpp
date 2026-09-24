@@ -327,12 +327,9 @@ void LAppDelegate::OnMouseCallBack(void* window, int button, int action, int mod
                     const auto now = ClickClock();
                     if (_clicks.HasPending() && !_clicks.IsSecondClick(now, _windowStartX, _windowStartY))
                         FlushPendingTap();
-                    const auto result = _clicks.Release(now, _windowStartX, _windowStartY, false);
-                    if (result == ModelDoubleClick::Pending)
-                    {
-                        _clicks.SetTapPosition(static_cast<int>(curX), static_cast<int>(curY));
-                    }
-                    else if (result == ModelDoubleClick::DoubleClick)
+                    const auto result = _clicks.Release(now, _windowStartX, _windowStartY,
+                        static_cast<int>(curX), static_cast<int>(curY), false);
+                    if (result == ModelDoubleClick::DoubleClick)
                     {
                         LAppLive2DManager::GetInstance()->OnDrag(0.0f, 0.0f);
                         SetModelKeyboardGrab(&_wlContext, true);

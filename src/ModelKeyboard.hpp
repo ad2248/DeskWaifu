@@ -73,7 +73,7 @@ public:
             && x - _x > -Distance && x - _x < Distance
             && y - _y > -Distance && y - _y < Distance;
     }
-    Result Release(uint32_t time, int x, int y, bool dragged)
+    Result Release(uint32_t time, int x, int y, int tapX, int tapY, bool dragged)
     {
         if (dragged) { _pending = false; return Ignore; }
         if (IsSecondClick(time, x, y))
@@ -85,12 +85,11 @@ public:
         _time = time;
         _x = x;
         _y = y;
-        _tapX = x;
-        _tapY = y;
+        _tapX = tapX;
+        _tapY = tapY;
         return Pending;
     }
     // Double-click distance uses press coordinates; the eventual tap uses release coordinates.
-    void SetTapPosition(int x, int y) { _tapX = x; _tapY = y; }
     bool Expired(uint32_t time) const { return _pending && static_cast<uint32_t>(time - _time) > Delay; }
     bool Take() { bool pending = _pending; _pending = false; return pending; }
     int X() const { return _tapX; }
