@@ -141,6 +141,7 @@ private slots:
         QCOMPARE(lifecycle.SetGrabbed(true, true, true), GrabResult::Changed);
         QVERIFY(lifecycle.RequestInteractivityUpdate()); // no pre-configure commit
         QCOMPARE(lifecycle.SetGrabbed(false, true, true), GrabResult::Changed);
+        QCOMPARE(lifecycle.SetGrabbed(false, true, true), GrabResult::Unchanged);
         QVERIFY(lifecycle.RequestInteractivityUpdate()); // lock/focus loss is deferred
         QVERIFY(lifecycle.OnConfigure()); // apply latest state after ack
         QVERIFY(!lifecycle.OnConfigure()); // repeated configure must not reapply
