@@ -1,6 +1,7 @@
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -58,8 +59,16 @@ class ExtractReviewTest(unittest.TestCase):
         script = REVIEW_SCRIPT.read_text(encoding="utf-8")
 
         self.assertIn('export REVIEW_APPROVAL_FILE="$approval_file"', script)
-        self.assertIn('test ! -f "$approval_file" || review_event=APPROVED', script)
         self.assertIn('"event": event', script)
+
+    def test_review_events_follow_gitea_api_contract(self):
+        script = REVIEW_SCRIPT.read_text(encoding="utf-8")
+        events = re.findall(r"\breview_event\s*=\s*([^\s;#]+)", script)
+
+        self.assertTrue(events, "No review_event assignments found")
+        for event in events:
+            with self.subTest(event=event):
+                self.assertIn(event, {"APPROVED", "COMMENT", "REQUEST_CHANGES", "PENDING"})
 
     def test_approve_action_checks_head_and_records_signal(self):
         with tempfile.TemporaryDirectory() as directory:
