@@ -1,4 +1,5 @@
 #include "ModelKeyboard.hpp"
+#include "ModelKeyboardGrab.hpp"
 
 #include <QtTest>
 
@@ -6,6 +7,18 @@ class ModelKeyboardTest : public QObject
 {
     Q_OBJECT
 private slots:
+    void externalFocusLossAllowsRegrab()
+    {
+        bool grabbed = true;
+        QVERIFY(CanChangeKeyboardGrab(grabbed, false, false, false));
+        grabbed = false; // compositor focus lost or keyboard capability removed
+        QVERIFY(!CanChangeKeyboardGrab(grabbed, true, false, true));
+        QVERIFY(!CanChangeKeyboardGrab(grabbed, true, true, false));
+        QVERIFY(CanChangeKeyboardGrab(grabbed, true, true, true));
+        grabbed = true;
+        QVERIFY(!CanChangeKeyboardGrab(grabbed, true, true, true));
+    }
+
     void doubleClickSuppressesTwoTaps()
     {
         ModelDoubleClick clicks;
