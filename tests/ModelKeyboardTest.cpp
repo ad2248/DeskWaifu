@@ -1,4 +1,5 @@
 #include "ModelKeyboard.hpp"
+#include "ModelHotkeyTrigger.hpp"
 
 #include <QtTest>
 
@@ -6,35 +7,64 @@ class ModelKeyboardTest : public QObject
 {
     Q_OBJECT
 private slots:
+    void reportsHotkeyTriggerFailureWithBindingId()
+    {
+        struct Hotkeys
+        {
+            bool succeeds = false;
+            bool Trigger(const std::string&, std::string& error)
+            {
+                if (!succeeds) error = "action not loaded";
+                return succeeds;
+            }
+        } hotkeys;
+        std::string loggedId, loggedError;
+        const auto log = [&](const std::string& id, const std::string& error)
+        {
+            loggedId = id;
+            loggedError = error;
+        };
+
+        QVERIFY(!TriggerModelHotkey(hotkeys, "binding-42", log));
+        QCOMPARE(loggedId, std::string("binding-42"));
+        QCOMPARE(loggedError, std::string("action not loaded"));
+
+        hotkeys.succeeds = true;
+        loggedId.clear();
+        QVERIFY(TriggerModelHotkey(hotkeys, "binding-42", log));
+        QVERIFY(loggedId.empty());
+    }
+
     void doubleClickSuppressesTwoTaps()
     {
         ModelDoubleClick clicks;
-        QCOMPARE(clicks.Release(100, 40, 50, 40, 50, false), ModelDoubleClick::Pending);
+        QCOMPARE(clicks.Release(100, 40, 50, 40, 50), ModelDoubleClick::Pending);
         QVERIFY(!clicks.Expired(449));
-        QCOMPARE(clicks.Release(300, 45, 55, 45, 55, false), ModelDoubleClick::DoubleClick);
+        QCOMPARE(clicks.Release(300, 45, 55, 45, 55), ModelDoubleClick::DoubleClick);
         QVERIFY(!clicks.Take());
-        QCOMPARE(clicks.Release(500, 40, 50, 40, 50, false), ModelDoubleClick::Pending);
+        QCOMPARE(clicks.Release(500, 40, 50, 40, 50), ModelDoubleClick::Pending);
         QVERIFY(clicks.Expired(851));
         QVERIFY(clicks.Take());
-        QCOMPARE(clicks.Release(900, 40, 50, 40, 50, false), ModelDoubleClick::Pending);
+        QCOMPARE(clicks.Release(900, 40, 50, 40, 50), ModelDoubleClick::Pending);
         QVERIFY(!clicks.IsSecondClick(950, 60, 50));
         QVERIFY(clicks.Take());
-        QCOMPARE(clicks.Release(970, 60, 50, 60, 50, true), ModelDoubleClick::Ignore);
+        // Drag path flushes the previous tap without calling Release.
         QVERIFY(!clicks.Take());
+        QCOMPARE(clicks.Release(970, 60, 50, 60, 50), ModelDoubleClick::Pending);
     }
 
     void delayedTapUsesReleaseCoordinatesButDoubleClickUsesPressCoordinates()
     {
         ModelDoubleClick clicks;
-        QCOMPARE(clicks.Release(100, 40, 50, 49, 59, false), ModelDoubleClick::Pending);
+        QCOMPARE(clicks.Release(100, 40, 50, 49, 59), ModelDoubleClick::Pending);
         QCOMPARE(clicks.X(), 49);
         QCOMPARE(clicks.Y(), 59);
         QVERIFY(clicks.IsSecondClick(300, 32, 43));
         QVERIFY(!clicks.IsSecondClick(300, 50, 60));
-        QCOMPARE(clicks.Release(300, 32, 43, 32, 43, false), ModelDoubleClick::DoubleClick);
+        QCOMPARE(clicks.Release(300, 32, 43, 32, 43), ModelDoubleClick::DoubleClick);
         QVERIFY(!clicks.Take());
 
-        QCOMPARE(clicks.Release(500, 40, 50, 49, 59, false), ModelDoubleClick::Pending);
+        QCOMPARE(clicks.Release(500, 40, 50, 49, 59), ModelDoubleClick::Pending);
         QVERIFY(clicks.Take()); // pointer left the surface: flush without waiting
         QCOMPARE(clicks.X(), 49);
         QCOMPARE(clicks.Y(), 59);

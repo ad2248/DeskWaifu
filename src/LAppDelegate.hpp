@@ -75,7 +75,10 @@ public:
     void SetMousePosition(double x, double y);
     void OnPointerLeave();
     void OnModelKey(uint32_t code, bool pressed);
-    void OnKeyboardLeave();
+    /** @brief Reset pressed keys on keyboard enter/leave, seat capability loss,
+     *         and explicit keyboard-grab release.
+     */
+    void ResetKeyboardState();
 
     /**
      * @brief   ウィンドウクライアント領域の幅、高さ取得
