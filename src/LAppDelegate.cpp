@@ -23,6 +23,7 @@
 #include "LAppModel.hpp"
 #include "LAppTextureManager.hpp"
 #include "LAppIPC.hpp"
+#include "ModelInputDispatch.hpp"
 #include "ModelScroll.hpp"
 #include "ModelHotkeyTrigger.hpp"
 
@@ -361,10 +362,11 @@ void LAppDelegate::OnMouseCallBack(void* window, int button, int action, int mod
 
 void LAppDelegate::FlushPendingTap()
 {
-    if (!_clicks.Take()) return;
-    const int x = _clicks.X(), y = _clicks.Y();
-    _view->OnTouchesBegan(x, y);
-    _view->OnTouchesEnded(x, y);
+    DispatchPendingTap(_clicks, [this](int x, int y)
+    {
+        _view->OnTouchesBegan(x, y);
+        _view->OnTouchesEnded(x, y);
+    });
 }
 
 void LAppDelegate::OnPointerLeave()
@@ -380,28 +382,16 @@ void LAppDelegate::ResetKeyboardState()
 
 void LAppDelegate::OnModelKey(uint32_t code, bool pressed)
 {
-    if (!_wlContext.keyboardGrabbed) return;
-    if (code == KEY_ESC && pressed)
-    {
+    LAppModel* model = _wlContext.keyboardGrabbed
+        ? LAppLive2DManager::GetInstance()->GetModel(0) : nullptr;
+    const auto* bindings = model ? &model->Hotkeys().Bindings() : nullptr;
+    const ModelKeyDecision decision = DecideModelKey(
+        _keyboard, _wlContext.keyboardGrabbed, code, pressed, bindings);
+    if (decision.action == ModelKeyDecision::ReleaseGrab)
         SetModelKeyboardGrab(&_wlContext, false);
-        _keyboard.Reset();
-        return;
-    }
-    if (!_keyboard.Key(code, pressed)) return;
-    LAppModel* model = LAppLive2DManager::GetInstance()->GetModel(0);
-    if (!model) return;
-    auto& hotkeys = model->Hotkeys();
-    // A duplicate chord is ambiguous; treat it the same as the control panel.
-    const ModelHotkeys::Binding* match = nullptr;
-    for (const auto& binding : hotkeys.Bindings())
+    else if (decision.action == ModelKeyDecision::Trigger)
     {
-        if (!binding.enabled || !binding.reason.empty() || !_keyboard.Matches(binding.keys)) continue;
-        if (match) return;
-        match = &binding;
-    }
-    if (match)
-    {
-        TriggerModelHotkey(hotkeys, match->id,
+        TriggerModelHotkey(model->Hotkeys(), decision.bindingId,
             [](const std::string& id, const std::string& error)
             {
                 LAppPal::PrintLogLn("[Hotkeys] Trigger failed for binding %s: %s",

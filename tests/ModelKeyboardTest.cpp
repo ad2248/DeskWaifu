@@ -1,4 +1,5 @@
 #include "ModelKeyboard.hpp"
+#include "ModelInputDispatch.hpp"
 #include "ModelKeyboardGrab.hpp"
 #include "ModelHotkeyTrigger.hpp"
 
@@ -8,6 +9,66 @@ class ModelKeyboardTest : public QObject
 {
     Q_OBJECT
 private slots:
+    void keyDispatchHandlesGrabFocusRepeatAndAmbiguity()
+    {
+        struct Binding
+        {
+            std::string id, reason;
+            std::vector<std::string> keys;
+            bool enabled = true;
+        };
+        std::vector<Binding> bindings{{"action-1", "", {"A"}, true}};
+        ModelKeyboard keyboard;
+        QCOMPARE(DecideModelKey(keyboard, false, KEY_A, true, &bindings).action,
+            ModelKeyDecision::None);
+        QCOMPARE(DecideModelKey(keyboard, true, KEY_A, true,
+            static_cast<const std::vector<Binding>*>(nullptr)).action, ModelKeyDecision::None);
+        QVERIFY(!keyboard.Key(KEY_A, true)); // no model still updates pressed keys
+        keyboard.Reset();
+
+        const auto first = DecideModelKey(keyboard, true, KEY_A, true, &bindings);
+        QCOMPARE(first.action, ModelKeyDecision::Trigger);
+        QCOMPARE(first.bindingId, std::string("action-1"));
+        QCOMPARE(DecideModelKey(keyboard, true, KEY_A, true, &bindings).action,
+            ModelKeyDecision::None); // repeat
+        bindings.push_back({"action-2", "", {"A"}, true});
+        QCOMPARE(DecideModelKey(keyboard, true, KEY_A, false, &bindings).action,
+            ModelKeyDecision::None);
+        QCOMPARE(DecideModelKey(keyboard, true, KEY_A, true, &bindings).action,
+            ModelKeyDecision::None); // ambiguous chord
+        QCOMPARE(DecideModelKey(keyboard, true, KEY_ESC, true, &bindings).action,
+            ModelKeyDecision::ReleaseGrab);
+        QVERIFY(keyboard.Key(KEY_A, true)); // Esc cleared held keys
+
+        keyboard.Reset();
+        bindings = {{"disabled", "", {"B"}, false}};
+        QCOMPARE(DecideModelKey(keyboard, true, KEY_B, true, &bindings).action,
+            ModelKeyDecision::None);
+        keyboard.Reset();
+        bindings = {{"conflict", "duplicate chord", {"C"}, true}};
+        QCOMPARE(DecideModelKey(keyboard, true, KEY_C, true, &bindings).action,
+            ModelKeyDecision::None);
+    }
+
+    void pendingTapDispatchSuppressesBothClicksOfDoubleClick()
+    {
+        ModelDoubleClick clicks;
+        std::vector<std::pair<int, int>> taps;
+        const auto tap = [&](int x, int y) { taps.emplace_back(x, y); };
+
+        QCOMPARE(clicks.Release(100, 40, 50, 45, 55), ModelDoubleClick::Pending);
+        DispatchPendingTap(clicks, tap); // expiry or pointer leave
+        QCOMPARE(taps.size(), size_t(1));
+        QCOMPARE(taps.front(), std::make_pair(45, 55));
+        DispatchPendingTap(clicks, tap);
+        QCOMPARE(taps.size(), size_t(1));
+
+        QCOMPARE(clicks.Release(500, 40, 50, 49, 59), ModelDoubleClick::Pending);
+        QCOMPARE(clicks.Release(600, 42, 51, 43, 52), ModelDoubleClick::DoubleClick);
+        DispatchPendingTap(clicks, tap);
+        QCOMPARE(taps.size(), size_t(1)); // both clicks were suppressed
+    }
+
     void externalFocusLossAllowsRegrab()
     {
         bool grabbed = true;
