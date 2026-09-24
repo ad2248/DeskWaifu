@@ -45,6 +45,23 @@ static const struct wl_pointer_listener pointer_listener = {
     pointer_handle_axis,
 };
 
+// Keycodes in wl_keyboard.key are evdev codes (not XKB keysyms).
+static void keyboard_keymap(void*, wl_keyboard*, uint32_t, int fd, uint32_t) { close(fd); }
+static void keyboard_enter(void*, wl_keyboard*, uint32_t, wl_surface*, wl_array*) {
+    LAppDelegate::GetInstance()->OnKeyboardLeave();
+}
+static void keyboard_leave(void*, wl_keyboard*, uint32_t, wl_surface*) {
+    LAppDelegate::GetInstance()->OnKeyboardLeave();
+}
+static void keyboard_key(void*, wl_keyboard*, uint32_t, uint32_t, uint32_t key, uint32_t state) {
+    LAppDelegate::GetInstance()->OnModelKey(key, state == WL_KEYBOARD_KEY_STATE_PRESSED);
+}
+static void keyboard_modifiers(void*, wl_keyboard*, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t) {}
+static void keyboard_repeat_info(void*, wl_keyboard*, int32_t, int32_t) {}
+static const wl_keyboard_listener keyboard_listener = {
+    keyboard_keymap, keyboard_enter, keyboard_leave, keyboard_key, keyboard_modifiers, keyboard_repeat_info
+};
+
 // --- Wayland Seat Handlers ---
 static void seat_handle_capabilities(void *data, struct wl_seat *seat, uint32_t caps) {
     WaylandContext* wl = static_cast<WaylandContext*>(data);
@@ -54,6 +71,14 @@ static void seat_handle_capabilities(void *data, struct wl_seat *seat, uint32_t 
     } else if (!(caps & WL_SEAT_CAPABILITY_POINTER) && wl->pointer) {
         wl_pointer_release(wl->pointer);
         wl->pointer = nullptr;
+    }
+    if ((caps & WL_SEAT_CAPABILITY_KEYBOARD) && !wl->keyboard) {
+        wl->keyboard = wl_seat_get_keyboard(seat);
+        wl_keyboard_add_listener(wl->keyboard, &keyboard_listener, wl);
+    } else if (!(caps & WL_SEAT_CAPABILITY_KEYBOARD) && wl->keyboard) {
+        LAppDelegate::GetInstance()->OnKeyboardLeave();
+        wl_keyboard_destroy(wl->keyboard);
+        wl->keyboard = nullptr;
     }
 }
 static void seat_handle_name(void *data, struct wl_seat *seat, const char *name) {}
@@ -315,6 +340,16 @@ bool SetupWaylandContext(WaylandContext* wl, int width, int height) {
     return true;
 }
 
+void SetModelKeyboardGrab(WaylandContext* wl, bool grabbed) {
+    if (!wl || !wl->layer_surface || (grabbed && !wl->keyboard) || wl->keyboardGrabbed == grabbed) return;
+    wl->keyboardGrabbed = grabbed;
+    zwlr_layer_surface_v1_set_keyboard_interactivity(wl->layer_surface,
+        grabbed ? ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE
+                : ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE);
+    wl_surface_commit(wl->surface);
+    if (!grabbed) LAppDelegate::GetInstance()->OnKeyboardLeave();
+}
+
 void CleanWaylandContext(WaylandContext* wl) {
     if (wl->egl_display != EGL_NO_DISPLAY) {
         eglMakeCurrent(wl->egl_display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
@@ -327,6 +362,7 @@ void CleanWaylandContext(WaylandContext* wl) {
     if (wl->surface) wl_surface_destroy(wl->surface);
     if (wl->layer_shell) zwlr_layer_shell_v1_destroy(wl->layer_shell);
     if (wl->pointer) wl_pointer_destroy(wl->pointer);
+    if (wl->keyboard) wl_keyboard_destroy(wl->keyboard);
     if (wl->seat) wl_seat_destroy(wl->seat);
     if (wl->shm) wl_shm_destroy(wl->shm);
     if (wl->compositor) wl_compositor_destroy(wl->compositor);
@@ -435,7 +471,9 @@ void SwitchWaylandOutputToMonitor(int hx, int hy) {
     zwlr_layer_surface_v1_add_listener(g_wl->layer_surface, &layer_surface_listener, g_wl);
     zwlr_layer_surface_v1_set_size(g_wl->layer_surface, 0, 0);
     zwlr_layer_surface_v1_set_anchor(g_wl->layer_surface, ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP | ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM | ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT);
-    zwlr_layer_surface_v1_set_keyboard_interactivity(g_wl->layer_surface, 0);
+    zwlr_layer_surface_v1_set_keyboard_interactivity(g_wl->layer_surface,
+        g_wl->keyboardGrabbed ? ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE
+                              : ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE);
     
     wl_surface_commit(g_wl->surface);
     wl_display_roundtrip(g_wl->display);

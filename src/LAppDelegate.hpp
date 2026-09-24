@@ -10,6 +10,7 @@
 #include <string>
 #include <GL/glew.h>
 #include "LAppWayland.hpp"
+#include "ModelKeyboard.hpp"
 #include "Type/csmVector.hpp"
 #include "LAppAllocator_Common.hpp"
 
@@ -72,6 +73,8 @@ public:
     void OnMouseCallBack(void* window, double x, double y);
 
     void SetMousePosition(double x, double y);
+    void OnModelKey(uint32_t code, bool pressed);
+    void OnKeyboardLeave();
 
     /**
      * @brief   ウィンドウクライアント領域の幅、高さ取得
@@ -150,6 +153,9 @@ private:
     bool _captured;                              ///< クリックしているか
     float _mouseX;                               ///< マウスX座標
     float _mouseY;                               ///< マウスY座標
+    ModelDoubleClick _clicks;
+    ModelKeyboard _keyboard;
+    void FlushPendingTap();
     bool _isEnd;                                 ///< APP終了しているか
     LAppTextureManager* _textureManager;         ///< テクスチャマネージャー
     std::string _executeAbsolutePath;            ///< アプリケーションの実行パス

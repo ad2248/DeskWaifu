@@ -8,6 +8,7 @@
 
 #include "LAppDelegate.hpp"
 #include <cmath>
+#include <chrono>
 #include <iostream>
 #include <sstream>
 #include <unistd.h>
@@ -19,6 +20,7 @@
 #include "LAppWaylandRegion.hpp"
 #include "LAppDefine.hpp"
 #include "LAppLive2DManager.hpp"
+#include "LAppModel.hpp"
 #include "LAppTextureManager.hpp"
 #include "LAppIPC.hpp"
 #include "ModelTransform.hpp"
@@ -29,6 +31,11 @@ using namespace LAppDefine;
 
 namespace {
     LAppDelegate* s_instance = NULL;
+    uint32_t ClickClock()
+    {
+        using namespace std::chrono;
+        return static_cast<uint32_t>(duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count());
+    }
 }
 
 static void HandleToggleSignal(int) {
@@ -134,6 +141,7 @@ void LAppDelegate::Run()
         if (wl_display_dispatch_pending(_wlContext.display) == -1) {
             break;
         }
+        if (_clicks.Expired(ClickClock())) FlushPendingTap();
         wl_display_flush(_wlContext.display);
         
         int width = _wlContext.width;
@@ -316,11 +324,19 @@ void LAppDelegate::OnMouseCallBack(void* window, int button, int action, int mod
                     static_cast<int>(curX), static_cast<int>(curY), _windowStartX, _windowStartY, dx, dy);
                 if (dx < 10 && dy < 10)
                 {
-                    LAppPal::PrintLogLn("[Event] Model Tapped: Cursor (%d, %d)", static_cast<int>(curX), static_cast<int>(curY));
-                      _view->OnTouchesEnded(_mouseX, _mouseY); // Trigger Tap
+                    const auto now = ClickClock();
+                    if (_clicks.HasPending() && !_clicks.IsSecondClick(now, _windowStartX, _windowStartY))
+                        FlushPendingTap();
+                    const auto result = _clicks.Release(now, _windowStartX, _windowStartY, false);
+                    if (result == ModelDoubleClick::DoubleClick)
+                    {
+                        LAppLive2DManager::GetInstance()->OnDrag(0.0f, 0.0f);
+                        SetModelKeyboardGrab(&_wlContext, true);
+                    }
                 }
                 else 
                 {
+                    FlushPendingTap();
                     LAppLive2DManager::GetInstance()->OnDrag(0.0f, 0.0f); // End look
                 }
             }
@@ -338,6 +354,47 @@ void LAppDelegate::OnMouseCallBack(void* window, int button, int action, int mod
         // Switch Skin
         LAppPal::PrintLogLn("[Event] Switch Skin Triggered");
         LAppLive2DManager::GetInstance()->SwitchSkin();
+    }
+}
+
+void LAppDelegate::FlushPendingTap()
+{
+    if (!_clicks.Take()) return;
+    const int x = _clicks.X(), y = _clicks.Y();
+    _view->OnTouchesBegan(x, y);
+    _view->OnTouchesEnded(x, y);
+}
+
+void LAppDelegate::OnKeyboardLeave()
+{
+    _keyboard.Reset();
+}
+
+void LAppDelegate::OnModelKey(uint32_t code, bool pressed)
+{
+    if (!_wlContext.keyboardGrabbed) return;
+    if (code == KEY_ESC && pressed)
+    {
+        SetModelKeyboardGrab(&_wlContext, false);
+        _keyboard.Reset();
+        return;
+    }
+    if (!_keyboard.Key(code, pressed)) return;
+    LAppModel* model = LAppLive2DManager::GetInstance()->GetModel(0);
+    if (!model) return;
+    auto& hotkeys = model->Hotkeys();
+    // A duplicate chord is ambiguous; treat it the same as the control panel.
+    const ModelHotkeys::Binding* match = nullptr;
+    for (const auto& binding : hotkeys.Bindings())
+    {
+        if (!binding.enabled || !binding.reason.empty() || !_keyboard.Matches(binding.keys)) continue;
+        if (match) return;
+        match = &binding;
+    }
+    if (match)
+    {
+        std::string error;
+        hotkeys.Trigger(match->id, error);
     }
 }
 
