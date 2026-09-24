@@ -75,6 +75,30 @@ private slots:
         compareAnchor(after.scale * (pointX + after.x), anchorX);
         compareAnchor(after.scale * (pointY + after.y), anchorY);
     }
+
+    void roundTripRestoresTranslation()
+    {
+        const ModelTransform before{1.0f, 0.3f, -0.2f};
+        const ModelTransform enlarged = ZoomModelAroundPoint(before, 0.9f, -0.6f, 2.0f);
+        const ModelTransform restored = ZoomModelAroundPoint(enlarged, 0.9f, -0.6f, 1.0f);
+
+        QCOMPARE(restored.scale, before.scale);
+        compareAnchor(restored.x, before.x);
+        compareAnchor(restored.y, before.y);
+    }
+
+    void nonPositiveScaleSkipsCompensation()
+    {
+        for (float scale : {0.0f, -1.0f})
+        {
+            const ModelTransform before{scale, 0.3f, -0.2f};
+            const ModelTransform after = ZoomModelAroundPoint(before, 0.9f, -0.6f, 2.0f);
+
+            QCOMPARE(after.scale, 2.0f);
+            QCOMPARE(after.x, before.x);
+            QCOMPARE(after.y, before.y);
+        }
+    }
 };
 
 QTEST_GUILESS_MAIN(ModelTransformTest)
