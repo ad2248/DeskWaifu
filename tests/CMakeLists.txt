@@ -31,7 +31,7 @@ add_test(NAME model-hotkeys COMMAND model-hotkeys-test)
 
 qt_add_executable(model-transform-test ModelTransformTest.cpp)
 target_include_directories(model-transform-test PRIVATE ../src)
-target_link_libraries(model-transform-test PRIVATE Qt6::Test)
+target_link_libraries(model-transform-test PRIVATE Qt6::Test Framework)
 set_target_properties(model-transform-test PROPERTIES AUTOMOC ON)
 add_test(NAME model-transform COMMAND model-transform-test)
 
