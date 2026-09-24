@@ -25,6 +25,7 @@
 #include "LAppIPC.hpp"
 #include "ModelTransform.hpp"
 #include "ModelInputDispatch.hpp"
+#include "ModelHotkeyTrigger.hpp"
 
 using namespace Csm;
 using namespace std;
@@ -328,7 +329,7 @@ void LAppDelegate::OnMouseCallBack(void* window, int button, int action, int mod
                     const auto now = ClickClock();
                     if (_clicks.HasPending() && !_clicks.IsSecondClick(now, _windowStartX, _windowStartY))
                         FlushPendingTap();
-                    const auto result = _clicks.Release(now, _windowStartX, _windowStartY, false);
+                    const auto result = _clicks.Release(now, _windowStartX, _windowStartY);
                     if (result == ModelDoubleClick::DoubleClick)
                     {
                         LAppLive2DManager::GetInstance()->OnDrag(0.0f, 0.0f);
@@ -367,7 +368,7 @@ void LAppDelegate::FlushPendingTap()
     });
 }
 
-void LAppDelegate::OnKeyboardLeave()
+void LAppDelegate::ResetKeyboardState()
 {
     _keyboard.Reset();
 }
@@ -383,8 +384,12 @@ void LAppDelegate::OnModelKey(uint32_t code, bool pressed)
         SetModelKeyboardGrab(&_wlContext, false);
     else if (decision.action == ModelKeyDecision::Trigger)
     {
-        std::string error;
-        model->Hotkeys().Trigger(decision.bindingId, error);
+        TriggerModelHotkey(model->Hotkeys(), decision.bindingId,
+            [](const std::string& id, const std::string& error)
+            {
+                LAppPal::PrintLogLn("[Hotkeys] Trigger failed for binding %s: %s",
+                    id.c_str(), error.c_str());
+            });
     }
 }
 

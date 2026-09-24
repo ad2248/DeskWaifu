@@ -48,10 +48,11 @@ static const struct wl_pointer_listener pointer_listener = {
 // Keycodes in wl_keyboard.key are evdev codes (not XKB keysyms).
 static void keyboard_keymap(void*, wl_keyboard*, uint32_t, int fd, uint32_t) { close(fd); }
 static void keyboard_enter(void*, wl_keyboard*, uint32_t, wl_surface*, wl_array*) {
-    LAppDelegate::GetInstance()->OnKeyboardLeave();
+    // Focus regained: discard keys held before focus was lost.
+    LAppDelegate::GetInstance()->ResetKeyboardState();
 }
 static void keyboard_leave(void*, wl_keyboard*, uint32_t, wl_surface*) {
-    LAppDelegate::GetInstance()->OnKeyboardLeave();
+    LAppDelegate::GetInstance()->ResetKeyboardState();
 }
 static void keyboard_key(void*, wl_keyboard*, uint32_t, uint32_t, uint32_t key, uint32_t state) {
     LAppDelegate::GetInstance()->OnModelKey(key, state == WL_KEYBOARD_KEY_STATE_PRESSED);
@@ -76,7 +77,7 @@ static void seat_handle_capabilities(void *data, struct wl_seat *seat, uint32_t 
         wl->keyboard = wl_seat_get_keyboard(seat);
         wl_keyboard_add_listener(wl->keyboard, &keyboard_listener, wl);
     } else if (!(caps & WL_SEAT_CAPABILITY_KEYBOARD) && wl->keyboard) {
-        LAppDelegate::GetInstance()->OnKeyboardLeave();
+        LAppDelegate::GetInstance()->ResetKeyboardState();
         wl_keyboard_destroy(wl->keyboard);
         wl->keyboard = nullptr;
     }
@@ -347,7 +348,7 @@ void SetModelKeyboardGrab(WaylandContext* wl, bool grabbed) {
         grabbed ? ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE
                 : ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE);
     wl_surface_commit(wl->surface);
-    if (!grabbed) LAppDelegate::GetInstance()->OnKeyboardLeave();
+    if (!grabbed) LAppDelegate::GetInstance()->ResetKeyboardState();
 }
 
 void CleanWaylandContext(WaylandContext* wl) {
