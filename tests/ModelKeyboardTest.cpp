@@ -38,19 +38,37 @@ private slots:
     void doubleClickSuppressesTwoTaps()
     {
         ModelDoubleClick clicks;
-        QCOMPARE(clicks.Release(100, 40, 50), ModelDoubleClick::Pending);
+        QCOMPARE(clicks.Release(100, 40, 50, 40, 50), ModelDoubleClick::Pending);
         QVERIFY(!clicks.Expired(449));
-        QCOMPARE(clicks.Release(300, 45, 55), ModelDoubleClick::DoubleClick);
+        QCOMPARE(clicks.Release(300, 45, 55, 45, 55), ModelDoubleClick::DoubleClick);
         QVERIFY(!clicks.Take());
-        QCOMPARE(clicks.Release(500, 40, 50), ModelDoubleClick::Pending);
+        QCOMPARE(clicks.Release(500, 40, 50, 40, 50), ModelDoubleClick::Pending);
         QVERIFY(clicks.Expired(851));
         QVERIFY(clicks.Take());
-        QCOMPARE(clicks.Release(900, 40, 50), ModelDoubleClick::Pending);
+        QCOMPARE(clicks.Release(900, 40, 50, 40, 50), ModelDoubleClick::Pending);
         QVERIFY(!clicks.IsSecondClick(950, 60, 50));
         QVERIFY(clicks.Take());
         // Drag path flushes the previous tap without calling Release.
         QVERIFY(!clicks.Take());
-        QCOMPARE(clicks.Release(970, 60, 50), ModelDoubleClick::Pending);
+        QCOMPARE(clicks.Release(970, 60, 50, 60, 50), ModelDoubleClick::Pending);
+    }
+
+    void delayedTapUsesReleaseCoordinatesButDoubleClickUsesPressCoordinates()
+    {
+        ModelDoubleClick clicks;
+        QCOMPARE(clicks.Release(100, 40, 50, 49, 59), ModelDoubleClick::Pending);
+        QCOMPARE(clicks.X(), 49);
+        QCOMPARE(clicks.Y(), 59);
+        QVERIFY(clicks.IsSecondClick(300, 32, 43));
+        QVERIFY(!clicks.IsSecondClick(300, 50, 60));
+        QCOMPARE(clicks.Release(300, 32, 43, 32, 43), ModelDoubleClick::DoubleClick);
+        QVERIFY(!clicks.Take());
+
+        QCOMPARE(clicks.Release(500, 40, 50, 49, 59), ModelDoubleClick::Pending);
+        QVERIFY(clicks.Take()); // pointer left the surface: flush without waiting
+        QCOMPARE(clicks.X(), 49);
+        QCOMPARE(clicks.Y(), 59);
+        QVERIFY(!clicks.IsSecondClick(600, 40, 50));
     }
 
     void letterDigitChordAndRelease()
