@@ -1,4 +1,5 @@
 #include "ModelKeyboard.hpp"
+#include "ModelInputDispatch.hpp"
 
 #include <QtTest>
 
@@ -6,6 +7,57 @@ class ModelKeyboardTest : public QObject
 {
     Q_OBJECT
 private slots:
+    void keyDispatchHandlesGrabFocusRepeatAndAmbiguity()
+    {
+        struct Binding
+        {
+            std::string id, reason;
+            std::vector<std::string> keys;
+            bool enabled = true;
+        };
+        std::vector<Binding> bindings{{"action-1", "", {"A"}, true}};
+        ModelKeyboard keyboard;
+        QCOMPARE(DecideModelKey(keyboard, false, KEY_A, true, &bindings).action,
+            ModelKeyDecision::None);
+        QCOMPARE(DecideModelKey(keyboard, true, KEY_A, true,
+            static_cast<const std::vector<Binding>*>(nullptr)).action, ModelKeyDecision::None);
+        QVERIFY(!keyboard.Key(KEY_A, true)); // no model still updates pressed keys
+        keyboard.Reset();
+
+        const auto first = DecideModelKey(keyboard, true, KEY_A, true, &bindings);
+        QCOMPARE(first.action, ModelKeyDecision::Trigger);
+        QCOMPARE(first.bindingId, std::string("action-1"));
+        QCOMPARE(DecideModelKey(keyboard, true, KEY_A, true, &bindings).action,
+            ModelKeyDecision::None); // repeat
+        bindings.push_back({"action-2", "", {"A"}, true});
+        QCOMPARE(DecideModelKey(keyboard, true, KEY_A, false, &bindings).action,
+            ModelKeyDecision::None);
+        QCOMPARE(DecideModelKey(keyboard, true, KEY_A, true, &bindings).action,
+            ModelKeyDecision::None); // ambiguous chord
+        QCOMPARE(DecideModelKey(keyboard, true, KEY_ESC, true, &bindings).action,
+            ModelKeyDecision::ReleaseGrab);
+        QVERIFY(keyboard.Key(KEY_A, true)); // Esc cleared held keys
+    }
+
+    void pendingTapDispatchSuppressesBothClicksOfDoubleClick()
+    {
+        ModelDoubleClick clicks;
+        std::vector<std::pair<int, int>> taps;
+        const auto tap = [&](int x, int y) { taps.emplace_back(x, y); };
+
+        QCOMPARE(clicks.Release(100, 40, 50, false), ModelDoubleClick::Pending);
+        DispatchPendingTap(clicks, tap); // expiry or pointer leave
+        QCOMPARE(taps.size(), size_t(1));
+        QCOMPARE(taps.front(), std::make_pair(40, 50));
+        DispatchPendingTap(clicks, tap);
+        QCOMPARE(taps.size(), size_t(1));
+
+        QCOMPARE(clicks.Release(500, 40, 50, false), ModelDoubleClick::Pending);
+        QCOMPARE(clicks.Release(600, 42, 51, false), ModelDoubleClick::DoubleClick);
+        DispatchPendingTap(clicks, tap);
+        QCOMPARE(taps.size(), size_t(1)); // both clicks were suppressed
+    }
+
     void doubleClickSuppressesTwoTaps()
     {
         ModelDoubleClick clicks;
