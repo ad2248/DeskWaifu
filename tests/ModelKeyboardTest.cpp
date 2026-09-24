@@ -81,6 +81,44 @@ private slots:
         QCOMPARE(retriggeredChord.bindingId, std::string("ctrl-a"));
     }
 
+    void unrelatedKeyPressAndReleaseDoesNotCancelHeldModifierChord()
+    {
+        ModelHotkeys::Binding chord;
+        chord.id = "ctrl-a";
+        chord.keys = {"Ctrl", "A"};
+        const std::vector<ModelHotkeys::Binding> bindings{chord};
+        ModelKeyboard keyboard;
+
+        QCOMPARE(DecideModelKey(keyboard, true, KEY_LEFTCTRL, true, &bindings).action,
+            ModelKeyDecision::None);
+        QCOMPARE(DecideModelKey(keyboard, true, KEY_B, true, &bindings).action,
+            ModelKeyDecision::None);
+        QCOMPARE(DecideModelKey(keyboard, true, KEY_B, false, &bindings).action,
+            ModelKeyDecision::None);
+        const auto result = DecideModelKey(keyboard, true, KEY_A, true, &bindings);
+        QCOMPARE(result.action, ModelKeyDecision::Trigger);
+        QCOMPARE(result.bindingId, std::string("ctrl-a"));
+    }
+
+    void releasingOnlyChordTriggerKeyAllowsRetriggerWhileModifierStaysHeld()
+    {
+        ModelHotkeys::Binding chord;
+        chord.id = "ctrl-a";
+        chord.keys = {"Ctrl", "A"};
+        const std::vector<ModelHotkeys::Binding> bindings{chord};
+        ModelKeyboard keyboard;
+
+        QCOMPARE(DecideModelKey(keyboard, true, KEY_LEFTCTRL, true, &bindings).action,
+            ModelKeyDecision::None);
+        QCOMPARE(DecideModelKey(keyboard, true, KEY_A, true, &bindings).action,
+            ModelKeyDecision::Trigger);
+        QCOMPARE(DecideModelKey(keyboard, true, KEY_A, false, &bindings).action,
+            ModelKeyDecision::None);
+        const auto result = DecideModelKey(keyboard, true, KEY_A, true, &bindings);
+        QCOMPARE(result.action, ModelKeyDecision::Trigger);
+        QCOMPARE(result.bindingId, std::string("ctrl-a"));
+    }
+
     void pendingTapDispatchSuppressesBothClicksOfDoubleClick()
     {
         ModelDoubleClick clicks;
