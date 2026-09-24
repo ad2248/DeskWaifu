@@ -24,8 +24,13 @@ def review_event_values(script: str) -> list[str]:
     )
     events = []
     for line in assignments:
-        for value in re.findall(r"\breview_event\s*=\s*([^\s;#]+)", line):
-            events.append(value.strip("'\""))
+        matches = re.finditer(
+            r"(?<![$\w])review_event\s*=(?!=)\s*(['\"]?)([A-Za-z][A-Za-z_]*)\1"
+            r"(?=\s*(?:#.*)?$)",
+            line,
+            re.IGNORECASE,
+        )
+        events.extend(match.group(2).upper() for match in matches)
     return events
 
 
@@ -87,10 +92,15 @@ class ExtractReviewTest(unittest.TestCase):
                 "# review_event=INVALID\n"
                 "  # review_event=INVALID\n"
                 "review_event=COMMENT\n"
+                "review_event=COMMENT # trailing note\n"
                 "review_event=\"APPROVED\"\n"
                 "review_event='REQUEST_CHANGES'\n"
+                "REVIEW_EVENT=PENDING\n"
+                "[[ $review_event == APPROVED ]]\n"
+                "echo review_event=$review_event\n"
+                "review_event==APPROVED\n"
             ),
-            ["COMMENT", "APPROVED", "REQUEST_CHANGES"],
+            ["COMMENT", "COMMENT", "APPROVED", "REQUEST_CHANGES", "PENDING"],
         )
 
     def test_approve_action_checks_head_and_records_signal(self):
