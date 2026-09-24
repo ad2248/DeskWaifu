@@ -73,7 +73,6 @@ public:
     void OnMouseCallBack(void* window, double x, double y);
 
     void SetMousePosition(double x, double y);
-    void OnPointerLeave();
     void OnModelKey(uint32_t code, bool pressed);
     /** @brief Reset pressed keys on keyboard enter/leave, seat capability loss,
      *         and explicit keyboard-grab release.

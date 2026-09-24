@@ -100,6 +100,25 @@ private slots:
         QCOMPARE(taps.size(), size_t(1)); // both clicks were suppressed
     }
 
+    void pointerLeaveAndReenterWithinDoubleClickWindowStillCountsAsDoubleClick()
+    {
+        ModelDoubleClick clicks;
+        std::vector<std::pair<int, int>> taps;
+        const auto tap = [&](int x, int y) { taps.emplace_back(x, y); };
+
+        QCOMPARE(clicks.Release(100, 40, 50, 41, 51), ModelDoubleClick::Pending);
+        // Leaving the surface must not consume the pending click.
+        QCOMPARE(clicks.Release(280, 42, 51, 43, 52), ModelDoubleClick::DoubleClick);
+        DispatchPendingTap(clicks, tap);
+        QVERIFY(taps.empty());
+
+        QCOMPARE(clicks.Release(500, 40, 50, 41, 51), ModelDoubleClick::Pending);
+        QVERIFY(clicks.Expired(851));
+        DispatchPendingTap(clicks, tap); // regular timeout still flushes singles
+        QCOMPARE(taps.size(), size_t(1));
+        QCOMPARE(taps.front(), std::make_pair(41, 51));
+    }
+
     void externalFocusLossAllowsRegrab()
     {
         bool grabbed = true;
