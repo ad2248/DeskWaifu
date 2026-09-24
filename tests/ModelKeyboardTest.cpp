@@ -37,6 +37,15 @@ private slots:
         QCOMPARE(DecideModelKey(keyboard, true, KEY_ESC, true, &bindings).action,
             ModelKeyDecision::ReleaseGrab);
         QVERIFY(keyboard.Key(KEY_A, true)); // Esc cleared held keys
+
+        keyboard.Reset();
+        bindings = {{"disabled", "", {"B"}, false}};
+        QCOMPARE(DecideModelKey(keyboard, true, KEY_B, true, &bindings).action,
+            ModelKeyDecision::None);
+        keyboard.Reset();
+        bindings = {{"conflict", "duplicate chord", {"C"}, true}};
+        QCOMPARE(DecideModelKey(keyboard, true, KEY_C, true, &bindings).action,
+            ModelKeyDecision::None);
     }
 
     void pendingTapDispatchSuppressesBothClicksOfDoubleClick()
