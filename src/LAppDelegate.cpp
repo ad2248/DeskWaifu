@@ -328,7 +328,11 @@ void LAppDelegate::OnMouseCallBack(void* window, int button, int action, int mod
                     if (_clicks.HasPending() && !_clicks.IsSecondClick(now, _windowStartX, _windowStartY))
                         FlushPendingTap();
                     const auto result = _clicks.Release(now, _windowStartX, _windowStartY, false);
-                    if (result == ModelDoubleClick::DoubleClick)
+                    if (result == ModelDoubleClick::Pending)
+                    {
+                        _clicks.SetTapPosition(static_cast<int>(curX), static_cast<int>(curY));
+                    }
+                    else if (result == ModelDoubleClick::DoubleClick)
                     {
                         LAppLive2DManager::GetInstance()->OnDrag(0.0f, 0.0f);
                         SetModelKeyboardGrab(&_wlContext, true);
@@ -363,6 +367,12 @@ void LAppDelegate::FlushPendingTap()
     const int x = _clicks.X(), y = _clicks.Y();
     _view->OnTouchesBegan(x, y);
     _view->OnTouchesEnded(x, y);
+}
+
+void LAppDelegate::OnPointerLeave()
+{
+    // A second click cannot land on this surface until the pointer re-enters.
+    FlushPendingTap();
 }
 
 void LAppDelegate::OnKeyboardLeave()

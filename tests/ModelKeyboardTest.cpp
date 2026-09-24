@@ -23,6 +23,25 @@ private slots:
         QVERIFY(!clicks.Take());
     }
 
+    void delayedTapUsesReleaseCoordinatesButDoubleClickUsesPressCoordinates()
+    {
+        ModelDoubleClick clicks;
+        QCOMPARE(clicks.Release(100, 40, 50, false), ModelDoubleClick::Pending);
+        clicks.SetTapPosition(48, 57);
+        QCOMPARE(clicks.X(), 48);
+        QCOMPARE(clicks.Y(), 57);
+        QVERIFY(clicks.IsSecondClick(300, 42, 52));
+        QCOMPARE(clicks.Release(300, 42, 52, false), ModelDoubleClick::DoubleClick);
+        QVERIFY(!clicks.Take());
+
+        QCOMPARE(clicks.Release(500, 40, 50, false), ModelDoubleClick::Pending);
+        clicks.SetTapPosition(48, 57);
+        QVERIFY(clicks.Take()); // pointer left the surface: flush without waiting
+        QCOMPARE(clicks.X(), 48);
+        QCOMPARE(clicks.Y(), 57);
+        QVERIFY(!clicks.IsSecondClick(600, 40, 50));
+    }
+
     void letterDigitChordAndRelease()
     {
         ModelKeyboard keyboard;

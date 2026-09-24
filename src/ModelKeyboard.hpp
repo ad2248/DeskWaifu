@@ -85,16 +85,21 @@ public:
         _time = time;
         _x = x;
         _y = y;
+        _tapX = x;
+        _tapY = y;
         return Pending;
     }
+    // Double-click distance uses press coordinates; the eventual tap uses release coordinates.
+    void SetTapPosition(int x, int y) { _tapX = x; _tapY = y; }
     bool Expired(uint32_t time) const { return _pending && static_cast<uint32_t>(time - _time) > Delay; }
     bool Take() { bool pending = _pending; _pending = false; return pending; }
-    int X() const { return _x; }
-    int Y() const { return _y; }
+    int X() const { return _tapX; }
+    int Y() const { return _tapY; }
     static constexpr uint32_t Delay = 350;
     static constexpr int Distance = 10;
 private:
     bool _pending = false;
     uint32_t _time = 0;
     int _x = 0, _y = 0;
+    int _tapX = 0, _tapY = 0;
 };

@@ -73,6 +73,7 @@ public:
     void OnMouseCallBack(void* window, double x, double y);
 
     void SetMousePosition(double x, double y);
+    void OnPointerLeave();
     void OnModelKey(uint32_t code, bool pressed);
     void OnKeyboardLeave();
 
