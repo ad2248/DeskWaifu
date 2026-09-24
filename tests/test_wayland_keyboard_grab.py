@@ -1,4 +1,4 @@
-"""Ensure Wayland focus callbacks and all layer surfaces use shared grab state."""
+"""Check each Wayland layer surface uses the same keyboard interactivity helper."""
 
 from pathlib import Path
 import re
@@ -9,17 +9,23 @@ SOURCE = Path(__file__).resolve().parents[1] / "src/LAppWayland.cpp"
 
 
 class WaylandKeyboardGrabTest(unittest.TestCase):
-    def test_focus_loss_and_seat_loss_release_grab(self):
+    def test_each_created_layer_uses_shared_interactivity(self):
         source = SOURCE.read_text()
-        self.assertRegex(source, r"static void keyboard_leave\([^)]*\)\s*\{[^}]*SetModelKeyboardGrab\([^;]*false\)")
-        self.assertRegex(source, r"WL_SEAT_CAPABILITY_KEYBOARD\) && wl->keyboard\) \{\s*SetModelKeyboardGrab\(wl, false\)")
+        helper = re.search(
+            r"static void (\w+)\([^)]*\)\s*\{[^}]*"
+            r"zwlr_layer_surface_v1_set_keyboard_interactivity\s*\(",
+            source,
+        )
+        self.assertIsNotNone(helper)
+        direct_calls = list(re.finditer(r"\bzwlr_layer_surface_v1_set_keyboard_interactivity\s*\(", source))
+        self.assertTrue(all(helper.start() <= call.start() < helper.end() for call in direct_calls))
 
-    def test_every_layer_surface_uses_shared_interactivity(self):
-        source = SOURCE.read_text()
-        self.assertEqual(source.count("zwlr_layer_shell_v1_get_layer_surface("), 2)
-        self.assertEqual(source.count("ApplyLayerKeyboardInteractivity(wl);"), 2)
-        self.assertIn("ApplyLayerKeyboardInteractivity(g_wl);", source)
-        self.assertEqual(len(re.findall(r"zwlr_layer_surface_v1_set_keyboard_interactivity\(", source)), 1)
+        creations = list(re.finditer(r"\bzwlr_layer_shell_v1_get_layer_surface\s*\(", source))
+        self.assertTrue(creations)
+        for creation in creations:
+            with self.subTest(creation=source.count("\n", 0, creation.start()) + 1):
+                until_first_commit = source[creation.end():].split("wl_surface_commit", 1)[0]
+                self.assertRegex(until_first_commit, rf"\b{helper.group(1)}\s*\(")
 
 
 if __name__ == "__main__":

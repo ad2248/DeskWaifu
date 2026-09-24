@@ -19,6 +19,22 @@ private slots:
         QVERIFY(!CanChangeKeyboardGrab(grabbed, true, true, true));
     }
 
+    void focusLossDuringOutputSwitchDefersCommitAndOnlyResetsOnce()
+    {
+        bool grabbed = true;
+        bool dirty = false;
+        const bool configured = false; // newly created layer awaiting configure
+
+        QVERIFY(UpdateKeyboardGrabState(grabbed, false, true, true));
+        QVERIFY(!UpdateKeyboardGrabState(grabbed, false, true, true)); // no second reset
+        QVERIFY(DeferKeyboardInteractivity(configured, dirty)); // no pre-configure commit
+        QVERIFY(dirty);
+        QVERIFY(TakePendingKeyboardInteractivity(dirty)); // apply after configure
+        QVERIFY(!TakePendingKeyboardInteractivity(dirty));
+        QVERIFY(!DeferKeyboardInteractivity(true, dirty)); // live layer commits directly
+        QVERIFY(!dirty);
+    }
+
     void doubleClickSuppressesTwoTaps()
     {
         ModelDoubleClick clicks;
