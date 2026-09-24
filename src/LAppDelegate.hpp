@@ -74,6 +74,9 @@ public:
 
     void SetMousePosition(double x, double y);
     void OnModelKey(uint32_t code, bool pressed);
+    /** @brief Reset pressed keys on keyboard enter/leave, seat capability loss,
+     *         and explicit keyboard-grab release.
+     */
     void ResetKeyboardState();
 
     /**
