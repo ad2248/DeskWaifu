@@ -9,18 +9,19 @@ private slots:
     void doubleClickSuppressesTwoTaps()
     {
         ModelDoubleClick clicks;
-        QCOMPARE(clicks.Release(100, 40, 50, false), ModelDoubleClick::Pending);
+        QCOMPARE(clicks.Release(100, 40, 50), ModelDoubleClick::Pending);
         QVERIFY(!clicks.Expired(449));
-        QCOMPARE(clicks.Release(300, 45, 55, false), ModelDoubleClick::DoubleClick);
+        QCOMPARE(clicks.Release(300, 45, 55), ModelDoubleClick::DoubleClick);
         QVERIFY(!clicks.Take());
-        QCOMPARE(clicks.Release(500, 40, 50, false), ModelDoubleClick::Pending);
+        QCOMPARE(clicks.Release(500, 40, 50), ModelDoubleClick::Pending);
         QVERIFY(clicks.Expired(851));
         QVERIFY(clicks.Take());
-        QCOMPARE(clicks.Release(900, 40, 50, false), ModelDoubleClick::Pending);
+        QCOMPARE(clicks.Release(900, 40, 50), ModelDoubleClick::Pending);
         QVERIFY(!clicks.IsSecondClick(950, 60, 50));
         QVERIFY(clicks.Take());
-        QCOMPARE(clicks.Release(970, 60, 50, true), ModelDoubleClick::Ignore);
+        // Drag path flushes the previous tap without calling Release.
         QVERIFY(!clicks.Take());
+        QCOMPARE(clicks.Release(970, 60, 50), ModelDoubleClick::Pending);
     }
 
     void letterDigitChordAndRelease()

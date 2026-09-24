@@ -65,7 +65,7 @@ private:
 class ModelDoubleClick
 {
 public:
-    enum Result { Pending, DoubleClick, Ignore };
+    enum Result { Pending, DoubleClick };
     bool HasPending() const { return _pending; }
     bool IsSecondClick(uint32_t time, int x, int y) const
     {
@@ -73,9 +73,8 @@ public:
             && x - _x > -Distance && x - _x < Distance
             && y - _y > -Distance && y - _y < Distance;
     }
-    Result Release(uint32_t time, int x, int y, bool dragged)
+    Result Release(uint32_t time, int x, int y)
     {
-        if (dragged) { _pending = false; return Ignore; }
         if (IsSecondClick(time, x, y))
         {
             _pending = false;
