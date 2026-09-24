@@ -1,4 +1,5 @@
 #include "ModelTransform.hpp"
+#include "ModelScroll.hpp"
 #include "ModelProjection.hpp"
 
 #include <QtTest>
@@ -18,6 +19,41 @@ class ModelTransformTest : public QObject
     }
 
 private slots:
+    void scrollConvertsAnchorAndUpdatesModelPosition()
+    {
+        struct View
+        {
+            float TransformScreenX(float x) { return x * 0.5f; }
+            float TransformScreenY(float y) { return -y * 0.25f; }
+        } view;
+        const ModelTransform before{1.0f, 0.3f, -0.2f};
+        const float anchorX = 0.8f;
+        const float anchorY = -0.5f;
+        const float pointX = anchorX / before.scale - before.x;
+        const float pointY = anchorY / before.scale - before.y;
+
+        const ModelTransform after = ZoomModelFromScroll(before, &view, 1.6f, 2.0f, 1.0f);
+
+        compareAnchor(after.scale, 1.1f);
+        compareAnchor(after.scale * (pointX + after.x), anchorX);
+        compareAnchor(after.scale * (pointY + after.y), anchorY);
+    }
+
+    void scrollWithNullViewKeepsTransform()
+    {
+        struct View
+        {
+            float TransformScreenX(float) { return 0; }
+            float TransformScreenY(float) { return 0; }
+        };
+        const ModelTransform before{1.0f, 0.3f, -0.2f};
+        const ModelTransform after = ZoomModelFromScroll(before, static_cast<View*>(nullptr), 10.0f, 20.0f, 1.0f);
+
+        QCOMPARE(after.scale, before.scale);
+        QCOMPARE(after.x, before.x);
+        QCOMPARE(after.y, before.y);
+    }
+
     void rendererUsesModelSpaceTranslation()
     {
         const ModelTransform before{2.0f, 0.3f, -0.2f};

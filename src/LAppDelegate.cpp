@@ -23,8 +23,8 @@
 #include "LAppModel.hpp"
 #include "LAppTextureManager.hpp"
 #include "LAppIPC.hpp"
-#include "ModelTransform.hpp"
 #include "ModelInputDispatch.hpp"
+#include "ModelScroll.hpp"
 #include "ModelHotkeyTrigger.hpp"
 
 using namespace Csm;
@@ -329,7 +329,8 @@ void LAppDelegate::OnMouseCallBack(void* window, int button, int action, int mod
                     const auto now = ClickClock();
                     if (_clicks.HasPending() && !_clicks.IsSecondClick(now, _windowStartX, _windowStartY))
                         FlushPendingTap();
-                    const auto result = _clicks.Release(now, _windowStartX, _windowStartY);
+                    const auto result = _clicks.Release(now, _windowStartX, _windowStartY,
+                        static_cast<int>(curX), static_cast<int>(curY));
                     if (result == ModelDoubleClick::DoubleClick)
                     {
                         LAppLive2DManager::GetInstance()->OnDrag(0.0f, 0.0f);
@@ -366,6 +367,12 @@ void LAppDelegate::FlushPendingTap()
         _view->OnTouchesBegan(x, y);
         _view->OnTouchesEnded(x, y);
     });
+}
+
+void LAppDelegate::OnPointerLeave()
+{
+    // A second click cannot land on this surface until the pointer re-enters.
+    FlushPendingTap();
 }
 
 void LAppDelegate::ResetKeyboardState()
@@ -442,16 +449,9 @@ void LAppDelegate::SetMousePosition(double x, double y)
 
 void LAppDelegate::OnScrollCallBack(void* window, double xoffset, double yoffset)
 {
-    if (_view == NULL)
-    {
-        return;
-    }
-
-    const float scaleFactor = 1.0f + static_cast<float>(yoffset) * 0.1f;
-    const float anchorX = _view->TransformScreenX(_mouseX);
-    const float anchorY = _view->TransformScreenY(_mouseY);
-    const ModelTransform transform = ZoomModelAroundPoint(
-        {_modelScale, _modelX, _modelY}, anchorX, anchorY, _modelScale * scaleFactor);
+    const ModelTransform transform = ZoomModelFromScroll(
+        ModelTransform{_modelScale, _modelX, _modelY}, _view, _mouseX, _mouseY,
+        static_cast<float>(yoffset));
 
     _modelScale = transform.scale;
     _modelX = transform.x;

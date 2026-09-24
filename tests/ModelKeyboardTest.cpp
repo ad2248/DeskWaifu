@@ -1,5 +1,6 @@
 #include "ModelKeyboard.hpp"
 #include "ModelInputDispatch.hpp"
+#include "ModelKeyboardGrab.hpp"
 #include "ModelHotkeyTrigger.hpp"
 
 #include <QtTest>
@@ -55,17 +56,45 @@ private slots:
         std::vector<std::pair<int, int>> taps;
         const auto tap = [&](int x, int y) { taps.emplace_back(x, y); };
 
-        QCOMPARE(clicks.Release(100, 40, 50), ModelDoubleClick::Pending);
+        QCOMPARE(clicks.Release(100, 40, 50, 45, 55), ModelDoubleClick::Pending);
         DispatchPendingTap(clicks, tap); // expiry or pointer leave
         QCOMPARE(taps.size(), size_t(1));
-        QCOMPARE(taps.front(), std::make_pair(40, 50));
+        QCOMPARE(taps.front(), std::make_pair(45, 55));
         DispatchPendingTap(clicks, tap);
         QCOMPARE(taps.size(), size_t(1));
 
-        QCOMPARE(clicks.Release(500, 40, 50), ModelDoubleClick::Pending);
-        QCOMPARE(clicks.Release(600, 42, 51), ModelDoubleClick::DoubleClick);
+        QCOMPARE(clicks.Release(500, 40, 50, 49, 59), ModelDoubleClick::Pending);
+        QCOMPARE(clicks.Release(600, 42, 51, 43, 52), ModelDoubleClick::DoubleClick);
         DispatchPendingTap(clicks, tap);
         QCOMPARE(taps.size(), size_t(1)); // both clicks were suppressed
+    }
+
+    void externalFocusLossAllowsRegrab()
+    {
+        bool grabbed = true;
+        QVERIFY(CanChangeKeyboardGrab(grabbed, false, false, false));
+        grabbed = false; // compositor focus lost or keyboard capability removed
+        QVERIFY(!CanChangeKeyboardGrab(grabbed, true, false, true));
+        QVERIFY(!CanChangeKeyboardGrab(grabbed, true, true, false));
+        QVERIFY(CanChangeKeyboardGrab(grabbed, true, true, true));
+        grabbed = true;
+        QVERIFY(!CanChangeKeyboardGrab(grabbed, true, true, true));
+    }
+
+    void focusLossDuringOutputSwitchDefersCommitAndOnlyResetsOnce()
+    {
+        bool grabbed = true;
+        bool dirty = false;
+        const bool configured = false; // newly created layer awaiting configure
+
+        QVERIFY(UpdateKeyboardGrabState(grabbed, false, true, true));
+        QVERIFY(!UpdateKeyboardGrabState(grabbed, false, true, true)); // no second reset
+        QVERIFY(DeferKeyboardInteractivity(configured, dirty)); // no pre-configure commit
+        QVERIFY(dirty);
+        QVERIFY(TakePendingKeyboardInteractivity(dirty)); // apply after configure
+        QVERIFY(!TakePendingKeyboardInteractivity(dirty));
+        QVERIFY(!DeferKeyboardInteractivity(true, dirty)); // live layer commits directly
+        QVERIFY(!dirty);
     }
 
     void reportsHotkeyTriggerFailureWithBindingId()
@@ -99,19 +128,37 @@ private slots:
     void doubleClickSuppressesTwoTaps()
     {
         ModelDoubleClick clicks;
-        QCOMPARE(clicks.Release(100, 40, 50), ModelDoubleClick::Pending);
+        QCOMPARE(clicks.Release(100, 40, 50, 40, 50), ModelDoubleClick::Pending);
         QVERIFY(!clicks.Expired(449));
-        QCOMPARE(clicks.Release(300, 45, 55), ModelDoubleClick::DoubleClick);
+        QCOMPARE(clicks.Release(300, 45, 55, 45, 55), ModelDoubleClick::DoubleClick);
         QVERIFY(!clicks.Take());
-        QCOMPARE(clicks.Release(500, 40, 50), ModelDoubleClick::Pending);
+        QCOMPARE(clicks.Release(500, 40, 50, 40, 50), ModelDoubleClick::Pending);
         QVERIFY(clicks.Expired(851));
         QVERIFY(clicks.Take());
-        QCOMPARE(clicks.Release(900, 40, 50), ModelDoubleClick::Pending);
+        QCOMPARE(clicks.Release(900, 40, 50, 40, 50), ModelDoubleClick::Pending);
         QVERIFY(!clicks.IsSecondClick(950, 60, 50));
         QVERIFY(clicks.Take());
         // Drag path flushes the previous tap without calling Release.
         QVERIFY(!clicks.Take());
-        QCOMPARE(clicks.Release(970, 60, 50), ModelDoubleClick::Pending);
+        QCOMPARE(clicks.Release(970, 60, 50, 60, 50), ModelDoubleClick::Pending);
+    }
+
+    void delayedTapUsesReleaseCoordinatesButDoubleClickUsesPressCoordinates()
+    {
+        ModelDoubleClick clicks;
+        QCOMPARE(clicks.Release(100, 40, 50, 49, 59), ModelDoubleClick::Pending);
+        QCOMPARE(clicks.X(), 49);
+        QCOMPARE(clicks.Y(), 59);
+        QVERIFY(clicks.IsSecondClick(300, 32, 43));
+        QVERIFY(!clicks.IsSecondClick(300, 50, 60));
+        QCOMPARE(clicks.Release(300, 32, 43, 32, 43), ModelDoubleClick::DoubleClick);
+        QVERIFY(!clicks.Take());
+
+        QCOMPARE(clicks.Release(500, 40, 50, 49, 59), ModelDoubleClick::Pending);
+        QVERIFY(clicks.Take()); // pointer left the surface: flush without waiting
+        QCOMPARE(clicks.X(), 49);
+        QCOMPARE(clicks.Y(), 59);
+        QVERIFY(!clicks.IsSecondClick(600, 40, 50));
     }
 
     void letterDigitChordAndRelease()
