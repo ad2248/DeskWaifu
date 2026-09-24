@@ -18,6 +18,8 @@ struct WaylandContext {
     wl_shm* shm = nullptr;
     wl_seat* seat = nullptr;
     wl_pointer* pointer = nullptr;
+    wl_keyboard* keyboard = nullptr;
+    bool keyboardGrabbed = false;
     zwlr_layer_shell_v1* layer_shell = nullptr;
 
     wl_surface* surface = nullptr;
@@ -59,6 +61,7 @@ bool GetGlobalCursorPosition(int& x, int& y);
 
 bool SetupWaylandContext(WaylandContext* wl, int width, int height);
 void CleanWaylandContext(WaylandContext* wl);
+void SetModelKeyboardGrab(WaylandContext* wl, bool grabbed);
 
 void SwitchWaylandOutput(int direction);
 void MoveToFocusedMonitor();
