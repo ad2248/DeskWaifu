@@ -1,4 +1,5 @@
 #include "ModelTransform.hpp"
+#include "ModelProjection.hpp"
 
 #include <QtTest>
 
@@ -17,6 +18,31 @@ class ModelTransformTest : public QObject
     }
 
 private slots:
+    void rendererUsesModelSpaceTranslation()
+    {
+        const ModelTransform before{2.0f, 0.3f, -0.2f};
+        Live2D::Cubism::Framework::CubismMatrix44 projection;
+        ApplyModelTransform(projection, before);
+
+        compareAnchor(projection.TransformX(0.4f), before.scale * (0.4f + before.x));
+        compareAnchor(projection.TransformY(-0.1f), before.scale * (-0.1f + before.y));
+    }
+
+    void rendererPreservesNonIdentityBaseProjection()
+    {
+        const ModelTransform transform{2.0f, 0.3f, -0.2f};
+        Live2D::Cubism::Framework::CubismMatrix44 projection;
+        const float aspect = 0.75f;
+        projection.ScaleRelative(aspect, 1.0f);
+
+        ApplyModelTransform(projection, transform);
+
+        compareAnchor(projection.TransformX(0.4f),
+            aspect * transform.scale * (0.4f + transform.x));
+        compareAnchor(projection.TransformY(-0.1f),
+            transform.scale * (-0.1f + transform.y));
+    }
+
     void keepsOffCenterPointFixed()
     {
         const ModelTransform before{1.0f, 0.0f, 0.0f};
