@@ -369,12 +369,6 @@ void LAppDelegate::FlushPendingTap()
     });
 }
 
-void LAppDelegate::OnPointerLeave()
-{
-    // A second click cannot land on this surface until the pointer re-enters.
-    FlushPendingTap();
-}
-
 void LAppDelegate::ResetKeyboardState()
 {
     _keyboard.Reset();
