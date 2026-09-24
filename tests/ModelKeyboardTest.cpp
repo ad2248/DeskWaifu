@@ -119,6 +119,27 @@ private slots:
         QCOMPARE(result.bindingId, std::string("ctrl-a"));
     }
 
+    void tabBindingTriggersAfterGrabAndCanBeRepeatedAfterRelease()
+    {
+        ModelHotkeys::Binding binding;
+        binding.id = "watermark";
+        binding.keys = {"Tab"};
+        const std::vector<ModelHotkeys::Binding> bindings{binding};
+        ModelKeyboard keyboard;
+
+        QCOMPARE(DecideModelKey(keyboard, false, KEY_TAB, true, &bindings).action,
+            ModelKeyDecision::None);
+        const auto first = DecideModelKey(keyboard, true, KEY_TAB, true, &bindings);
+        QCOMPARE(first.action, ModelKeyDecision::Trigger);
+        QCOMPARE(first.bindingId, std::string("watermark"));
+        QCOMPARE(DecideModelKey(keyboard, true, KEY_TAB, true, &bindings).action,
+            ModelKeyDecision::None); // held key does not retrigger
+        QCOMPARE(DecideModelKey(keyboard, true, KEY_TAB, false, &bindings).action,
+            ModelKeyDecision::None);
+        QCOMPARE(DecideModelKey(keyboard, true, KEY_TAB, true, &bindings).action,
+            ModelKeyDecision::Trigger);
+    }
+
     void pendingTapDispatchSuppressesBothClicksOfDoubleClick()
     {
         ModelDoubleClick clicks;
@@ -302,7 +323,10 @@ private slots:
         keyboard.Reset();
         QVERIFY(keyboard.Key(KEY_P, true));
         QVERIFY(keyboard.Matches({"P"}));
-        QVERIFY(!keyboard.Key(KEY_TAB, true));
+        QVERIFY(keyboard.Key(KEY_TAB, true));
+        QVERIFY(!keyboard.Matches({"Tab"})); // P is still held
+        QVERIFY(!keyboard.Key(KEY_TAB, false));
+        QVERIFY(keyboard.Matches({"P"}));
         keyboard.Reset();
         QVERIFY(keyboard.Key(KEY_RIGHTCTRL, true));
         QVERIFY(keyboard.Key(KEY_LEFTSHIFT, true));

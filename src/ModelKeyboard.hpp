@@ -14,6 +14,7 @@ inline std::string ModelKeyName(uint32_t key)
     if (key >= KEY_Z && key <= KEY_M) return std::string(1, "ZXCVBNM"[key - KEY_Z]);
     if (key >= KEY_1 && key <= KEY_9) return "N" + std::to_string(key - KEY_1 + 1);
     if (key == KEY_0) return "N0";
+    if (key == KEY_TAB) return "Tab";
     if (key == KEY_LEFTCTRL || key == KEY_RIGHTCTRL) return "Ctrl";
     if (key == KEY_LEFTSHIFT || key == KEY_RIGHTSHIFT) return "Shift";
     if (key == KEY_LEFTALT || key == KEY_RIGHTALT) return "Alt";
@@ -26,6 +27,7 @@ inline std::string ModelBindingKey(const std::string& name)
     if (name == "LeftShift" || name == "RightShift" || name == "Shift") return "Shift";
     if (name == "LeftAlt" || name == "RightAlt" || name == "Alt") return "Alt";
     if (name.size() == 2 && name[0] == 'N' && name[1] >= '0' && name[1] <= '9') return name;
+    if (name == "Tab") return name;
     if (name.size() == 1 && name[0] >= 'A' && name[0] <= 'Z') return name;
     return {};
 }
