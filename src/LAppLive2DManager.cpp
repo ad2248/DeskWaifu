@@ -25,6 +25,7 @@
 #include "LAppModel.hpp"
 #include "LAppView.hpp"
 #include "LAppSprite.hpp"
+#include "ModelProjection.hpp"
 
 using namespace Csm;
 using namespace LAppDefine;
@@ -380,8 +381,7 @@ void LAppLive2DManager::OnUpdate() const
         }
 
         LAppDelegate* app = LAppDelegate::GetInstance();
-        projection.ScaleRelative(app->_modelScale, app->_modelScale);
-        projection.TranslateRelative(app->_modelX, app->_modelY);
+        ApplyModelTransform(projection, {app->_modelScale, app->_modelX, app->_modelY});
 
         // 必要があればここで乗算
         if (_viewMatrix != NULL)

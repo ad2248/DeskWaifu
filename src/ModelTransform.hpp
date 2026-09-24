@@ -20,6 +20,8 @@ inline ModelTransform ZoomModelAroundPoint(
         return result;
     }
 
+    // Rendering must compose scale before relative translation: logical =
+    // scale * (modelPoint + translate). See ApplyModelTransform in ModelProjection.hpp.
     // Keep the model point under the cursor at the same screen position.
     const float positionDelta = 1.0f / result.scale - 1.0f / current.scale;
     result.x += anchorX * positionDelta;
