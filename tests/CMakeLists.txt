@@ -47,7 +47,7 @@ add_test(NAME hotkey-panel COMMAND hotkey-panel-test)
 set_tests_properties(hotkey-panel PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 qt_add_executable(model-keyboard-test ModelKeyboardTest.cpp)
-target_include_directories(model-keyboard-test PRIVATE ../src)
+target_include_directories(model-keyboard-test PRIVATE ../src ${FRAMEWORK_PATH}/src ${CORE_PATH}/include)
 target_link_libraries(model-keyboard-test PRIVATE Qt6::Test)
 set_target_properties(model-keyboard-test PROPERTIES AUTOMOC ON)
 add_test(NAME model-keyboard COMMAND model-keyboard-test)
