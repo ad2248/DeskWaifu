@@ -5,6 +5,7 @@
 #include <wayland-egl.h>
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
+#include "ModelKeyboardGrab.hpp"
 
 #define namespace wayland_namespace
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
@@ -19,8 +20,7 @@ struct WaylandContext {
     wl_seat* seat = nullptr;
     wl_pointer* pointer = nullptr;
     wl_keyboard* keyboard = nullptr;
-    bool keyboardGrabbed = false;
-    bool keyboardInteractivityDirty = false;
+    KeyboardSurfaceLifecycle keyboardSurface;
     zwlr_layer_shell_v1* layer_shell = nullptr;
 
     wl_surface* surface = nullptr;
@@ -42,7 +42,6 @@ struct WaylandContext {
 };
     std::vector<OutputInfo*> outputs;
     int current_output_index = 0;
-    bool configured = false;
     int width = 0;
     int height = 0;
     int margin_left = 0;
@@ -62,7 +61,7 @@ bool GetGlobalCursorPosition(int& x, int& y);
 
 bool SetupWaylandContext(WaylandContext* wl, int width, int height);
 void CleanWaylandContext(WaylandContext* wl);
-bool SetModelKeyboardGrab(WaylandContext* wl, bool grabbed);
+KeyboardSurfaceLifecycle::GrabResult SetModelKeyboardGrab(WaylandContext* wl, bool grabbed);
 
 void SwitchWaylandOutput(int direction);
 void MoveToFocusedMonitor();

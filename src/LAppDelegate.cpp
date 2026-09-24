@@ -376,11 +376,11 @@ void LAppDelegate::ResetKeyboardState()
 
 void LAppDelegate::OnModelKey(uint32_t code, bool pressed)
 {
-    LAppModel* model = _wlContext.keyboardGrabbed
+    LAppModel* model = _wlContext.keyboardSurface.IsGrabbed()
         ? LAppLive2DManager::GetInstance()->GetModel(0) : nullptr;
     const auto* bindings = model ? &model->Hotkeys().Bindings() : nullptr;
     const ModelKeyDecision decision = DecideModelKey(
-        _keyboard, _wlContext.keyboardGrabbed, code, pressed, bindings);
+        _keyboard, _wlContext.keyboardSurface.IsGrabbed(), code, pressed, bindings);
     if (decision.action == ModelKeyDecision::ReleaseGrab)
         SetModelKeyboardGrab(&_wlContext, false);
     else if (decision.action == ModelKeyDecision::Trigger)
