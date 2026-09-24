@@ -23,7 +23,7 @@
 #include "LAppModel.hpp"
 #include "LAppTextureManager.hpp"
 #include "LAppIPC.hpp"
-#include "ModelTransform.hpp"
+#include "ModelScroll.hpp"
 
 using namespace Csm;
 using namespace std;
@@ -447,16 +447,9 @@ void LAppDelegate::SetMousePosition(double x, double y)
 
 void LAppDelegate::OnScrollCallBack(void* window, double xoffset, double yoffset)
 {
-    if (_view == NULL)
-    {
-        return;
-    }
-
-    const float scaleFactor = 1.0f + static_cast<float>(yoffset) * 0.1f;
-    const float anchorX = _view->TransformScreenX(_mouseX);
-    const float anchorY = _view->TransformScreenY(_mouseY);
-    const ModelTransform transform = ZoomModelAroundPoint(
-        {_modelScale, _modelX, _modelY}, anchorX, anchorY, _modelScale * scaleFactor);
+    const ModelTransform transform = ZoomModelFromScroll(
+        ModelTransform{_modelScale, _modelX, _modelY}, _view, _mouseX, _mouseY,
+        static_cast<float>(yoffset));
 
     _modelScale = transform.scale;
     _modelX = transform.x;
