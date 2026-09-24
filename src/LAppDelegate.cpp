@@ -24,6 +24,7 @@
 #include "LAppTextureManager.hpp"
 #include "LAppIPC.hpp"
 #include "ModelTransform.hpp"
+#include "ModelHotkeyTrigger.hpp"
 
 using namespace Csm;
 using namespace std;
@@ -393,8 +394,12 @@ void LAppDelegate::OnModelKey(uint32_t code, bool pressed)
     }
     if (match)
     {
-        std::string error;
-        hotkeys.Trigger(match->id, error);
+        TriggerModelHotkey(hotkeys, match->id,
+            [](const std::string& id, const std::string& error)
+            {
+                LAppPal::PrintLogLn("[Hotkeys] Trigger failed for binding %s: %s",
+                    id.c_str(), error.c_str());
+            });
     }
 }
 

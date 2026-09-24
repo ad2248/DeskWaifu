@@ -1,4 +1,5 @@
 #include "ModelKeyboard.hpp"
+#include "ModelHotkeyTrigger.hpp"
 
 #include <QtTest>
 
@@ -6,6 +7,34 @@ class ModelKeyboardTest : public QObject
 {
     Q_OBJECT
 private slots:
+    void reportsHotkeyTriggerFailureWithBindingId()
+    {
+        struct Hotkeys
+        {
+            bool succeeds = false;
+            bool Trigger(const std::string&, std::string& error)
+            {
+                if (!succeeds) error = "action not loaded";
+                return succeeds;
+            }
+        } hotkeys;
+        std::string loggedId, loggedError;
+        const auto log = [&](const std::string& id, const std::string& error)
+        {
+            loggedId = id;
+            loggedError = error;
+        };
+
+        QVERIFY(!TriggerModelHotkey(hotkeys, "binding-42", log));
+        QCOMPARE(loggedId, std::string("binding-42"));
+        QCOMPARE(loggedError, std::string("action not loaded"));
+
+        hotkeys.succeeds = true;
+        loggedId.clear();
+        QVERIFY(TriggerModelHotkey(hotkeys, "binding-42", log));
+        QVERIFY(loggedId.empty());
+    }
+
     void doubleClickSuppressesTwoTaps()
     {
         ModelDoubleClick clicks;
