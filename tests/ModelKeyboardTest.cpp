@@ -1,4 +1,5 @@
 #include "ModelKeyboard.hpp"
+#include "ModelKeyboardGrab.hpp"
 #include "ModelHotkeyTrigger.hpp"
 
 #include <QtTest>
@@ -7,6 +8,34 @@ class ModelKeyboardTest : public QObject
 {
     Q_OBJECT
 private slots:
+    void externalFocusLossAllowsRegrab()
+    {
+        bool grabbed = true;
+        QVERIFY(CanChangeKeyboardGrab(grabbed, false, false, false));
+        grabbed = false; // compositor focus lost or keyboard capability removed
+        QVERIFY(!CanChangeKeyboardGrab(grabbed, true, false, true));
+        QVERIFY(!CanChangeKeyboardGrab(grabbed, true, true, false));
+        QVERIFY(CanChangeKeyboardGrab(grabbed, true, true, true));
+        grabbed = true;
+        QVERIFY(!CanChangeKeyboardGrab(grabbed, true, true, true));
+    }
+
+    void focusLossDuringOutputSwitchDefersCommitAndOnlyResetsOnce()
+    {
+        bool grabbed = true;
+        bool dirty = false;
+        const bool configured = false; // newly created layer awaiting configure
+
+        QVERIFY(UpdateKeyboardGrabState(grabbed, false, true, true));
+        QVERIFY(!UpdateKeyboardGrabState(grabbed, false, true, true)); // no second reset
+        QVERIFY(DeferKeyboardInteractivity(configured, dirty)); // no pre-configure commit
+        QVERIFY(dirty);
+        QVERIFY(TakePendingKeyboardInteractivity(dirty)); // apply after configure
+        QVERIFY(!TakePendingKeyboardInteractivity(dirty));
+        QVERIFY(!DeferKeyboardInteractivity(true, dirty)); // live layer commits directly
+        QVERIFY(!dirty);
+    }
+
     void reportsHotkeyTriggerFailureWithBindingId()
     {
         struct Hotkeys

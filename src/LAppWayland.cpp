@@ -5,8 +5,15 @@
 #include "LAppWayland.hpp"
 #include "LAppDelegate.hpp"
 #include "LAppPal.hpp"
+#include "ModelKeyboardGrab.hpp"
 #include <linux/input-event-codes.h>
 #include <iostream>
+
+static void ApplyLayerKeyboardInteractivity(WaylandContext* wl) {
+    zwlr_layer_surface_v1_set_keyboard_interactivity(wl->layer_surface,
+        wl->keyboardGrabbed ? ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE
+                            : ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE);
+}
 
 // --- Wayland Pointer Handlers ---
 static void pointer_handle_enter(void *data, struct wl_pointer *wl_pointer, uint32_t serial, struct wl_surface *surface, wl_fixed_t surface_x, wl_fixed_t surface_y) {
@@ -53,8 +60,10 @@ static void keyboard_enter(void*, wl_keyboard*, uint32_t, wl_surface*, wl_array*
     // Focus regained: discard keys held before focus was lost.
     LAppDelegate::GetInstance()->ResetKeyboardState();
 }
-static void keyboard_leave(void*, wl_keyboard*, uint32_t, wl_surface*) {
-    LAppDelegate::GetInstance()->ResetKeyboardState();
+static void keyboard_leave(void* data, wl_keyboard*, uint32_t, wl_surface*) {
+    // The compositor may revoke focus (e.g. on lock); allow a later double-click to regrab.
+    if (!SetModelKeyboardGrab(static_cast<WaylandContext*>(data), false))
+        LAppDelegate::GetInstance()->ResetKeyboardState();
 }
 static void keyboard_key(void*, wl_keyboard*, uint32_t, uint32_t, uint32_t key, uint32_t state) {
     LAppDelegate::GetInstance()->OnModelKey(key, state == WL_KEYBOARD_KEY_STATE_PRESSED);
@@ -79,7 +88,8 @@ static void seat_handle_capabilities(void *data, struct wl_seat *seat, uint32_t 
         wl->keyboard = wl_seat_get_keyboard(seat);
         wl_keyboard_add_listener(wl->keyboard, &keyboard_listener, wl);
     } else if (!(caps & WL_SEAT_CAPABILITY_KEYBOARD) && wl->keyboard) {
-        LAppDelegate::GetInstance()->ResetKeyboardState();
+        if (!SetModelKeyboardGrab(wl, false))
+            LAppDelegate::GetInstance()->ResetKeyboardState();
         wl_keyboard_destroy(wl->keyboard);
         wl->keyboard = nullptr;
     }
@@ -104,6 +114,12 @@ static void layer_surface_configure(void *data, struct zwlr_layer_surface_v1 *su
     }
     
     wl->configured = true;
+    if (TakePendingKeyboardInteractivity(wl->keyboardInteractivityDirty)) {
+        // A focus change while the new layer was awaiting its first configure
+        // must only be committed after this configure has been acknowledged.
+        ApplyLayerKeyboardInteractivity(wl);
+        wl_surface_commit(wl->surface);
+    }
     std::cout << "[Wayland] Configured! width: " << wl->width << ", height: " << wl->height << std::endl;
 }
 static void layer_surface_closed(void *data, struct zwlr_layer_surface_v1 *surface) {
@@ -325,7 +341,7 @@ bool SetupWaylandContext(WaylandContext* wl, int width, int height) {
     // Set interactive, anchor to all edges to get a full-screen transparent overlay
     zwlr_layer_surface_v1_set_size(wl->layer_surface, 0, 0);
     zwlr_layer_surface_v1_set_anchor(wl->layer_surface, ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP | ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM | ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT);
-    zwlr_layer_surface_v1_set_keyboard_interactivity(wl->layer_surface, 0); // No keyboard focus
+    ApplyLayerKeyboardInteractivity(wl);
     wl_surface_commit(wl->surface);
     wl_display_roundtrip(wl->display); // Wait for configure event
 
@@ -343,14 +359,17 @@ bool SetupWaylandContext(WaylandContext* wl, int width, int height) {
     return true;
 }
 
-void SetModelKeyboardGrab(WaylandContext* wl, bool grabbed) {
-    if (!wl || !wl->layer_surface || (grabbed && !wl->keyboard) || wl->keyboardGrabbed == grabbed) return;
-    wl->keyboardGrabbed = grabbed;
-    zwlr_layer_surface_v1_set_keyboard_interactivity(wl->layer_surface,
-        grabbed ? ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE
-                : ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE);
-    wl_surface_commit(wl->surface);
+bool SetModelKeyboardGrab(WaylandContext* wl, bool grabbed) {
+    if (!wl || !UpdateKeyboardGrabState(wl->keyboardGrabbed, grabbed,
+        wl->layer_surface != nullptr, wl->keyboard != nullptr)) return false;
+    if (wl->layer_surface) {
+        if (!DeferKeyboardInteractivity(wl->configured, wl->keyboardInteractivityDirty)) {
+            ApplyLayerKeyboardInteractivity(wl);
+            wl_surface_commit(wl->surface);
+        }
+    }
     if (!grabbed) LAppDelegate::GetInstance()->ResetKeyboardState();
+    return true;
 }
 
 void CleanWaylandContext(WaylandContext* wl) {
@@ -445,6 +464,8 @@ void SwitchWaylandOutputToMonitor(int hx, int hy) {
     }
     LAppPal::PrintLogLn("[Wayland] Switching output from %d to %d", g_wl->current_output_index, target_idx);
     g_wl->current_output_index = target_idx;
+    g_wl->configured = false;
+    g_wl->keyboardInteractivityDirty = false;
     
     if (g_wl->egl_surface != EGL_NO_SURFACE) {
         eglDestroySurface(g_wl->egl_display, g_wl->egl_surface);
@@ -474,9 +495,7 @@ void SwitchWaylandOutputToMonitor(int hx, int hy) {
     zwlr_layer_surface_v1_add_listener(g_wl->layer_surface, &layer_surface_listener, g_wl);
     zwlr_layer_surface_v1_set_size(g_wl->layer_surface, 0, 0);
     zwlr_layer_surface_v1_set_anchor(g_wl->layer_surface, ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP | ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM | ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT);
-    zwlr_layer_surface_v1_set_keyboard_interactivity(g_wl->layer_surface,
-        g_wl->keyboardGrabbed ? ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE
-                              : ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE);
+    ApplyLayerKeyboardInteractivity(g_wl);
     
     wl_surface_commit(g_wl->surface);
     wl_display_roundtrip(g_wl->display);
