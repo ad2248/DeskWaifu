@@ -52,5 +52,12 @@ int main()
     // must not attempt eglMakeCurrent.
     bool touched = false;
     if (!ReleaseGpuResources(false, [&] { touched = true; return false; }, [] {}) || touched) return 1;
+
+    // Starting Cubism alone is CPU-only and must not request an EGL bind.
+    if (HasGpuResources(nullptr, nullptr, 0)) return 1;
+    const int gpuOwner = 0;
+    if (!HasGpuResources(&gpuOwner, nullptr, 0) ||
+        !HasGpuResources(nullptr, &gpuOwner, 0) ||
+        !HasGpuResources(nullptr, nullptr, 1)) return 1;
     return 0;
 }

@@ -138,8 +138,8 @@ bool LAppDelegate::Initialize()
 }
 bool LAppDelegate::Release()
 {
-    return ReleaseGpuResources(_cubismStarted || _view || _manager ||
-        (_textureManager && _textureManager->ResidentCount()),
+    return ReleaseGpuResources(HasGpuResources(_view, _manager,
+        _textureManager ? _textureManager->ResidentCount() : 0),
         [this] { return MakeWaylandGpuContextCurrent(&_wlContext); },
         [this] { ReleaseRuntimeInOrder(
         [this] { delete _commands; _commands = nullptr; delete _ipc; _ipc = nullptr; },
@@ -262,6 +262,7 @@ void LAppDelegate::InitializeCubism()
 
 void LAppDelegate::TrackGlobalCursor()
 {
+    if (!_globalCursorThrottle.Ready(std::chrono::steady_clock::now())) return;
     const auto cursor = _compositor.GlobalCursor();
     if (!cursor) return; // pointer-on-surface events still work without it
     const auto outputs = _waylandBackend.Outputs();
