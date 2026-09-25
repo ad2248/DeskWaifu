@@ -20,6 +20,7 @@
 class LAppPal
 {
 public:
+    static void SetResourceBasePath(const std::string& base);
     /**
     * @brief ファイルをバイトデータとして読み込む
     *
@@ -94,8 +95,8 @@ public:
     static void PrintMessageLn(const Csm::csmChar* message);
 
 private:
+    static std::string s_resourceBasePath;
     static double s_currentFrame;
     static double s_lastFrame;
     static double s_deltaTime;
 };
-

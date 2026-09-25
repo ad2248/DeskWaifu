@@ -92,6 +92,8 @@ int main(int argc, char* argv[])
     // create the application instance
     if (LAppDelegate::GetInstance()->Initialize() == GL_FALSE)
     {
+        LAppDelegate::GetInstance()->Release();
+        LAppDelegate::ReleaseInstance();
         return 1;
     }
 

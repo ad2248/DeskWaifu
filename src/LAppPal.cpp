@@ -15,7 +15,7 @@
 #include <GL/glew.h>
 #include <Model/CubismMoc.hpp>
 #include "LAppDefine.hpp"
-#include "LAppDelegate.hpp"
+#include "ResourcePath.hpp"
 #include "EmbeddedShaders.hpp"
 #include <time.h>
 
@@ -25,6 +25,12 @@ using namespace std;
 using namespace LAppDefine;
 
 double LAppPal::s_currentFrame = 0.0;
+std::string LAppPal::s_resourceBasePath;
+
+void LAppPal::SetResourceBasePath(const std::string& base)
+{
+    s_resourceBasePath = base;
+}
 double LAppPal::s_lastFrame = 0.0;
 double LAppPal::s_deltaTime = 0.0;
 
@@ -48,10 +54,7 @@ csmByte* LAppPal::LoadFileAsBytes(const string filePath, csmSizeInt* outSize)
     }
 
     //filePath;//
-    string pathString = filePath;
-    if (!pathString.empty() && pathString[0] != '/') {
-        pathString = LAppDelegate::GetInstance()->GetExecuteAbsolutePath() + pathString;
-    }
+    string pathString = ResolveResourcePath(s_resourceBasePath, filePath);
     const char* path = pathString.c_str();
 
     int size = 0;

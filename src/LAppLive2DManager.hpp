@@ -9,8 +9,22 @@
 #include <CubismFramework.hpp>
 #include <Math/CubismMatrix44.hpp>
 #include <Type/csmVector.hpp>
+#include <functional>
+#include <string>
+#include <vector>
+#include "ModelTransform.hpp"
+#include "ModelFrameInput.hpp"
 
 class LAppModel;
+class LAppTextureManager;
+
+struct ModelDiscoveryOptions
+{
+    std::string primaryDirectory;
+    std::vector<std::string> additionalDirectories;
+    std::string defaultModel;
+    float emotionTimeout = 5.0f;
+};
 
 /**
 * @brief サンプルアプリケーションにおいてCubismModelを管理するクラス<br>
@@ -27,13 +41,11 @@ public:
     *
     * @return  クラスのインスタンス
     */
-    static LAppLive2DManager* GetInstance();
 
     /**
     * @brief   クラスのインスタンス（シングルトン）を解放する。
     *
     */
-    static void ReleaseInstance();
 
     /**
     * @brief   Resources フォルダにあるモデルフォルダ名をセットする
@@ -95,7 +107,9 @@ public:
     * @brief   画面を更新するときの処理
     *          モデルの更新処理および描画処理を行う
     */
-    void OnUpdate() const;
+    void OnUpdate(int width, int height, ModelTransform transform, const ModelFrameInput& input,
+        const std::function<void(LAppModel&)>& beforeDraw,
+        const std::function<void(LAppModel&)>& afterDraw) const;
 
     /**
     * @brief   次のシーンに切り替える<br>
@@ -130,16 +144,20 @@ public:
      */
     Csm::csmInt32 GetSceneIndex() const { return _sceneIndex; }
 
+public:
+    LAppLive2DManager(LAppTextureManager& textures, int width, int height,
+        ModelDiscoveryOptions discovery);
+    virtual ~LAppLive2DManager();
+    bool HasModels() const { return _modelDir.GetSize() != 0; }
+
 private:
     /**
     * @brief  コンストラクタ
     */
-    LAppLive2DManager();
 
     /**
     * @brief  デストラクタ
     */
-    virtual ~LAppLive2DManager();
 
     /**
     * @brief   指定ディレクトリからモデルをスキャンする
@@ -162,6 +180,10 @@ private:
     void EvictExcessModels();
 
     Csm::CubismMatrix44* _viewMatrix; ///< モデル描画に用いるView行列
+    LAppTextureManager& _textures;
+    int _viewportWidth;
+    int _viewportHeight;
+    ModelDiscoveryOptions _discovery;
     Csm::csmVector<LAppModel*> _models; ///< 表示中モデルのコンテナ（所有権はキャッシュ側）
     Csm::csmVector<LAppModel*> _modelCache; ///< モデルキャッシュ（インデックス対応、NULLは未読み込み）
     Csm::csmInt32 _sceneIndex; ///< 表示するシーンのインデックス値

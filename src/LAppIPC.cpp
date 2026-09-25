@@ -309,7 +309,7 @@ std::string LAppIPC::ProcessCommand(const std::string& json)
     }
 
     LAppDelegate* app = LAppDelegate::GetInstance();
-    LAppLive2DManager* mgr = LAppLive2DManager::GetInstance();
+    LAppLive2DManager* mgr = app->GetManager();
 
     // ── get_available_models ──
     if (command == "get_available_models")

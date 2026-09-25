@@ -9,7 +9,6 @@
 #include <math.h>
 #include <string>
 #include "LAppPal.hpp"
-#include "LAppDelegate.hpp"
 #include "LAppLive2DManager.hpp"
 #include "LAppTextureManager.hpp"
 #include "LAppDefine.hpp"
@@ -23,8 +22,10 @@
 using namespace std;
 using namespace LAppDefine;
 
-LAppView::LAppView() :
+LAppView::LAppView(LAppLive2DManager& manager, LAppTextureManager& textures) :
     LAppView_Common(),
+    _manager(manager),
+    _textures(textures),
     _back(NULL),
     _gear(NULL),
     _power(NULL),
@@ -36,6 +37,13 @@ LAppView::LAppView() :
     _clearColor[1] = 1.0f;
     _clearColor[2] = 1.0f;
     _clearColor[3] = 0.0f;
+
+#if defined(USE_RENDER_TARGET)
+    _renderTarget = SelectTarget_ViewFrameBuffer;
+#elif defined(USE_MODEL_RENDER_TARGET)
+    _renderTarget = SelectTarget_ModelFrameBuffer;
+#endif
+    if (_renderTarget != SelectTarget_None) SetRenderTargetClearColor(0.0f, 0.0f, 0.0f);
 
     // タッチ関係のイベント管理
     _touchManager = new TouchManager_Common();
@@ -72,6 +80,8 @@ LAppView::~LAppView()
 
 void LAppView::Initialize(int width, int height)
 {
+    _width = width;
+    _height = height;
     LAppView_Common::Initialize(width, height);
 
     // シェーダー作成
@@ -81,19 +91,19 @@ void LAppView::Initialize(int width, int height)
     }
 }
 
-void LAppView::Render()
+void LAppView::Render(ModelTransform transform, const ModelFrameInput& input)
 {
     // Disable background and UI to make it a transparent desktop pet
     // _back->Render();
     // _gear->Render();
     // _power->Render();
 
-    LAppLive2DManager* Live2DManager = LAppLive2DManager::GetInstance();
-
-    Live2DManager->SetViewMatrix(_viewMatrix);
+    _manager.SetViewMatrix(_viewMatrix);
 
     // Cubism更新・描画
-    Live2DManager->OnUpdate();
+    _manager.OnUpdate(_width, _height, transform, input,
+        [this](LAppModel& model) { PreModelDraw(model); },
+        [this](LAppModel& model) { PostModelDraw(model); });
 
     // 各モデルが持つ描画ターゲットをテクスチャとする場合
     if (_renderTarget == SelectTarget_ModelFrameBuffer && _renderSprite)
@@ -106,9 +116,9 @@ void LAppView::Render()
             1.0f, 0.0f,
         };
 
-        for(csmUint32 i=0; i<Live2DManager->GetModelNum(); i++)
+        for(csmUint32 i=0; i<_manager.GetModelNum(); i++)
         {
-            LAppModel* model = Live2DManager->GetModel(i);
+            LAppModel* model = _manager.GetModel(i);
             float alpha = i < 1 ? 1.0f : model->GetOpacity(); // 片方のみ不透明度を取得できるようにする
             _renderSprite->SetColor(1.0f * alpha, 1.0f * alpha, 1.0f * alpha, alpha);
 
@@ -124,8 +134,7 @@ void LAppView::InitializeSprite()
 {
     GLuint programId = _spriteShader->GetShaderId();
 
-    int width, height;
-    width = LAppDelegate::GetInstance()->GetWindowWidth(); height = LAppDelegate::GetInstance()->GetWindowHeight();
+    int width = _width, height = _height;
 
     // 画面全体を覆うサイズ
     float x = width * 0.5f;
@@ -146,15 +155,13 @@ void LAppView::OnTouchesMoved(float px, float py) const
 
     _touchManager->TouchesMoved(px, py);
 
-    LAppLive2DManager* Live2DManager = LAppLive2DManager::GetInstance();
-    Live2DManager->OnDrag(viewX, viewY);
+    _manager.OnDrag(viewX, viewY);
 }
 
 void LAppView::OnTouchesEnded(float px, float py) const
 {
     // タッチ終了
-    LAppLive2DManager* live2DManager = LAppLive2DManager::GetInstance();
-    live2DManager->OnDrag(0.0f, 0.0f);
+    _manager.OnDrag(0.0f, 0.0f);
     {
 
         // シングルタップ
@@ -164,7 +171,7 @@ void LAppView::OnTouchesEnded(float px, float py) const
         {
             LAppPal::PrintLogLn("[APP]touchesEnded x:%.2f y:%.2f", x, y);
         }
-        live2DManager->OnTap(x, y);
+        _manager.OnTap(x, y);
     }
 }
 
@@ -184,8 +191,7 @@ void LAppView::PreModelDraw(LAppModel &refModel)
 
         if (!useTarget->IsValid())
         {// 描画ターゲット内部未作成の場合はここで作成
-            int bufWidth, bufHeight;
-            bufWidth = LAppDelegate::GetInstance()->GetWindowWidth(); bufHeight = LAppDelegate::GetInstance()->GetWindowHeight();
+            int bufWidth = _width, bufHeight = _height;
 
             if(bufWidth!=0 && bufHeight!=0)
             {
@@ -262,15 +268,14 @@ float LAppView::GetSpriteAlpha(int assign) const
 
 void LAppView::ResizeSprite()
 {
-    LAppTextureManager* textureManager = LAppDelegate::GetInstance()->GetTextureManager();
+    LAppTextureManager* textureManager = &_textures;
     if (!textureManager)
     {
         return;
     }
 
     // 描画領域サイズ
-    int width, height;
-    width = LAppDelegate::GetInstance()->GetWindowWidth(); height = LAppDelegate::GetInstance()->GetWindowHeight();
+    int width = _width, height = _height;
 
     float x = 0.0f;
     float y = 0.0f;
@@ -330,16 +335,15 @@ void LAppView::ResizeSprite()
 
 void LAppView::DestroySpriteRenderTarget()
 {
-    LAppLive2DManager* live2DManager = LAppLive2DManager::GetInstance();
     if (_renderTarget == SelectTarget_ViewFrameBuffer)
     {
         _renderBuffer.DestroyRenderTarget();
     }
     else if (_renderTarget == SelectTarget_ModelFrameBuffer)
     {
-        for (csmUint32 i = 0; i < live2DManager->GetModelNum(); i++)
+        for (csmUint32 i = 0; i < _manager.GetModelNum(); i++)
         {
-            LAppModel* model = live2DManager->GetModel(i);
+            LAppModel* model = _manager.GetModel(i);
             if (model)
             {
                 model->GetRenderBuffer().DestroyRenderTarget();
