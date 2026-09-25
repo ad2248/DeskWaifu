@@ -8,6 +8,7 @@
 #pragma once
 
 #include <functional>
+#include <vector>
 
 #include <CubismFramework.hpp>
 #include <CubismModelSettingJson.hpp>
@@ -111,6 +112,7 @@ private:
     Csm::csmMap<Csm::csmString, Csm::ACubismMotion*> _expressions; ///< 読み込まれている表情のリスト
 
     LAppTextureManager* _textureManager;         ///< テクスチャマネージャー
+    std::vector<LAppTextureManager::TextureLease> _textureLeases;
 
     const Csm::CubismId* _idParamAngleX; ///< パラメータID: ParamAngleX
     const Csm::CubismId* _idParamAngleY; ///< パラメータID: ParamAngleX

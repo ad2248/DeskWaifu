@@ -99,17 +99,17 @@ void LAppIPC::Release()
     }
 }
 
-std::string& LAppIPC::GetClientBuffer(int fd)
+LAppIPC::ClientBuffer& LAppIPC::GetClientBuffer(int fd)
 {
     for (size_t i = 0; i < _clientBuffers.size(); i++)
     {
-        if (_clientBuffers[i].fd == fd) return _clientBuffers[i].buf;
+        if (_clientBuffers[i].fd == fd) return _clientBuffers[i];
     }
     ClientBuffer cb;
     cb.fd = fd;
     cb.source = "stream:" + std::to_string(++_nextConnection);
     _clientBuffers.push_back(cb);
-    return _clientBuffers.back().buf;
+    return _clientBuffers.back();
 }
 
 void LAppIPC::RemoveClientBuffer(int fd)
@@ -151,7 +151,8 @@ void LAppIPC::Poll()
         if (n > 0)
         {
             buf[n] = '\0';
-            std::string& clientBuf = GetClientBuffer(fd);
+            ClientBuffer& client = GetClientBuffer(fd);
+            std::string& clientBuf = client.buf;
             clientBuf += buf;
 
             // Process complete lines
@@ -163,9 +164,7 @@ void LAppIPC::Poll()
 
                 if (!line.empty())
                 {
-                    auto client = std::find_if(_clientBuffers.begin(), _clientBuffers.end(),
-                        [fd](const ClientBuffer& entry) { return entry.fd == fd; });
-                    std::string response = _commands->Execute(line, client->source);
+                    std::string response = _commands->Execute(line, client.source);
                     response += "\n";
                     // Best-effort write
                     send(fd, response.c_str(), response.size(), MSG_NOSIGNAL);

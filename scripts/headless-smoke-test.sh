@@ -142,11 +142,16 @@ assert_ok set_expression --id F01
 assert_ok get_motions
 assert_ok do_motion --group Idle --index 0 --priority 2
 assert_ok set_mouth_y --value 0.5
+assert_ok set_mouth_y --reset
+assert_ok set_mouth_y --value 0.5
 assert_ok set_model_zoom --value 1.25
 assert_ok set_model_position --x 0.1 --y -0.1
 assert_ok get_model_position
 assert_ok set_look --x 0.25 --y -0.25
 assert_ok set_look --reset
+assert_ok release_source
+assert_ok set_mouth_y --value 0.5
+assert_ok get_control_status
 python3 - <<'PY'
 import json
 import os

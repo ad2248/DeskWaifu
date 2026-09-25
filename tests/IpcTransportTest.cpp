@@ -58,6 +58,7 @@ int main()
     if (ok) ok = read(client, response, sizeof(response)) == 8;
     if (std::string(response) != "one\ntwo\n" || commands.calls != 2 ||
         commands.source.find("stream:") != 0) ok = false;
+    const std::string firstSource = commands.source;
     close(client);
     transport.Poll();
     if (commands.releases != 1) ok = false;
@@ -70,7 +71,7 @@ int main()
     if (ok) ok = read(streaming, response, sizeof(response)) == 8;
     auto frame = commands.controls.Frame();
     if (!frame.hasMouth || frame.mouth != 0.8f || !frame.hasLook || frame.lookX != 0.2f ||
-        commands.source.find("stream:") != 0) ok = false;
+        commands.source.find("stream:") != 0 || commands.source == firstSource) ok = false;
     close(streaming);
     transport.Poll();
     if (commands.releases != 2 || commands.controls.Frame().hasMouth ||
