@@ -142,7 +142,7 @@ bool LAppDelegate::Release()
         _textureManager ? _textureManager->ResidentCount() : 0),
         [this] { return MakeWaylandGpuContextCurrent(&_wlContext); },
         [this] { ReleaseRuntimeInOrder(
-        [this] { delete _commands; _commands = nullptr; delete _ipc; _ipc = nullptr; },
+        [this] { delete _ipc; _ipc = nullptr; delete _commands; _commands = nullptr; },
         [this] { delete _view; _view = nullptr; },
         [this] { delete _manager; _manager = nullptr; },
         [this] { delete _textureManager; _textureManager = nullptr; },
