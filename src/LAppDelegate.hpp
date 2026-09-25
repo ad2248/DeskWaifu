@@ -11,6 +11,7 @@
 #include <GL/glew.h>
 #include "LAppWayland.hpp"
 #include "InputController.hpp"
+#include "ApplicationService.hpp"
 #include "Type/csmVector.hpp"
 #include "LAppAllocator_Common.hpp"
 
@@ -24,7 +25,7 @@ class AppCommandHandler;
 * @brief   アプリケーションクラス。
 *   Cubism3の管理を行う。
 */
-class LAppDelegate
+class LAppDelegate : private IApplicationRuntime
 {
 public:
     /**
@@ -96,7 +97,8 @@ public:
     * @brief   View情報を取得する。
     */
     LAppView* GetView() { return _view; }
-    LAppLive2DManager* GetManager() { return _manager; }
+    ApplicationService& Service() { return _service; }
+    const ApplicationService& Service() const { return _service; }
 
     /**
     * @brief   アプリケーションを終了するかどうか。
@@ -138,6 +140,14 @@ public:
     int GetWindowHeight() { return _windowHeight; }
 
 private:
+    bool SelectModel(int index) override;
+    int ModelIndex() const override;
+    int ModelCount() const override;
+    bool SetHidden(bool hidden) override;
+    bool PlayMotion(const std::string& group, int index, int priority) override;
+    bool SetExpression(const std::string& id) override;
+    bool TriggerHotkey(const std::string& id, std::string& error) override;
+    bool SwitchSkin() override;
     /**
      * @brief   コンストラクタ
      */
@@ -160,6 +170,7 @@ private:
     LAppLive2DManager* _manager;
     LAppIPC* _ipc;
     AppCommandHandler* _commands;
+    ApplicationService _service;
     float _mouseX;                               ///< マウスX座標
     float _mouseY;                               ///< マウスY座標
     InputController _input;
@@ -176,16 +187,6 @@ private:
     float _lookCenterY;
     
 public:
-    bool _isHidden = false;
-    void ToggleHidden() { _isHidden = !_isHidden; }
-
-    volatile bool _pendingFocusMove = false;
-    void RequestMoveToFocusedMonitor() { _pendingFocusMove = true; }
-
-    float _modelScale;
-    float _modelX;
-    float _modelY;
-
 public:
     void SetLookCenter(float x, float y) {
         _lookCenterX = x;

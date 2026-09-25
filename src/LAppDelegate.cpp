@@ -11,6 +11,7 @@
 #include <chrono>
 #include <iostream>
 #include <sstream>
+#include <algorithm>
 #include <unistd.h>
 #include <libgen.h>
 #include <GL/glew.h>
@@ -36,6 +37,8 @@ using namespace LAppDefine;
 
 namespace {
     LAppDelegate* s_instance = NULL;
+    volatile sig_atomic_t pendingToggle = 0;
+    volatile sig_atomic_t pendingFocusMove = 0;
     uint32_t ClickClock()
     {
         using namespace std::chrono;
@@ -44,15 +47,11 @@ namespace {
 }
 
 static void HandleToggleSignal(int) {
-    if (s_instance) {
-        s_instance->ToggleHidden();
-    }
+    pendingToggle = 1;
 }
 
 static void HandleFocusSignal(int) {
-    if (s_instance) {
-        s_instance->RequestMoveToFocusedMonitor();
-    }
+    pendingFocusMove = 1;
 }
 
 LAppDelegate* LAppDelegate::GetInstance()
@@ -139,7 +138,7 @@ bool LAppDelegate::Initialize()
 void LAppDelegate::Release()
 {
     ReleaseRuntimeInOrder(
-        [this] { delete _ipc; _ipc = nullptr; delete _commands; _commands = nullptr; },
+        [this] { delete _commands; _commands = nullptr; delete _ipc; _ipc = nullptr; },
         [this] { delete _view; _view = nullptr; },
         [this] { delete _manager; _manager = nullptr; },
         [this] { delete _textureManager; _textureManager = nullptr; },
@@ -150,6 +149,10 @@ void LAppDelegate::Run()
 {
     while (!_isEnd) 
     {
+        if (pendingToggle) {
+            pendingToggle = 0;
+            _service.SetVisibility(_service.Snapshot().hidden);
+        }
         if (wl_display_dispatch_pending(_wlContext.display) == -1) {
             break;
         }
@@ -170,8 +173,8 @@ void LAppDelegate::Run()
 
         glViewport(0, 0, _windowWidth, _windowHeight);
 
-        if (_pendingFocusMove) {
-            _pendingFocusMove = false;
+        if (pendingFocusMove) {
+            pendingFocusMove = 0;
             MoveToFocusedMonitor();
         }
 
@@ -195,16 +198,17 @@ void LAppDelegate::Run()
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glClearDepth(1.0);
 
-        if (!_isHidden) {
+        const auto state = _service.Snapshot();
+        if (!state.hidden) {
             const ModelFrameInput input{LAppIPC::HasExternalMouthY(), LAppIPC::GetExternalMouthY(),
                 LAppIPC::HasExternalLook(), LAppIPC::GetExternalLookX(), LAppIPC::GetExternalLookY()};
-            _view->Render({_modelScale, _modelX, _modelY}, input);
+            _view->Render(state.transform, input);
         }
 
-        UpdateWaylandInputRegion(&_wlContext);
+        if (!state.hidden) UpdateWaylandInputRegion(&_wlContext);
         eglSwapBuffers(_wlContext.egl_display, _wlContext.egl_surface);
         
-        if (_isHidden) {
+        if (state.hidden) {
             usleep(33000); // Reduce CPU usage when hidden
         }
     }
@@ -217,6 +221,7 @@ LAppDelegate::LAppDelegate():
     _manager(nullptr),
     _ipc(nullptr),
     _commands(nullptr),
+    _service(*this),
     
     _mouseX(0.0f),
     _mouseY(0.0f),
@@ -224,10 +229,7 @@ LAppDelegate::LAppDelegate():
     _windowWidth(0),
     _windowHeight(0),
     _lookCenterX(0.5f),
-    _lookCenterY(0.5f),
-    _modelScale(1.0f),
-    _modelX(0.0f),
-    _modelY(0.0f)
+    _lookCenterY(0.5f)
 {
     _executeAbsolutePath = "";
     _textureManager = new LAppTextureManager();
@@ -303,13 +305,17 @@ void LAppDelegate::OnMouseCallBack(void* window, int button, int action, int mod
                         WaylandContext::OutputInfo* new_out = _wlContext.outputs[new_idx];
                         
                         // Keep physical height identical across different resolution monitors
-                        _modelScale *= (float)out->height / (float)new_out->height;
+                        auto transform = _service.Snapshot().transform;
+                        if (new_out->height > 0 && out->height > 0) {
+                        transform.scale *= (float)out->height / (float)new_out->height;
 
                         float local_x = hx - new_out->x;
                         float local_y = hy - new_out->y;
                         
-                        _modelX = (local_x - new_out->width * 0.5f) / (new_out->height * 0.5f) / _modelScale;
-                        _modelY = -(local_y - new_out->height * 0.5f) / (new_out->height * 0.5f) / _modelScale;
+                        transform.x = (local_x - new_out->width * 0.5f) / (new_out->height * 0.5f) / transform.scale;
+                        transform.y = -(local_y - new_out->height * 0.5f) / (new_out->height * 0.5f) / transform.scale;
+                        _service.SetTransform(transform);
+                        }
                     }
                 }
 
@@ -336,13 +342,14 @@ void LAppDelegate::OnMouseCallBack(void* window, int button, int action, int mod
         // Switch Models
         LAppPal::PrintLogLn("[Event] Switch Model Triggered");
           LAppPal::PrintLogLn("[Event] Switch Model Triggered");
-          _manager->NextScene();
+          const auto state = _service.Snapshot();
+          if (state.modelCount) _service.SelectModel((state.modelIndex + 1) % state.modelCount);
     }
     else if (button == 2 && action == 1)
     {
         // Switch Skin
         LAppPal::PrintLogLn("[Event] Switch Skin Triggered");
-        _manager->SwitchSkin();
+        _service.SwitchSkin();
     }
 }
 
@@ -371,12 +378,9 @@ void LAppDelegate::OnModelKey(uint32_t code, bool pressed)
         SetModelKeyboardGrab(&_wlContext, false);
     else if (decision.action == ModelKeyDecision::Trigger)
     {
-        TriggerModelHotkey(model->Hotkeys(), decision.bindingId,
-            [](const std::string& id, const std::string& error)
-            {
-                LAppPal::PrintLogLn("[Hotkeys] Trigger failed for binding %s: %s",
-                    id.c_str(), error.c_str());
-            });
+        const auto result = _service.TriggerHotkey(decision.bindingId);
+        if (!result.ok) LAppPal::PrintLogLn("[Hotkeys] Trigger failed for binding %s: %s",
+            decision.bindingId.c_str(), result.error.c_str());
     }
 }
 
@@ -394,7 +398,7 @@ void LAppDelegate::OnMouseCallBack(void* window, double x, double y)
     width = _windowWidth; height = _windowHeight;
     
     const auto look = InputController::LookAt(_mouseX, _mouseY, width, height,
-        _lookCenterX, _lookCenterY, {_modelScale, _modelX, _modelY});
+        _lookCenterX, _lookCenterY, _service.Snapshot().transform);
     _manager->OnDrag(look.first, look.second);
 
     if (_input.IsCaptured())
@@ -405,10 +409,9 @@ void LAppDelegate::OnMouseCallBack(void* window, double x, double y)
         int deltaY = static_cast<int>(curY) - _input.DragY();
         
         if (deltaX != 0 || deltaY != 0) {
-            const auto next = InputController::Drag({_modelScale, _modelX, _modelY},
+            const auto next = InputController::Drag(_service.Snapshot().transform,
                 deltaX, deltaY, _windowHeight);
-            _modelX = next.x;
-            _modelY = next.y;
+            _service.SetTransform(next);
             
             _input.SetDragPosition(static_cast<int>(curX), static_cast<int>(curY));
         }
@@ -424,12 +427,61 @@ void LAppDelegate::SetMousePosition(double x, double y)
 void LAppDelegate::OnScrollCallBack(void* window, double xoffset, double yoffset)
 {
     const ModelTransform transform = ZoomModelFromScroll(
-        ModelTransform{_modelScale, _modelX, _modelY}, _view, _mouseX, _mouseY,
+        _service.Snapshot().transform, _view, _mouseX, _mouseY,
         static_cast<float>(yoffset));
+    _service.SetTransform(transform);
+}
 
-    _modelScale = transform.scale;
-    _modelX = transform.x;
-    _modelY = transform.y;
+bool LAppDelegate::SelectModel(int index) { return _manager && _manager->ChangeScene(index); }
+int LAppDelegate::ModelIndex() const { return _manager ? _manager->GetSceneIndex() : -1; }
+int LAppDelegate::ModelCount() const { return _manager ? _manager->GetModelDirSize() : 0; }
+
+bool LAppDelegate::SetHidden(bool hidden)
+{
+    if (hidden) {
+        if (!_wlContext.compositor || !_wlContext.surface) return false;
+        if (!ClearWaylandInputRegion(&_wlContext)) return false;
+        SetModelKeyboardGrab(&_wlContext, false);
+        _input.ResetKeyboard();
+        return true;
+    }
+    return _wlContext.surface && _wlContext.compositor;
+}
+
+bool LAppDelegate::PlayMotion(const std::string& group, int index, int priority)
+{
+    LAppModel* model = _manager ? _manager->GetModel(0) : nullptr;
+    if (!model) return false;
+    if (group.empty())
+        return model->StartRandomMotion(MotionGroupTapBody, priority) != InvalidMotionQueueEntryHandleValue;
+    for (const auto& motion : model->GetMotionList())
+        if (motion.group == group && motion.index == index)
+            return model->StartMotion(group.c_str(), index, priority) != InvalidMotionQueueEntryHandleValue;
+    return false;
+}
+
+bool LAppDelegate::SetExpression(const std::string& id)
+{
+    LAppModel* model = _manager ? _manager->GetModel(0) : nullptr;
+    if (!model) return false;
+    const auto expressions = model->GetExpressionIds();
+    if (std::find(expressions.begin(), expressions.end(), id) == expressions.end()) return false;
+    model->SetExpression(id.c_str());
+    return true;
+}
+
+bool LAppDelegate::TriggerHotkey(const std::string& id, std::string& error)
+{
+    LAppModel* model = _manager ? _manager->GetModel(0) : nullptr;
+    if (!model) { error = "no model loaded"; return false; }
+    return model->Hotkeys().Trigger(id, error);
+}
+
+bool LAppDelegate::SwitchSkin()
+{
+    if (!_manager || !_manager->GetModel(0)) return false;
+    _manager->SwitchSkin();
+    return true;
 }
 
 void LAppDelegate::GetClientSize(int& rWidth, int& rHeight)

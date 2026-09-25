@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <sstream>
+#include <limits>
 
 using namespace Csm;
 
@@ -32,6 +33,12 @@ static std::string JsonEscape(const std::string& s)
         }
     }
     return out;
+}
+
+static std::string Reply(const AppResult& result)
+{
+    return result.ok ? "{\"ok\":true}"
+        : "{\"ok\":false,\"error\":\"" + JsonEscape(result.error) + "\"}";
 }
 
 // Very simple key extraction from a flat JSON object. Returns empty string if not found.
@@ -83,7 +90,11 @@ static float JsonGetFloat(const std::string& json, const std::string& key, float
 {
     std::string val = JsonGetString(json, key);
     if (val.empty()) return defaultVal;
-    return (float)atof(val.c_str());
+    char* end = nullptr;
+    errno = 0;
+    float parsed = strtof(val.c_str(), &end);
+    return errno || end == val.c_str() || *end != '\0'
+        ? std::numeric_limits<float>::quiet_NaN() : parsed;
 }
 
 static int JsonGetInt(const std::string& json, const std::string& key, int defaultVal)
@@ -165,8 +176,7 @@ std::string AppCommandHandler::Execute(const std::string& json)
             return "{\"ok\":false,\"error\":\"invalid index\"}";
         }
 
-        return mgr->ChangeScene(index) ? "{\"ok\":true}"
-            : "{\"ok\":false,\"error\":\"model load failed\"}";
+        return Reply(app->Service().SelectModel(index));
     }
 
     if (command == "get_hotkeys" || command == "trigger_hotkey")
@@ -178,9 +188,8 @@ std::string AppCommandHandler::Execute(const std::string& json)
         {
             if (JsonGetString(json, "model_token") != hotkeys.Token())
                 return "{\"ok\":false,\"error\":\"Model changed; refresh hotkeys before triggering\"}";
-            std::string error;
-            if (!hotkeys.Trigger(JsonGetString(json, "id"), error))
-                return "{\"ok\":false,\"error\":\"" + JsonEscape(error) + "\"}";
+            const auto result = app->Service().TriggerHotkey(JsonGetString(json, "id"));
+            if (!result.ok) return Reply(result);
         }
         std::ostringstream out;
         out << "{\"ok\":true,\"model_token\":\"" << hotkeys.Token()
@@ -241,8 +250,7 @@ std::string AppCommandHandler::Execute(const std::string& json)
             return "{\"ok\":false,\"error\":\"missing 'id'\"}";
         }
 
-        model->SetExpression(id.c_str());
-        return "{\"ok\":true}";
+        return Reply(app->Service().SetExpression(id));
     }
 
     // ── get_motions ──
@@ -281,15 +289,7 @@ std::string AppCommandHandler::Execute(const std::string& json)
         int index = JsonGetInt(json, "index", 0);
         int priority = JsonGetInt(json, "priority", LAppDefine::PriorityNormal);
 
-        if (group.empty())
-        {
-            // Try random auto-motion
-            model->StartRandomMotion(LAppDefine::MotionGroupTapBody, priority);
-            return "{\"ok\":true}";
-        }
-
-        model->StartMotion(group.c_str(), index, priority);
-        return "{\"ok\":true}";
+        return Reply(app->Service().PlayMotion(group, index, priority));
     }
 
     // ── set_mouth_y ──
@@ -310,36 +310,38 @@ std::string AppCommandHandler::Execute(const std::string& json)
         {
             return "{\"ok\":false,\"error\":\"value must be 0.1..10.0\"}";
         }
-        app->_modelScale = zoom;
-        return "{\"ok\":true}";
+        auto transform = app->Service().Snapshot().transform;
+        transform.scale = zoom;
+        return Reply(app->Service().SetTransform(transform));
     }
 
     // ── set_model_position ──
     if (command == "set_model_position")
     {
-        float x = JsonGetFloat(json, "x", app->_modelX);
-        float y = JsonGetFloat(json, "y", app->_modelY);
-        app->_modelX = x;
-        app->_modelY = y;
-        return "{\"ok\":true}";
+        auto transform = app->Service().Snapshot().transform;
+        transform.x = JsonGetFloat(json, "x", transform.x);
+        transform.y = JsonGetFloat(json, "y", transform.y);
+        return Reply(app->Service().SetTransform(transform));
     }
 
     // ── get_model_position ──
     if (command == "get_model_position")
     {
         std::ostringstream oss;
-        oss << "{\"ok\":true,\"x\":" << app->_modelX
-            << ",\"y\":" << app->_modelY
-            << ",\"zoom\":" << app->_modelScale << "}";
+        const auto transform = app->Service().Snapshot().transform;
+        oss << "{\"ok\":true,\"x\":" << transform.x
+            << ",\"y\":" << transform.y
+            << ",\"zoom\":" << transform.scale << "}";
         return oss.str();
     }
 
     // ── toggle_hidden ──
     if (command == "toggle_hidden")
     {
-        app->ToggleHidden();
+        auto result = app->Service().SetVisibility(app->Service().Snapshot().hidden);
+        if (!result.ok) return Reply(result);
         std::ostringstream oss;
-        oss << "{\"ok\":true,\"hidden\":" << (app->_isHidden ? "true" : "false") << "}";
+        oss << "{\"ok\":true,\"hidden\":" << (app->Service().Snapshot().hidden ? "true" : "false") << "}";
         return oss.str();
     }
 
@@ -362,7 +364,8 @@ std::string AppCommandHandler::Execute(const std::string& json)
     if (command == "get_status")
     {
         csmVector<csmString> dirs = mgr->GetModelDir();
-        csmInt32 idx = mgr->GetSceneIndex();
+        const auto state = app->Service().Snapshot();
+        csmInt32 idx = state.modelIndex;
         std::string modelName = "";
         if (idx >= 0 && idx < (csmInt32)dirs.GetSize())
         {
@@ -373,11 +376,11 @@ std::string AppCommandHandler::Execute(const std::string& json)
         oss << "{\"ok\":true"
             << ",\"model\":\"" << JsonEscape(modelName) << "\""
             << ",\"model_index\":" << idx
-            << ",\"model_count\":" << mgr->GetModelDirSize()
-            << ",\"hidden\":" << (app->_isHidden ? "true" : "false")
-            << ",\"zoom\":" << app->_modelScale
-            << ",\"x\":" << app->_modelX
-            << ",\"y\":" << app->_modelY
+            << ",\"model_count\":" << state.modelCount
+            << ",\"hidden\":" << (state.hidden ? "true" : "false")
+            << ",\"zoom\":" << state.transform.scale
+            << ",\"x\":" << state.transform.x
+            << ",\"y\":" << state.transform.y
             << "}";
         return oss.str();
     }
@@ -385,8 +388,9 @@ std::string AppCommandHandler::Execute(const std::string& json)
     // ── next_model ──
     if (command == "next_model")
     {
-        return mgr->NextScene() ? "{\"ok\":true}"
-            : "{\"ok\":false,\"error\":\"model load failed\"}";
+        auto state = app->Service().Snapshot();
+        return state.modelCount ? Reply(app->Service().SelectModel((state.modelIndex + 1) % state.modelCount))
+            : "{\"ok\":false,\"error\":\"no models available\"}";
     }
 
     // ── prev_model ──
@@ -397,8 +401,7 @@ std::string AppCommandHandler::Execute(const std::string& json)
         {
             csmInt32 idx = mgr->GetSceneIndex();
             csmInt32 prev = (idx - 1 + size) % size;
-            return mgr->ChangeScene(prev) ? "{\"ok\":true}"
-                : "{\"ok\":false,\"error\":\"model load failed\"}";
+            return Reply(app->Service().SelectModel(prev));
         }
         return "{\"ok\":false,\"error\":\"no models available\"}";
     }
@@ -406,8 +409,7 @@ std::string AppCommandHandler::Execute(const std::string& json)
     // ── switch_skin ──
     if (command == "switch_skin")
     {
-        mgr->SwitchSkin();
-        return "{\"ok\":true}";
+        return Reply(app->Service().SwitchSkin());
     }
 
     return "{\"ok\":false,\"error\":\"unknown command\"}";
