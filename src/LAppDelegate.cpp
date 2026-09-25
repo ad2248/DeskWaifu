@@ -138,8 +138,8 @@ bool LAppDelegate::Initialize()
 }
 bool LAppDelegate::Release()
 {
-    return ReleaseGpuResources(_cubismStarted || _view || _manager ||
-        (_textureManager && _textureManager->ResidentCount()),
+    return ReleaseGpuResources(HasGpuResources(_view, _manager,
+        _textureManager ? _textureManager->ResidentCount() : 0),
         [this] { return MakeWaylandGpuContextCurrent(&_wlContext); },
         [this] { ReleaseRuntimeInOrder(
         [this] { delete _ipc; _ipc = nullptr; delete _commands; _commands = nullptr; },
