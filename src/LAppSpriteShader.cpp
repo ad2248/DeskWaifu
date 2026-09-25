@@ -55,16 +55,19 @@ GLuint LAppSpriteShader::CreateShader()
     GLint linked = GL_FALSE;
     glGetProgramiv(programId, GL_LINK_STATUS, &linked);
 
+    if (linked != GL_TRUE)
+    {
+        glDeleteShader(vertexShaderId);
+        glDeleteShader(fragmentShaderId);
+        glDeleteProgram(programId);
+        return 0;
+    }
+
     glUseProgram(programId);
 
     // 不要になったシェーダーオブジェクトの削除
     glDeleteShader(vertexShaderId);
     glDeleteShader(fragmentShaderId);
-
-    if (linked != GL_TRUE) {
-        glDeleteProgram(programId);
-        return 0;
-    }
 
     return programId;
 }
