@@ -1,7 +1,12 @@
 #include "CompositorAdapter.hpp"
 #include <chrono>
+#include <csignal>
 #include <fcntl.h>
 #include <unistd.h>
+
+namespace {
+void InterruptPoll(int) {}
+}
 
 struct FakeTransport : ICompositorTransport
 {
@@ -14,6 +19,11 @@ struct FakeTransport : ICompositorTransport
 
 int main()
 {
+    const auto start = std::chrono::steady_clock::now();
+    CursorQueryThrottle throttle(std::chrono::milliseconds(30));
+    if (!throttle.Ready(start) || throttle.Ready(start + std::chrono::milliseconds(29)) ||
+        !throttle.Ready(start + std::chrono::milliseconds(30))) return 1;
+
     FakeTransport transport;
     CompositorAdapter generic(CompositorType::Generic, transport);
     if (generic.GlobalCursor().status != CapabilityStatus::Unsupported ||
@@ -44,5 +54,15 @@ int main()
         "test ! -e /proc/self/fd/" + std::to_string(inherited)});
     close(inherited);
     if (!descriptorCheck) return 1;
+
+    struct sigaction interrupt{}, previous{};
+    interrupt.sa_handler = InterruptPoll;
+    sigemptyset(&interrupt.sa_mask);
+    if (sigaction(SIGALRM, &interrupt, &previous) != 0) return 1;
+    ualarm(50000, 0);
+    const auto interrupted = actual.Command({"sh", "-c", "sleep 0.15; printf recovered"});
+    ualarm(0, 0);
+    if (sigaction(SIGALRM, &previous, nullptr) != 0) return 1;
+    if (!interrupted || interrupted.value != "recovered") return 1;
     return 0;
 }

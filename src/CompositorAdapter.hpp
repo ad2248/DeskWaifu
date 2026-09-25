@@ -1,6 +1,7 @@
 #pragma once
 
 #include "OutputController.hpp"
+#include <chrono>
 #include <string>
 #include <vector>
 
@@ -13,6 +14,28 @@ struct Capability
     CapabilityStatus status = CapabilityStatus::Unsupported;
     T value{};
     explicit operator bool() const { return status == CapabilityStatus::Available; }
+};
+
+class CursorQueryThrottle
+{
+public:
+    explicit CursorQueryThrottle(std::chrono::milliseconds interval = std::chrono::milliseconds(30))
+        : _interval(interval) {}
+
+    bool Ready(std::chrono::steady_clock::time_point now)
+    {
+        if (!_queried || now - _lastQuery >= _interval) {
+            _lastQuery = now;
+            _queried = true;
+            return true;
+        }
+        return false;
+    }
+
+private:
+    std::chrono::milliseconds _interval;
+    std::chrono::steady_clock::time_point _lastQuery{};
+    bool _queried = false;
 };
 
 class ICompositorTransport
