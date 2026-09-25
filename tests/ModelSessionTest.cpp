@@ -29,6 +29,9 @@ int main()
     session.SetTextureBudget(16); // only the active model fits
     if (!session.Select(3, load) || session.Cache().Get(4) != nullptr ||
         session.Cache().ModelBytes() != 16) return 1;
+    session.SetTextureBudget(8); // active model is pinned above the soft budget
+    if (!session.Select(3, load) || session.Current() == nullptr ||
+        session.Cache().ModelBytes() != 16) return 1;
     session.Clear();
     return session.CurrentIndex() == -1 && session.Current() == nullptr ? 0 : 1;
 }
