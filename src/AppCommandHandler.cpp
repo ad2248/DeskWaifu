@@ -380,6 +380,12 @@ std::string AppCommandHandler::Execute(const std::string& json, const std::strin
         return "{\"ok\":true}";
     }
 
+    if (command == "quit")
+    {
+        app->AppEnd();
+        return "{\"ok\":true}";
+    }
+
     if (command == "get_control_status")
     {
         const auto frame = app->Service().FrameInput();

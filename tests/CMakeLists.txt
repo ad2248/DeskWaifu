@@ -35,6 +35,10 @@ add_executable(external-control-test ExternalControlTest.cpp)
 target_include_directories(external-control-test PRIVATE ../src)
 add_test(NAME external-control COMMAND external-control-test)
 
+add_executable(texture-residency-test TextureResidencyTest.cpp)
+target_include_directories(texture-residency-test PRIVATE ../src)
+add_test(NAME texture-residency COMMAND texture-residency-test)
+
 if (NOT DESKWAIFU_BUILD_CONTROL)
   return()
 endif ()

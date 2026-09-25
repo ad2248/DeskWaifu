@@ -92,7 +92,8 @@ int main(int argc, char* argv[])
     // create the application instance
     if (LAppDelegate::GetInstance()->Initialize() == GL_FALSE)
     {
-        LAppDelegate::GetInstance()->Release();
+        if (!LAppDelegate::GetInstance()->Release())
+            fprintf(stderr, "[APP]Failed to bind GPU context for teardown\n");
         LAppDelegate::ReleaseInstance();
         return 1;
     }
@@ -102,12 +103,11 @@ int main(int argc, char* argv[])
         {config.modelScale, config.modelX, config.modelY});
     if (!configured.ok) {
         fprintf(stderr, "[APP] Invalid model transform in config: %s\n", configured.error.c_str());
-        LAppDelegate::GetInstance()->Release();
+        if (!LAppDelegate::GetInstance()->Release())
+            fprintf(stderr, "[APP]Failed to bind GPU context for teardown\n");
         LAppDelegate::ReleaseInstance();
         return 1;
     }
 
-    LAppDelegate::GetInstance()->Run();
-
-    return 0;
+    return LAppDelegate::GetInstance()->Run() ? 0 : 1;
 }

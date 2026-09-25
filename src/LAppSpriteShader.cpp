@@ -18,7 +18,7 @@ LAppSpriteShader::LAppSpriteShader()
 
 LAppSpriteShader::~LAppSpriteShader()
 {
-    glDeleteShader(_programId);
+    if (_programId) glDeleteProgram(_programId);
 }
 
 GLuint LAppSpriteShader::GetShaderId() const
@@ -40,6 +40,8 @@ GLuint LAppSpriteShader::CreateShader()
 
     if (!vertexShaderId || !fragmentShaderId)
     {
+        if (vertexShaderId) glDeleteShader(vertexShaderId);
+        if (fragmentShaderId) glDeleteShader(fragmentShaderId);
         return 0;
     }
 
@@ -50,12 +52,19 @@ GLuint LAppSpriteShader::CreateShader()
 
     // リンク
     glLinkProgram(programId);
+    GLint linked = GL_FALSE;
+    glGetProgramiv(programId, GL_LINK_STATUS, &linked);
 
     glUseProgram(programId);
 
     // 不要になったシェーダーオブジェクトの削除
     glDeleteShader(vertexShaderId);
     glDeleteShader(fragmentShaderId);
+
+    if (linked != GL_TRUE) {
+        glDeleteProgram(programId);
+        return 0;
+    }
 
     return programId;
 }

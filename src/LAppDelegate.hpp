@@ -50,12 +50,12 @@ public:
     /**
     * @brief   解放する。
     */
-    void Release();
+    bool Release();
 
     /**
     * @brief   実行処理。
     */
-    void Run();
+    bool Run();
 
     /**
     * @brief   OpenGL用 glfwSetMouseButtonCallback用関数。

@@ -57,6 +57,7 @@ if [ $# -lt 1 ]; then
     echo "  set_look              Set look direction (--x, --y) or --reset"
     echo "  release_source        Release persistent CLI mouth and look"
     echo "  get_control_status    Read the effective per-frame external input"
+    echo "  quit                  Gracefully stop the application"
     echo "  Note: --stream_source true is for long-lived raw sockets, not one-shot CLI."
     exit 1
 fi

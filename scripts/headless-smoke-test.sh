@@ -231,4 +231,18 @@ kill -0 "$APP_PID"
 timeout 20 "$BUILD_DIR/bin/deskwaifu-control" --smoke-test \
     >"$LOG_DIR/deskwaifu-control.log" 2>&1
 kill -0 "$APP_PID"
+assert_ok quit
+for _ in {1..200}; do
+    state=$(ps -o stat= -p "$APP_PID" 2>/dev/null || true)
+    if [[ -z $state || $state == Z* ]]; then break; fi
+    sleep 0.1
+done
+state=$(ps -o stat= -p "$APP_PID" 2>/dev/null || true)
+if [[ -n $state && $state != Z* ]]; then
+    echo "DeskWaifu did not exit after quit" >&2
+    exit 1
+fi
+wait "$APP_PID"
+APP_PID=
+grep -q 'GPU resources released before EGL teardown' "$LOG_DIR/deskwaifu.log"
 echo "Headless Wayland, Qt control, and IPC smoke test passed"

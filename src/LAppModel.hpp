@@ -18,6 +18,7 @@
 #include "LAppModel_Common.hpp"
 #include "ModelHotkeys.hpp"
 #include "ModelFrameInput.hpp"
+#include "LAppTextureManager.hpp"
 
 /**
  * @brief ユーザーが実際に使用するモデルの実装クラス<br>
@@ -145,6 +146,7 @@ public:
      * @brief   Get all available motions for IPC queries.
      */
     std::vector<MotionInfo> GetMotionList() const;
+    std::size_t TextureBytes() const;
 
     /**
      * @brief   Get the model setting (for IPC to query model capabilities).
@@ -160,6 +162,7 @@ protected:
 
 private:
     LAppTextureManager& _textures;
+    std::vector<LAppTextureManager::TextureLease> _textureLeases;
     int _viewportWidth;
     int _viewportHeight;
     float _emotionTimeout;

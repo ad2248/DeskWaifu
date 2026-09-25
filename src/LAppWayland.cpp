@@ -396,6 +396,15 @@ void CleanWaylandContext(WaylandContext* wl) {
     if (wl->display) wl_display_disconnect(wl->display);
 }
 
+bool MakeWaylandGpuContextCurrent(WaylandContext* wl)
+{
+    if (!wl || wl->egl_display == EGL_NO_DISPLAY || wl->egl_surface == EGL_NO_SURFACE ||
+        wl->egl_context == EGL_NO_CONTEXT) return false;
+    return eglMakeCurrent(wl->egl_display, wl->egl_surface, wl->egl_surface, wl->egl_context) == EGL_TRUE &&
+        eglGetCurrentDisplay() == wl->egl_display && eglGetCurrentContext() == wl->egl_context &&
+        eglGetCurrentSurface(EGL_DRAW) == wl->egl_surface;
+}
+
 static void UpdateMonitorCoordinatesHyprland() {
     if (!g_wl) return;
     FILE* fp = popen("hyprctl monitors", "r");

@@ -20,13 +20,26 @@
 #endif
 #include "LAppPal.hpp"
 
-LAppTextureManager::LAppTextureManager() : LAppTextureManager_Common()
+LAppTextureManager::LAppTextureManager()
+    : LAppTextureManager_Common()
+    , _residency([this](GLuint id) { ReleaseTexture(id); })
 {
 }
 
 LAppTextureManager::~LAppTextureManager()
 {
     ReleaseTextures();
+}
+
+LAppTextureManager::TextureLease LAppTextureManager::AcquireTexture(const std::string& fileName)
+{
+    return _residency.Acquire(fileName, [this](const std::string& path)
+    {
+        TextureInfo* info = CreateTextureFromPngFile(path);
+        return info ? std::make_pair(static_cast<GLuint>(info->id),
+            static_cast<std::size_t>(info->width) * static_cast<std::size_t>(info->height) * 4)
+            : std::make_pair(GLuint(0), std::size_t(0));
+    });
 }
 
 LAppTextureManager::TextureInfo* LAppTextureManager::CreateTextureFromPngFile(std::string fileName)
@@ -72,6 +85,11 @@ LAppTextureManager::TextureInfo* LAppTextureManager::CreateTextureFromPngFile(st
 
     // OpenGL用のテクスチャを生成する
     glGenTextures(1, &textureId);
+    if (!textureId) {
+        stbi_image_free(png);
+        LAppPal::ReleaseBytes(address);
+        return nullptr;
+    }
     glBindTexture(GL_TEXTURE_2D, textureId);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, png);
     glGenerateMipmap(GL_TEXTURE_2D);

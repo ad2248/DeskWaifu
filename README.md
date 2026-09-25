@@ -604,6 +604,10 @@ sources outrank persistent CLI values, and the latest update within a tier
 wins. When a stream is released, the previous eligible source becomes active.
 `get_control_status` reports effective per-frame `has_mouth`, `mouth`,
 `has_look`, `look_x`, and `look_y` values for diagnostics.
+`./deskwaifu-ctl quit` stops the app gracefully (releasing GPU objects while
+their EGL context is current). Model texture leases release uploads on the
+last borrower; cached models obey a 128 MiB soft texture budget (the active
+model is always kept even if it alone exceeds the budget).
 
 ```json
 {"command":"set_mouth_y","value":0.7,"stream_source":true}
