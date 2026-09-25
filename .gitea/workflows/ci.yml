@@ -54,6 +54,18 @@ jobs:
       - name: Build
         run: cmake --build build-ci --parallel "$(nproc)"
 
+      - name: Compile render-target variants
+        run: |
+          for definition in USE_RENDER_TARGET USE_MODEL_RENDER_TARGET; do
+            build_dir="build-ci-$definition"
+            cmake -S . -B "$build_dir" -G Ninja \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DBUILD_TESTING=OFF \
+              -DDESKWAIFU_BUILD_CONTROL=OFF \
+              "-DCMAKE_CXX_FLAGS=-D$definition"
+            cmake --build "$build_dir" --parallel "$(nproc)"
+          done
+
       - name: Test Qt IPC client
         run: ctest --test-dir build-ci --output-on-failure --no-tests=error
 
