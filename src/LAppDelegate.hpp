@@ -12,6 +12,7 @@
 #include "LAppWayland.hpp"
 #include "InputController.hpp"
 #include "ApplicationService.hpp"
+#include "CompositorAdapter.hpp"
 #include "Type/csmVector.hpp"
 #include "LAppAllocator_Common.hpp"
 
@@ -25,7 +26,7 @@ class AppCommandHandler;
 * @brief   アプリケーションクラス。
 *   Cubism3の管理を行う。
 */
-class LAppDelegate : private IApplicationRuntime
+class LAppDelegate : private IApplicationRuntime, public IWaylandEvents
 {
 public:
     /**
@@ -140,6 +141,13 @@ public:
     int GetWindowHeight() { return _windowHeight; }
 
 private:
+    void PointerEntered(double x, double y) override { SetMousePosition(x, y); }
+    void PointerMoved(double x, double y) override { OnMouseCallBack(nullptr, x, y); }
+    void PointerButton(int button, bool pressed) override { OnMouseCallBack(nullptr, button, pressed ? 1 : 0, 0); }
+    void PointerScroll(double vertical) override { OnScrollCallBack(nullptr, 0, vertical); }
+    void KeyboardChanged() override { ResetKeyboardState(); }
+    void KeyboardKey(std::uint32_t code, bool pressed) override { OnModelKey(code, pressed); }
+    void SurfaceClosed() override { AppEnd(); }
     bool SelectModel(int index) override;
     int ModelIndex() const override;
     int ModelCount() const override;
@@ -166,6 +174,10 @@ private:
     LAppAllocator_Common _cubismAllocator;              ///< Cubism3 Allocator
     Csm::CubismFramework::Option _cubismOption;         ///< Cubism3 Option
     WaylandContext _wlContext;                          ///< Wayland Context
+    WaylandBackend _waylandBackend;
+    OutputController _outputController;
+    BoundedCompositorTransport _compositorTransport;
+    CompositorAdapter _compositor;
     LAppView* _view;                                    ///< View情報
     LAppLive2DManager* _manager;
     LAppIPC* _ipc;
@@ -175,6 +187,7 @@ private:
     float _mouseY;                               ///< マウスY座標
     InputController _input;
     void FlushPendingTap();
+    void TrackGlobalCursor();
     bool _isEnd;                                 ///< APP終了しているか
     bool _cubismStarted = false;
     LAppTextureManager* _textureManager;         ///< テクスチャマネージャー
