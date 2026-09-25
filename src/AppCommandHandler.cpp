@@ -106,7 +106,12 @@ static int JsonGetInt(const std::string& json, const std::string& key, int defau
 
 // ─── Command handlers ─────────────────────────────────────────────────────────
 
-std::string AppCommandHandler::Execute(const std::string& json)
+void AppCommandHandler::Disconnected(const std::string& connection)
+{
+    _app.Service().ReleaseControls(connection);
+}
+
+std::string AppCommandHandler::Execute(const std::string& json, const std::string& connection)
 {
     std::string command = JsonGetString(json, "command");
 
@@ -117,6 +122,12 @@ std::string AppCommandHandler::Execute(const std::string& json)
 
     LAppDelegate* app = &_app;
     LAppLive2DManager* mgr = &_models;
+    const auto stream = JsonGetString(json, "stream_source");
+    const bool streaming = stream == "true" || stream == "1";
+    const std::string source = streaming ? connection : "cli";
+    const auto lifetime = streaming ? ExternalControlState::Lifetime::Stream
+        : ExternalControlState::Lifetime::Persistent;
+    if (streaming && connection.empty()) return "{\"ok\":false,\"error\":\"stream requires a connection\"}";
 
     // ── get_available_models ──
     if (command == "get_available_models")
@@ -295,11 +306,15 @@ std::string AppCommandHandler::Execute(const std::string& json)
     // ── set_mouth_y ──
     if (command == "set_mouth_y")
     {
+        std::string reset = JsonGetString(json, "reset");
+        if (reset == "true" || reset == "1") {
+            app->Service().ResetMouth(source);
+            return "{\"ok\":true}";
+        }
         float value = JsonGetFloat(json, "value", 0.0f);
         if (value < 0.0f) value = 0.0f;
         if (value > 1.0f) value = 1.0f;
-        _control.SetMouth(value);
-        return "{\"ok\":true}";
+        return Reply(app->Service().SetMouth(source, lifetime, value));
     }
 
     // ── set_model_zoom ──
@@ -351,13 +366,29 @@ std::string AppCommandHandler::Execute(const std::string& json)
         std::string reset = JsonGetString(json, "reset");
         if (reset == "true" || reset == "1")
         {
-            _control.ResetLook();
+            app->Service().ResetLook(source);
             return "{\"ok\":true}";
         }
         float x = JsonGetFloat(json, "x", 0.0f);
         float y = JsonGetFloat(json, "y", 0.0f);
-        _control.SetLook(x, y);
+        return Reply(app->Service().SetLook(source, lifetime, x, y));
+    }
+
+    if (command == "release_source")
+    {
+        app->Service().ReleaseControls(source);
         return "{\"ok\":true}";
+    }
+
+    if (command == "get_control_status")
+    {
+        const auto frame = app->Service().FrameInput();
+        std::ostringstream result;
+        result << "{\"ok\":true,\"has_mouth\":" << (frame.hasMouth ? "true" : "false")
+            << ",\"mouth\":" << frame.mouth
+            << ",\"has_look\":" << (frame.hasLook ? "true" : "false")
+            << ",\"look_x\":" << frame.lookX << ",\"look_y\":" << frame.lookY << "}";
+        return result.str();
     }
 
     // ── get_status ──

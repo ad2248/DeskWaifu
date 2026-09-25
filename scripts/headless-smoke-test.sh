@@ -140,6 +140,48 @@ assert_ok set_model_position --x 0.1 --y -0.1
 assert_ok get_model_position
 assert_ok set_look --x 0.25 --y -0.25
 assert_ok set_look --reset
+python3 - <<'PY'
+import json
+import os
+import socket
+
+path = os.path.join(os.environ['XDG_RUNTIME_DIR'], 'deskwaifu.sock')
+
+def connect():
+    client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    client.settimeout(10)
+    client.connect(path)
+    return client
+
+def request(client, command, **kwargs):
+    client.sendall((json.dumps(dict(command=command, **kwargs)) + '\n').encode())
+    return json.loads(client.makefile('rb').readline())
+
+with connect() as observer:
+    assert request(observer, 'get_control_status')['mouth'] == 0.5
+with connect() as first, connect() as second:
+    assert request(first, 'set_mouth_y', value=0.8, stream_source=True)['ok']
+    assert request(second, 'set_look', x=0.25, y=-0.25, stream_source=True)['ok']
+    with connect() as observer:
+        state = request(observer, 'get_control_status')
+        assert state['mouth'] == 0.8 and state['look_x'] == 0.25, state
+    first.close()
+    with connect() as observer:
+        # Disconnection is processed on the next frame; use a bounded retry.
+        import time
+        for _ in range(100):
+            state = request(observer, 'get_control_status')
+            if state['mouth'] == 0.5: break
+            time.sleep(0.01)
+        assert state['mouth'] == 0.5 and state['has_look'], state
+with connect() as observer:
+    import time
+    for _ in range(100):
+        state = request(observer, 'get_control_status')
+        if not state['has_look']: break
+        time.sleep(0.01)
+    assert state['mouth'] == 0.5 and not state['has_look'], state
+PY
 assert_ok toggle_hidden
 python3 - <<'PY'
 import json
@@ -170,6 +212,17 @@ assert request('toggle_hidden')['hidden'] is False
 PY
 assert_ok switch_skin
 assert_ok next_model
+python3 - <<'PY'
+import json
+import os
+import socket
+with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+    client.settimeout(10)
+    client.connect(os.path.join(os.environ['XDG_RUNTIME_DIR'], 'deskwaifu.sock'))
+    client.sendall(b'{"command":"get_control_status"}\n')
+    state = json.loads(client.makefile('rb').readline())
+    assert not state['has_mouth'] and not state['has_look'], state
+PY
 assert_ok prev_model
 assert_ok set_model --name Haru
 python3 tests/hotkey_smoke.py check

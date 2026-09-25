@@ -31,6 +31,10 @@ add_executable(application-service-test ApplicationServiceTest.cpp)
 target_include_directories(application-service-test PRIVATE ../src)
 add_test(NAME application-service COMMAND application-service-test)
 
+add_executable(external-control-test ExternalControlTest.cpp)
+target_include_directories(external-control-test PRIVATE ../src)
+add_test(NAME external-control COMMAND external-control-test)
+
 if (NOT DESKWAIFU_BUILD_CONTROL)
   return()
 endif ()
