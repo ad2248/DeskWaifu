@@ -76,5 +76,19 @@ int main()
             [&] { ReleaseRuntimeInOrder([] {}, [] {}, [] {}, [] {},
                 [&] { cubismStarted = false; }, [&] { cleaned = true; }); }) ||
         bound || cubismStarted || !cleaned) return 1;
+    int lastLeaseDeletes = 0;
+    TextureResidency<unsigned> scoped([&](unsigned id) {
+        if (id == 7) ++lastLeaseDeletes;
+    });
+    {
+        auto owner = scoped.Acquire("texture", [](const std::string&) {
+            return std::make_pair(7u, 4u);
+        });
+        auto borrower = scoped.Acquire("texture", [](const std::string&) {
+            return std::make_pair(8u, 4u);
+        });
+        if (!owner || !borrower || lastLeaseDeletes) return 1;
+    }
+    if (lastLeaseDeletes != 1 || scoped.ResidentCount() != 0) return 1;
     return 0;
 }

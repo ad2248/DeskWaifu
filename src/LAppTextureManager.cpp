@@ -6,6 +6,7 @@
  */
 
 #include "LAppTextureManager.hpp"
+#include "FailureDiagnostics.hpp"
 #include <iostream>
 #define STBI_NO_STDIO
 #define STBI_ONLY_PNG
@@ -46,7 +47,7 @@ std::pair<GLuint, std::size_t> LAppTextureManager::UploadTexture(const std::stri
 
     address = LAppPal::LoadFileAsBytes(fileName, &size);
     if (!address) {
-        LAppPal::PrintLogLn("[Texture] Cannot read %s", fileName.c_str());
+        LAppPal::PrintLogLn("%s", TextureFailureMessage(fileName, "Cannot read").c_str());
         return {};
     }
 
@@ -59,7 +60,9 @@ std::pair<GLuint, std::size_t> LAppTextureManager::UploadTexture(const std::stri
         &channels,
         STBI_rgb_alpha);
     if (!png) {
-        LAppPal::PrintLogLn("[Texture] Cannot decode %s: %s", fileName.c_str(), stbi_failure_reason());
+        const char* error = stbi_failure_reason();
+        LAppPal::PrintLogLn("%s", TextureFailureMessage(fileName,
+            std::string("Cannot decode") + (error ? std::string(" (") + error + ")" : "")).c_str());
         LAppPal::ReleaseBytes(address);
         return {};
     }
@@ -78,7 +81,7 @@ std::pair<GLuint, std::size_t> LAppTextureManager::UploadTexture(const std::stri
     // OpenGL用のテクスチャを生成する
     glGenTextures(1, &textureId);
     if (!textureId) {
-        LAppPal::PrintLogLn("[Texture] glGenTextures failed for %s", fileName.c_str());
+        LAppPal::PrintLogLn("%s", TextureFailureMessage(fileName, "glGenTextures failed").c_str());
         stbi_image_free(png);
         LAppPal::ReleaseBytes(address);
         return {};
