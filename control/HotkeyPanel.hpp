@@ -12,6 +12,7 @@ class HotkeyPanel : public QWidget
     Q_OBJECT
 public:
     explicit HotkeyPanel(QWidget* parent = nullptr);
+    ~HotkeyPanel() override;
     void setBindings(const QJsonArray& bindings, const QString& warning = {});
     void setConnected(bool connected);
     void resetInput() { _pressed.clear(); }

@@ -119,6 +119,26 @@ private slots:
         QTest::keyClick(&panel, Qt::Key_1, Qt::ControlModifier);
         QCOMPARE(spy.count(), 1);
     }
+
+    void windowDestructionUnregistersFilter()
+    {
+        QWidget survivor;
+        survivor.show();
+        for (int index = 0; index < 16; ++index)
+        {
+            auto* panel = new HotkeyPanel;
+            panel->setConnected(true);
+            panel->setBindings({binding("repeat", {"Tab"})});
+            panel->show();
+            panel->activateWindow();
+            QVERIFY(QTest::qWaitForWindowActive(panel));
+            QTest::keyClick(panel, Qt::Key_Tab);
+            delete panel;
+            survivor.activateWindow();
+            QVERIFY(QTest::qWaitForWindowActive(&survivor));
+            QTest::keyClick(&survivor, Qt::Key_Tab);
+        }
+    }
 };
 
 QTEST_MAIN(HotkeyPanelTest)
