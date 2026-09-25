@@ -1,5 +1,11 @@
 #include "CompositorAdapter.hpp"
 #include <chrono>
+#include <csignal>
+#include <unistd.h>
+
+namespace {
+void InterruptPoll(int) {}
+}
 
 struct FakeTransport : ICompositorTransport
 {
@@ -36,5 +42,15 @@ int main()
         std::chrono::steady_clock::now() - begin).count();
     if (timed.status != CapabilityStatus::Unavailable || elapsed > 1500) return 1;
     if (actual.Command({"/definitely/missing/compositor"}).status != CapabilityStatus::Failed) return 1;
+
+    struct sigaction interrupt{}, previous{};
+    interrupt.sa_handler = InterruptPoll;
+    sigemptyset(&interrupt.sa_mask);
+    if (sigaction(SIGALRM, &interrupt, &previous) != 0) return 1;
+    ualarm(50000, 0);
+    const auto interrupted = actual.Command({"sh", "-c", "sleep 0.15; printf recovered"});
+    ualarm(0, 0);
+    if (sigaction(SIGALRM, &previous, nullptr) != 0) return 1;
+    if (!interrupted || interrupted.value != "recovered") return 1;
     return 0;
 }
