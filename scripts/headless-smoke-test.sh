@@ -141,6 +141,33 @@ assert_ok get_model_position
 assert_ok set_look --x 0.25 --y -0.25
 assert_ok set_look --reset
 assert_ok toggle_hidden
+python3 - <<'PY'
+import json
+import os
+import socket
+
+def request(command, **values):
+    with socket.socket(socket.AF_UNIX) as connection:
+        connection.settimeout(10)
+        connection.connect(os.path.join(os.environ['XDG_RUNTIME_DIR'], 'deskwaifu.sock'))
+        connection.sendall((json.dumps({'command': command, **values}) + '\n').encode())
+        return json.loads(connection.makefile('rb').readline())
+
+assert request('get_status')['hidden'] is True
+initial = request('get_model_position')
+for command in ({'command': 'set_model_zoom', 'value': 'nan'},
+                {'command': 'set_model_position', 'x': 'inf'},
+                {'command': 'do_motion', 'group': 'missing', 'index': 0},
+                {'command': 'set_model', 'index': 999}):
+    with socket.socket(socket.AF_UNIX) as connection:
+        connection.settimeout(10)
+        connection.connect(os.path.join(os.environ['XDG_RUNTIME_DIR'], 'deskwaifu.sock'))
+        connection.sendall((json.dumps(command) + '\n').encode())
+        response = json.loads(connection.makefile('rb').readline())
+        assert not response['ok'], (command, response)
+assert request('get_model_position') == initial
+assert request('toggle_hidden')['hidden'] is False
+PY
 assert_ok switch_skin
 assert_ok next_model
 assert_ok prev_model

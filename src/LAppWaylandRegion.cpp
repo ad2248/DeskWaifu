@@ -4,6 +4,16 @@
 #include <iostream>
 #include <chrono>
 
+bool ClearWaylandInputRegion(WaylandContext* wl) {
+    if (!wl || !wl->compositor || !wl->surface) return false;
+    wl_region* empty = wl_compositor_create_region(wl->compositor);
+    if (!empty) return false;
+    wl_surface_set_input_region(wl->surface, empty);
+    wl_region_destroy(empty);
+    wl_surface_commit(wl->surface);
+    return true;
+}
+
 void UpdateWaylandInputRegion(WaylandContext* wl) {
     if (!wl || !wl->compositor || !wl->surface) return;
 
@@ -69,4 +79,3 @@ void UpdateWaylandInputRegion(WaylandContext* wl) {
     wl_surface_set_input_region(wl->surface, region);
     wl_region_destroy(region);
 }
-

@@ -27,6 +27,10 @@ add_executable(input-controller-test InputControllerTest.cpp)
 target_link_libraries(input-controller-test PRIVATE deskwaifu_input)
 add_test(NAME input-controller COMMAND input-controller-test)
 
+add_executable(application-service-test ApplicationServiceTest.cpp)
+target_include_directories(application-service-test PRIVATE ../src)
+add_test(NAME application-service COMMAND application-service-test)
+
 if (NOT DESKWAIFU_BUILD_CONTROL)
   return()
 endif ()

@@ -98,9 +98,14 @@ int main(int argc, char* argv[])
     }
 
     // Apply config values to delegate
-    LAppDelegate::GetInstance()->_modelScale = config.modelScale;
-    LAppDelegate::GetInstance()->_modelX = config.modelX;
-    LAppDelegate::GetInstance()->_modelY = config.modelY;
+    const AppResult configured = LAppDelegate::GetInstance()->Service().SetTransform(
+        {config.modelScale, config.modelX, config.modelY});
+    if (!configured.ok) {
+        fprintf(stderr, "[APP] Invalid model transform in config: %s\n", configured.error.c_str());
+        LAppDelegate::GetInstance()->Release();
+        LAppDelegate::ReleaseInstance();
+        return 1;
+    }
 
     LAppDelegate::GetInstance()->Run();
 
