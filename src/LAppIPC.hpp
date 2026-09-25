@@ -56,7 +56,7 @@ private:
     };
     std::vector<ClientBuffer> _clientBuffers;
 
-    std::string& GetClientBuffer(int fd);
+    ClientBuffer& GetClientBuffer(int fd);
     void RemoveClientBuffer(int fd);
 
     unsigned long long _nextConnection = 0;
