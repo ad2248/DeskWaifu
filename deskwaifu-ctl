@@ -48,13 +48,16 @@ if [ $# -lt 1 ]; then
     echo "  trigger_hotkey        Toggle a model expression (--id, --model_token)"
     echo "  get_motions           List motions for current model"
     echo "  do_motion             Play motion (--group, --index, --priority)"
-    echo "  set_mouth_y           Set mouth Y for lipsync (--value 0.0-1.0)"
+    echo "  set_mouth_y           Set mouth Y (--value 0.0-1.0) or --reset"
     echo "  set_model_zoom        Set zoom level (--value 0.1-10.0)"
     echo "  set_model_position    Set position (--x, --y)"
     echo "  get_model_position    Get current position and zoom"
     echo "  toggle_hidden         Toggle window visibility"
     echo "  switch_skin           Switch model skin/outfit"
     echo "  set_look              Set look direction (--x, --y) or --reset"
+    echo "  release_source        Release persistent CLI mouth and look"
+    echo "  get_control_status    Read the effective per-frame external input"
+    echo "  Note: --stream_source true is for long-lived raw sockets, not one-shot CLI."
     exit 1
 fi
 

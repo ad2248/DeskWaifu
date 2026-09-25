@@ -11,16 +11,12 @@
 #include <vector>
 #include "AppCommandHandler.hpp"
 
-class LAppIPC : public IExternalControlPort
+class LAppIPC
 {
 public:
     LAppIPC();
     ~LAppIPC();
     void SetCommandService(ICommandService& commands) { _commands = &commands; }
-    void SetMouth(float value) override { _externalMouthY = value; _hasExternalMouthY = true; }
-    void SetLook(float x, float y) override
-    { _externalLookX = x; _externalLookY = y; _hasExternalLook = true; }
-    void ResetLook() override { _hasExternalLook = false; }
 
     /**
      * @brief Initialize the IPC socket server.
@@ -44,21 +40,6 @@ public:
      */
     const std::string& GetSocketPath() const { return _socketPath; }
 
-    /**
-     * @brief Set the mouth Y value from external source (for lipsync).
-     *        Read by LAppModel during Update().
-     */
-    static float GetExternalMouthY() { return _externalMouthY; }
-    static bool HasExternalMouthY() { return _hasExternalMouthY; }
-    static void ClearExternalMouthY() { _hasExternalMouthY = false; }
-
-    /**
-     * @brief External look-at override.
-     */
-    static bool HasExternalLook() { return _hasExternalLook; }
-    static float GetExternalLookX() { return _externalLookX; }
-    static float GetExternalLookY() { return _externalLookY; }
-
 private:
     void HandleClient(int clientFd);
     ICommandService* _commands;
@@ -71,15 +52,12 @@ private:
     struct ClientBuffer {
         int fd;
         std::string buf;
+        std::string source;
     };
     std::vector<ClientBuffer> _clientBuffers;
 
     std::string& GetClientBuffer(int fd);
     void RemoveClientBuffer(int fd);
 
-    static float _externalMouthY;
-    static bool _hasExternalMouthY;
-    static float _externalLookX;
-    static float _externalLookY;
-    static bool _hasExternalLook;
+    unsigned long long _nextConnection = 0;
 };

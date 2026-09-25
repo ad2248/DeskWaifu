@@ -10,12 +10,6 @@
 #include <cstdio>
 #include <algorithm>
 
-float LAppIPC::_externalMouthY = 0.0f;
-bool LAppIPC::_hasExternalMouthY = false;
-float LAppIPC::_externalLookX = 0.0f;
-float LAppIPC::_externalLookY = 0.0f;
-bool LAppIPC::_hasExternalLook = false;
-
 LAppIPC::LAppIPC()
     : _commands(nullptr)
     , _serverFd(-1)
@@ -85,6 +79,8 @@ void LAppIPC::Release()
 {
     for (size_t i = 0; i < _clients.size(); i++)
     {
+        for (const auto& client : _clientBuffers)
+            if (client.fd == _clients[i] && _commands) _commands->Disconnected(client.source);
         close(_clients[i]);
     }
     _clients.clear();
@@ -111,6 +107,7 @@ std::string& LAppIPC::GetClientBuffer(int fd)
     }
     ClientBuffer cb;
     cb.fd = fd;
+    cb.source = "stream:" + std::to_string(++_nextConnection);
     _clientBuffers.push_back(cb);
     return _clientBuffers.back().buf;
 }
@@ -140,6 +137,7 @@ void LAppIPC::Poll()
         int flags = fcntl(clientFd, F_GETFL, 0);
         fcntl(clientFd, F_SETFL, flags | O_NONBLOCK);
         _clients.push_back(clientFd);
+        GetClientBuffer(clientFd);
     }
 
     // Process existing clients
@@ -165,7 +163,9 @@ void LAppIPC::Poll()
 
                 if (!line.empty())
                 {
-                    std::string response = _commands->Execute(line);
+                    auto client = std::find_if(_clientBuffers.begin(), _clientBuffers.end(),
+                        [fd](const ClientBuffer& entry) { return entry.fd == fd; });
+                    std::string response = _commands->Execute(line, client->source);
                     response += "\n";
                     // Best-effort write
                     send(fd, response.c_str(), response.size(), MSG_NOSIGNAL);
@@ -175,6 +175,8 @@ void LAppIPC::Poll()
         else if (n == 0 || (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK))
         {
             close(fd);
+            for (const auto& client : _clientBuffers)
+                if (client.fd == fd && _commands) _commands->Disconnected(client.source);
             RemoveClientBuffer(fd);
             toRemove.push_back(fd);
         }

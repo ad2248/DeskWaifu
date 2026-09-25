@@ -1,4 +1,5 @@
 #include "LAppIPC.hpp"
+#include "ExternalControlState.hpp"
 
 #include <cstdlib>
 #include <cstring>
@@ -11,10 +12,21 @@
 struct FakeCommands : ICommandService
 {
     int calls = 0;
-    std::string Execute(const std::string& json) override
+    int releases = 0;
+    std::string source;
+    ExternalControlState controls;
+    std::string Execute(const std::string& json, const std::string& connection) override
     {
         ++calls;
+        source = connection;
+        if (json == "mouth") controls.SetMouth(connection, ExternalControlState::Lifetime::Stream, 0.8f);
+        if (json == "look") controls.SetLook(connection, ExternalControlState::Lifetime::Stream, 0.2f, 0.3f);
         return json == "first" ? "one" : "two";
+    }
+    void Disconnected(const std::string& connection) override
+    {
+        if (connection == source) ++releases;
+        controls.Release(connection);
     }
 };
 
@@ -44,9 +56,25 @@ int main()
     transport.Poll();
     char response[64]{};
     if (ok) ok = read(client, response, sizeof(response)) == 8;
-    if (std::string(response) != "one\ntwo\n" || commands.calls != 2) ok = false;
+    if (std::string(response) != "one\ntwo\n" || commands.calls != 2 ||
+        commands.source.find("stream:") != 0) ok = false;
     close(client);
     transport.Poll();
+    if (commands.releases != 1) ok = false;
+    if (commands.controls.Frame().hasMouth) ok = false;
+    int streaming = socket(AF_UNIX, SOCK_STREAM, 0);
+    setsockopt(streaming, SOL_SOCKET, SO_RCVTIMEO, &limit, sizeof(limit));
+    if (ok) ok = connect(streaming, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0;
+    if (ok) ok = write(streaming, "mouth\nlook\n", 11) == 11;
+    transport.Poll();
+    if (ok) ok = read(streaming, response, sizeof(response)) == 8;
+    auto frame = commands.controls.Frame();
+    if (!frame.hasMouth || frame.mouth != 0.8f || !frame.hasLook || frame.lookX != 0.2f ||
+        commands.source.find("stream:") != 0) ok = false;
+    close(streaming);
+    transport.Poll();
+    if (commands.releases != 2 || commands.controls.Frame().hasMouth ||
+        commands.controls.Frame().hasLook) ok = false;
     transport.Release();
     if (access(addr.sun_path, F_OK) == 0) ok = false;
     if (previous) setenv("XDG_RUNTIME_DIR", saved.c_str(), 1);

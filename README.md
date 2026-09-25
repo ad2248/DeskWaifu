@@ -488,10 +488,14 @@ Returns current model, zoom, position, and visibility.
 
 #### `set_mouth_y` — Set mouth opening for external lipsync
 
-Value range: `0.0` (closed) to `1.0` (fully open). Send continuously for real-time lipsync.
+Value range: `0.0` (closed) to `1.0` (fully open). Existing one-shot CLI
+commands remain **persistent** across socket disconnects. Send continuously
+for real-time lipsync using a single long-lived socket with
+`"stream_source":true` (see below).
 
 ```bash
 ./deskwaifu-ctl set_mouth_y --value 0.8
+./deskwaifu-ctl set_mouth_y --reset    # release the persistent mouth override
 ```
 
 ```json
@@ -574,6 +578,7 @@ Value range: `0.1` to `10.0`.
 
 # Reset to default (follow cursor)
 ./deskwaifu-ctl set_look --reset
+./deskwaifu-ctl release_source        # release both persistent CLI channels
 ```
 
 ```json
@@ -583,6 +588,26 @@ Value range: `0.1` to `10.0`.
 ```
 
 ### Raw Socket Usage
+
+For real-time mouth or look tracking, add `"stream_source":true` to each
+`set_mouth_y` / `set_look` JSON command on a **long-lived connection**. The
+server assigns a unique, unforgeable source identity to that connection;
+closing it releases only its mouth/look values. A one-command connection with
+`stream_source` releases immediately on close. Commands without the flag use
+the shared persistent `cli` source and retain the pre-existing one-shot CLI
+behavior. `set_mouth_y --reset` and `set_look --reset` clear only their
+respective channel, and `release_source` clears both. For stream commands,
+reset/release affects only the current connection. A successful switch to a
+**different** model clears all external sources; failed selection or selecting
+the current model preserves them. For each channel independently, live stream
+sources outrank persistent CLI values, and the latest update within a tier
+wins. When a stream is released, the previous eligible source becomes active.
+`get_control_status` reports effective per-frame `has_mouth`, `mouth`,
+`has_look`, `look_x`, and `look_y` values for diagnostics.
+
+```json
+{"command":"set_mouth_y","value":0.7,"stream_source":true}
+```
 
 You can also communicate directly with the socket without `deskwaifu-ctl`:
 

@@ -129,7 +129,7 @@ bool LAppDelegate::Initialize()
 
     // Initialize IPC socket server
     _ipc = new LAppIPC();
-    _commands = new AppCommandHandler(*this, *_manager, *_ipc);
+    _commands = new AppCommandHandler(*this, *_manager);
     _ipc->SetCommandService(*_commands);
     _ipc->Initialize();
 
@@ -138,7 +138,7 @@ bool LAppDelegate::Initialize()
 void LAppDelegate::Release()
 {
     ReleaseRuntimeInOrder(
-        [this] { delete _commands; _commands = nullptr; delete _ipc; _ipc = nullptr; },
+        [this] { delete _ipc; _ipc = nullptr; delete _commands; _commands = nullptr; },
         [this] { delete _view; _view = nullptr; },
         [this] { delete _manager; _manager = nullptr; },
         [this] { delete _textureManager; _textureManager = nullptr; },
@@ -200,9 +200,7 @@ void LAppDelegate::Run()
 
         const auto state = _service.Snapshot();
         if (!state.hidden) {
-            const ModelFrameInput input{LAppIPC::HasExternalMouthY(), LAppIPC::GetExternalMouthY(),
-                LAppIPC::HasExternalLook(), LAppIPC::GetExternalLookX(), LAppIPC::GetExternalLookY()};
-            _view->Render(state.transform, input);
+            _view->Render(state.transform, _service.FrameInput());
         }
 
         if (!state.hidden) UpdateWaylandInputRegion(&_wlContext);
