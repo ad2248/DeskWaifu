@@ -22,37 +22,22 @@
 
 LAppTextureManager::LAppTextureManager()
     : LAppTextureManager_Common()
-    , _residency([this](GLuint id) { ReleaseTexture(id); })
+    , _residency([](GLuint id) { glDeleteTextures(1, &id); })
 {
 }
 
-LAppTextureManager::~LAppTextureManager()
-{
-    ReleaseTextures();
-}
+LAppTextureManager::~LAppTextureManager() = default;
 
 LAppTextureManager::TextureLease LAppTextureManager::AcquireTexture(const std::string& fileName)
 {
     return _residency.Acquire(fileName, [this](const std::string& path)
     {
-        TextureInfo* info = CreateTextureFromPngFile(path);
-        return info ? std::make_pair(static_cast<GLuint>(info->id),
-            static_cast<std::size_t>(info->width) * static_cast<std::size_t>(info->height) * 4)
-            : std::make_pair(GLuint(0), std::size_t(0));
+        return UploadTexture(path);
     });
 }
 
-LAppTextureManager::TextureInfo* LAppTextureManager::CreateTextureFromPngFile(std::string fileName)
+std::pair<GLuint, std::size_t> LAppTextureManager::UploadTexture(const std::string& fileName)
 {
-    //search loaded texture already.
-    for (Csm::csmUint32 i = 0; i < _texturesInfo.GetSize(); i++)
-    {
-        if (_texturesInfo[i]->fileName == fileName)
-        {
-            return _texturesInfo[i];
-        }
-    }
-
     GLuint textureId;
     int width, height, channels;
     unsigned int size;
@@ -60,7 +45,7 @@ LAppTextureManager::TextureInfo* LAppTextureManager::CreateTextureFromPngFile(st
     unsigned char* address;
 
     address = LAppPal::LoadFileAsBytes(fileName, &size);
-    if (!address) return nullptr;
+    if (!address) return {};
 
     // png情報を取得する
     png = stbi_load_from_memory(
@@ -70,7 +55,7 @@ LAppTextureManager::TextureInfo* LAppTextureManager::CreateTextureFromPngFile(st
         &height,
         &channels,
         STBI_rgb_alpha);
-    if (!png) { LAppPal::ReleaseBytes(address); return nullptr; }
+    if (!png) { LAppPal::ReleaseBytes(address); return {}; }
     {
 
 #ifdef PREMULTIPLIED_ALPHA_ENABLE
@@ -88,7 +73,7 @@ LAppTextureManager::TextureInfo* LAppTextureManager::CreateTextureFromPngFile(st
     if (!textureId) {
         stbi_image_free(png);
         LAppPal::ReleaseBytes(address);
-        return nullptr;
+        return {};
     }
     glBindTexture(GL_TEXTURE_2D, textureId);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, png);
@@ -101,56 +86,6 @@ LAppTextureManager::TextureInfo* LAppTextureManager::CreateTextureFromPngFile(st
     stbi_image_free(png);
     LAppPal::ReleaseBytes(address);
 
-    LAppTextureManager::TextureInfo* textureInfo = new LAppTextureManager::TextureInfo();
-    if (textureInfo != NULL)
-    {
-        textureInfo->fileName = fileName;
-        textureInfo->width = width;
-        textureInfo->height = height;
-        textureInfo->id = textureId;
-
-        _texturesInfo.PushBack(textureInfo);
-    }
-
-    return textureInfo;
-
-}
-
-void LAppTextureManager::ReleaseTextures()
-{
-    for (Csm::csmUint32 i = 0; i < _texturesInfo.GetSize(); i++)
-    {
-        glDeleteTextures(1, &(_texturesInfo[i]->id));
-    }
-
-    ReleaseTexturesInfo();
-}
-
-void LAppTextureManager::ReleaseTexture(Csm::csmUint32 textureId)
-{
-    for (Csm::csmUint32 i = 0; i < _texturesInfo.GetSize(); i++)
-    {
-        if (_texturesInfo[i]->id != textureId)
-        {
-            continue;
-        }
-        glDeleteTextures(1, &(_texturesInfo[i]->id));
-        delete _texturesInfo[i];
-        _texturesInfo.Remove(i);
-        break;
-    }
-}
-
-void LAppTextureManager::ReleaseTexture(std::string fileName)
-{
-    for (Csm::csmUint32 i = 0; i < _texturesInfo.GetSize(); i++)
-    {
-        if (_texturesInfo[i]->fileName == fileName)
-        {
-            glDeleteTextures(1, &(_texturesInfo[i]->id));
-            delete _texturesInfo[i];
-            _texturesInfo.Remove(i);
-            break;
-        }
-    }
+    return std::make_pair(textureId,
+        static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4);
 }

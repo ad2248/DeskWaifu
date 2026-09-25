@@ -58,6 +58,8 @@ CubismUserModelExtend::~CubismUserModelExtend()
     // モデルの設定データの解放
     ReleaseModelSetting();
 
+    _textureLeases.clear();
+
     // テクスチャマネージャーの解放
     delete _textureManager;
 }
@@ -409,8 +411,10 @@ void CubismUserModelExtend::SetupTextures()
         csmString texturePath = _modelJson->GetTextureFileName(modelTextureNumber);
         texturePath = csmString(_currentModelDirectory.c_str()) + texturePath;
 
-        LAppTextureManager::TextureInfo* texture = _textureManager->CreateTextureFromPngFile(texturePath.GetRawString());
-        const csmInt32 glTextueNumber = texture->id;
+        auto lease = _textureManager->AcquireTexture(texturePath.GetRawString());
+        if (!lease) continue;
+        const csmInt32 glTextueNumber = lease.IdValue();
+        _textureLeases.push_back(std::move(lease));
 
         // OpenGL
         GetRenderer<Rendering::CubismRenderer_OpenGLES2>()->BindTexture(modelTextureNumber, glTextueNumber);
