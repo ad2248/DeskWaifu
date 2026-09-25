@@ -17,6 +17,7 @@
 #include "LAppWavFileHandler_Common.hpp"
 #include "LAppModel_Common.hpp"
 #include "ModelHotkeys.hpp"
+#include "ModelFrameInput.hpp"
 
 /**
  * @brief ユーザーが実際に使用するモデルの実装クラス<br>
@@ -35,7 +36,8 @@ public:
     /**
      * @brief コンストラクタ
      */
-    LAppModel();
+    LAppModel(class LAppTextureManager& textures, int width, int height, float emotionTimeout);
+    void SetViewport(int width, int height) { _viewportWidth = width; _viewportHeight = height; }
 
     /**
      * @brief デストラクタ
@@ -59,7 +61,7 @@ public:
      * @brief   モデルの更新処理。モデルのパラメータから描画状態を決定する。
      *
      */
-    void Update();
+    void Update(const ModelFrameInput& input);
 
     /**
      * @brief   モデルを描画する処理。モデルを描画する空間のView-Projection行列を渡す。
@@ -157,6 +159,10 @@ protected:
     void DoDraw();
 
 private:
+    LAppTextureManager& _textures;
+    int _viewportWidth;
+    int _viewportHeight;
+    float _emotionTimeout;
     ModelHotkeys _hotkeys;
     /**
      * @brief model3.jsonからモデルを生成する。<br>

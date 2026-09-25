@@ -1,3 +1,10 @@
+add_executable(component-dependencies-test ComponentDependenciesTest.cpp)
+target_include_directories(component-dependencies-test PRIVATE ../src)
+add_test(NAME component-dependencies COMMAND component-dependencies-test)
+add_test(NAME component-direction
+  COMMAND ${CMAKE_COMMAND} -DAPP_SOURCE=${CMAKE_SOURCE_DIR}/src
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckComponentDirection.cmake)
+
 find_package(Qt6 REQUIRED COMPONENTS Test Network Widgets)
 
 qt_add_executable(deskwaifu-client-test

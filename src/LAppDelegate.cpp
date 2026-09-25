@@ -19,6 +19,7 @@
 #include "LAppPal.hpp"
 #include "LAppWaylandRegion.hpp"
 #include "LAppDefine.hpp"
+#include "LAppConfig.hpp"
 #include "LAppLive2DManager.hpp"
 #include "LAppModel.hpp"
 #include "LAppTextureManager.hpp"
@@ -26,6 +27,7 @@
 #include "ModelInputDispatch.hpp"
 #include "ModelScroll.hpp"
 #include "ModelHotkeyTrigger.hpp"
+#include "RuntimeLifecycle.hpp"
 
 using namespace Csm;
 using namespace std;
@@ -112,9 +114,15 @@ bool LAppDelegate::Initialize()
     glViewport(0, 0, _windowWidth, _windowHeight);
 
     // Cubism3の初期化
-    InitializeCubism();
     SetExecuteAbsolutePath();
-    LAppLive2DManager::GetInstance();
+    LAppPal::SetResourceBasePath(_executeAbsolutePath);
+    InitializeCubism();
+    _cubismStarted = true;
+    const auto& config = LAppConfig::GetInstance();
+    _manager = new LAppLive2DManager(*_textureManager, _windowWidth, _windowHeight,
+        {LAppDefine::ModelsDir, config.additionalModelDirs, config.defaultModel, config.emotionTimeout});
+    if (!_manager->HasModels()) { _isEnd = true; return false; }
+    _view = new LAppView(*_manager, *_textureManager);
 
     _view->Initialize(_windowWidth, _windowHeight);
     _view->InitializeSprite();
@@ -126,15 +134,13 @@ bool LAppDelegate::Initialize()
 }
 void LAppDelegate::Release()
 {
-    LAppIPC::ReleaseInstance();
-
-    CleanWaylandContext(&_wlContext);
-
-    delete _textureManager;
-    delete _view;
-
-    LAppLive2DManager::ReleaseInstance();
-    CubismFramework::Dispose();
+    ReleaseRuntimeInOrder(
+        [] { LAppIPC::ReleaseInstance(); },
+        [this] { delete _view; _view = nullptr; },
+        [this] { delete _manager; _manager = nullptr; },
+        [this] { delete _textureManager; _textureManager = nullptr; },
+        [this] { if (_cubismStarted) { CubismFramework::Dispose(); _cubismStarted = false; } },
+        [this] { CleanWaylandContext(&_wlContext); });
 }
 void LAppDelegate::Run()
 {
@@ -153,7 +159,7 @@ void LAppDelegate::Run()
             _view->Initialize(width, height);
             _view->ResizeSprite();
             _view->DestroySpriteRenderTarget();
-            LAppLive2DManager::GetInstance()->SetRenderTargetSize(width, height);
+            _manager->SetRenderTargetSize(width, height);
             _windowWidth = width;
             _windowHeight = height;
         }
@@ -186,7 +192,9 @@ void LAppDelegate::Run()
         glClearDepth(1.0);
 
         if (!_isHidden) {
-            _view->Render();
+            const ModelFrameInput input{LAppIPC::HasExternalMouthY(), LAppIPC::GetExternalMouthY(),
+                LAppIPC::HasExternalLook(), LAppIPC::GetExternalLookX(), LAppIPC::GetExternalLookY()};
+            _view->Render({_modelScale, _modelX, _modelY}, input);
         }
 
         UpdateWaylandInputRegion(&_wlContext);
@@ -201,6 +209,8 @@ void LAppDelegate::Run()
 }
 LAppDelegate::LAppDelegate():
     _cubismOption(),
+    _view(nullptr),
+    _manager(nullptr),
     
     _captured(false),
     _mouseX(0.0f),
@@ -220,7 +230,6 @@ LAppDelegate::LAppDelegate():
     _modelY(0.0f)
 {
     _executeAbsolutePath = "";
-    _view = new LAppView();
     _textureManager = new LAppTextureManager();
 }
 
@@ -333,14 +342,14 @@ void LAppDelegate::OnMouseCallBack(void* window, int button, int action, int mod
                         static_cast<int>(curX), static_cast<int>(curY));
                     if (result == ModelDoubleClick::DoubleClick)
                     {
-                        LAppLive2DManager::GetInstance()->OnDrag(0.0f, 0.0f);
+                        _manager->OnDrag(0.0f, 0.0f);
                         SetModelKeyboardGrab(&_wlContext, true);
                     }
                 }
                 else 
                 {
                     FlushPendingTap();
-                    LAppLive2DManager::GetInstance()->OnDrag(0.0f, 0.0f); // End look
+                    _manager->OnDrag(0.0f, 0.0f); // End look
                 }
             }
         }
@@ -350,13 +359,13 @@ void LAppDelegate::OnMouseCallBack(void* window, int button, int action, int mod
         // Switch Models
         LAppPal::PrintLogLn("[Event] Switch Model Triggered");
           LAppPal::PrintLogLn("[Event] Switch Model Triggered");
-          LAppLive2DManager::GetInstance()->NextScene();
+          _manager->NextScene();
     }
     else if (button == 2 && action == 1)
     {
         // Switch Skin
         LAppPal::PrintLogLn("[Event] Switch Skin Triggered");
-        LAppLive2DManager::GetInstance()->SwitchSkin();
+        _manager->SwitchSkin();
     }
 }
 
@@ -377,7 +386,7 @@ void LAppDelegate::ResetKeyboardState()
 void LAppDelegate::OnModelKey(uint32_t code, bool pressed)
 {
     LAppModel* model = _wlContext.keyboardSurface.IsGrabbed()
-        ? LAppLive2DManager::GetInstance()->GetModel(0) : nullptr;
+        ? _manager->GetModel(0) : nullptr;
     const auto* bindings = model ? &model->Hotkeys().Bindings() : nullptr;
     const ModelKeyDecision decision = DecideModelKey(
         _keyboard, _wlContext.keyboardSurface.IsGrabbed(), code, pressed, bindings);
@@ -413,7 +422,7 @@ void LAppDelegate::OnMouseCallBack(void* window, double x, double y)
     float viewX = (_mouseX - faceCenterX) / ((float)width / 2.0f);
     float viewY = -(_mouseY - faceCenterY) / ((float)height / 2.0f);
 
-    LAppLive2DManager::GetInstance()->OnDrag(viewX, viewY);
+    _manager->OnDrag(viewX, viewY);
 
     if (_captured && _isDraggingWindow)
     {
@@ -462,10 +471,8 @@ void LAppDelegate::SetExecuteAbsolutePath()
 {
     char path[1024];
     ssize_t len = readlink("/proc/self/exe", path, 1024 - 1);
-    if (len != -1)
-    {
-        path[len] = '\0';
-    }
+    if (len < 0) return;
+    path[len] = '\0';
     this->_executeAbsolutePath = dirname(path);
     this->_executeAbsolutePath += "/";
 }

@@ -15,11 +15,15 @@
 #include <Rendering/OpenGL/CubismRenderTarget_OpenGLES2.hpp>
 
 #include "LAppView_Common.hpp"
+#include "ModelTransform.hpp"
+#include "ModelFrameInput.hpp"
 
 class TouchManager_Common;
 class LAppSprite;
 class LAppSpriteShader;
 class LAppModel;
+class LAppLive2DManager;
+class LAppTextureManager;
 
 /**
 * @brief 描画クラス
@@ -41,7 +45,7 @@ public:
     /**
     * @brief コンストラクタ
     */
-    LAppView();
+    LAppView(LAppLive2DManager& manager, LAppTextureManager& textures);
 
     /**
     * @brief デストラクタ
@@ -56,7 +60,7 @@ public:
     /**
     * @brief 描画する。
     */
-    void Render();
+    void Render(ModelTransform transform, const ModelFrameInput& input);
 
     /**
     * @brief 画像の初期化を行う。
@@ -127,6 +131,10 @@ public:
     void DestroySpriteRenderTarget();
 
 private:
+    LAppLive2DManager& _manager;
+    LAppTextureManager& _textures;
+    int _width = 0;
+    int _height = 0;
     TouchManager_Common* _touchManager;                 ///< タッチマネージャー
     LAppSprite* _back;                       ///< 背景画像
     LAppSprite* _gear;                       ///< ギア画像

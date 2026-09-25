@@ -20,11 +20,8 @@
 #include <Id/CubismIdManager.hpp>
 #include <Motion/CubismMotionQueueEntry.hpp>
 #include "LAppDefine.hpp"
-#include "LAppConfig.hpp"
 #include "LAppPal.hpp"
-#include "LAppIPC.hpp"
 #include "LAppTextureManager.hpp"
-#include "LAppDelegate.hpp"
 #include <Motion/CubismMotionJson.hpp>
 #include "Motion/CubismBreathUpdater.hpp"
 #include "Motion/CubismLookUpdater.hpp"
@@ -40,8 +37,12 @@ using namespace LAppDefine;
 
 const csmFloat32 LAppModel::ExpressionTimeoutSeconds = 5.0f;
 
-LAppModel::LAppModel()
+LAppModel::LAppModel(LAppTextureManager& textures, int width, int height, float emotionTimeout)
     : LAppModel_Common()
+    , _textures(textures)
+    , _viewportWidth(width)
+    , _viewportHeight(height)
+    , _emotionTimeout(emotionTimeout)
     , _modelSetting(NULL)
     , _userTimeSeconds(0.0f)
     , _motionUpdated(false)
@@ -104,7 +105,7 @@ void LAppModel::LoadAssets(const csmChar* dir, const csmChar* fileName)
         return;
     }
 
-    CreateRenderer(LAppDelegate::GetInstance()->GetWindowWidth(), LAppDelegate::GetInstance()->GetWindowHeight());
+    CreateRenderer(_viewportWidth, _viewportHeight);
 
     SetupTextures();
 }
@@ -515,7 +516,7 @@ void LAppModel::ReleaseExpressions()
     _expressions.Clear();
 }
 
-void LAppModel::Update()
+void LAppModel::Update(const ModelFrameInput& input)
 {
     const csmFloat32 deltaTimeSeconds = LAppPal::GetDeltaTime();
     _userTimeSeconds += deltaTimeSeconds;
@@ -549,25 +550,18 @@ void LAppModel::Update()
     _hotkeys.Apply(_model);
 
     // External mouth Y override (IPC lipsync)
-    if (LAppIPC::HasExternalMouthY())
-    {
-        csmFloat32 mouthValue = LAppIPC::GetExternalMouthY();
-        for (csmUint32 i = 0; i < _lipSyncIds.GetSize(); ++i)
+    DispatchModelFrameInput(input,
+        [this](float mouthValue)
         {
-            _model->SetParameterValue(_lipSyncIds[i], mouthValue);
-        }
-    }
-
-    // External look-at override (IPC head tracking)
-    if (LAppIPC::HasExternalLook())
-    {
-        _dragManager->Set(LAppIPC::GetExternalLookX(), LAppIPC::GetExternalLookY());
-    }
+            for (csmUint32 i = 0; i < _lipSyncIds.GetSize(); ++i)
+                _model->SetParameterValue(_lipSyncIds[i], mouthValue);
+        },
+        [this](float x, float y) { _dragManager->Set(x, y); });
 
     // Expression timeout: revert to default after emotion_timeout seconds
     // emotion_timeout < 0 means expressions never revert
     {
-        float timeout = LAppConfig::GetInstance().emotionTimeout;
+        float timeout = _emotionTimeout;
         if (timeout >= 0.0f && _lastExpressionTime >= 0.0f &&
             (_userTimeSeconds - _lastExpressionTime) > timeout)
         {
@@ -763,7 +757,7 @@ void LAppModel::ReloadRenderer()
 {
     DeleteRenderer();
 
-    CreateRenderer(LAppDelegate::GetInstance()->GetWindowWidth(), LAppDelegate::GetInstance()->GetWindowHeight());
+    CreateRenderer(_viewportWidth, _viewportHeight);
 
     SetupTextures();
 }
@@ -803,7 +797,7 @@ void LAppModel::SetupTextures()
         csmString texturePath = _modelSetting->GetTextureFileName(modelTextureNumber);
         texturePath = _modelHomeDir + texturePath;
 
-        LAppTextureManager::TextureInfo* texture = LAppDelegate::GetInstance()->GetTextureManager()->CreateTextureFromPngFile(texturePath.GetRawString());
+        LAppTextureManager::TextureInfo* texture = _textures.CreateTextureFromPngFile(texturePath.GetRawString());
         const csmInt32 glTextueNumber = texture->id;
 
         GetRenderer<Rendering::CubismRenderer_OpenGLES2>()->BindTexture(modelTextureNumber, glTextueNumber);

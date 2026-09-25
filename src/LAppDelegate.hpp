@@ -16,6 +16,7 @@
 
 class LAppView;
 class LAppTextureManager;
+class LAppLive2DManager;
 
 /**
 * @brief   アプリケーションクラス。
@@ -93,6 +94,7 @@ public:
     * @brief   View情報を取得する。
     */
     LAppView* GetView() { return _view; }
+    LAppLive2DManager* GetManager() { return _manager; }
 
     /**
     * @brief   アプリケーションを終了するかどうか。
@@ -153,6 +155,7 @@ private:
     Csm::CubismFramework::Option _cubismOption;         ///< Cubism3 Option
     WaylandContext _wlContext;                          ///< Wayland Context
     LAppView* _view;                                    ///< View情報
+    LAppLive2DManager* _manager;
     bool _captured;                              ///< クリックしているか
     float _mouseX;                               ///< マウスX座標
     float _mouseY;                               ///< マウスY座標
@@ -160,6 +163,7 @@ private:
     ModelKeyboard _keyboard;
     void FlushPendingTap();
     bool _isEnd;                                 ///< APP終了しているか
+    bool _cubismStarted = false;
     LAppTextureManager* _textureManager;         ///< テクスチャマネージャー
     std::string _executeAbsolutePath;            ///< アプリケーションの実行パス
 

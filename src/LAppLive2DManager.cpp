@@ -14,16 +14,15 @@
 #include <libgen.h>
 #include <limits.h>
 #include <string>
+#include <utility>
 #include <GL/glew.h>
 
 #include <Rendering/CubismRenderer.hpp>
 #include <Rendering/OpenGL/CubismOffscreenManager_OpenGLES2.hpp>
 #include "LAppPal.hpp"
 #include "LAppDefine.hpp"
-#include "LAppConfig.hpp"
-#include "LAppDelegate.hpp"
+#include "LAppTextureManager.hpp"
 #include "LAppModel.hpp"
-#include "LAppView.hpp"
 #include "LAppSprite.hpp"
 #include "ModelProjection.hpp"
 
@@ -31,7 +30,6 @@ using namespace Csm;
 using namespace LAppDefine;
 
 namespace {
-    LAppLive2DManager* s_instance = NULL;
 
     void BeganMotion(ACubismMotion* self)
     {
@@ -50,28 +48,13 @@ namespace {
     }
 }
 
-LAppLive2DManager* LAppLive2DManager::GetInstance()
-{
-    if (s_instance == NULL)
-    {
-        s_instance = new LAppLive2DManager();
-    }
-
-    return s_instance;
-}
-
-void LAppLive2DManager::ReleaseInstance()
-{
-    if (s_instance != NULL)
-    {
-        delete s_instance;
-    }
-
-    s_instance = NULL;
-}
-
-LAppLive2DManager::LAppLive2DManager()
+LAppLive2DManager::LAppLive2DManager(LAppTextureManager& textures, int width, int height,
+    ModelDiscoveryOptions discovery)
     : _viewMatrix(NULL)
+    , _textures(textures)
+    , _viewportWidth(width)
+    , _viewportHeight(height)
+    , _discovery(std::move(discovery))
     , _sceneIndex(0)
 {
     _viewMatrix = new CubismMatrix44();
@@ -79,16 +62,15 @@ LAppLive2DManager::LAppLive2DManager()
 
     if (_modelDir.GetSize() == 0)
     {
-        LAppPal::PrintLogLn("[APP]No models found in: %s", LAppDefine::ModelsDir.c_str());
+        LAppPal::PrintLogLn("[APP]No models found in: %s", _discovery.primaryDirectory.c_str());
         LAppPal::PrintLogLn("[APP]Please place your Live2D models in the models directory.");
         LAppPal::PrintLogLn("[APP]Each model should be in its own subfolder with a .model3.json file.");
-        LAppPal::PrintLogLn("[APP]Example: %s<ModelName>/<ModelName>.model3.json", LAppDefine::ModelsDir.c_str());
-        LAppDelegate::GetInstance()->AppEnd();
+        LAppPal::PrintLogLn("[APP]Example: %s<ModelName>/<ModelName>.model3.json", _discovery.primaryDirectory.c_str());
         return;
     }
 
     // Find default model index from config
-    const std::string& defaultModel = LAppConfig::GetInstance().defaultModel;
+    const std::string& defaultModel = _discovery.defaultModel;
     if (!defaultModel.empty())
     {
         for (csmInt32 i = 0; i < _modelDir.GetSize(); i++)
@@ -180,14 +162,13 @@ void LAppLive2DManager::SetUpModel()
     _modelJsonName.Clear();
 
     // Scan default models directory
-    csmString defaultPath(LAppDefine::ModelsDir.c_str());
+    csmString defaultPath(_discovery.primaryDirectory.c_str());
     ScanModelsInDir(defaultPath);
 
     // Scan additional model directories from config
-    const LAppConfig& config = LAppConfig::GetInstance();
-    for (size_t i = 0; i < config.additionalModelDirs.size(); i++)
+    for (size_t i = 0; i < _discovery.additionalDirectories.size(); i++)
     {
-        std::string dir = config.additionalModelDirs[i];
+        std::string dir = _discovery.additionalDirectories[i];
         if (!dir.empty() && dir.back() != '/') dir += "/";
 
         // Resolve absolute path
@@ -260,7 +241,7 @@ void LAppLive2DManager::PreloadNextModel()
 
     const csmString& modelJsonName = _modelJsonName[nextIndex];
 
-    _modelCache[nextIndex] = new LAppModel();
+    _modelCache[nextIndex] = new LAppModel(_textures, _viewportWidth, _viewportHeight, _discovery.emotionTimeout);
     _modelCache[nextIndex]->LoadAssets(modelPath.GetRawString(), modelJsonName.GetRawString());
 }
 
@@ -303,11 +284,15 @@ LAppModel* LAppLive2DManager::GetModel(csmUint32 no) const
 
 void LAppLive2DManager::SetRenderTargetSize(csmUint32 width, csmUint32 height)
 {
-    for (csmUint32 i = 0; i < _models.GetSize(); i++)
+    _viewportWidth = width;
+    _viewportHeight = height;
+    for (csmUint32 i = 0; i < _modelCache.GetSize(); i++)
     {
-        LAppModel* model = GetModel(i);
-
-        model->SetRenderTargetSize(width, height);
+        LAppModel* model = _modelCache[i];
+        if (model) {
+            model->SetViewport(width, height);
+            model->SetRenderTargetSize(width, height);
+        }
     }
 }
 
@@ -350,10 +335,11 @@ void LAppLive2DManager::OnTap(csmFloat32 x, csmFloat32 y)
     }
 }
 
-void LAppLive2DManager::OnUpdate() const
+void LAppLive2DManager::OnUpdate(int width, int height, ModelTransform transform, const ModelFrameInput& input,
+    const std::function<void(LAppModel&)>& beforeDraw,
+    const std::function<void(LAppModel&)>& afterDraw) const
 {
-    int width, height;
-    width = LAppDelegate::GetInstance()->GetWindowWidth(); height = LAppDelegate::GetInstance()->GetWindowHeight();
+    if (width <= 0 || height <= 0) return;
 
     // モデルで使用するオフスクリーン管理の開始処理
     Csm::Rendering::CubismOffscreenManager_OpenGLES2::GetInstance()->BeginFrameProcess();
@@ -380,8 +366,7 @@ void LAppLive2DManager::OnUpdate() const
             projection.Scale(static_cast<float>(height) / static_cast<float>(width), 1.0f);
         }
 
-        LAppDelegate* app = LAppDelegate::GetInstance();
-        ApplyModelTransform(projection, {app->_modelScale, app->_modelX, app->_modelY});
+        ApplyModelTransform(projection, transform);
 
         // 必要があればここで乗算
         if (_viewMatrix != NULL)
@@ -389,12 +374,12 @@ void LAppLive2DManager::OnUpdate() const
             projection.MultiplyByMatrix(_viewMatrix);
         }
 
-        LAppDelegate::GetInstance()->GetView()->PreModelDraw(*model);
+        beforeDraw(*model);
 
-        model->Update();
+        model->Update(input);
         model->Draw(projection);///< 参照渡しなのでprojectionは変質する
 
-        LAppDelegate::GetInstance()->GetView()->PostModelDraw(*model);
+        afterDraw(*model);
     }
 
     // モデルで使用するオフスクリーン管理の終了処理
@@ -440,7 +425,7 @@ void LAppLive2DManager::ChangeScene(Csm::csmInt32 index)
 
         const csmString& modelJsonName = _modelJsonName[index];
 
-        _modelCache[index] = new LAppModel();
+        _modelCache[index] = new LAppModel(_textures, _viewportWidth, _viewportHeight, _discovery.emotionTimeout);
         _modelCache[index]->LoadAssets(modelPath.GetRawString(), modelJsonName.GetRawString());
     }
     else
@@ -460,41 +445,15 @@ void LAppLive2DManager::ChangeScene(Csm::csmInt32 index)
     // 次のモデルを事前読み込み
     PreloadNextModel();
 
-    /*
-     * モデル半透明表示を行うサンプルを提示する。
-     * ここでUSE_RENDER_TARGET、USE_MODEL_RENDER_TARGETが定義されている場合
-     * 別のレンダリングターゲットにモデルを描画し、描画結果をテクスチャとして別のスプライトに張り付ける。
-     */
-    {
-#if defined(USE_RENDER_TARGET)
-        // LAppViewの持つターゲットに描画を行う場合、こちらを選択
-        LAppView::SelectTarget useRenderTarget = LAppView::SelectTarget_ViewFrameBuffer;
-#elif defined(USE_MODEL_RENDER_TARGET)
-        // 各LAppModelの持つターゲットに描画を行う場合、こちらを選択
-        LAppView::SelectTarget useRenderTarget = LAppView::SelectTarget_ModelFrameBuffer;
-#else
-        // デフォルトのメインフレームバッファへレンダリングする(通常)
-        LAppView::SelectTarget useRenderTarget = LAppView::SelectTarget_None;
-#endif
-
 #if defined(USE_RENDER_TARGET) || defined(USE_MODEL_RENDER_TARGET)
-        // モデル個別にαを付けるサンプルとして、もう1体モデルを作成し、少し位置をずらす
-        _models.PushBack(new LAppModel());
-        _models[1]->LoadAssets(modelPath.GetRawString(), modelJsonName.GetRawString());
-        _models[1]->GetModelMatrix()->TranslateX(0.2f);
+    // Sample second model borrows the selected model's asset descriptor.
+    csmString modelPath(_modelBasePath[index]);
+    modelPath += _modelDir[index];
+    modelPath.Append(1, '/');
+    _models.PushBack(new LAppModel(_textures, _viewportWidth, _viewportHeight, _discovery.emotionTimeout));
+    _models[1]->LoadAssets(modelPath.GetRawString(), _modelJsonName[index].GetRawString());
+    _models[1]->GetModelMatrix()->TranslateX(0.2f);
 #endif
-
-        float clearColor[3] = { 0.0f, 0.0f, 0.0f };
-
-        LAppDelegate::GetInstance()->GetView()->SwitchRenderingTarget(useRenderTarget);
-
-        if(useRenderTarget)
-        {
-            LAppDelegate::GetInstance()->GetView()->SwitchRenderingTarget(useRenderTarget);
-            // 背景クリア色
-            LAppDelegate::GetInstance()->GetView()->SetRenderTargetClearColor(clearColor[0], clearColor[1], clearColor[2]);
-        }
-    }
 }
 
 csmUint32 LAppLive2DManager::GetModelNum() const
