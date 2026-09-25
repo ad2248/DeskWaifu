@@ -137,6 +137,6 @@ if (DESKWAIFU_BUILD_CONTROL)
   add_subdirectory(control)
 endif ()
 
-if (BUILD_TESTING AND DESKWAIFU_BUILD_CONTROL)
+if (BUILD_TESTING)
   add_subdirectory(tests)
 endif ()

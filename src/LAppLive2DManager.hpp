@@ -14,6 +14,9 @@
 #include <vector>
 #include "ModelTransform.hpp"
 #include "ModelFrameInput.hpp"
+#include "ModelCache.hpp"
+#include "ModelSession.hpp"
+#include "ModelLoader.hpp"
 
 class LAppModel;
 class LAppTextureManager;
@@ -46,12 +49,6 @@ public:
     * @brief   クラスのインスタンス（シングルトン）を解放する。
     *
     */
-
-    /**
-    * @brief   Resources フォルダにあるモデルフォルダ名をセットする
-    *
-    */
-    void SetUpModel();
 
     /**
     * @brief   Resources フォルダにあるモデルフォルダ名を取得する
@@ -115,7 +112,7 @@ public:
     * @brief   次のシーンに切り替える<br>
     *           サンプルアプリケーションではモデルセットの切り替えを行う。
     */
-    void NextScene();
+    bool NextScene();
 
     /**
     * @brief   現在のモデルのスキンを切り替える
@@ -126,7 +123,7 @@ public:
     * @brief   シーンを切り替える<br>
     *           サンプルアプリケーションではモデルセットの切り替えを行う。
     */
-    void ChangeScene(Csm::csmInt32 index);
+    bool ChangeScene(Csm::csmInt32 index);
 
     /**
      * @brief   モデル個数を得る
@@ -142,15 +139,16 @@ public:
     /**
      * @brief   Get the current scene (model) index.
      */
-    Csm::csmInt32 GetSceneIndex() const { return _sceneIndex; }
+    Csm::csmInt32 GetSceneIndex() const { return _session.CurrentIndex(); }
 
 public:
     LAppLive2DManager(LAppTextureManager& textures, int width, int height,
         ModelDiscoveryOptions discovery);
     virtual ~LAppLive2DManager();
-    bool HasModels() const { return _modelDir.GetSize() != 0; }
+    bool HasModels() const { return _session.Current() != nullptr; }
 
 private:
+    void SetUpModel();
     /**
     * @brief  コンストラクタ
     */
@@ -159,36 +157,16 @@ private:
     * @brief  デストラクタ
     */
 
-    /**
-    * @brief   指定ディレクトリからモデルをスキャンする
-    */
-    void ScanModelsInDir(const Csm::csmString& basePath);
-
-    /**
-    * @brief   モデルキャッシュを初期化する
-    */
-    void InitModelCache();
-
-    /**
-    * @brief   次のモデルを事前読み込みする
-    */
-    void PreloadNextModel();
-
-    /**
-    * @brief   モデル数が4を超える場合、現在と次以外のキャッシュを解放する
-    */
-    void EvictExcessModels();
-
     Csm::CubismMatrix44* _viewMatrix; ///< モデル描画に用いるView行列
     LAppTextureManager& _textures;
     int _viewportWidth;
     int _viewportHeight;
     ModelDiscoveryOptions _discovery;
+    ModelLoader _loader;
+    std::vector<ModelDescriptor> _descriptors;
     Csm::csmVector<LAppModel*> _models; ///< 表示中モデルのコンテナ（所有権はキャッシュ側）
-    Csm::csmVector<LAppModel*> _modelCache; ///< モデルキャッシュ（インデックス対応、NULLは未読み込み）
-    Csm::csmInt32 _sceneIndex; ///< 表示するシーンのインデックス値
+    ModelSession<LAppModel> _session; ///< Active model, cache and residency policy.
+    std::unique_ptr<LAppModel> _sampleModel;
 
     Csm::csmVector<Csm::csmString> _modelDir; ///< モデルディレクトリ名のコンテナ
-    Csm::csmVector<Csm::csmString> _modelBasePath; ///< 各モデルの親ディレクトリパス
-    Csm::csmVector<Csm::csmString> _modelJsonName; ///< 各モデルの.model3.jsonファイル名
 };

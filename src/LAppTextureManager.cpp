@@ -47,6 +47,7 @@ LAppTextureManager::TextureInfo* LAppTextureManager::CreateTextureFromPngFile(st
     unsigned char* address;
 
     address = LAppPal::LoadFileAsBytes(fileName, &size);
+    if (!address) return nullptr;
 
     // png情報を取得する
     png = stbi_load_from_memory(
@@ -56,6 +57,7 @@ LAppTextureManager::TextureInfo* LAppTextureManager::CreateTextureFromPngFile(st
         &height,
         &channels,
         STBI_rgb_alpha);
+    if (!png) { LAppPal::ReleaseBytes(address); return nullptr; }
     {
 
 #ifdef PREMULTIPLIED_ALPHA_ENABLE

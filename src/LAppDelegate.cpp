@@ -24,10 +24,11 @@
 #include "LAppModel.hpp"
 #include "LAppTextureManager.hpp"
 #include "LAppIPC.hpp"
-#include "ModelInputDispatch.hpp"
+#include "AppCommandHandler.hpp"
 #include "ModelScroll.hpp"
 #include "ModelHotkeyTrigger.hpp"
 #include "RuntimeLifecycle.hpp"
+#include "InputController.hpp"
 
 using namespace Csm;
 using namespace std;
@@ -128,14 +129,17 @@ bool LAppDelegate::Initialize()
     _view->InitializeSprite();
 
     // Initialize IPC socket server
-    LAppIPC::GetInstance()->Initialize();
+    _ipc = new LAppIPC();
+    _commands = new AppCommandHandler(*this, *_manager, *_ipc);
+    _ipc->SetCommandService(*_commands);
+    _ipc->Initialize();
 
     return true;
 }
 void LAppDelegate::Release()
 {
     ReleaseRuntimeInOrder(
-        [] { LAppIPC::ReleaseInstance(); },
+        [this] { delete _ipc; _ipc = nullptr; delete _commands; _commands = nullptr; },
         [this] { delete _view; _view = nullptr; },
         [this] { delete _manager; _manager = nullptr; },
         [this] { delete _textureManager; _textureManager = nullptr; },
@@ -149,7 +153,7 @@ void LAppDelegate::Run()
         if (wl_display_dispatch_pending(_wlContext.display) == -1) {
             break;
         }
-        if (_clicks.Expired(ClickClock())) FlushPendingTap();
+        if (_input.TapExpired(ClickClock())) FlushPendingTap();
         wl_display_flush(_wlContext.display);
         
         int width = _wlContext.width;
@@ -182,7 +186,7 @@ void LAppDelegate::Run()
         }
 
         // Poll IPC commands
-        LAppIPC::GetInstance()->Poll();
+        _ipc->Poll();
 
         LAppPal::UpdateTime();
 
@@ -211,18 +215,14 @@ LAppDelegate::LAppDelegate():
     _cubismOption(),
     _view(nullptr),
     _manager(nullptr),
+    _ipc(nullptr),
+    _commands(nullptr),
     
-    _captured(false),
     _mouseX(0.0f),
     _mouseY(0.0f),
     _isEnd(false),
     _windowWidth(0),
     _windowHeight(0),
-    _isDraggingWindow(false),
-    _dragStartX(0),
-    _dragStartY(0),
-    _windowStartX(0),
-    _windowStartY(0),
     _lookCenterX(0.5f),
     _lookCenterY(0.5f),
     _modelScale(1.0f),
@@ -278,33 +278,21 @@ void LAppDelegate::OnMouseCallBack(void* window, int button, int action, int mod
     {
         if (1 == action)
         {
-            _captured = true;
+            _input.Press(static_cast<int>(_mouseX), static_cast<int>(_mouseY));
             _view->OnTouchesBegan(_mouseX, _mouseY);
-
-            // Start drag
-            _isDraggingWindow = true;
-            double curX, curY;
-            curX = _mouseX; curY = _mouseY;
-            _dragStartX = static_cast<int>(curX);
-            _dragStartY = static_cast<int>(curY);
-            _windowStartX = static_cast<int>(curX); _windowStartY = static_cast<int>(curY);
-
         }
         else if (0 == action)
         {
-            if (_captured)
+            if (_input.IsCaptured())
             {
-                _captured = false;
-
                 // Execute screen switch on release
                 int hx, hy;
-                bool is_drag = _isDraggingWindow;
                 bool got_cursor = GetGlobalCursorPosition(hx, hy);
                 bool has_outputs = !_wlContext.outputs.empty();
-                LAppPal::PrintLogLn("[Debug] Release: is_drag=%d, got_cursor=%d, has_outputs=%d, hx=%d, hy=%d", 
-                    (int)is_drag, (int)got_cursor, (int)has_outputs, hx, hy);
+                LAppPal::PrintLogLn("[Debug] Release: got_cursor=%d, has_outputs=%d, hx=%d, hy=%d",
+                    (int)got_cursor, (int)has_outputs, hx, hy);
                 
-                if (is_drag && got_cursor && has_outputs) {
+                if (got_cursor && has_outputs) {
                     int old_idx = _wlContext.current_output_index;
                     extern void SwitchWaylandOutputToMonitor(int, int);
                     SwitchWaylandOutputToMonitor(hx, hy);
@@ -325,30 +313,19 @@ void LAppDelegate::OnMouseCallBack(void* window, int button, int action, int mod
                     }
                 }
 
-                _isDraggingWindow = false;
-
-                double curX, curY;
-                curX = _mouseX; curY = _mouseY;
-                int dx = abs(static_cast<int>(curX) - _windowStartX);
-                int dy = abs(static_cast<int>(curY) - _windowStartY);
-                LAppPal::PrintLogLn("[Debug] Tap check: cur(%d,%d) start(%d,%d) dx=%d dy=%d", 
-                    static_cast<int>(curX), static_cast<int>(curY), _windowStartX, _windowStartY, dx, dy);
-                if (dx < 10 && dy < 10)
-                {
-                    const auto now = ClickClock();
-                    if (_clicks.HasPending() && !_clicks.IsSecondClick(now, _windowStartX, _windowStartY))
-                        FlushPendingTap();
-                    const auto result = _clicks.Release(now, _windowStartX, _windowStartY,
-                        static_cast<int>(curX), static_cast<int>(curY));
-                    if (result == ModelDoubleClick::DoubleClick)
+                const auto result = _input.Release(ClickClock(), static_cast<int>(_mouseX),
+                    static_cast<int>(_mouseY), [this](int x, int y)
                     {
-                        _manager->OnDrag(0.0f, 0.0f);
-                        SetModelKeyboardGrab(&_wlContext, true);
-                    }
-                }
-                else 
+                        _view->OnTouchesBegan(x, y);
+                        _view->OnTouchesEnded(x, y);
+                    });
+                if (result == InputController::ReleaseResult::DoubleClick)
                 {
-                    FlushPendingTap();
+                    _manager->OnDrag(0.0f, 0.0f);
+                    SetModelKeyboardGrab(&_wlContext, true);
+                }
+                else if (result == InputController::ReleaseResult::Drag)
+                {
                     _manager->OnDrag(0.0f, 0.0f); // End look
                 }
             }
@@ -371,7 +348,7 @@ void LAppDelegate::OnMouseCallBack(void* window, int button, int action, int mod
 
 void LAppDelegate::FlushPendingTap()
 {
-    DispatchPendingTap(_clicks, [this](int x, int y)
+    _input.FlushTap([this](int x, int y)
     {
         _view->OnTouchesBegan(x, y);
         _view->OnTouchesEnded(x, y);
@@ -380,7 +357,7 @@ void LAppDelegate::FlushPendingTap()
 
 void LAppDelegate::ResetKeyboardState()
 {
-    _keyboard.Reset();
+    _input.ResetKeyboard();
 }
 
 void LAppDelegate::OnModelKey(uint32_t code, bool pressed)
@@ -388,8 +365,8 @@ void LAppDelegate::OnModelKey(uint32_t code, bool pressed)
     LAppModel* model = _wlContext.keyboardSurface.IsGrabbed()
         ? _manager->GetModel(0) : nullptr;
     const auto* bindings = model ? &model->Hotkeys().Bindings() : nullptr;
-    const ModelKeyDecision decision = DecideModelKey(
-        _keyboard, _wlContext.keyboardSurface.IsGrabbed(), code, pressed, bindings);
+    const ModelKeyDecision decision = _input.Key(
+        _wlContext.keyboardSurface.IsGrabbed(), code, pressed, bindings);
     if (decision.action == ModelKeyDecision::ReleaseGrab)
         SetModelKeyboardGrab(&_wlContext, false);
     else if (decision.action == ModelKeyDecision::Trigger)
@@ -416,30 +393,24 @@ void LAppDelegate::OnMouseCallBack(void* window, double x, double y)
     int width, height;
     width = _windowWidth; height = _windowHeight;
     
-    float faceCenterX = ((float)width * _lookCenterX) + (_modelX * _modelScale * ((float)height / 2.0f));
-    float faceCenterY = ((float)height * _lookCenterY) - (_modelY * _modelScale * ((float)height / 2.0f));
+    const auto look = InputController::LookAt(_mouseX, _mouseY, width, height,
+        _lookCenterX, _lookCenterY, {_modelScale, _modelX, _modelY});
+    _manager->OnDrag(look.first, look.second);
 
-    float viewX = (_mouseX - faceCenterX) / ((float)width / 2.0f);
-    float viewY = -(_mouseY - faceCenterY) / ((float)height / 2.0f);
-
-    _manager->OnDrag(viewX, viewY);
-
-    if (_captured && _isDraggingWindow)
+    if (_input.IsCaptured())
     {
         double curX = x;
         double curY = y;
-        int deltaX = static_cast<int>(curX) - _dragStartX;
-        int deltaY = static_cast<int>(curY) - _dragStartY;
+        int deltaX = static_cast<int>(curX) - _input.DragX();
+        int deltaY = static_cast<int>(curY) - _input.DragY();
         
         if (deltaX != 0 || deltaY != 0) {
-            float dx_logical = (float)deltaX / (float)_windowHeight * 2.0f;
-            float dy_logical = -(float)deltaY / (float)_windowHeight * 2.0f; // Y axis is flipped in OpenGL
+            const auto next = InputController::Drag({_modelScale, _modelX, _modelY},
+                deltaX, deltaY, _windowHeight);
+            _modelX = next.x;
+            _modelY = next.y;
             
-            _modelX += dx_logical / _modelScale;
-            _modelY += dy_logical / _modelScale;
-            
-            _dragStartX = static_cast<int>(curX);
-            _dragStartY = static_cast<int>(curY);
+            _input.SetDragPosition(static_cast<int>(curX), static_cast<int>(curY));
         }
     }
 }

@@ -5,6 +5,32 @@ add_test(NAME component-direction
   COMMAND ${CMAKE_COMMAND} -DAPP_SOURCE=${CMAKE_SOURCE_DIR}/src
     -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckComponentDirection.cmake)
 
+add_executable(model-catalog-test ModelCatalogTest.cpp)
+target_include_directories(model-catalog-test PRIVATE ../src)
+target_link_libraries(model-catalog-test PRIVATE deskwaifu_catalog)
+add_test(NAME model-catalog COMMAND model-catalog-test)
+
+add_executable(model-cache-test ModelCacheTest.cpp)
+target_include_directories(model-cache-test PRIVATE ../src)
+add_test(NAME model-cache COMMAND model-cache-test)
+
+add_executable(model-session-test ModelSessionTest.cpp)
+target_include_directories(model-session-test PRIVATE ../src)
+add_test(NAME model-session COMMAND model-session-test)
+
+add_executable(ipc-transport-test IpcTransportTest.cpp)
+target_include_directories(ipc-transport-test PRIVATE ../src)
+target_link_libraries(ipc-transport-test PRIVATE deskwaifu_ipc)
+add_test(NAME ipc-transport COMMAND ipc-transport-test)
+
+add_executable(input-controller-test InputControllerTest.cpp)
+target_link_libraries(input-controller-test PRIVATE deskwaifu_input)
+add_test(NAME input-controller COMMAND input-controller-test)
+
+if (NOT DESKWAIFU_BUILD_CONTROL)
+  return()
+endif ()
+
 find_package(Qt6 REQUIRED COMPONENTS Test Network Widgets)
 
 qt_add_executable(deskwaifu-client-test

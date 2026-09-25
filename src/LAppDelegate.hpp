@@ -10,13 +10,15 @@
 #include <string>
 #include <GL/glew.h>
 #include "LAppWayland.hpp"
-#include "ModelKeyboard.hpp"
+#include "InputController.hpp"
 #include "Type/csmVector.hpp"
 #include "LAppAllocator_Common.hpp"
 
 class LAppView;
 class LAppTextureManager;
 class LAppLive2DManager;
+class LAppIPC;
+class AppCommandHandler;
 
 /**
 * @brief   アプリケーションクラス。
@@ -156,11 +158,11 @@ private:
     WaylandContext _wlContext;                          ///< Wayland Context
     LAppView* _view;                                    ///< View情報
     LAppLive2DManager* _manager;
-    bool _captured;                              ///< クリックしているか
+    LAppIPC* _ipc;
+    AppCommandHandler* _commands;
     float _mouseX;                               ///< マウスX座標
     float _mouseY;                               ///< マウスY座標
-    ModelDoubleClick _clicks;
-    ModelKeyboard _keyboard;
+    InputController _input;
     void FlushPendingTap();
     bool _isEnd;                                 ///< APP終了しているか
     bool _cubismStarted = false;
@@ -170,11 +172,6 @@ private:
     int _windowWidth;                            ///< Initialize関数で設定したウィンドウ幅
     int _windowHeight;                           ///< Initialize関数で設定したウィンドウ高さ
 
-    bool _isDraggingWindow;
-    int _dragStartX;
-    int _dragStartY;
-    int _windowStartX;
-    int _windowStartY;
     float _lookCenterX;
     float _lookCenterY;
     
