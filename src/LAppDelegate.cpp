@@ -262,6 +262,7 @@ void LAppDelegate::InitializeCubism()
 
 void LAppDelegate::TrackGlobalCursor()
 {
+    if (!_globalCursorThrottle.Ready(std::chrono::steady_clock::now())) return;
     const auto cursor = _compositor.GlobalCursor();
     if (!cursor) return; // pointer-on-surface events still work without it
     const auto outputs = _waylandBackend.Outputs();
