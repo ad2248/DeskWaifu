@@ -44,8 +44,11 @@ std::vector<ModelDescriptor> ModelCatalog::Scan(const std::vector<std::string>& 
                 if (json.size() <= suffix.size() ||
                     json.compare(json.size() - suffix.size(), suffix.size(), suffix) != 0)
                     continue;
-                const std::string id = Canonical(modelDir + json);
-                if (!id.empty()) result.push_back({id, name, modelDir, json});
+                // A directory may overlay shared symlinked assets with its
+                // own hotkey config. Resolve the directory, not the file.
+                struct stat info;
+                if (stat((modelDir + json).c_str(), &info) == 0 && S_ISREG(info.st_mode))
+                    result.push_back({modelDir + json, name, modelDir, json});
             }
             closedir(inner);
         }

@@ -20,19 +20,23 @@ int main()
     mkdir((second + "/Twin").c_str(), 0700);
     const std::string firstJson = first + "/Twin/alpha.model3.json";
     const std::string secondJson = second + "/Twin/beta.model3.json";
+    const std::string aliasJson = second + "/Twin/alpha.model3.json";
     const std::string ignored = second + "/Twin/README.txt";
     std::ofstream(firstJson) << "{}";
     std::ofstream(secondJson) << "{}";
+    symlink(firstJson.c_str(), aliasJson.c_str());
     std::ofstream(ignored) << "skip";
 
     const auto models = ModelCatalog::Scan({second, root + "/missing", first, second});
-    const bool correct = models.size() == 2 && models[0].name == "Twin" &&
-        models[1].name == "Twin" && models[0].id == firstJson &&
-        models[1].id == secondJson && models[0].id != models[1].id &&
+    const bool correct = models.size() == 3 && models[0].name == "Twin" &&
+        models[1].name == "Twin" && models[2].name == "Twin" &&
+        models[0].id == firstJson && models[1].id == aliasJson &&
+        models[2].id == secondJson && models[0].id != models[1].id &&
         models[0].directory == first + "/Twin/";
 
     unlink(firstJson.c_str());
     unlink(secondJson.c_str());
+    unlink(aliasJson.c_str());
     unlink(ignored.c_str());
     rmdir((first + "/Twin").c_str());
     rmdir((second + "/Twin").c_str());

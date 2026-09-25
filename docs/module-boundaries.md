@@ -24,7 +24,8 @@ depend on Cubism. The manager keeps cached model pointers private, with
 `ModelSession` owning them; View borrows only active pointers for the duration
 of a frame. A failed selection keeps the previous model active, while failed
 prefetch is non-fatal. Models with duplicate visible names have distinct
-canonical `.model3.json` path IDs; the existing name-based IPC lookup still
+canonical-directory-plus-filename IDs (the JSON file may symlink to shared
+assets without merging model sessions); the existing name-based IPC lookup still
 selects the first sorted match for compatibility.
 
 `BUILD_TESTING=ON` runs catalog, cache, session, input, dependency direction
