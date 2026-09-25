@@ -281,7 +281,14 @@ if [[ -n $state && $state != Z* ]]; then
     echo "DeskWaifu did not exit after quit" >&2
     exit 1
 fi
-wait "$APP_PID"
-APP_PID=
+if wait "$APP_PID"; then
+    APP_PID=
+else
+    exit_code=$?
+    APP_PID=
+    echo "DeskWaifu exited with status $exit_code after quit" >&2
+    cat "$LOG_DIR/deskwaifu.log" >&2
+    exit "$exit_code"
+fi
 grep -q 'GPU resources released before EGL teardown' "$LOG_DIR/deskwaifu.log"
 echo "Headless Wayland, Qt control, and IPC smoke test passed"
