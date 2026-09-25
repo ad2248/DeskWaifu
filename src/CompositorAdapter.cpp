@@ -27,7 +27,10 @@ Capability<std::string> ReadBounded(int fd)
         pollfd pending{fd, POLLIN, 0};
         const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
             deadline - std::chrono::steady_clock::now()).count();
-        if (remaining <= 0 || poll(&pending, 1, static_cast<int>(remaining)) <= 0)
+        if (remaining <= 0) return {CapabilityStatus::Unavailable, {}};
+        const int ready = poll(&pending, 1, static_cast<int>(remaining));
+        if (ready < 0 && errno == EINTR) continue;
+        if (ready <= 0)
             return {CapabilityStatus::Unavailable, {}};
         const ssize_t size = read(fd, buffer, std::min(sizeof(buffer), 16384 - output.size()));
         if (size == 0) return {CapabilityStatus::Available, output};
