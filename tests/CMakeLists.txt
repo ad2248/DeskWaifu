@@ -38,6 +38,11 @@ add_test(NAME external-control COMMAND external-control-test)
 add_executable(texture-residency-test TextureResidencyTest.cpp)
 target_include_directories(texture-residency-test PRIVATE ../src)
 add_test(NAME texture-residency COMMAND texture-residency-test)
+add_test(NAME texture-lease-gl-deletion
+  COMMAND ${CMAKE_COMMAND}
+    -DTEXTURE_MANAGER_HEADER=${CMAKE_SOURCE_DIR}/src/LAppTextureManager.hpp
+    -DTEXTURE_MANAGER_SOURCE=${CMAKE_SOURCE_DIR}/src/LAppTextureManager.cpp
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckTextureLeaseGlDeletion.cmake)
 
 add_executable(output-controller-test OutputControllerTest.cpp)
 target_link_libraries(output-controller-test PRIVATE deskwaifu_output)
