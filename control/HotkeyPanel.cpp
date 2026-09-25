@@ -31,6 +31,15 @@ HotkeyPanel::HotkeyPanel(QWidget* parent) : QWidget(parent)
     connect(qApp, &QApplication::focusChanged, this, [this] { _pressed.clear(); });
 }
 
+HotkeyPanel::~HotkeyPanel()
+{
+    // QWidget's base destructor hides the window and emits focusChanged
+    // after members such as _pressed are already destroyed. Disconnect the
+    // application signal while those members are still alive.
+    QObject::disconnect(qApp, nullptr, this, nullptr);
+    qApp->removeEventFilter(this);
+}
+
 int HotkeyPanel::keyCode(const QString& name)
 {
     if (name.size() == 2 && name[0] == QLatin1Char('N') && name[1].isDigit())
