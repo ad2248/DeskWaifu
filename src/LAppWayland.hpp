@@ -61,6 +61,7 @@ bool GetGlobalCursorPosition(int& x, int& y);
 
 bool SetupWaylandContext(WaylandContext* wl, int width, int height);
 void CleanWaylandContext(WaylandContext* wl);
+bool MakeWaylandGpuContextCurrent(WaylandContext* wl);
 KeyboardSurfaceLifecycle::GrabResult SetModelKeyboardGrab(WaylandContext* wl, bool grabbed);
 
 void SwitchWaylandOutput(int direction);

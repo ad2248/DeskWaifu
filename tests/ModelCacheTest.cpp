@@ -7,6 +7,7 @@ struct FakeModel
     explicit FakeModel(int& destroyed) : destroyed(destroyed) {}
     ~FakeModel() { ++destroyed; }
     int& destroyed;
+    std::size_t TextureBytes() const { return 1; }
 };
 
 int main()

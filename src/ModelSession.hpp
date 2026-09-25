@@ -9,6 +9,10 @@ template<typename Model>
 class ModelSession
 {
 public:
+    // Soft budget: the currently active model is pinned even if it alone
+    // exceeds the budget. Shared textures are conservatively counted once per
+    // model here; actual GPU residency is tracked by TextureResidency.
+    void SetTextureBudget(std::size_t bytes) { _textureBudget = bytes; }
     void Initialize(std::size_t count)
     {
         _cache.Initialize(count);
@@ -29,6 +33,12 @@ public:
         const std::size_t next = (static_cast<std::size_t>(index) + 1) % _cache.Size();
         _cache.EvictExcept(index, next);
         if (_cache.Size() > 1 && !_cache.Get(next)) _cache.Store(next, load(next));
+        for (std::size_t candidate = 0; candidate < _cache.Size() &&
+            _cache.ModelBytes() > _textureBudget; ++candidate)
+            if (candidate != static_cast<std::size_t>(index) && candidate != next)
+                _cache.Evict(candidate);
+        if (_cache.ModelBytes() > _textureBudget && next != static_cast<std::size_t>(index))
+            _cache.Evict(next);
         return true;
     }
 
@@ -45,4 +55,5 @@ public:
 private:
     ModelCache<Model> _cache;
     int _current = -1;
+    std::size_t _textureBudget = 128u * 1024u * 1024u;
 };

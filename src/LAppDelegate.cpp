@@ -29,6 +29,7 @@
 #include "ModelScroll.hpp"
 #include "ModelHotkeyTrigger.hpp"
 #include "RuntimeLifecycle.hpp"
+#include "GpuTeardown.hpp"
 #include "InputController.hpp"
 
 using namespace Csm;
@@ -135,17 +136,20 @@ bool LAppDelegate::Initialize()
 
     return true;
 }
-void LAppDelegate::Release()
+bool LAppDelegate::Release()
 {
-    ReleaseRuntimeInOrder(
+    return ReleaseGpuResources(_cubismStarted || _view || _manager ||
+        (_textureManager && _textureManager->ResidentCount()),
+        [this] { return MakeWaylandGpuContextCurrent(&_wlContext); },
+        [this] { ReleaseRuntimeInOrder(
         [this] { delete _ipc; _ipc = nullptr; delete _commands; _commands = nullptr; },
         [this] { delete _view; _view = nullptr; },
         [this] { delete _manager; _manager = nullptr; },
         [this] { delete _textureManager; _textureManager = nullptr; },
         [this] { if (_cubismStarted) { CubismFramework::Dispose(); _cubismStarted = false; } },
-        [this] { CleanWaylandContext(&_wlContext); });
+        [this] { CleanWaylandContext(&_wlContext); }); });
 }
-void LAppDelegate::Run()
+bool LAppDelegate::Run()
 {
     while (!_isEnd) 
     {
@@ -210,8 +214,11 @@ void LAppDelegate::Run()
             usleep(33000); // Reduce CPU usage when hidden
         }
     }
-    Release();
+    const bool released = Release();
+    if (released) LAppPal::PrintLogLn("[APP]GPU resources released before EGL teardown");
+    else LAppPal::PrintLogLn("[APP]Could not restore GPU context for teardown; resources left to process cleanup");
     LAppDelegate::ReleaseInstance();
+    return released;
 }
 LAppDelegate::LAppDelegate():
     _cubismOption(),

@@ -69,6 +69,9 @@ LAppModel::~LAppModel()
 {
     _renderBuffer.DestroyRenderTarget();
 
+    DeleteRenderer();
+    _textureLeases.clear();
+
     ReleaseMotions();
     ReleaseExpressions();
 
@@ -799,15 +802,29 @@ bool LAppModel::SetupTextures()
         csmString texturePath = _modelSetting->GetTextureFileName(modelTextureNumber);
         texturePath = _modelHomeDir + texturePath;
 
-        LAppTextureManager::TextureInfo* texture = _textures.CreateTextureFromPngFile(texturePath.GetRawString());
-        if (!texture) return false;
-        const csmInt32 glTextueNumber = texture->id;
+        GLuint textureId = 0;
+        const std::string path = texturePath.GetRawString();
+        for (const auto& lease : _textureLeases)
+            if (lease.Key() == path) { textureId = lease.IdValue(); break; }
+        if (!textureId) {
+            auto lease = _textures.AcquireTexture(path);
+            if (!lease) return false;
+            textureId = lease.IdValue();
+            _textureLeases.push_back(std::move(lease));
+        }
 
-        GetRenderer<Rendering::CubismRenderer_OpenGLES2>()->BindTexture(modelTextureNumber, glTextueNumber);
+        GetRenderer<Rendering::CubismRenderer_OpenGLES2>()->BindTexture(modelTextureNumber, textureId);
     }
 
     GetRenderer<Rendering::CubismRenderer_OpenGLES2>()->IsPremultipliedAlpha(false);
     return true;
+}
+
+std::size_t LAppModel::TextureBytes() const
+{
+    std::size_t sum = 0;
+    for (const auto& lease : _textureLeases) sum += lease.Bytes();
+    return sum;
 }
 
 void LAppModel::MotionEventFired(const csmString& eventValue)

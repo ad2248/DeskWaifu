@@ -2,7 +2,11 @@
 
 #include <memory>
 
-struct FakeModel { explicit FakeModel(int value) : value(value) {} int value; };
+struct FakeModel {
+    explicit FakeModel(int value) : value(value) {}
+    int value;
+    std::size_t TextureBytes() const { return 16; }
+};
 
 int main()
 {
@@ -22,6 +26,9 @@ int main()
     if (session.Cache().Get(0) || session.Cache().Get(2)) return 1;
     if (!session.Select(3, load) || !session.Cache().Get(4)) return 1;
     if (session.Cache().Get(1)) return 1;
+    session.SetTextureBudget(16); // only the active model fits
+    if (!session.Select(3, load) || session.Cache().Get(4) != nullptr ||
+        session.Cache().ModelBytes() != 16) return 1;
     session.Clear();
     return session.CurrentIndex() == -1 && session.Current() == nullptr ? 0 : 1;
 }

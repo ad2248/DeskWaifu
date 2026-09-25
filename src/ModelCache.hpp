@@ -35,6 +35,14 @@ public:
 
     void Clear() { _entries.clear(); }
     std::size_t Size() const { return _entries.size(); }
+    void Evict(std::size_t index) { if (index < _entries.size()) _entries[index].reset(); }
+
+    std::size_t ModelBytes() const
+    {
+        std::size_t bytes = 0;
+        for (const auto& model : _entries) if (model) bytes += model->TextureBytes();
+        return bytes;
+    }
 
 private:
     std::vector<std::unique_ptr<Model>> _entries;

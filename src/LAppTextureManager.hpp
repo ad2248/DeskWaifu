@@ -12,6 +12,7 @@
 #include <Type/csmVector.hpp>
 
 #include "LAppTextureManager_Common.hpp"
+#include "TextureResidency.hpp"
 
 /**
 * @brief テクスチャ管理クラス
@@ -38,8 +39,15 @@ public:
     * @param[in] fileName  読み込む画像ファイルパス名
     * @return 画像情報。読み込み失敗時はNULLを返す
     */
+    // Legacy non-leased resource path (minimum demo). Runtime models must use
+    // AcquireTexture so evictions release their GPU residency.
     TextureInfo* CreateTextureFromPngFile(std::string fileName);
+    using TextureLease = TextureResidency<GLuint>::Lease;
+    TextureLease AcquireTexture(const std::string& fileName);
+    std::size_t ResidentBytes() const { return _residency.ResidentBytes(); }
+    std::size_t ResidentCount() const { return _residency.ResidentCount(); }
 
+private:
     /**
     * @brief 画像の解放
     *
@@ -62,4 +70,5 @@ public:
     * @param[in] fileName  解放する画像ファイルパス名
     **/
     void ReleaseTexture(std::string fileName);
+    TextureResidency<GLuint> _residency;
 };
