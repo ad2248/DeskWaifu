@@ -42,8 +42,11 @@ if (wayland MATCHES "LAppDelegate::GetInstance|#include \"LAppDelegate.hpp\"")
   message(FATAL_ERROR "Protocol callbacks must use the explicit event sink")
 endif ()
 file(READ "${APP_SOURCE}/LAppDelegate.cpp" delegate)
-string(FIND "${delegate}" "delete _ipc; _ipc = nullptr;" ipc_cleanup)
-string(FIND "${delegate}" "delete _commands; _commands = nullptr;" command_cleanup)
-if (command_cleanup EQUAL -1 OR ipc_cleanup EQUAL -1 OR ipc_cleanup GREATER command_cleanup)
-  message(FATAL_ERROR "IPC transport must be destroyed before its command service")
+# LAppIPC::Release() calls ICommandService::Disconnected() for every active
+# client, so the command service must outlive the IPC transport. This is a
+# lexical guard for the delegate cleanup block; ipc-transport-test verifies the
+# callback behavior itself.
+string(REGEX MATCH "delete _ipc;[ \t\r\n]+_ipc = nullptr;[ \t\r\n]+delete _commands;[ \t\r\n]+_commands = nullptr;" ipc_before_commands "${delegate}")
+if (NOT ipc_before_commands)
+  message(FATAL_ERROR "IPC transport must be destroyed before its command service because Release() invokes Disconnected()")
 endif ()
