@@ -1,5 +1,7 @@
 #include "CompositorAdapter.hpp"
 #include <chrono>
+#include <fcntl.h>
+#include <unistd.h>
 
 struct FakeTransport : ICompositorTransport
 {
@@ -36,5 +38,11 @@ int main()
         std::chrono::steady_clock::now() - begin).count();
     if (timed.status != CapabilityStatus::Unavailable || elapsed > 1500) return 1;
     if (actual.Command({"/definitely/missing/compositor"}).status != CapabilityStatus::Failed) return 1;
+    const int inherited = fcntl(STDOUT_FILENO, F_DUPFD, 100);
+    if (inherited < 0) return 1;
+    const auto descriptorCheck = actual.Command({"sh", "-c",
+        "test ! -e /proc/self/fd/" + std::to_string(inherited)});
+    close(inherited);
+    if (!descriptorCheck) return 1;
     return 0;
 }

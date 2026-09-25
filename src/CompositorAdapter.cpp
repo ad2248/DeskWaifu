@@ -6,9 +6,12 @@
 #include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
+#include <limits>
+#include <linux/close_range.h>
 #include <poll.h>
 #include <regex>
 #include <signal.h>
+#include <sys/syscall.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/wait.h>
@@ -16,6 +19,16 @@
 
 namespace {
 constexpr int TimeoutMs = 250;
+
+void CloseInheritedDescriptors()
+{
+    if (syscall(SYS_close_range, STDERR_FILENO + 1, ~0U, CLOSE_RANGE_UNSHARE) == 0) return;
+    const long limit = sysconf(_SC_OPEN_MAX);
+    const int maximum = limit > STDERR_FILENO
+        ? static_cast<int>(std::min(limit, static_cast<long>(std::numeric_limits<int>::max())))
+        : 1024;
+    for (int fd = STDERR_FILENO + 1; fd < maximum; ++fd) close(fd);
+}
 
 Capability<std::string> ReadBounded(int fd)
 {
@@ -91,6 +104,7 @@ Capability<std::string> BoundedCompositorTransport::Command(const std::vector<st
         close(pipes[0]);
         dup2(pipes[1], STDOUT_FILENO);
         close(pipes[1]);
+        CloseInheritedDescriptors();
         std::vector<char*> argv;
         for (const auto& arg : args) argv.push_back(const_cast<char*>(arg.c_str()));
         argv.push_back(nullptr);
