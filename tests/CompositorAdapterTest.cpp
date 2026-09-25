@@ -12,6 +12,11 @@ struct FakeTransport : ICompositorTransport
 
 int main()
 {
+    const auto start = std::chrono::steady_clock::now();
+    CursorQueryThrottle throttle(std::chrono::milliseconds(30));
+    if (!throttle.Ready(start) || throttle.Ready(start + std::chrono::milliseconds(29)) ||
+        !throttle.Ready(start + std::chrono::milliseconds(30))) return 1;
+
     FakeTransport transport;
     CompositorAdapter generic(CompositorType::Generic, transport);
     if (generic.GlobalCursor().status != CapabilityStatus::Unsupported ||
