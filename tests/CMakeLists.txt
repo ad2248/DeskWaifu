@@ -4,6 +4,10 @@ add_test(NAME component-dependencies COMMAND component-dependencies-test)
 add_test(NAME component-direction
   COMMAND ${CMAKE_COMMAND} -DAPP_SOURCE=${CMAKE_SOURCE_DIR}/src
     -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckComponentDirection.cmake)
+add_test(NAME component-direction-missing
+  COMMAND ${CMAKE_COMMAND} -DAPP_SOURCE=${CMAKE_CURRENT_BINARY_DIR}/missing-components
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckComponentDirection.cmake)
+set_tests_properties(component-direction-missing PROPERTIES WILL_FAIL TRUE)
 
 add_executable(json-command-test JsonCommandTest.cpp)
 target_include_directories(json-command-test PRIVATE ../src)
@@ -40,13 +44,10 @@ target_include_directories(external-control-test PRIVATE ../src)
 add_test(NAME external-control COMMAND external-control-test)
 
 add_executable(texture-residency-test TextureResidencyTest.cpp)
-target_include_directories(texture-residency-test PRIVATE ../src)
+target_include_directories(texture-residency-test PRIVATE ../src ${GLEW_PATH}/include ${FRAMEWORK_PATH}/src ${CORE_PATH}/include ${COMMON_SRC_PATH})
 add_test(NAME texture-residency COMMAND texture-residency-test)
-add_test(NAME texture-lease-gl-deletion
-  COMMAND ${CMAKE_COMMAND}
-    -DTEXTURE_MANAGER_HEADER=${CMAKE_SOURCE_DIR}/src/LAppTextureManager.hpp
-    -DTEXTURE_MANAGER_SOURCE=${CMAKE_SOURCE_DIR}/src/LAppTextureManager.cpp
-    -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckTextureLeaseGlDeletion.cmake)
+add_test(NAME smoke-exit-status
+  COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/SmokeExitStatusTest.sh ${CMAKE_SOURCE_DIR})
 
 add_executable(output-controller-test OutputControllerTest.cpp)
 target_link_libraries(output-controller-test PRIVATE deskwaifu_output)

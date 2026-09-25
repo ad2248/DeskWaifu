@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+source "$(dirname "$0")/quit-exit-status.sh"
 
 BUILD_DIR=${1:-build-ci}
 DEPS_DIR=${DESKWAIFU_DEPS_DIR:-}
@@ -143,6 +144,7 @@ assert_ok get_motions
 assert_ok do_motion --group Idle --index 0 --priority 2
 assert_ok set_mouth_y --value 0.5
 assert_ok set_mouth_y --reset
+./deskwaifu-ctl get_control_status | python3 -c 'import json,sys; s=json.load(sys.stdin); assert s["ok"] and not s["has_mouth"], s'
 assert_ok set_mouth_y --value 0.5
 assert_ok set_model_zoom --value 1.25
 assert_ok set_model_position --x 0.1 --y -0.1
@@ -150,6 +152,7 @@ assert_ok get_model_position
 assert_ok set_look --x 0.25 --y -0.25
 assert_ok set_look --reset
 assert_ok release_source
+./deskwaifu-ctl get_control_status | python3 -c 'import json,sys; s=json.load(sys.stdin); assert s["ok"] and not s["has_mouth"] and not s["has_look"], s'
 assert_ok set_mouth_y --value 0.5
 assert_ok get_control_status
 python3 - <<'PY'
@@ -291,9 +294,7 @@ if wait "$APP_PID"; then
 else
     exit_code=$?
     APP_PID=
-    echo "DeskWaifu exited with status $exit_code after quit" >&2
-    cat "$LOG_DIR/deskwaifu.log" >&2
-    exit "$exit_code"
+    report_app_failure "$exit_code" "$LOG_DIR/deskwaifu.log" || exit "$exit_code"
 fi
 grep -q 'GPU resources released before EGL teardown' "$LOG_DIR/deskwaifu.log"
 echo "Headless Wayland, Qt control, and IPC smoke test passed"

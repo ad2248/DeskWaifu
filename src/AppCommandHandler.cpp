@@ -78,8 +78,7 @@ std::string AppCommandHandler::Execute(const std::string& json, const std::strin
 
     LAppDelegate* app = &_app;
     LAppLive2DManager* mgr = &_models;
-    const auto stream = JsonGetString(json, "stream_source");
-    const bool streaming = stream == "true" || stream == "1";
+    const bool streaming = JsonGetBool(json, "stream_source");
     const std::string source = streaming ? connection : "cli";
     const auto lifetime = streaming ? ExternalControlState::Lifetime::Stream
         : ExternalControlState::Lifetime::Persistent;
@@ -262,8 +261,7 @@ std::string AppCommandHandler::Execute(const std::string& json, const std::strin
     // ── set_mouth_y ──
     if (command == "set_mouth_y")
     {
-        std::string reset = JsonGetString(json, "reset");
-        if (reset == "true" || reset == "1") {
+        if (JsonGetBool(json, "reset")) {
             app->Service().ResetMouth(source);
             return "{\"ok\":true}";
         }
@@ -319,8 +317,7 @@ std::string AppCommandHandler::Execute(const std::string& json, const std::strin
     // ── set_look ──
     if (command == "set_look")
     {
-        std::string reset = JsonGetString(json, "reset");
-        if (reset == "true" || reset == "1")
+        if (JsonGetBool(json, "reset"))
         {
             app->Service().ResetLook(source);
             return "{\"ok\":true}";

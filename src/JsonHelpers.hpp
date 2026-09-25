@@ -44,3 +44,9 @@ inline std::string JsonGetString(const std::string& json, const std::string& key
     }
     return val;
 }
+
+inline bool JsonGetBool(const std::string& json, const std::string& key)
+{
+    const auto value = JsonGetString(json, key);
+    return value == "true" || value == "1";
+}

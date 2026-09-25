@@ -42,7 +42,9 @@ int main()
     // updates leave every field unchanged.
     if (apply({std::numeric_limits<float>::quiet_NaN(), 2.0f, 0.0f}).ok ||
         apply({2.0f, std::numeric_limits<float>::infinity(), 0.0f}).ok ||
-        apply({11.0f, 1.0f, 0.0f}).ok) return 1;
+        apply({11.0f, 1.0f, 0.0f}).ok ||
+        apply({0.09f, 1.0f, 0.0f}).ok ||
+        apply({0.0f, 1.0f, 0.0f}).ok) return 1;
     auto snapshot = service.Snapshot();
     if (snapshot.transform.scale != 10.0f || snapshot.transform.x != 0.0f ||
         snapshot.transform.y != 0.0f) return 1;

@@ -62,7 +62,15 @@ jobs:
               -DCMAKE_BUILD_TYPE=Release \
               -DBUILD_TESTING=OFF \
               -DDESKWAIFU_BUILD_CONTROL=OFF \
+              -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
               "-DCMAKE_CXX_FLAGS=-D$definition"
+            python3 - "$build_dir/compile_commands.json" "$definition" <<'PY'
+          import json, shlex, sys
+          commands = json.load(open(sys.argv[1]))
+          expected = '-D' + sys.argv[2]
+          assert any(entry['file'].endswith('/src/LAppLive2DManager.cpp') and
+                     expected in shlex.split(entry['command']) for entry in commands), expected
+          PY
             cmake --build "$build_dir" --parallel "$(nproc)"
           done
 

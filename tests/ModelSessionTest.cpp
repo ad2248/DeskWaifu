@@ -13,9 +13,11 @@ int main()
     ModelSession<FakeModel> session;
     session.Initialize(5);
     int calls = 0;
+    int activeLoads = 0;
     const auto load = [&](int index) -> std::unique_ptr<FakeModel>
     {
         ++calls;
+        if (index == 3) ++activeLoads;
         if (index == 2) return nullptr;  // broken model, including prefetch
         return std::unique_ptr<FakeModel>(new FakeModel(index));
     };
@@ -30,7 +32,11 @@ int main()
     if (!session.Select(3, load) || session.Cache().Get(4) != nullptr ||
         session.Cache().ModelBytes() != 16) return 1;
     session.SetTextureBudget(8); // active model is pinned above the soft budget
+    auto* pinned = session.Current();
+    const int beforeSelect = activeLoads;
+    if (!pinned || session.Cache().ModelBytes() != 16) return 1;
     if (!session.Select(3, load) || session.Current() == nullptr ||
+        session.Current() != pinned || activeLoads != beforeSelect ||
         session.Cache().ModelBytes() != 16) return 1;
     session.Clear();
     return session.CurrentIndex() == -1 && session.Current() == nullptr ? 0 : 1;

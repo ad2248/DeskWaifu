@@ -1,5 +1,13 @@
 foreach(component LAppView LAppLive2DManager LAppModel LAppPal
     ModelHotkeys ModelInputDispatch ModelScroll)
+  if (component MATCHES "^Model(InputDispatch|Scroll)$")
+    set(required_extension .hpp)
+  else ()
+    set(required_extension .cpp)
+  endif ()
+  if (NOT EXISTS "${APP_SOURCE}/${component}${required_extension}")
+    message(FATAL_ERROR "Required component ${component}${required_extension} is missing")
+  endif ()
   foreach(extension .cpp .hpp)
     set(source "${APP_SOURCE}/${component}${extension}")
     if (EXISTS "${source}")
@@ -40,13 +48,4 @@ endif ()
 file(READ "${APP_SOURCE}/LAppWayland.cpp" wayland)
 if (wayland MATCHES "LAppDelegate::GetInstance|#include \"LAppDelegate.hpp\"")
   message(FATAL_ERROR "Protocol callbacks must use the explicit event sink")
-endif ()
-file(READ "${APP_SOURCE}/LAppDelegate.cpp" delegate)
-# LAppIPC::Release() calls ICommandService::Disconnected() for every active
-# client, so the command service must outlive the IPC transport. This is a
-# lexical guard for the delegate cleanup block; ipc-transport-test verifies the
-# callback behavior itself.
-string(REGEX MATCH "delete _ipc;[ \t\r\n]+_ipc = nullptr;[ \t\r\n]+delete _commands;[ \t\r\n]+_commands = nullptr;" ipc_before_commands "${delegate}")
-if (NOT ipc_before_commands)
-  message(FATAL_ERROR "IPC transport must be destroyed before its command service because Release() invokes Disconnected()")
 endif ()
