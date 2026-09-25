@@ -39,6 +39,14 @@ add_executable(texture-residency-test TextureResidencyTest.cpp)
 target_include_directories(texture-residency-test PRIVATE ../src)
 add_test(NAME texture-residency COMMAND texture-residency-test)
 
+add_executable(output-controller-test OutputControllerTest.cpp)
+target_link_libraries(output-controller-test PRIVATE deskwaifu_output)
+add_test(NAME output-controller COMMAND output-controller-test)
+
+add_executable(compositor-adapter-test CompositorAdapterTest.cpp)
+target_link_libraries(compositor-adapter-test PRIVATE deskwaifu_compositor)
+add_test(NAME compositor-adapter COMMAND compositor-adapter-test)
+
 if (NOT DESKWAIFU_BUILD_CONTROL)
   return()
 endif ()

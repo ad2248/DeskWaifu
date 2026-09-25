@@ -74,6 +74,13 @@ if [[ -z ${WAYLAND_DISPLAY:-} ]]; then
     exit 1
 fi
 wayland-info >/dev/null
+for _ in {1..100}; do
+    for socket in "$RUNTIME_DIR"/sway-ipc.*.sock; do
+        if [[ -S $socket ]]; then export SWAYSOCK=$socket; break 2; fi
+    done
+    sleep 0.1
+done
+if [[ -z ${SWAYSOCK:-} ]]; then echo 'Sway IPC socket missing' >&2; exit 1; fi
 
 "$BUILD_DIR/bin/deskwaifu" \
     --models_dir "$XDG_CONFIG_HOME/deskwaifu/models" \
@@ -231,6 +238,38 @@ kill -0 "$APP_PID"
 timeout 20 "$BUILD_DIR/bin/deskwaifu-control" --smoke-test \
     >"$LOG_DIR/deskwaifu-control.log" 2>&1
 kill -0 "$APP_PID"
+{
+    # Exercise the actual layer-surface configure/EGL rebind path, including
+    # switching back with an already live GPU context and active model.
+    swaymsg create_output >/dev/null
+    for _ in {1..100}; do
+        count=$(swaymsg -t get_outputs -r | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')
+        if (( count >= 2 )); then break; fi
+        sleep 0.1
+    done
+    if (( count < 2 )); then echo 'Second headless output missing' >&2; exit 1; fi
+    original=$(swaymsg -t get_outputs -r | python3 -c 'import json,sys; print(next(o["name"] for o in json.load(sys.stdin) if o["focused"]))')
+    target=$(swaymsg -t get_outputs -r | python3 -c 'import json,sys; a=json.load(sys.stdin); print(next(o["name"] for o in a if not o["focused"]))')
+    before=$(grep -c 'Output switch configured and committed:' "$LOG_DIR/deskwaifu.log" || true)
+    swaymsg focus output "$target" >/dev/null
+    kill -USR2 "$APP_PID"
+    for _ in {1..100}; do
+        after=$(grep -c 'Output switch configured and committed:' "$LOG_DIR/deskwaifu.log" || true)
+        if (( after > before )); then break; fi
+        sleep 0.1
+    done
+    if (( after <= before )); then cat "$LOG_DIR/deskwaifu.log" >&2; exit 1; fi
+    assert_ok get_status
+    swaymsg focus output "$original" >/dev/null
+    kill -USR2 "$APP_PID"
+    for _ in {1..100}; do
+        after=$(grep -c 'Output switch configured and committed:' "$LOG_DIR/deskwaifu.log" || true)
+        if (( after > before + 1 )); then break; fi
+        sleep 0.1
+    done
+    if (( after <= before + 1 )); then cat "$LOG_DIR/deskwaifu.log" >&2; exit 1; fi
+    assert_ok get_status
+}
 assert_ok quit
 for _ in {1..200}; do
     state=$(ps -o stat= -p "$APP_PID" 2>/dev/null || true)

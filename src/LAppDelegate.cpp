@@ -85,11 +85,11 @@ bool LAppDelegate::Initialize()
     signal(SIGUSR1, HandleToggleSignal);
     signal(SIGUSR2, HandleFocusSignal);
 
-    DetectCompositor();
 
     _windowWidth = RenderTargetWidth;
     _windowHeight = RenderTargetHeight;
 
+    _wlContext.events = this;
     if (!SetupWaylandContext(&_wlContext, RenderTargetWidth, RenderTargetHeight)) {
         return false;
     }
@@ -160,6 +160,8 @@ bool LAppDelegate::Run()
         if (wl_display_dispatch_pending(_wlContext.display) == -1) {
             break;
         }
+        _waylandBackend.ReconcileOutputs();
+        if (_isEnd) break;
         if (_input.TapExpired(ClickClock())) FlushPendingTap();
         wl_display_flush(_wlContext.display);
         
@@ -179,18 +181,13 @@ bool LAppDelegate::Run()
 
         if (pendingFocusMove) {
             pendingFocusMove = 0;
-            MoveToFocusedMonitor();
+            const auto focused = _compositor.FocusedOutput();
+            if (focused) {
+                if (!_outputController.Focus(focused.value))
+                    LAppPal::PrintLogLn("[Wayland] Focused output not available: %s", focused.value.c_str());
+            } else LAppPal::PrintLogLn("[Wayland] Focus capability unavailable (%d)", static_cast<int>(focused.status));
         }
-
-        int hx, hy;
-        if (GetGlobalCursorPosition(hx, hy) && !_wlContext.outputs.empty()) {
-            int current_idx = _wlContext.current_output_index;
-            WaylandContext::OutputInfo* out = _wlContext.outputs[current_idx];
-            
-            int local_x = hx - out->x;
-            int local_y = hy - out->y;
-            OnMouseCallBack(nullptr, (double)local_x, (double)local_y);
-        }
+        TrackGlobalCursor();
 
         // Poll IPC commands
         _ipc->Poll();
@@ -222,6 +219,9 @@ bool LAppDelegate::Run()
 }
 LAppDelegate::LAppDelegate():
     _cubismOption(),
+    _waylandBackend(_wlContext),
+    _outputController(_waylandBackend),
+    _compositor(CompositorAdapter::Detect(), _compositorTransport),
     _view(nullptr),
     _manager(nullptr),
     _ipc(nullptr),
@@ -257,21 +257,18 @@ void LAppDelegate::InitializeCubism()
     //Initialize cubism
     CubismFramework::Initialize();
 
-    //default proj
-    CubismMatrix44 projection;
+    LAppPal::UpdateTime();
+}
 
-    
-        int hx, hy;
-        if (GetGlobalCursorPosition(hx, hy) && !_wlContext.outputs.empty()) {
-            int current_idx = _wlContext.current_output_index;
-            WaylandContext::OutputInfo* out = _wlContext.outputs[current_idx];
-            
-            int local_x = hx - out->x;
-            int local_y = hy - out->y;
-            OnMouseCallBack(nullptr, (double)local_x, (double)local_y);
-        }
-
-        LAppPal::UpdateTime();
+void LAppDelegate::TrackGlobalCursor()
+{
+    const auto cursor = _compositor.GlobalCursor();
+    if (!cursor) return; // pointer-on-surface events still work without it
+    const auto outputs = _waylandBackend.Outputs();
+    const auto* current = _outputController.Current(outputs);
+    if (current) OnMouseCallBack(nullptr,
+        static_cast<double>(cursor.value.first - current->x),
+        static_cast<double>(cursor.value.second - current->y));
 }
 
 void LAppDelegate::OnMouseCallBack(void* window, int button, int action, int modify)
@@ -293,35 +290,15 @@ void LAppDelegate::OnMouseCallBack(void* window, int button, int action, int mod
             if (_input.IsCaptured())
             {
                 // Execute screen switch on release
-                int hx, hy;
-                bool got_cursor = GetGlobalCursorPosition(hx, hy);
-                bool has_outputs = !_wlContext.outputs.empty();
-                LAppPal::PrintLogLn("[Debug] Release: got_cursor=%d, has_outputs=%d, hx=%d, hy=%d",
-                    (int)got_cursor, (int)has_outputs, hx, hy);
-                
-                if (got_cursor && has_outputs) {
-                    int old_idx = _wlContext.current_output_index;
-                    extern void SwitchWaylandOutputToMonitor(int, int);
-                    SwitchWaylandOutputToMonitor(hx, hy);
-                    int new_idx = _wlContext.current_output_index;
-                    
-                    if (old_idx != new_idx) {
-                        WaylandContext::OutputInfo* out = _wlContext.outputs[old_idx];
-                        WaylandContext::OutputInfo* new_out = _wlContext.outputs[new_idx];
-                        
-                        // Keep physical height identical across different resolution monitors
-                        auto transform = _service.Snapshot().transform;
-                        if (new_out->height > 0 && out->height > 0) {
-                        transform.scale *= (float)out->height / (float)new_out->height;
-
-                        float local_x = hx - new_out->x;
-                        float local_y = hy - new_out->y;
-                        
-                        transform.x = (local_x - new_out->width * 0.5f) / (new_out->height * 0.5f) / transform.scale;
-                        transform.y = -(local_y - new_out->height * 0.5f) / (new_out->height * 0.5f) / transform.scale;
+                const auto cursor = _compositor.GlobalCursor();
+                if (cursor) {
+                    const auto geometry = _compositor.MonitorGeometry();
+                    if (geometry) _waylandBackend.ApplyMonitorGeometry(geometry.value);
+                    auto transform = _service.Snapshot().transform;
+                    const OutputId oldId = _waylandBackend.CurrentOutput();
+                    if (_outputController.MoveTo(cursor.value.first, cursor.value.second, transform) &&
+                        oldId != _waylandBackend.CurrentOutput())
                         _service.SetTransform(transform);
-                        }
-                    }
                 }
 
                 const auto result = _input.Release(ClickClock(), static_cast<int>(_mouseX),
