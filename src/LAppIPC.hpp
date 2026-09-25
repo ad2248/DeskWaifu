@@ -9,12 +9,18 @@
 
 #include <string>
 #include <vector>
+#include "AppCommandHandler.hpp"
 
-class LAppIPC
+class LAppIPC : public IExternalControlPort
 {
 public:
-    static LAppIPC* GetInstance();
-    static void ReleaseInstance();
+    LAppIPC();
+    ~LAppIPC();
+    void SetCommandService(ICommandService& commands) { _commands = &commands; }
+    void SetMouth(float value) override { _externalMouthY = value; _hasExternalMouthY = true; }
+    void SetLook(float x, float y) override
+    { _externalLookX = x; _externalLookY = y; _hasExternalLook = true; }
+    void ResetLook() override { _hasExternalLook = false; }
 
     /**
      * @brief Initialize the IPC socket server.
@@ -54,11 +60,8 @@ public:
     static float GetExternalLookY() { return _externalLookY; }
 
 private:
-    LAppIPC();
-    ~LAppIPC();
-
-    std::string ProcessCommand(const std::string& json);
     void HandleClient(int clientFd);
+    ICommandService* _commands;
 
     int _serverFd;
     std::string _socketPath;

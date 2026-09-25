@@ -1,0 +1,27 @@
+#include "ModelSession.hpp"
+
+#include <memory>
+
+struct FakeModel { explicit FakeModel(int value) : value(value) {} int value; };
+
+int main()
+{
+    ModelSession<FakeModel> session;
+    session.Initialize(5);
+    int calls = 0;
+    const auto load = [&](int index) -> std::unique_ptr<FakeModel>
+    {
+        ++calls;
+        if (index == 2) return nullptr;  // broken model, including prefetch
+        return std::unique_ptr<FakeModel>(new FakeModel(index));
+    };
+    if (!session.Select(0, load) || session.CurrentIndex() != 0 || !session.Current()) return 1;
+    if (session.Cache().Get(1) == nullptr || session.Cache().Get(2) != nullptr) return 1;
+    if (session.Select(2, load) || session.CurrentIndex() != 0 || session.Current()->value != 0) return 1;
+    if (!session.Select(1, load) || session.CurrentIndex() != 1 || session.Current()->value != 1) return 1;
+    if (session.Cache().Get(0) || session.Cache().Get(2)) return 1;
+    if (!session.Select(3, load) || !session.Cache().Get(4)) return 1;
+    if (session.Cache().Get(1)) return 1;
+    session.Clear();
+    return session.CurrentIndex() == -1 && session.Current() == nullptr ? 0 : 1;
+}

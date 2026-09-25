@@ -49,7 +49,7 @@ public:
      * @brief model3.jsonが置かれたディレクトリとファイルパスからモデルを生成する
      *
      */
-    void LoadAssets(const Csm::csmChar* dir, const  Csm::csmChar* fileName);
+    bool LoadAssets(const Csm::csmChar* dir, const Csm::csmChar* fileName);
 
     /**
      * @brief レンダラを再構築する
@@ -177,7 +177,7 @@ private:
      * @brief OpenGLのテクスチャユニットにテクスチャをロードする
      *
      */
-    void SetupTextures();
+    bool SetupTextures();
     Csm::csmVector<Csm::ACubismMotion*> _autoMotions;
 
     /**

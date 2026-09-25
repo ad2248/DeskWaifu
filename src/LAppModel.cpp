@@ -72,7 +72,7 @@ LAppModel::~LAppModel()
     ReleaseMotions();
     ReleaseExpressions();
 
-    for (csmInt32 i = 0; i < _modelSetting->GetMotionGroupCount(); i++)
+    for (csmInt32 i = 0; _modelSetting && i < _modelSetting->GetMotionGroupCount(); i++)
     {
         const csmChar* group = _modelSetting->GetMotionGroupName(i);
         ReleaseMotionGroup(group);
@@ -80,7 +80,7 @@ LAppModel::~LAppModel()
     delete(_modelSetting);
 }
 
-void LAppModel::LoadAssets(const csmChar* dir, const csmChar* fileName)
+bool LAppModel::LoadAssets(const csmChar* dir, const csmChar* fileName)
 {
     _modelHomeDir = dir;
 
@@ -93,6 +93,7 @@ void LAppModel::LoadAssets(const csmChar* dir, const csmChar* fileName)
     const csmString path = csmString(dir) + fileName;
 
     csmByte* buffer = CreateBuffer(path.GetRawString(), &size);
+    if (!buffer) return false;
     ICubismModelSetting* setting = new CubismModelSettingJson(buffer, size);
     DeleteBuffer(buffer, path.GetRawString());
 
@@ -102,12 +103,12 @@ void LAppModel::LoadAssets(const csmChar* dir, const csmChar* fileName)
     if (_model == NULL)
     {
         LAppPal::PrintLogLn("Failed to LoadAssets().");
-        return;
+        return false;
     }
 
     CreateRenderer(_viewportWidth, _viewportHeight);
 
-    SetupTextures();
+    return SetupTextures();
 }
 
 
@@ -133,6 +134,7 @@ void LAppModel::SetupModel(ICubismModelSetting* setting)
         }
 
         buffer = CreateBuffer(path.GetRawString(), &size);
+        if (!buffer) return;
         LoadModel(buffer, size);
         DeleteBuffer(buffer, path.GetRawString());
     }
@@ -788,7 +790,7 @@ void LAppModel::SwitchSkin()
     StartMotion(group, 0, PriorityForce);
 }
 
-void LAppModel::SetupTextures()
+bool LAppModel::SetupTextures()
 {
     for (csmInt32 modelTextureNumber = 0; modelTextureNumber < _modelSetting->GetTextureCount(); modelTextureNumber++)
     {
@@ -798,12 +800,14 @@ void LAppModel::SetupTextures()
         texturePath = _modelHomeDir + texturePath;
 
         LAppTextureManager::TextureInfo* texture = _textures.CreateTextureFromPngFile(texturePath.GetRawString());
+        if (!texture) return false;
         const csmInt32 glTextueNumber = texture->id;
 
         GetRenderer<Rendering::CubismRenderer_OpenGLES2>()->BindTexture(modelTextureNumber, glTextueNumber);
     }
 
     GetRenderer<Rendering::CubismRenderer_OpenGLES2>()->IsPremultipliedAlpha(false);
+    return true;
 }
 
 void LAppModel::MotionEventFired(const csmString& eventValue)
