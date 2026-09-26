@@ -178,7 +178,6 @@ private:
     OutputController _outputController;
     BoundedCompositorTransport _compositorTransport;
     CompositorAdapter _compositor;
-    CursorQueryThrottle _globalCursorThrottle;
     LAppView* _view;                                    ///< View情報
     LAppLive2DManager* _manager;
     LAppIPC* _ipc;

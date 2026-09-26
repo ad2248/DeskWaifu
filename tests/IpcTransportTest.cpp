@@ -1,5 +1,6 @@
 #include "LAppIPC.hpp"
 #include "ExternalControlState.hpp"
+#include "RuntimeLifecycle.hpp"
 
 #include <cstdlib>
 #include <cstring>
@@ -89,6 +90,10 @@ int main()
         commands.controls.Frame().hasLook) ok = false;
     close(retained);
     if (access(addr.sun_path, F_OK) == 0) ok = false;
+    bool serviceAlive = true, disconnected = false;
+    ReleaseCommandTransport(
+        [&] { if (!serviceAlive) ok = false; disconnected = true; },
+        [&] { if (!disconnected) ok = false; serviceAlive = false; });
     if (previous) setenv("XDG_RUNTIME_DIR", saved.c_str(), 1);
     else unsetenv("XDG_RUNTIME_DIR");
     rmdir(path);

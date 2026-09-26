@@ -10,6 +10,8 @@
 #include "LAppDefine.hpp"
 #include "LAppLive2DManager.hpp"
 #include "LAppPal.hpp"
+#include "FailureDiagnostics.hpp"
+#include <vector>
 
 LAppSpriteShader::LAppSpriteShader()
 {
@@ -57,6 +59,15 @@ GLuint LAppSpriteShader::CreateShader()
 
     if (linked != GL_TRUE)
     {
+        GLint logLength = 0;
+        glGetProgramiv(programId, GL_INFO_LOG_LENGTH, &logLength);
+        if (logLength > 0) {
+            std::vector<GLchar> log(static_cast<std::size_t>(logLength));
+            glGetProgramInfoLog(programId, logLength, nullptr, log.data());
+            CubismLogError("%s", ShaderLinkFailureMessage(log.data()).c_str());
+        } else {
+            CubismLogError("%s", ShaderLinkFailureMessage("").c_str());
+        }
         glDeleteShader(vertexShaderId);
         glDeleteShader(fragmentShaderId);
         glDeleteProgram(programId);

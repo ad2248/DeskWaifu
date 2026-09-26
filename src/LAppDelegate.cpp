@@ -143,11 +143,9 @@ bool LAppDelegate::Release()
         [this] { return MakeWaylandGpuContextCurrent(&_wlContext); },
         [this] { ReleaseRuntimeInOrder(
         [this] {
-            // LAppIPC::~LAppIPC() calls Release(), which synchronously notifies _commands.
-            delete _ipc;
-            _ipc = nullptr;
-            delete _commands;
-            _commands = nullptr;
+            ReleaseCommandTransport(
+                [this] { delete _ipc; _ipc = nullptr; },
+                [this] { delete _commands; _commands = nullptr; });
         },
         [this] { delete _view; _view = nullptr; },
         [this] { delete _manager; _manager = nullptr; },
@@ -268,8 +266,7 @@ void LAppDelegate::InitializeCubism()
 
 void LAppDelegate::TrackGlobalCursor()
 {
-    if (!_globalCursorThrottle.Ready(std::chrono::steady_clock::now())) return;
-    const auto cursor = _compositor.GlobalCursor();
+    const auto cursor = _compositor.TrackedCursor(std::chrono::steady_clock::now());
     if (!cursor) return; // pointer-on-surface events still work without it
     const auto outputs = _waylandBackend.Outputs();
     const auto* current = _outputController.Current(outputs);

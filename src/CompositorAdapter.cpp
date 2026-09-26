@@ -3,10 +3,11 @@
 #include <algorithm>
 #include <cerrno>
 #include <chrono>
+#include <climits>
 #include <cstdlib>
 #include <cstring>
+#include <dirent.h>
 #include <fcntl.h>
-#include <limits>
 #include <linux/close_range.h>
 #include <poll.h>
 #include <regex>
@@ -20,17 +21,41 @@
 namespace {
 constexpr int TimeoutMs = 250;
 
-void CloseInheritedDescriptors()
+// Enumerate in the parent: readdir and sysconf are not async-signal-safe in a
+// forked multithreaded process. The command pipe already exists at this point.
+bool OpenDescriptors(std::vector<int>& descriptors)
 {
-    if (syscall(SYS_close_range, STDERR_FILENO + 1, ~0U, CLOSE_RANGE_UNSHARE) == 0) return;
-    const long limit = sysconf(_SC_OPEN_MAX);
-    const int maximum = limit > STDERR_FILENO
-        ? static_cast<int>(std::min(limit, static_cast<long>(std::numeric_limits<int>::max())))
-        : 1024;
-    for (int fd = STDERR_FILENO + 1; fd < maximum; ++fd) close(fd);
+    DIR* directory = opendir("/proc/self/fd");
+    if (!directory) return false;
+    const int directoryFd = dirfd(directory);
+    errno = 0;
+    while (const auto* entry = readdir(directory)) {
+        char* end = nullptr;
+        const long fd = std::strtol(entry->d_name, &end, 10);
+        if (*end == '\0' && fd > STDERR_FILENO && fd != directoryFd &&
+            fd <= INT_MAX) descriptors.push_back(static_cast<int>(fd));
+        errno = 0;
+    }
+    const bool ok = errno == 0;
+    closedir(directory);
+    return ok;
 }
 
-Capability<std::string> ReadBounded(int fd)
+bool CloseInheritedDescriptors(const std::vector<int>& descriptors, bool available,
+    bool forceFallback)
+{
+    if (!forceFallback && syscall(SYS_close_range, STDERR_FILENO + 1, ~0U,
+        CLOSE_RANGE_UNSHARE) == 0) return true;
+    if (!forceFallback && errno != ENOSYS && errno != EINVAL) return false;
+    if (!available) return false;
+    for (int fd : descriptors) close(fd);
+    return true;
+}
+
+}
+
+Capability<std::string> ReadBoundedCompositorResponse(int fd,
+    ssize_t (*reader)(int, void*, std::size_t))
 {
     std::string output;
     char buffer[1024];
@@ -45,7 +70,7 @@ Capability<std::string> ReadBounded(int fd)
         if (ready < 0 && errno == EINTR) continue;
         if (ready <= 0)
             return {CapabilityStatus::Unavailable, {}};
-        const ssize_t size = read(fd, buffer, std::min(sizeof(buffer), 16384 - output.size()));
+        const ssize_t size = reader(fd, buffer, std::min(sizeof(buffer), 16384 - output.size()));
         if (size == 0) return {CapabilityStatus::Available, output};
         if (size < 0) {
             if (errno == EINTR) continue;
@@ -54,6 +79,12 @@ Capability<std::string> ReadBounded(int fd)
         output.append(buffer, size);
     }
     return {CapabilityStatus::Failed, {}};
+}
+
+namespace {
+Capability<std::string> ReadBounded(int fd)
+{
+    return ReadBoundedCompositorResponse(fd, read);
 }
 
 bool Number(const std::string& json, const std::string& key, int& value)
@@ -100,6 +131,11 @@ Capability<std::string> BoundedCompositorTransport::Command(const std::vector<st
     if (args.empty()) return {CapabilityStatus::Failed, {}};
     int pipes[2];
     if (pipe(pipes) != 0) return {CapabilityStatus::Failed, {}};
+    std::vector<int> descriptors;
+    const bool available = OpenDescriptors(descriptors);
+    std::vector<char*> argv;
+    for (const auto& arg : args) argv.push_back(const_cast<char*>(arg.c_str()));
+    argv.push_back(nullptr);
     const pid_t pid = fork();
     if (pid < 0) { close(pipes[0]); close(pipes[1]); return {CapabilityStatus::Failed, {}}; }
     if (!pid) {
@@ -107,10 +143,7 @@ Capability<std::string> BoundedCompositorTransport::Command(const std::vector<st
         close(pipes[0]);
         dup2(pipes[1], STDOUT_FILENO);
         close(pipes[1]);
-        CloseInheritedDescriptors();
-        std::vector<char*> argv;
-        for (const auto& arg : args) argv.push_back(const_cast<char*>(arg.c_str()));
-        argv.push_back(nullptr);
+        if (!CloseInheritedDescriptors(descriptors, available, _forceDescriptorFallback)) _exit(127);
         execvp(argv[0], argv.data());
         _exit(127);
     }
@@ -171,6 +204,12 @@ Capability<std::pair<int, int>> CompositorAdapter::GlobalCursor()
     if (!Number(output.value, "x", x) || !Number(output.value, "y", y))
         return {CapabilityStatus::Failed, {}};
     return {CapabilityStatus::Available, {x, y}};
+}
+
+Capability<std::pair<int, int>> CompositorAdapter::TrackedCursor(std::chrono::steady_clock::time_point now)
+{
+    if (!_cursorThrottle.Ready(now)) return {CapabilityStatus::Unavailable, {}};
+    return GlobalCursor();
 }
 
 Capability<std::string> CompositorAdapter::FocusedOutput()

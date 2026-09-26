@@ -1,10 +1,20 @@
 #include "TextureResidency.hpp"
 #include "GpuTeardown.hpp"
 #include "RuntimeLifecycle.hpp"
+#include "LAppTextureManager.hpp"
 
 #include <cassert>
 #include <memory>
 #include <vector>
+#include <type_traits>
+
+template<typename T, typename = void>
+struct HasLegacyTextureCreation : std::false_type {};
+template<typename T>
+struct HasLegacyTextureCreation<T, decltype(void(std::declval<T&>().CreateTextureFromPngFile("x")))>
+    : std::true_type {};
+static_assert(!HasLegacyTextureCreation<LAppTextureManager>::value,
+    "Texture creation must be owned by leases, not the legacy API");
 
 int main()
 {
@@ -59,5 +69,26 @@ int main()
     if (!HasGpuResources(&gpuOwner, nullptr, 0) ||
         !HasGpuResources(nullptr, &gpuOwner, 0) ||
         !HasGpuResources(nullptr, nullptr, 1)) return 1;
+    // Cubism may have started without creating a view, manager or texture.
+    bool cubismStarted = true, cleaned = false, bound = false;
+    if (!ReleaseGpuResources(HasGpuResources(nullptr, nullptr, 0),
+            [&] { bound = true; return false; },
+            [&] { ReleaseRuntimeInOrder([] {}, [] {}, [] {}, [] {},
+                [&] { cubismStarted = false; }, [&] { cleaned = true; }); }) ||
+        bound || cubismStarted || !cleaned) return 1;
+    int lastLeaseDeletes = 0;
+    TextureResidency<unsigned> scoped([&](unsigned id) {
+        if (id == 7) ++lastLeaseDeletes;
+    });
+    {
+        auto owner = scoped.Acquire("texture", [](const std::string&) {
+            return std::make_pair(7u, 4u);
+        });
+        auto borrower = scoped.Acquire("texture", [](const std::string&) {
+            return std::make_pair(8u, 4u);
+        });
+        if (!owner || !borrower || lastLeaseDeletes) return 1;
+    }
+    if (lastLeaseDeletes != 1 || scoped.ResidentCount() != 0) return 1;
     return 0;
 }
