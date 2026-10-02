@@ -66,9 +66,9 @@ class ExtractReviewTest(unittest.TestCase):
 
         self.assertIn("--agent build", script)
         self.assertIn('"steps": 8', script)
-        self.assertIn('".gitea/scripts/opencode-review-action.sh *": "allow"', script)
-        self.assertIn('OPENCODE_CONFIG="$workdir/opencode.json"', script)
-        self.assertIn('--dir "$repo_root"', script)
+        self.assertIn('"resource": ".gitea/scripts/opencode-review-action.sh *", "effect": "allow"', script)
+        self.assertIn('cd "$workdir"', script)
+        self.assertIn('--standalone', script)
         self.assertIn("last events follow", script)
 
     def test_final_review_uses_approval_signal(self):
