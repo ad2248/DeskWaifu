@@ -9,6 +9,10 @@ find_package(Python3 COMPONENTS Interpreter)
 if (Python3_Interpreter_FOUND)
   add_test(NAME wayland-layer-configuration
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_wayland_keyboard_grab.py)
+  add_test(NAME opencode-review-cli
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/.gitea/scripts/test_opencode_review_cli.py)
+  add_test(NAME opencode-review-extraction
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/.gitea/scripts/test_extract_opencode_review.py)
 endif ()
 
 add_executable(model-catalog-test ModelCatalogTest.cpp)
