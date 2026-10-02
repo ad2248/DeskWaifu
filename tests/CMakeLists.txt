@@ -5,6 +5,12 @@ add_test(NAME component-direction
   COMMAND ${CMAKE_COMMAND} -DAPP_SOURCE=${CMAKE_SOURCE_DIR}/src
     -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckComponentDirection.cmake)
 
+find_package(Python3 COMPONENTS Interpreter)
+if (Python3_Interpreter_FOUND)
+  add_test(NAME wayland-layer-configuration
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_wayland_keyboard_grab.py)
+endif ()
+
 add_executable(model-catalog-test ModelCatalogTest.cpp)
 target_include_directories(model-catalog-test PRIVATE ../src)
 target_link_libraries(model-catalog-test PRIVATE deskwaifu_catalog)

@@ -280,6 +280,9 @@ bool SetupWaylandContext(WaylandContext* wl, int width, int height) {
     // Set interactive, anchor to all edges to get a full-screen transparent overlay
     zwlr_layer_surface_v1_set_size(wl->layer_surface, 0, 0);
     zwlr_layer_surface_v1_set_anchor(wl->layer_surface, ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP | ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM | ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT);
+    // The default exclusive zone (0) shrinks the surface above reserved panels.
+    // Render across the whole output so the model is not clipped at the panel edge.
+    zwlr_layer_surface_v1_set_exclusive_zone(wl->layer_surface, -1);
     ApplyLayerKeyboardInteractivity(wl);
     wl_surface_commit(wl->surface);
     if (wl_display_roundtrip(wl->display) < 0 || !wl->keyboardSurface.IsConfigured()) {
@@ -426,6 +429,7 @@ bool WaylandBackend::SwitchOutput(OutputId id)
     zwlr_layer_surface_v1_set_anchor(layer, ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
         ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM | ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT |
         ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT);
+    zwlr_layer_surface_v1_set_exclusive_zone(layer, -1);
     ApplyLayerKeyboardInteractivity(&_wl);
     wl_surface_commit(surface);
     const bool protocolOk = wl_display_roundtrip(_wl.display) >= 0;
