@@ -5,14 +5,13 @@ latest `main` commit, including the Qt control panel and the IPC CLI. It can be
 used directly from this repository; publication on aur.archlinux.org is a
 separate step.
 
-The Git source URL must be readable by the building user. If the upstream
-repository requires authentication, configure your Git credentials first.
-Public AUR distribution requires anonymous read access to this URL or a public
-mirror; packaging alone does not change repository visibility.
+The recipe fetches the application source from the public GitHub repository
+at https://github.com/ad2248/DeskWaifu.git, tracking its `main` branch.
+No Git credentials are required.
 
 ```bash
 sudo pacman -S --needed base-devel git
-git clone https://git.kals.top/kals/DeskWaifu.git
+git clone https://github.com/ad2248/DeskWaifu.git
 cd DeskWaifu/packaging/aur
 makepkg -si
 ```
