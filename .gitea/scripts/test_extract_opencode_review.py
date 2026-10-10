@@ -68,7 +68,7 @@ class ExtractReviewTest(unittest.TestCase):
         self.assertIn('"steps": 8', script)
         self.assertIn('"resource": ".gitea/scripts/opencode-review-action.sh *", "effect": "allow"', script)
         self.assertIn('cd "$workdir"', script)
-        self.assertIn('--standalone', script)
+        self.assertIn('"${server_args[@]}"', script)
         self.assertIn("last events follow", script)
 
     def test_final_review_uses_approval_signal(self):
