@@ -67,7 +67,7 @@ class ReviewCliTest(unittest.TestCase):
             self.assertEqual(invocation["repo"], "/trusted/repository")
             self.assertEqual(invocation["args"], [
                 "run", "Review fixture", *(["--standalone"] if standalone else []), "--agent", "build",
-                "--model", "openai/gpt-6-luna", "--format", "json",
+                "--model", "openai/gpt-6.1-sol", "--format", "json",
                 "--file", str(work / "context.md"), "--file", str(work / "diff.patch"),
             ])
             config = invocation["config"]
