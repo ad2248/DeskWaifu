@@ -79,7 +79,7 @@ An AUR-style `deskwaifu-git` recipe is available in `packaging/aur/`:
 
 ```bash
 sudo pacman -S --needed base-devel git
-git clone https://git.kals.top/kals/DeskWaifu.git
+git clone https://github.com/ad2248/DeskWaifu.git
 cd DeskWaifu/packaging/aur
 makepkg -si
 ```

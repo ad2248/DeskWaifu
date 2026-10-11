@@ -2,10 +2,10 @@
 # Cubism SDK is downloaded from Live2D. See README.md for its license terms.
 pkgname=deskwaifu-git
 pkgver=r52.g1ddfd09
-pkgrel=1
+pkgrel=2
 pkgdesc='Live2D desktop characters for Wayland with a Qt control panel'
 arch=('x86_64')
-url='https://git.kals.top/kals/DeskWaifu'
+url='https://github.com/ad2248/DeskWaifu'
 license=('LicenseRef-Live2D-Open-Software' 'LicenseRef-Live2D-Proprietary' 'BSD-3-Clause' 'MIT' 'Unlicense')
 depends=('glibc' 'gcc-libs' 'wayland' 'libglvnd' 'qt6-base' 'qt6-wayland' 'bash' 'socat' 'psmisc')
 makedepends=('git' 'cmake' 'ninja')
@@ -15,7 +15,7 @@ conflicts=('deskwaifu')
 _sdk=CubismSdkForNative-5-r.5
 _glew=glew-2.3.1
 source=(
-  'deskwaifu::git+https://git.kals.top/kals/DeskWaifu.git#branch=main'
+  'deskwaifu::git+https://github.com/ad2248/DeskWaifu.git#branch=main'
   "https://cubism.live2d.com/sdk-native/bin/${_sdk}.zip"
   "https://github.com/nigels-com/glew/releases/download/${_glew}/${_glew}.zip"
 )
