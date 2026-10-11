@@ -10,12 +10,68 @@
 #include <regex>
 
 namespace {
+// Advance past a complete quoted token so braces, colons and escaped quotes
+// inside string values never participate in the structural scan.
+void SkipJsonString(const std::string& content, size_t& pos)
+{
+    ++pos;
+    while (pos < content.size())
+    {
+        const char c = content[pos++];
+        if (c == '"') return;
+        if (c == '\\' && pos < content.size()) ++pos;
+    }
+}
+
+bool FindTopLevelModelRegion(const std::string& content, std::string& value)
+{
+    const size_t root = content.find_first_not_of(" \t\r\n");
+    if (root == std::string::npos || content[root] != '{') return false;
+    int depth = 0;
+    for (size_t pos = root; pos < content.size();)
+    {
+        const char c = content[pos];
+        if (c == '"')
+        {
+            const size_t start = pos;
+            SkipJsonString(content, pos);
+            if (depth != 1 || content.substr(start, pos - start) != "\"model_region\"") continue;
+            const size_t colon = content.find_first_not_of(" \t\r\n", pos);
+            // The same token as a string value or array element is not a key.
+            if (colon == std::string::npos || content[colon] != ':') continue;
+            const size_t begin = colon + 1;
+            pos = begin;
+            int nested = 0;
+            while (pos < content.size())
+            {
+                const char token = content[pos];
+                if (token == '"') { SkipJsonString(content, pos); continue; }
+                if (nested == 0 && (token == ',' || token == '}')) break;
+                if (token == '{' || token == '[') ++nested;
+                else if (token == '}' || token == ']') --nested;
+                ++pos;
+            }
+            value = content.substr(begin, pos - begin);
+            return true;
+        }
+        if (c == '{' || c == '[') ++depth;
+        else if (c == '}' || c == ']')
+        {
+            --depth;
+            if (depth == 0) break;
+        }
+        ++pos;
+    }
+    return false;
+}
+
 bool ParseModelRegion(const std::string& content, bool& configured, ModelRegion& region)
 {
-    if (content.find("\"model_region\"") == std::string::npos) return true;
-    const std::regex object("\"model_region\"\\s*:\\s*\\{([^{}]*)\\}");
+    std::string value;
+    if (!FindTopLevelModelRegion(content, value)) return true;
+    const std::regex object("\\s*\\{([^{}]*)\\}\\s*");
     std::smatch match;
-    bool valid = std::regex_search(content, match, object);
+    bool valid = std::regex_match(value, match, object);
     if (valid)
     {
         std::string members = match[1].str();

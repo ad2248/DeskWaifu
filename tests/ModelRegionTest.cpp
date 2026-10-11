@@ -59,6 +59,22 @@ int main()
     };
     CHECK(load("{}"));
     CHECK(!config.hasModelRegion);
+    CHECK(load(R"({"additional_model_dirs":["model_region"],"model_scale":2.0})"));
+    CHECK(!config.hasModelRegion);
+    CHECK(config.additionalModelDirs == std::vector<std::string>{"model_region"});
+    CHECK(config.modelScale == 2.0f);
+    CHECK(load(R"({"default_model":"model_region","model_scale":2.0})"));
+    CHECK(!config.hasModelRegion && config.defaultModel == "model_region");
+    CHECK(load(R"({"metadata":{"model_region":{"width":50,"height":60}},"model_scale":2.0})"));
+    CHECK(!config.hasModelRegion && config.modelScale == 2.0f);
+    CHECK(load(R"({"metadata":[{"model_region":{"width":50,"height":60}}]})"));
+    CHECK(!config.hasModelRegion);
+    CHECK(load(R"({"note":"escaped \"model_region\": { and }","model_scale":2.0})"));
+    CHECK(!config.hasModelRegion && config.modelScale == 2.0f);
+    CHECK(load(R"({"metadata":{"model_region":{"width":50,"height":60}},"additional_model_dirs":["model_region"],"model_region":{"width":800,"height":700}})"));
+    CHECK(config.hasModelRegion && Equal(config.modelRegion, {0, 0, 800, 700}));
+    CHECK(load(R"({"note":"escaped \"model_region\": { and }","model_region":{"width":800,"height":700}})"));
+    CHECK(config.hasModelRegion && Equal(config.modelRegion, {0, 0, 800, 700}));
     CHECK(load(R"({"model_region":{"x":100,"y":80,"width":800,"height":700},"model_x":0.5})"));
     CHECK(config.hasModelRegion && Equal(config.modelRegion, {100, 80, 800, 700}));
     CHECK(config.modelX == 0.5f);
@@ -68,6 +84,8 @@ int main()
     CHECK(config.modelRegion.x == -100);
     for (const auto invalid : {
         R"({"model_region":null})", R"({"model_region":{}})",
+        R"({"model_region":null,"metadata":{"model_region":{"width":50,"height":60}}})",
+        R"({"metadata":{"model_region":{"width":50,"height":60}},"model_region":null})",
         R"({"model_region":{"width":0,"height":10}})",
         R"({"model_region":{"width":10,"height":-1}})",
         R"({"model_region":{"width":1.5,"height":10}})",
