@@ -39,9 +39,6 @@ MainWindow::MainWindow(QWidget* parent)
                 _hotkeyQueryPending = false;
             }
             ui->connectionLabel->setText(connected ? tr("Connected") : tr("Disconnected"));
-            ui->connectionLabel->setProperty("connected", connected);
-            ui->connectionLabel->style()->unpolish(ui->connectionLabel);
-            ui->connectionLabel->style()->polish(ui->connectionLabel);
             statusBar()->showMessage(message);
             if (connected)
             {

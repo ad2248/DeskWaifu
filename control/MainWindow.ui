@@ -9,26 +9,6 @@
    <size><width>720</width><height>560</height></size>
   </property>
   <property name="windowTitle"><string>DeskWaifu Control</string></property>
-  <property name="styleSheet">
-   <string notr="true">QMainWindow { background: #171922; color: #ececf2; }
-QWidget { color: #ececf2; font-size: 14px; }
-QFrame#headerFrame { background: #222633; border-radius: 14px; }
-QLabel#titleLabel { font-size: 27px; font-weight: 700; }
-QLabel#subtitleLabel { color: #aeb4c5; }
-QLabel#connectionLabel { color: #ff8f8f; font-weight: 700; padding: 7px 12px; background: #38252d; border-radius: 11px; }
-QLabel#connectionLabel[connected="true"] { color: #8ce5b1; background: #20372f; }
-QTabWidget::pane { border: 1px solid #34394a; border-radius: 10px; background: #1d202a; }
-QTabBar::tab { background: #222633; padding: 10px 18px; margin-right: 3px; }
-QTabBar::tab:selected { background: #7659d6; }
-QGroupBox { border: 1px solid #383d50; border-radius: 10px; margin-top: 14px; padding-top: 14px; font-weight: 600; }
-QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 5px; }
-QPushButton { background: #7659d6; border: 0; border-radius: 7px; padding: 8px 14px; font-weight: 600; }
-QPushButton:hover { background: #8a70de; }
-QPushButton:disabled { background: #454858; color: #8f93a3; }
-QComboBox, QSpinBox, QDoubleSpinBox, QPlainTextEdit { background: #151720; border: 1px solid #3b4052; border-radius: 6px; padding: 6px; }
-QLabel#currentModelLabel { font-size: 22px; font-weight: 700; color: #c6b8ff; }
-QStatusBar { color: #aeb4c5; }</string>
-  </property>
   <widget class="QWidget" name="centralWidget">
    <layout class="QVBoxLayout" name="rootLayout">
     <property name="leftMargin"><number>18</number></property>

@@ -13,6 +13,18 @@ add_executable(json-command-test JsonCommandTest.cpp)
 target_include_directories(json-command-test PRIVATE ../src)
 add_test(NAME json-command COMMAND json-command-test)
 
+add_executable(model-region-test ModelRegionTest.cpp ../src/LAppConfig.cpp)
+target_include_directories(model-region-test PRIVATE ../src)
+add_test(NAME model-region COMMAND model-region-test)
+
+add_executable(model-region-render-test ModelRegionRenderTest.cpp ../src/LAppWaylandRegion.cpp)
+add_dependencies(model-region-render-test ${APP_NAME}) # Generated Wayland protocol headers.
+target_include_directories(model-region-render-test PRIVATE ../src ${WAYLAND_GEN_DIR} ${WAYLAND_INCLUDE_DIRS} ${GLEW_PATH}/include)
+target_link_libraries(model-region-render-test PRIVATE glew_s OpenGL::EGL ${WAYLAND_LIBRARIES})
+add_test(NAME model-region-render COMMAND model-region-render-test)
+set_tests_properties(model-region-render PROPERTIES
+  ENVIRONMENT "EGL_PLATFORM=surfaceless" SKIP_RETURN_CODE 77)
+
 add_executable(failure-diagnostics-test FailureDiagnosticsTest.cpp)
 target_include_directories(failure-diagnostics-test PRIVATE ../src)
 add_test(NAME failure-diagnostics COMMAND failure-diagnostics-test)
@@ -122,6 +134,19 @@ target_link_libraries(hotkey-panel-test PRIVATE Qt6::Test Qt6::Widgets)
 set_target_properties(hotkey-panel-test PROPERTIES AUTOMOC ON)
 add_test(NAME hotkey-panel COMMAND hotkey-panel-test)
 set_tests_properties(hotkey-panel PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+qt_add_executable(control-theme-test
+  ControlThemeTest.cpp
+  ../control/MainWindow.ui
+  ../control/HotkeyPanel.cpp
+  ../control/HotkeyPanel.hpp
+)
+target_include_directories(control-theme-test PRIVATE ../control)
+target_link_libraries(control-theme-test PRIVATE Qt6::Test Qt6::Widgets)
+set_target_properties(control-theme-test PROPERTIES AUTOMOC ON AUTOUIC ON
+  AUTOUIC_SEARCH_PATHS "${CMAKE_CURRENT_SOURCE_DIR}/../control")
+add_test(NAME control-theme COMMAND control-theme-test)
+set_tests_properties(control-theme PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 qt_add_executable(model-keyboard-test ModelKeyboardTest.cpp)
 target_include_directories(model-keyboard-test PRIVATE ../src ${FRAMEWORK_PATH}/src ${CORE_PATH}/include)
