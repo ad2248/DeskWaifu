@@ -55,7 +55,7 @@ int main(int argc, char* argv[])
     if (config.LoadFromFile(configPath)) {
         printf("[APP]Loaded config from: %s\n", configPath.c_str());
     } else {
-        printf("[APP]No config file found at: %s (using defaults)\n", configPath.c_str());
+        printf("[APP]Config unavailable or invalid at: %s (using defaults)\n", configPath.c_str());
     }
 
     // Models dir: CLI flag > default XDG path

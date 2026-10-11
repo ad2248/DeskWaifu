@@ -208,7 +208,13 @@ bool LAppDelegate::Run()
             _view->Render(state.transform, _service.FrameInput());
         }
 
-        if (!state.hidden) UpdateWaylandInputRegion(&_wlContext);
+        if (!state.hidden) {
+            const auto& config = LAppConfig::GetInstance();
+            const auto region = ResolveModelRegion(config.hasModelRegion, config.modelRegion,
+                _windowWidth, _windowHeight);
+            ClipWaylandModelRegion(region, _windowWidth, _windowHeight);
+            UpdateWaylandInputRegion(&_wlContext, region);
+        }
         eglSwapBuffers(_wlContext.egl_display, _wlContext.egl_surface);
         
         if (state.hidden) {

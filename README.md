@@ -215,8 +215,24 @@ Example `config.json`:
 | `model_y` | float | `0.0` | Initial model Y offset |
 | `window_width` | int | `1900` | Render target width in pixels |
 | `window_height` | int | `1000` | Render target height in pixels |
+| `model_region` | object | Entire current output | Optional clipping rectangle: integer `x`, `y` (default `0`), and required positive integer `width`, `height` |
 
 All fields are optional. Missing fields use their default values. If the config file doesn't exist, all defaults are used.
+
+To clip the model to a rectangle, add this entry to your configuration:
+
+```json
+"model_region": { "x": 100, "y": 100, "width": 800, "height": 700 }
+```
+
+Coordinates are local to the current output's surface, measured from its top-left
+corner (not global desktop coordinates). The rectangle is intersected with the
+current surface on every frame, including after output switches or resizes.
+Anything outside it is transparent and click-through; the model's position,
+dragging and zoom are unchanged. A rectangle entirely outside the output makes
+the model invisible and click-through. Omitting `model_region` preserves full-output
+rendering: `x = 0`, `y = 0`, with the current output's width and height.
+Malformed rectangles reject the configuration file with a diagnostic.
 
 ### Controls
 

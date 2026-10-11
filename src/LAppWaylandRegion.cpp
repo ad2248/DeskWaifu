@@ -1,4 +1,5 @@
 #include "LAppWayland.hpp"
+#include "LAppWaylandRegion.hpp"
 #include <GL/glew.h>
 #include <vector>
 #include <iostream>
@@ -14,7 +15,34 @@ bool ClearWaylandInputRegion(WaylandContext* wl) {
     return true;
 }
 
-void UpdateWaylandInputRegion(WaylandContext* wl) {
+void ClipWaylandModelRegion(ModelRegion region, int width, int height) {
+    if (region.x == 0 && region.y == 0 && region.width == width && region.height == height) return;
+
+    // Clear only after Cubism has finished drawing: its mask/offscreen passes
+    // manage their own scissor state and must not inherit the display clip.
+    const GLboolean scissorEnabled = glIsEnabled(GL_SCISSOR_TEST);
+    GLint scissor[4];
+    GLfloat clearColor[4];
+    GLboolean colorMask[4];
+    glGetIntegerv(GL_SCISSOR_BOX, scissor);
+    glGetFloatv(GL_COLOR_CLEAR_VALUE, clearColor);
+    glGetBooleanv(GL_COLOR_WRITEMASK, colorMask);
+    glEnable(GL_SCISSOR_TEST);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glClearColor(0, 0, 0, 0);
+    for (const auto& outside : OutsideModelRegion(region, width, height)) {
+        if (outside.width <= 0 || outside.height <= 0) continue;
+        const auto box = ModelRegionToOpenGL(outside, height);
+        glScissor(box.x, box.y, box.width, box.height);
+        glClear(GL_COLOR_BUFFER_BIT);
+    }
+    glScissor(scissor[0], scissor[1], scissor[2], scissor[3]);
+    if (!scissorEnabled) glDisable(GL_SCISSOR_TEST);
+    glColorMask(colorMask[0], colorMask[1], colorMask[2], colorMask[3]);
+    glClearColor(clearColor[0], clearColor[1], clearColor[2], clearColor[3]);
+}
+
+void UpdateWaylandInputRegion(WaylandContext* wl, ModelRegion clip) {
     if (!wl || !wl->compositor || !wl->surface) return;
 
     int width = wl->width;
@@ -38,6 +66,12 @@ void UpdateWaylandInputRegion(WaylandContext* wl) {
     glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, full_pixels.data());
 
     wl_region* region = wl_compositor_create_region(wl->compositor);
+    if (!region) return;
+    const auto addRegion = [&](int x, int y, int w, int h) {
+        const auto box = IntersectModelRegions({x, y, w, h}, clip);
+        if (box.width > 0 && box.height > 0)
+            wl_region_add(region, box.x, box.y, box.width, box.height);
+    };
 
     // Build region
     // We process it in blocks of 'BLOCK_SIZE' (e.g. 10x10 pixels) to reduce the number of rectangles
@@ -65,14 +99,14 @@ void UpdateWaylandInputRegion(WaylandContext* wl) {
                 if (start_x >= 0) {
                     // OpenGL Y is bottom-to-top, Wayland surface Y is top-to-bottom
                     int wayland_y = height - y - BLOCK_SIZE;
-                    wl_region_add(region, start_x, wayland_y, x - start_x, BLOCK_SIZE);
+                    addRegion(start_x, wayland_y, x - start_x, BLOCK_SIZE);
                     start_x = -1;
                 }
             }
         }
         if (start_x >= 0) {
             int wayland_y = height - y - BLOCK_SIZE;
-            wl_region_add(region, start_x, wayland_y, width - start_x, BLOCK_SIZE);
+            addRegion(start_x, wayland_y, width - start_x, BLOCK_SIZE);
         }
     }
 

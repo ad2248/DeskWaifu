@@ -2,6 +2,7 @@
 
 #include <string>
 #include <vector>
+#include "ModelRegion.hpp"
 
 struct LAppConfig
 {
@@ -13,6 +14,8 @@ struct LAppConfig
     float modelY = 0.0f;
     int windowWidth = 1900;
     int windowHeight = 1000;
+    bool hasModelRegion = false;
+    ModelRegion modelRegion;
 
     static LAppConfig& GetInstance();
 

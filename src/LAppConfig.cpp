@@ -7,6 +7,50 @@
 #include <sys/types.h>
 #include <pwd.h>
 #include <cstdio>
+#include <regex>
+
+namespace {
+bool ParseModelRegion(const std::string& content, bool& configured, ModelRegion& region)
+{
+    if (content.find("\"model_region\"") == std::string::npos) return true;
+    const std::regex object("\"model_region\"\\s*:\\s*\\{([^{}]*)\\}");
+    std::smatch match;
+    bool valid = std::regex_search(content, match, object);
+    if (valid)
+    {
+        std::string members = match[1].str();
+        const std::regex member("^\\s*\"(x|y|width|height)\"\\s*:\\s*(-?(?:0|[1-9][0-9]*))\\s*(,|$)");
+        bool seen[4] = {};
+        while (!members.empty())
+        {
+            if (!std::regex_search(members, match, member)) { valid = false; break; }
+            const std::string key = match[1].str();
+            const int index = key == "x" ? 0 : key == "y" ? 1 : key == "width" ? 2 : 3;
+            if (seen[index]) { valid = false; break; }
+            seen[index] = true;
+            int value;
+            try { value = std::stoi(match[2].str()); }
+            catch (...) { valid = false; break; }
+            if (index == 0) region.x = value;
+            else if (index == 1) region.y = value;
+            else if (index == 2) region.width = value;
+            else region.height = value;
+            const bool comma = match[3].str() == ",";
+            members = match.suffix().str();
+            if (comma && members.find_first_not_of(" \t\r\n") == std::string::npos)
+            { valid = false; break; }
+        }
+        valid = valid && seen[2] && seen[3] && region.width > 0 && region.height > 0;
+    }
+    if (!valid)
+    {
+        std::fprintf(stderr, "[Config] Invalid model_region: expected integer x/y and positive integer width/height\n");
+        return false;
+    }
+    configured = true;
+    return true;
+}
+}
 
 static LAppConfig s_config;
 
@@ -189,6 +233,10 @@ bool LAppConfig::LoadFromFile(const std::string& path)
     ss << file.rdbuf();
     std::string content = StripComments(ss.str());
 
+    bool regionConfigured = false;
+    ModelRegion region;
+    if (!ParseModelRegion(content, regionConfigured, region)) return false;
+
     additionalModelDirs = ParseStringArray(content, "additional_model_dirs");
     for (size_t i = 0; i < additionalModelDirs.size(); i++)
     {
@@ -201,6 +249,8 @@ bool LAppConfig::LoadFromFile(const std::string& path)
     modelY = ParseFloatValue(content, "model_y", 0.0f);
     windowWidth = ParseIntValue(content, "window_width", 1900);
     windowHeight = ParseIntValue(content, "window_height", 1000);
+    hasModelRegion = regionConfigured;
+    modelRegion = region;
 
     return true;
 }
