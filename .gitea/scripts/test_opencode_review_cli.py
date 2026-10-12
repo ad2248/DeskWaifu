@@ -31,8 +31,9 @@ class ReviewCliTest(unittest.TestCase):
     def check_invocation(self, standalone):
         source = SOURCE.read_text()
         block = source.split("\n(\n", 1)[1].split('\n) > "$workdir/opencode.jsonl"', 1)[0]
-        setup = source.split('run_help="$(opencode run --help)"', 1)[1].split("\nprompt=", 1)[0]
-        setup = 'run_help="$(opencode run --help)"' + setup
+        help_line = 'run_help="$("$opencode_bin" run --help)"'
+        setup = source.split(help_line, 1)[1].split("\nprompt=", 1)[0]
+        setup = help_line + setup
         self.assertNotRegex(block, r"--(?:pure|dir)\b")
         self.assertIn('cp "$repo_root/.gitea/scripts/opencode-review-action.sh"', source)
         with tempfile.TemporaryDirectory() as temp:
@@ -59,6 +60,7 @@ class ReviewCliTest(unittest.TestCase):
                 ["bash", "-eu", "-c", setup + '\n' + block], check=True, capture_output=True, text=True,
                 env=dict(os.environ, PATH=f"{root}:{os.environ['PATH']}",
                           STANDALONE="1" if standalone else "0",
+                          opencode_bin=str(executable),
                          workdir=str(work), repo_root="/trusted/repository", marker="fixture",
                          approval_file=str(work / "approved"), prompt="Review fixture"),
             )
@@ -87,6 +89,40 @@ class ReviewCliTest(unittest.TestCase):
                         },
                     },
                 })
+
+    def test_host_runner_prefers_user_installation_and_honors_override(self):
+        source = SOURCE.read_text()
+        selection = source.split('opencode_bin="${OPENCODE_BIN:-}"', 1)[1].split('\npr_json=', 1)[0]
+        selection = 'opencode_bin="${OPENCODE_BIN:-}"' + selection
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            home = root / "home with spaces"
+            user_bin = home / ".opencode" / "bin" / "opencode"
+            user_bin.parent.mkdir(parents=True)
+            system_bin = root / "opencode"
+            override = root / "explicit opencode"
+            for executable, version in ((user_bin, "v2.0.26"), (system_bin, "1.18.32"), (override, "custom")):
+                executable.write_text(f"#!/bin/sh\necho {version}\n")
+                executable.chmod(0o755)
+            env = dict(os.environ, HOME=str(home), PATH=f"{root}:/usr/bin:/bin", OPENCODE_BIN="")
+
+            def select(**changes):
+                return subprocess.run(["bash", "-eu", "-c", selection],
+                    capture_output=True, text=True, env=env | changes)
+
+            result = select()
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(f"{user_bin} (v2.0.26)", result.stdout)
+            result = select(OPENCODE_BIN=str(override))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(f"{override} (custom)", result.stdout)
+            result = select(OPENCODE_BIN=str(root / "missing"))
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("OpenCode executable not found", result.stderr)
+            user_bin.unlink()
+            result = select()
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(f"{system_bin} (1.18.32)", result.stdout)
 
 
 if __name__ == "__main__":
