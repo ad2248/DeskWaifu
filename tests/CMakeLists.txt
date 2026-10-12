@@ -13,6 +13,14 @@ add_executable(json-command-test JsonCommandTest.cpp)
 target_include_directories(json-command-test PRIVATE ../src)
 add_test(NAME json-command COMMAND json-command-test)
 
+add_executable(config-store-test ConfigStoreTest.cpp ../src/ConfigStore.cpp)
+target_include_directories(config-store-test PRIVATE ../src)
+add_test(NAME config-store COMMAND config-store-test)
+
+add_executable(transform-editor-test TransformEditorTest.cpp ../src/ConfigStore.cpp ../src/InputController.cpp)
+target_include_directories(transform-editor-test PRIVATE ../src)
+add_test(NAME transform-editor COMMAND transform-editor-test)
+
 add_executable(model-region-test ModelRegionTest.cpp ../src/LAppConfig.cpp)
 target_include_directories(model-region-test PRIVATE ../src)
 add_test(NAME model-region COMMAND model-region-test)
@@ -147,6 +155,20 @@ set_target_properties(control-theme-test PROPERTIES AUTOMOC ON AUTOUIC ON
   AUTOUIC_SEARCH_PATHS "${CMAKE_CURRENT_SOURCE_DIR}/../control")
 add_test(NAME control-theme COMMAND control-theme-test)
 set_tests_properties(control-theme PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+qt_add_executable(main-window-transform-test
+  MainWindowTransformTest.cpp
+  ../control/MainWindow.cpp ../control/MainWindow.hpp ../control/MainWindow.ui
+  ../control/DeskWaifuClient.cpp ../control/DeskWaifuClient.hpp
+  ../control/HotkeyPanel.cpp ../control/HotkeyPanel.hpp
+  ../src/ConfigStore.cpp ../src/InputController.cpp
+)
+target_include_directories(main-window-transform-test PRIVATE ../control ../src)
+target_link_libraries(main-window-transform-test PRIVATE Qt6::Test Qt6::Widgets Qt6::Network)
+set_target_properties(main-window-transform-test PROPERTIES AUTOMOC ON AUTOUIC ON
+  AUTOUIC_SEARCH_PATHS "${CMAKE_CURRENT_SOURCE_DIR}/../control")
+add_test(NAME main-window-transform COMMAND main-window-transform-test)
+set_tests_properties(main-window-transform PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 qt_add_executable(model-keyboard-test ModelKeyboardTest.cpp)
 target_include_directories(model-keyboard-test PRIVATE ../src ${FRAMEWORK_PATH}/src ${CORE_PATH}/include)

@@ -279,6 +279,7 @@ std::string LAppConfig::StripComments(const std::string& s)
 
 bool LAppConfig::LoadFromFile(const std::string& path)
 {
+    sourcePath = path;
     std::ifstream file(path);
     if (!file.is_open())
     {

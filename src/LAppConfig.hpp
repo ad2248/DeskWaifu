@@ -16,6 +16,7 @@ struct LAppConfig
     int windowHeight = 1000;
     bool hasModelRegion = false;
     ModelRegion modelRegion;
+    std::string sourcePath;
 
     static LAppConfig& GetInstance();
 

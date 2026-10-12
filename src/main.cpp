@@ -98,16 +98,5 @@ int main(int argc, char* argv[])
         return 1;
     }
 
-    // Apply config values to delegate
-    const AppResult configured = LAppDelegate::GetInstance()->Service().SetTransform(
-        {config.modelScale, config.modelX, config.modelY});
-    if (!configured.ok) {
-        fprintf(stderr, "[APP] Invalid model transform in config: %s\n", configured.error.c_str());
-        if (!LAppDelegate::GetInstance()->Release())
-            fprintf(stderr, "[APP]Failed to bind GPU context for teardown\n");
-        LAppDelegate::ReleaseInstance();
-        return 1;
-    }
-
     return LAppDelegate::GetInstance()->Run() ? 0 : 1;
 }

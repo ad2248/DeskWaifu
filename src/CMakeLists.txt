@@ -34,6 +34,7 @@ else ()
   target_sources(${APP_NAME}
     PRIVATE
       ${CMAKE_CURRENT_SOURCE_DIR}/LAppConfig.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/ConfigStore.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/LAppConfig.hpp
       ${CMAKE_CURRENT_SOURCE_DIR}/LAppDefine.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/LAppDefine.hpp

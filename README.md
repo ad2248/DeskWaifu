@@ -234,6 +234,44 @@ the model invisible and click-through. Omitting `model_region` preserves full-ou
 rendering: `x = 0`, `y = 0`, with the current output's width and height.
 Malformed rectangles reject the configuration file with a diagnostic.
 
+### Editing position, zoom and crop in the control panel
+
+The **Transform** tab edits model position, zoom and the crop rectangle together.
+Crop coordinates are integers in the current surface's top-left coordinate system;
+they are not the model's floating-point offsets. **Enable crop** explicitly selects
+clipping; a disabled crop uses the entire current surface without a fixed rectangle.
+
+- Numeric edits create a preview. **Apply and save** commits all four configuration
+  keys (`model_x`, `model_y`, `model_scale`, `model_region`) in one atomic update.
+- **Drag edit** draws an on-screen frame. Its top-center handle moves **both the
+  crop and the model by the same screen distance**. Edges/corners resize the crop
+  without moving or scaling the model. Dragging the model itself moves only the
+  model; scrolling changes its zoom. Model tap/hotkey actions are disabled while editing.
+- **Cancel** or a disconnected control panel discards the preview. Output changes
+  or resizes cancel screen editing. **Move back to screen** recovers offscreen crops.
+- **Reset** immediately saves position `(0, 0)`, zoom `1` and no crop by removing
+  those four keys; all other configuration is retained.
+- Outside editing, a model drag saves on release, and scrolling saves after a
+  short idle interval. Failed saves keep the on-screen result and offer **Retry
+  save**. Automatic cross-output adaptation itself is not saved.
+
+Only the model process writes configuration, using the actual `--config` path
+(or the default path). Existing unrelated settings and comments outside replaced
+values are preserved, as are file permissions and existing symbolic links. A
+missing configuration is created; invalid documents and duplicate keys are never
+silently overwritten. Files are checked every 0.5 seconds, so external editor
+replacements are detected too. Only transform/crop settings are hot-reloaded;
+other settings still require restarting the application.
+
+External changes during preview do not replace the draft. Applying reports a
+conflict: explicitly overwrite just the four transform/crop keys, or discard the
+draft and reload. Only one connection can edit at a time. Save requests have IDs
+whose recent outcomes can be queried after reconnecting; outcomes are not retained
+across a backend restart. External editors do not honor the application's save
+protocol: a content check immediately before rename narrows, but cannot completely
+eliminate, concurrent external-write races. Requested crop rectangles are saved,
+never their intersections with a smaller output.
+
 ### Controls
 
 | Input | Action |

@@ -42,7 +42,26 @@ void ClipWaylandModelRegion(ModelRegion region, int width, int height) {
     glClearColor(clearColor[0], clearColor[1], clearColor[2], clearColor[3]);
 }
 
-void UpdateWaylandInputRegion(WaylandContext* wl, ModelRegion clip) {
+void DrawWaylandEditFrame(const std::vector<ModelRegion>& handles, int width, int height) {
+    const GLboolean enabled = glIsEnabled(GL_SCISSOR_TEST);
+    GLint scissor[4]; GLfloat color[4]; GLboolean mask[4];
+    glGetIntegerv(GL_SCISSOR_BOX, scissor); glGetFloatv(GL_COLOR_CLEAR_VALUE, color);
+    glGetBooleanv(GL_COLOR_WRITEMASK, mask);
+    glEnable(GL_SCISSOR_TEST); glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glClearColor(.1f, .75f, 1.f, 1.f);
+    for (auto handle : handles) {
+        auto box = IntersectModelRegions(handle, {0, 0, width, height});
+        if (box.width <= 0 || box.height <= 0) continue;
+        box = ModelRegionToOpenGL(box, height);
+        glScissor(box.x, box.y, box.width, box.height); glClear(GL_COLOR_BUFFER_BIT);
+    }
+    glScissor(scissor[0], scissor[1], scissor[2], scissor[3]);
+    if (!enabled) glDisable(GL_SCISSOR_TEST);
+    glClearColor(color[0], color[1], color[2], color[3]);
+    glColorMask(mask[0], mask[1], mask[2], mask[3]);
+}
+
+void UpdateWaylandInputRegion(WaylandContext* wl, ModelRegion clip, const std::vector<ModelRegion>& handles) {
     if (!wl || !wl->compositor || !wl->surface) return;
 
     int width = wl->width;
@@ -110,6 +129,10 @@ void UpdateWaylandInputRegion(WaylandContext* wl, ModelRegion clip) {
         }
     }
 
+    for (auto handle : handles) {
+        auto box = IntersectModelRegions(handle, {0, 0, width, height});
+        if (box.width > 0 && box.height > 0) wl_region_add(region, box.x, box.y, box.width, box.height);
+    }
     wl_surface_set_input_region(wl->surface, region);
     wl_region_destroy(region);
 }
