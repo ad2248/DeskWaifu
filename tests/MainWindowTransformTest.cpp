@@ -8,6 +8,7 @@
 #include <QJsonDocument>
 #include <QLocalServer>
 #include <QTemporaryDir>
+#include <QDir>
 #include <QtTest>
 
 struct WindowRuntime : IApplicationRuntime
@@ -28,8 +29,9 @@ class MainWindowTransformTest : public QObject
 private slots:
     void previewsSaveCancelAndReset()
     {
-        QTemporaryDir directory("/tmp/opencode/window-transform-XXXXXX");
+        QTemporaryDir directory;
         QVERIFY(directory.isValid());
+        QVERIFY(directory.path().startsWith(QDir::tempPath() + "/"));
         qputenv("XDG_RUNTIME_DIR", directory.path().toLocal8Bit());
         const auto path = (directory.path() + "/config.json").toStdString();
         WindowRuntime runtime; ApplicationService service(runtime);

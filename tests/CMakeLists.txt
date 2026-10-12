@@ -20,6 +20,12 @@ add_test(NAME config-store COMMAND config-store-test)
 add_executable(transform-editor-test TransformEditorTest.cpp ../src/ConfigStore.cpp ../src/InputController.cpp)
 target_include_directories(transform-editor-test PRIVATE ../src)
 add_test(NAME transform-editor COMMAND transform-editor-test)
+add_test(NAME config-temp-directory
+  COMMAND ${CMAKE_COMMAND}
+    -DTEST_TEMP_ROOT=${CMAKE_CURRENT_BINARY_DIR}/tmp
+    -DCONFIG_TEST=$<TARGET_FILE:config-store-test>
+    -DEDITOR_TEST=$<TARGET_FILE:transform-editor-test>
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckPortableTemporaryDirectory.cmake)
 
 add_executable(model-region-test ModelRegionTest.cpp ../src/LAppConfig.cpp)
 target_include_directories(model-region-test PRIVATE ../src)
@@ -169,6 +175,11 @@ set_target_properties(main-window-transform-test PROPERTIES AUTOMOC ON AUTOUIC O
   AUTOUIC_SEARCH_PATHS "${CMAKE_CURRENT_SOURCE_DIR}/../control")
 add_test(NAME main-window-transform COMMAND main-window-transform-test)
 set_tests_properties(main-window-transform PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+add_test(NAME main-window-temp-directory
+  COMMAND ${CMAKE_COMMAND}
+    -DTEST_TEMP_ROOT=${CMAKE_CURRENT_BINARY_DIR}/tmp
+    -DWINDOW_TEST=$<TARGET_FILE:main-window-transform-test>
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckPortableTemporaryDirectory.cmake)
 
 qt_add_executable(model-keyboard-test ModelKeyboardTest.cpp)
 target_include_directories(model-keyboard-test PRIVATE ../src ${FRAMEWORK_PATH}/src ${CORE_PATH}/include)

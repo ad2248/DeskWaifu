@@ -1,4 +1,5 @@
 #include "ConfigStore.hpp"
+#include "TestTemporaryDirectory.hpp"
 #include <cstdio>
 #include <fstream>
 #include <iostream>
@@ -18,8 +19,10 @@ int main()
     CHECK(ConfigStore::Parse("{\"模型\":\"\\ud83d\\ude00\"}", parsed, error));
     CHECK(!ConfigStore::Parse("{\"a\":\"\xc0\xaf\"}", parsed, error));
     CHECK(!ConfigStore::Parse("{\"a\":\"\\ud800\"}", parsed, error));
-    char directory[] = "/tmp/opencode/config-store-test-XXXXXX";
-    CHECK(mkdtemp(directory));
+    const std::string directory = MakeTestTemporaryDirectory("config-store-test");
+    CHECK(!directory.empty());
+    if (const char* root = std::getenv("TMPDIR"))
+        CHECK(directory.find(std::string(root) + "/") == 0);
     const std::string path = std::string(directory) + "/config.json";
     auto write = [&](const std::string& text) { std::ofstream file(path); file << text; };
     write("{\n // keep this comment\n \"other\": {\"model_x\": 9},\n \"model_x\": 1, // keep this too\n \"model_region\": {\"x\":100,\"width\":800,\"height\":600}\n}\n");
@@ -68,6 +71,6 @@ int main()
     CHECK(missing.Commit({{"model_scale", "1"}}, before, saved, error));
     CHECK(unlink(missing.Path().c_str()) == 0);
     CHECK(rmdir((std::string(directory) + "/new").c_str()) == 0);
-    CHECK(rmdir(directory) == 0);
+    CHECK(rmdir(directory.c_str()) == 0);
     return 0;
 }

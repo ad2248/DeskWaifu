@@ -1,5 +1,6 @@
 #include "TransformEditor.hpp"
 #include "CropInteraction.hpp"
+#include "TestTemporaryDirectory.hpp"
 #include <fstream>
 #include <iostream>
 #include <unistd.h>
@@ -20,8 +21,10 @@ struct Runtime : IApplicationRuntime
 
 int main()
 {
-    char directory[] = "/tmp/opencode/transform-editor-test-XXXXXX";
-    CHECK(mkdtemp(directory));
+    const std::string directory = MakeTestTemporaryDirectory("transform-editor-test");
+    CHECK(!directory.empty());
+    if (const char* root = std::getenv("TMPDIR"))
+        CHECK(directory.find(std::string(root) + "/") == 0);
     const std::string path = std::string(directory) + "/config.json";
     auto write = [&](std::string text) { std::ofstream file(path); file << text; };
     write("{\"model_x\":1,\"model_scale\":2,\"other\":true}");
@@ -103,6 +106,6 @@ int main()
     CHECK(recovered.region.x == 0 && recovered.region.y == 0);
     const auto extreme = CropInteraction::Drag(start, CropInteraction::Left | CropInteraction::Top, INT32_MIN, INT32_MIN, 1000);
     CHECK(extreme.region.width > 0 && extreme.region.height > 0);
-    CHECK(unlink(path.c_str()) == 0 && rmdir(directory) == 0);
+    CHECK(unlink(path.c_str()) == 0 && rmdir(directory.c_str()) == 0);
     return 0;
 }
