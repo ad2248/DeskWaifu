@@ -64,6 +64,28 @@ int main()
     glDisable(GL_SCISSOR_TEST);
     ClipWaylandModelRegion({3, 2, 5, 4}, 13, 9);
     CHECK(!glIsEnabled(GL_SCISSOR_TEST));
+    // Editor frame is drawn after clipping, including outside the model clip,
+    // and restores the renderer's GL state.
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glClearColor(0, 0, 0, 0);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glEnable(GL_SCISSOR_TEST); glScissor(1, 2, 3, 4);
+    glColorMask(GL_FALSE, GL_TRUE, GL_FALSE, GL_FALSE);
+    glClearColor(.25f, .5f, .75f, 1);
+    DrawWaylandEditFrame({{0, 0, 13, 1}, {-5, 3, 7, 2}}, 13, 9);
+    GLint frameScissor[4]; GLboolean frameMask[4]; GLfloat frameColor[4];
+    glGetIntegerv(GL_SCISSOR_BOX, frameScissor); glGetBooleanv(GL_COLOR_WRITEMASK, frameMask);
+    glGetFloatv(GL_COLOR_CLEAR_VALUE, frameColor);
+    CHECK(glIsEnabled(GL_SCISSOR_TEST));
+    CHECK(frameScissor[0] == 1 && frameScissor[1] == 2 && frameScissor[2] == 3 && frameScissor[3] == 4);
+    CHECK(!frameMask[0] && frameMask[1] && !frameMask[2] && !frameMask[3]);
+    CHECK(frameColor[0] == .25f && frameColor[1] == .5f && frameColor[2] == .75f);
+    std::vector<unsigned char> framePixels(13 * 9 * 4);
+    glReadPixels(0, 0, 13, 9, GL_RGBA, GL_UNSIGNED_BYTE, framePixels.data());
+    CHECK(framePixels[(8 * 13) * 4 + 3] == 255); // top edge
+    CHECK(framePixels[(5 * 13) * 4 + 3] == 255); // clipped left handle
+    CHECK(framePixels[(4 * 13 + 5) * 4 + 3] == 0); // untouched background
+    CHECK(glGetError() == GL_NO_ERROR);
     eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
     eglDestroyContext(display, context);
     eglDestroySurface(display, surface);

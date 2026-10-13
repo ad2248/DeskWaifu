@@ -116,7 +116,12 @@ void DeskWaifuClient::handleDisconnected()
     _readBuffer.clear();
     // A queued toggle is meaningful only for the current connection/model state.
     for (qsizetype i = _requests.size(); i-- > 0;)
-        if (_requests[i].command == QStringLiteral("trigger_hotkey")) _requests.removeAt(i);
+        if (_requests[i].command == QStringLiteral("trigger_hotkey") ||
+            _requests[i].command.endsWith(QStringLiteral("transform_edit")) ||
+            _requests[i].command == QStringLiteral("reset_transform_settings") ||
+            _requests[i].command == QStringLiteral("retry_transform_save") ||
+            _requests[i].command == QStringLiteral("reload_transform_settings") ||
+            _requests[i].command == QStringLiteral("relocate_crop")) _requests.removeAt(i);
     emit connectionChanged(false, tr("Disconnected"));
     _reconnectTimer.start();
 }
@@ -151,5 +156,7 @@ bool DeskWaifuClient::isRetryableQuery(const QString& command)
         || command == QStringLiteral("get_expressions")
         || command == QStringLiteral("get_hotkeys")
         || command == QStringLiteral("get_motions")
-        || command == QStringLiteral("get_model_position");
+        || command == QStringLiteral("get_model_position")
+        || command == QStringLiteral("get_transform_settings")
+        || command == QStringLiteral("get_transform_save_result");
 }

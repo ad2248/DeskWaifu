@@ -45,6 +45,10 @@ namespace {
         using namespace std::chrono;
         return static_cast<uint32_t>(duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count());
     }
+    double SettingsClock()
+    {
+        return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    }
 }
 
 static void HandleToggleSignal(int) {
@@ -120,6 +124,12 @@ bool LAppDelegate::Initialize()
     InitializeCubism();
     _cubismStarted = true;
     const auto& config = LAppConfig::GetInstance();
+    _settings.reset(new TransformEditor(_service, config.sourcePath.empty() ? LAppConfig::GetDefaultConfigPath() : config.sourcePath));
+    if (!_settings->Initialize({{config.modelScale, config.modelX, config.modelY}, config.hasModelRegion, config.modelRegion})) {
+        LAppPal::PrintLogLn("[Config] Invalid model transform; zoom must be finite and within 0.1..10");
+        return false;
+    }
+    _lastOutput = _waylandBackend.CurrentOutput();
     _manager = new LAppLive2DManager(*_textureManager, _windowWidth, _windowHeight,
         {LAppDefine::ModelsDir, config.additionalModelDirs, config.defaultModel, config.emotionTimeout});
     if (!_manager->HasModels()) { _isEnd = true; return false; }
@@ -164,7 +174,13 @@ bool LAppDelegate::Run()
         if (wl_display_dispatch_pending(_wlContext.display) == -1) {
             break;
         }
+        if (_wlContext.outputNeedsRebind) _settings->AbortScreenEdit();
         _waylandBackend.ReconcileOutputs();
+        if (_lastOutput != _waylandBackend.CurrentOutput()) {
+            _settings->AbortScreenEdit();
+            _settings->PauseAutosave();
+            _lastOutput = _waylandBackend.CurrentOutput();
+        }
         if (_isEnd) break;
         if (_input.TapExpired(ClickClock())) FlushPendingTap();
         wl_display_flush(_wlContext.display);
@@ -172,6 +188,8 @@ bool LAppDelegate::Run()
         int width = _wlContext.width;
         int height = _wlContext.height;
 
+        if (_settings->ScreenEditing() && (width != _windowWidth || height != _windowHeight))
+            _settings->AbortScreenEdit();
         if((_windowWidth!=width || _windowHeight!=height) && width>0 && height>0) {
             _view->Initialize(width, height);
             _view->ResizeSprite();
@@ -186,15 +204,24 @@ bool LAppDelegate::Run()
         if (pendingFocusMove) {
             pendingFocusMove = 0;
             const auto focused = _compositor.FocusedOutput();
-            if (focused) {
+            if (focused && !_settings->Editing()) {
                 if (!_outputController.Focus(focused.value))
                     LAppPal::PrintLogLn("[Wayland] Focused output not available: %s", focused.value.c_str());
+                else _settings->PauseAutosave();
             } else LAppPal::PrintLogLn("[Wayland] Focus capability unavailable (%d)", static_cast<int>(focused.status));
         }
         TrackGlobalCursor();
+        _lastOutput = _waylandBackend.CurrentOutput();
 
         // Poll IPC commands
         _ipc->Poll();
+        if (_input.IsCaptured() && _settings->Dirty()) _settings->ScheduleSave(SettingsClock(), .5);
+        _settings->Tick(SettingsClock());
+        if (_settings->Editing()) {
+            _input = InputController{};
+            if (_wlContext.keyboardSurface.IsGrabbed()) SetModelKeyboardGrab(&_wlContext, false);
+        }
+        if (!_settings->ScreenEditing()) _cropHandle = CropInteraction::None;
 
         LAppPal::UpdateTime();
 
@@ -208,13 +235,18 @@ bool LAppDelegate::Run()
             _view->Render(state.transform, _service.FrameInput());
         }
 
-        if (!state.hidden) {
-            const auto& config = LAppConfig::GetInstance();
-            const auto region = ResolveModelRegion(config.hasModelRegion, config.modelRegion,
+        if (!state.hidden || _settings->ScreenEditing()) {
+            const auto& settings = _settings->Display();
+            const auto region = ResolveModelRegion(settings.cropped, settings.region,
                 _windowWidth, _windowHeight);
             ClipWaylandModelRegion(region, _windowWidth, _windowHeight);
-            UpdateWaylandInputRegion(&_wlContext, region);
+            if (_settings->ScreenEditing()) {
+                const auto handles = settings.cropped ? CropInteraction::Handles(settings.region) : std::vector<ModelRegion>{};
+                DrawWaylandEditFrame(handles, _windowWidth, _windowHeight);
+                UpdateWaylandInputRegion(&_wlContext, region, handles);
+            } else UpdateWaylandInputRegion(&_wlContext, region);
         }
+        if (state.hidden && !_settings->ScreenEditing()) ClearWaylandInputRegion(&_wlContext);
         eglSwapBuffers(_wlContext.egl_display, _wlContext.egl_surface);
         
         if (state.hidden) {
@@ -288,6 +320,19 @@ void LAppDelegate::OnMouseCallBack(void* window, int button, int action, int mod
         return;
     }
     
+    if (_settings && _settings->Editing())
+    {
+        _input = InputController{};
+        if (button == 0 && _settings->ScreenEditing()) {
+            if (action == 1) {
+                _cropStart = _settings->Display();
+                _cropStartX = int(_mouseX); _cropStartY = int(_mouseY);
+                _cropHandle = _cropStart.cropped ? CropInteraction::Hit(_cropStart.region, _cropStartX, _cropStartY) : CropInteraction::None;
+                if (_cropHandle == CropInteraction::None) _cropHandle = CropInteraction::Model;
+            } else _cropHandle = CropInteraction::None;
+        }
+        return; // No model taps, skin changes or keyboard grabs during editing.
+    }
     if (button == 0)
     {
         if (1 == action)
@@ -299,16 +344,21 @@ void LAppDelegate::OnMouseCallBack(void* window, int button, int action, int mod
         {
             if (_input.IsCaptured())
             {
+                const bool moved = _input.DragX() != _input.StartX() || _input.DragY() != _input.StartY();
                 // Execute screen switch on release
                 const auto cursor = _compositor.GlobalCursor();
+                bool switched = false;
                 if (cursor) {
                     const auto geometry = _compositor.MonitorGeometry();
                     if (geometry) _waylandBackend.ApplyMonitorGeometry(geometry.value);
                     auto transform = _service.Snapshot().transform;
                     const OutputId oldId = _waylandBackend.CurrentOutput();
                     if (_outputController.MoveTo(cursor.value.first, cursor.value.second, transform) &&
-                        oldId != _waylandBackend.CurrentOutput())
-                        _service.SetTransform(transform);
+                         oldId != _waylandBackend.CurrentOutput()) {
+                         _service.SetTransform(transform);
+                         _settings->PauseAutosave();
+                         switched = true;
+                    }
                 }
 
                 const auto result = _input.Release(ClickClock(), static_cast<int>(_mouseX),
@@ -326,6 +376,7 @@ void LAppDelegate::OnMouseCallBack(void* window, int button, int action, int mod
                 {
                     _manager->OnDrag(0.0f, 0.0f); // End look
                 }
+                if (_settings && moved && !switched) _settings->ScheduleSave(SettingsClock(), .01);
             }
         }
     }
@@ -347,6 +398,7 @@ void LAppDelegate::OnMouseCallBack(void* window, int button, int action, int mod
 
 void LAppDelegate::FlushPendingTap()
 {
+    if (_settings && _settings->Editing()) return;
     _input.FlushTap([this](int x, int y)
     {
         _view->OnTouchesBegan(x, y);
@@ -361,6 +413,7 @@ void LAppDelegate::ResetKeyboardState()
 
 void LAppDelegate::OnModelKey(uint32_t code, bool pressed)
 {
+    if (_settings && _settings->Editing()) return;
     LAppModel* model = _wlContext.keyboardSurface.IsGrabbed()
         ? _manager->GetModel(0) : nullptr;
     const auto* bindings = model ? &model->Hotkeys().Bindings() : nullptr;
@@ -385,6 +438,14 @@ void LAppDelegate::OnMouseCallBack(void* window, double x, double y)
         return;
     }
 
+    if (_settings && _settings->Editing()) {
+        if (_cropHandle != CropInteraction::None) {
+            auto next = CropInteraction::Drag(_cropStart, _cropHandle,
+                int(x) - _cropStartX, int(y) - _cropStartY, _windowHeight);
+            _settings->Update(_settings->Owner(), next);
+        }
+        return;
+    }
     // Calculate viewX / viewY based on look center
     int width, height;
     width = _windowWidth; height = _windowHeight;
@@ -421,7 +482,12 @@ void LAppDelegate::OnScrollCallBack(void* window, double xoffset, double yoffset
     const ModelTransform transform = ZoomModelFromScroll(
         _service.Snapshot().transform, _view, _mouseX, _mouseY,
         static_cast<float>(yoffset));
-    _service.SetTransform(transform);
+    if (_settings && _settings->Editing()) {
+        if (_settings->ScreenEditing()) { auto next = _settings->Display(); next.transform = transform; _settings->Update(_settings->Owner(), next); }
+    } else {
+        _service.SetTransform(transform);
+        if (_settings) _settings->ScheduleSave(SettingsClock(), .5);
+    }
 }
 
 bool LAppDelegate::SelectModel(int index) { return _manager && _manager->ChangeScene(index); }

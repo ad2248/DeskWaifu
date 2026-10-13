@@ -38,6 +38,31 @@ private slots:
         QCOMPARE(window.statusBar(), ui.statusBar);
     }
 
+    void cropControlsUseIntegerSurfaceCoordinates()
+    {
+        QMainWindow window;
+        Ui::MainWindow ui;
+        ui.setupUi(&window);
+
+        for (auto* coordinate : {ui.cropBox_x, ui.cropBox_y})
+        {
+            QCOMPARE(coordinate->singleStep(), 1);
+            coordinate->setValue(-1920);
+            QCOMPARE(coordinate->value(), -1920);
+            coordinate->setValue(3840);
+            QCOMPARE(coordinate->value(), 3840);
+        }
+        for (auto* dimension : {ui.cropBox_w, ui.cropBox_h})
+        {
+            QCOMPARE(dimension->minimum(), 1);
+            QCOMPARE(dimension->singleStep(), 1);
+            dimension->setValue(3840);
+            QCOMPARE(dimension->value(), 3840);
+            dimension->setValue(0);
+            QCOMPARE(dimension->value(), 1);
+        }
+    }
+
     void followsApplicationTheme_data()
     {
         QTest::addColumn<QColor>("background");

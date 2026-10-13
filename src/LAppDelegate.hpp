@@ -12,6 +12,9 @@
 #include "LAppWayland.hpp"
 #include "InputController.hpp"
 #include "ApplicationService.hpp"
+#include "TransformEditor.hpp"
+#include "CropInteraction.hpp"
+#include <memory>
 #include "CompositorAdapter.hpp"
 #include "Type/csmVector.hpp"
 #include "LAppAllocator_Common.hpp"
@@ -100,6 +103,7 @@ public:
     LAppView* GetView() { return _view; }
     ApplicationService& Service() { return _service; }
     const ApplicationService& Service() const { return _service; }
+    TransformEditor& Settings() { return *_settings; }
 
     /**
     * @brief   アプリケーションを終了するかどうか。
@@ -183,6 +187,11 @@ private:
     LAppIPC* _ipc;
     AppCommandHandler* _commands;
     ApplicationService _service;
+    std::unique_ptr<TransformEditor> _settings;
+    int _cropHandle = CropInteraction::None;
+    int _cropStartX = 0, _cropStartY = 0;
+    TransformSettings _cropStart;
+    OutputId _lastOutput = 0;
     float _mouseX;                               ///< マウスX座標
     float _mouseY;                               ///< マウスY座標
     InputController _input;

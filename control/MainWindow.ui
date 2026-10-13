@@ -20,26 +20,11 @@
    <string>DeskWaifu Control</string>
   </property>
   <widget class="QWidget" name="centralWidget">
-   <layout class="QVBoxLayout" name="rootLayout">
-    <property name="spacing">
-     <number>14</number>
-    </property>
-    <property name="leftMargin">
-     <number>18</number>
-    </property>
-    <property name="topMargin">
-     <number>18</number>
-    </property>
-    <property name="rightMargin">
-     <number>18</number>
-    </property>
-    <property name="bottomMargin">
-     <number>18</number>
-    </property>
+   <layout class="QVBoxLayout" name="verticalLayout_2">
     <item>
      <widget class="QTabWidget" name="tabWidget">
-      <property name="currentIndex">
-       <number>0</number>
+       <property name="currentIndex">
+        <number>0</number>
       </property>
       <widget class="QWidget" name="overviewTab">
        <attribute name="title">
@@ -336,16 +321,56 @@
           <property name="title">
            <string>Position and scale</string>
           </property>
-          <layout class="QFormLayout" name="transformForm">
-           <item row="0" column="0">
-            <widget class="QLabel" name="zoomLabel">
+           <layout class="QGridLayout" name="horizontalLayout">
+            <item row="0" column="0">
+            <widget class="QLabel" name="positionXLabel">
+             <property name="text">
+              <string>X offset</string>
+             </property>
+            </widget>
+           </item>
+            <item row="0" column="1">
+             <widget class="QDoubleSpinBox" name="positionXSpin">
+             <property name="minimum">
+              <double>-100.000000000000000</double>
+             </property>
+             <property name="maximum">
+              <double>100.000000000000000</double>
+             </property>
+             <property name="singleStep">
+              <double>0.100000000000000</double>
+             </property>
+            </widget>
+           </item>
+            <item row="0" column="2">
+             <widget class="QLabel" name="positionYLabel">
+             <property name="text">
+              <string>Y offset</string>
+             </property>
+            </widget>
+           </item>
+            <item row="0" column="3">
+             <widget class="QDoubleSpinBox" name="positionYSpin">
+             <property name="minimum">
+              <double>-100.000000000000000</double>
+             </property>
+             <property name="maximum">
+              <double>100.000000000000000</double>
+             </property>
+             <property name="singleStep">
+              <double>0.100000000000000</double>
+             </property>
+            </widget>
+           </item>
+            <item row="1" column="0">
+             <widget class="QLabel" name="zoomLabel">
              <property name="text">
               <string>Zoom</string>
              </property>
             </widget>
            </item>
-           <item row="0" column="1">
-            <widget class="QDoubleSpinBox" name="zoomSpin">
+            <item row="1" column="1">
+             <widget class="QDoubleSpinBox" name="zoomSpin">
              <property name="minimum">
               <double>0.100000000000000</double>
              </property>
@@ -360,56 +385,163 @@
              </property>
             </widget>
            </item>
-           <item row="1" column="0">
-            <widget class="QLabel" name="positionXLabel">
+            <item row="1" column="2">
+             <widget class="QPushButton" name="transformButton">
              <property name="text">
-              <string>X offset</string>
+              <string>应用并保存</string>
              </property>
             </widget>
            </item>
-           <item row="1" column="1">
-            <widget class="QDoubleSpinBox" name="positionXSpin">
-             <property name="minimum">
-              <double>-100.000000000000000</double>
+            <item row="1" column="3">
+             <spacer name="horizontalSpacer_2">
+             <property name="orientation">
+              <enum>Qt::Orientation::Horizontal</enum>
              </property>
-             <property name="maximum">
-              <double>100.000000000000000</double>
+             <property name="sizeHint" stdset="0">
+              <size>
+               <width>40</width>
+               <height>20</height>
+              </size>
              </property>
-             <property name="singleStep">
-              <double>0.100000000000000</double>
-             </property>
-            </widget>
-           </item>
-           <item row="2" column="0">
-            <widget class="QLabel" name="positionYLabel">
-             <property name="text">
-              <string>Y offset</string>
-             </property>
-            </widget>
-           </item>
-           <item row="2" column="1">
-            <widget class="QDoubleSpinBox" name="positionYSpin">
-             <property name="minimum">
-              <double>-100.000000000000000</double>
-             </property>
-             <property name="maximum">
-              <double>100.000000000000000</double>
-             </property>
-             <property name="singleStep">
-              <double>0.100000000000000</double>
-             </property>
-            </widget>
-           </item>
-           <item row="3" column="1">
-            <widget class="QPushButton" name="transformButton">
-             <property name="text">
-              <string>Apply transform</string>
-             </property>
-            </widget>
+            </spacer>
            </item>
           </layout>
          </widget>
         </item>
+        <item>
+         <widget class="QGroupBox" name="positionEdit">
+          <property name="title">
+           <string>裁剪框</string>
+          </property>
+           <layout class="QGridLayout" name="horizontalLayout_2">
+            <item row="0" column="0" colspan="4">
+             <widget class="QCheckBox" name="cropEnabledCheck">
+              <property name="text"><string>启用裁剪</string></property>
+             </widget>
+            </item>
+            <item row="1" column="0">
+             <widget class="QLabel" name="cropBox_x_label">
+             <property name="text">
+              <string>X</string>
+             </property>
+            </widget>
+           </item>
+            <item row="1" column="1">
+              <widget class="QSpinBox" name="cropBox_x">
+              <property name="minimum">
+               <number>-2147483648</number>
+              </property>
+              <property name="maximum">
+               <number>2147483647</number>
+              </property>
+              <property name="singleStep">
+               <number>1</number>
+             </property>
+            </widget>
+           </item>
+            <item row="1" column="2">
+             <widget class="QLabel" name="cropBox_y_label">
+             <property name="text">
+              <string>Y</string>
+             </property>
+            </widget>
+           </item>
+            <item row="1" column="3">
+              <widget class="QSpinBox" name="cropBox_y">
+              <property name="minimum">
+               <number>-2147483648</number>
+              </property>
+              <property name="maximum">
+               <number>2147483647</number>
+              </property>
+              <property name="singleStep">
+               <number>1</number>
+             </property>
+            </widget>
+           </item>
+            <item row="2" column="0">
+             <widget class="QLabel" name="cropBox_w_label">
+             <property name="text">
+              <string>宽度</string>
+             </property>
+            </widget>
+           </item>
+            <item row="2" column="1">
+              <widget class="QSpinBox" name="cropBox_w">
+              <property name="minimum">
+               <number>1</number>
+              </property>
+              <property name="maximum">
+               <number>2147483647</number>
+              </property>
+              <property name="singleStep">
+               <number>1</number>
+             </property>
+            </widget>
+           </item>
+            <item row="2" column="2">
+             <widget class="QLabel" name="cropBox_h_label">
+             <property name="text">
+              <string>高度</string>
+             </property>
+            </widget>
+           </item>
+            <item row="2" column="3">
+              <widget class="QSpinBox" name="cropBox_h">
+              <property name="minimum">
+               <number>1</number>
+              </property>
+              <property name="maximum">
+               <number>2147483647</number>
+              </property>
+              <property name="singleStep">
+               <number>1</number>
+             </property>
+            </widget>
+           </item>
+            <item row="3" column="0" colspan="2">
+             <widget class="QPushButton" name="dragEditButton">
+             <property name="text">
+              <string>拖放编辑</string>
+             </property>
+            </widget>
+           </item>
+            <item row="3" column="2" colspan="2">
+             <spacer name="horizontalSpacer">
+             <property name="orientation">
+              <enum>Qt::Orientation::Horizontal</enum>
+             </property>
+             <property name="sizeHint" stdset="0">
+              <size>
+               <width>40</width>
+               <height>20</height>
+              </size>
+             </property>
+            </spacer>
+           </item>
+          </layout>
+         </widget>
+        </item>
+         <item>
+          <layout class="QHBoxLayout" name="transformActionsLayout">
+           <item><widget class="QPushButton" name="cancelTransformButton">
+            <property name="text"><string>取消编辑</string></property>
+           </widget></item>
+           <item><widget class="QPushButton" name="relocateCropButton">
+            <property name="text"><string>移回屏幕</string></property>
+           </widget></item>
+           <item><widget class="QPushButton" name="retryTransformButton">
+            <property name="text"><string>重试保存</string></property>
+           </widget></item>
+           <item><widget class="QPushButton" name="xformResetButton">
+            <property name="text"><string>重置</string></property>
+           </widget></item>
+          </layout>
+         </item>
+         <item><widget class="QLabel" name="transformStatusLabel">
+          <property name="text"><string>尚未连接</string></property>
+          <property name="wordWrap"><bool>true</bool></property>
+         </widget></item>
         <item>
          <spacer name="transformSpacer">
           <property name="orientation">

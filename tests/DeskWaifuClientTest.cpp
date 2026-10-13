@@ -104,6 +104,8 @@ void DeskWaifuClientTest::doesNotReplayUnacknowledgedMutation_data()
     QTest::addColumn<QString>("command");
     QTest::newRow("visibility") << QStringLiteral("toggle_hidden");
     QTest::newRow("model-hotkey") << QStringLiteral("trigger_hotkey");
+    QTest::newRow("transform-apply") << QStringLiteral("apply_transform_edit");
+    QTest::newRow("transform-reset") << QStringLiteral("reset_transform_settings");
 }
 
 void DeskWaifuClientTest::retriesUnacknowledgedQuery()
