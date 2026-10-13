@@ -180,6 +180,13 @@ add_test(NAME main-window-temp-directory
     -DTEST_TEMP_ROOT=${CMAKE_CURRENT_BINARY_DIR}/tmp
     -DWINDOW_TEST=$<TARGET_FILE:main-window-transform-test>
     -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckPortableTemporaryDirectory.cmake)
+string(REPEAT "long-build-path-" 10 LONG_TEMP_SUFFIX)
+add_test(NAME main-window-long-temp-directory
+  COMMAND ${CMAKE_COMMAND}
+    -DTEST_TEMP_ROOT=${CMAKE_CURRENT_BINARY_DIR}/tmp/${LONG_TEMP_SUFFIX}
+    -DEXPECT_LONG_TEMP=ON
+    -DWINDOW_TEST=$<TARGET_FILE:main-window-transform-test>
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckPortableTemporaryDirectory.cmake)
 
 qt_add_executable(model-keyboard-test ModelKeyboardTest.cpp)
 target_include_directories(model-keyboard-test PRIVATE ../src ${FRAMEWORK_PATH}/src ${CORE_PATH}/include)
