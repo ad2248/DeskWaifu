@@ -8,6 +8,15 @@ add_test(NAME component-direction-missing
   COMMAND ${CMAKE_COMMAND} -DAPP_SOURCE=${CMAKE_CURRENT_BINARY_DIR}/missing-components
     -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckComponentDirection.cmake)
 set_tests_properties(component-direction-missing PROPERTIES WILL_FAIL TRUE)
+add_test(NAME command-service-direction
+  COMMAND ${CMAKE_COMMAND} -DAPP_SOURCE=${CMAKE_SOURCE_DIR}/src
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckCommandServiceDirection.cmake)
+add_test(NAME command-service-direction-regression
+  COMMAND ${CMAKE_COMMAND} -DFIXTURE_SOURCE=${CMAKE_CURRENT_BINARY_DIR}/reverse-port-fixture
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckCommandServiceDirectionRegression.cmake)
+add_test(NAME cursor-look-wiring
+  COMMAND ${CMAKE_COMMAND} -DAPP_SOURCE=${CMAKE_SOURCE_DIR}/src
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckCursorLookWiring.cmake)
 
 add_executable(json-command-test JsonCommandTest.cpp)
 target_include_directories(json-command-test PRIVATE ../src)
@@ -74,6 +83,10 @@ add_test(NAME ipc-transport COMMAND ipc-transport-test)
 add_executable(input-controller-test InputControllerTest.cpp)
 target_link_libraries(input-controller-test PRIVATE deskwaifu_input)
 add_test(NAME input-controller COMMAND input-controller-test)
+
+add_executable(cursor-look-test CursorLookTest.cpp)
+target_link_libraries(cursor-look-test PRIVATE deskwaifu_input)
+add_test(NAME cursor-look COMMAND cursor-look-test)
 
 add_executable(application-service-test ApplicationServiceTest.cpp)
 target_include_directories(application-service-test PRIVATE ../src)

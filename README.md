@@ -324,6 +324,13 @@ DeskWaifu runs on any Wayland compositor that supports the `wlr-layer-shell` pro
 | Cross-monitor drag | Yes | No | No |
 | Move to focused monitor | Yes | Yes | No |
 
+On Hyprland, gaze follows the cursor even outside the model's input/crop region
+or on another monitor. The latest cursor sample is applied every frame, so taps
+and model position changes do not stop tracking a stationary cursor. Global
+tracking does not synthesize model drag or crop-edit events. On Sway and other
+compositors, gaze falls back to pointer events on the model surface; standard
+Wayland does not expose the global cursor position.
+
 The compositor is auto-detected at startup. Feature availability is logged to the console.
 
 ### Toggling Visibility

@@ -232,6 +232,7 @@ bool LAppDelegate::Run()
 
         const auto state = _service.Snapshot();
         if (!state.hidden) {
+            UpdateCursorLook();
             _view->Render(state.transform, _service.FrameInput());
         }
 
@@ -306,11 +307,18 @@ void LAppDelegate::TrackGlobalCursor()
 {
     const auto cursor = _compositor.TrackedCursor(std::chrono::steady_clock::now());
     if (!cursor) return; // pointer-on-surface events still work without it
+    _cursorLook.GlobalPosition(cursor.value.first, cursor.value.second);
+}
+
+void LAppDelegate::UpdateCursorLook()
+{
+    if (!_manager || !_cursorLook.HasPosition() || (_settings && _settings->Editing())) return;
     const auto outputs = _waylandBackend.Outputs();
     const auto* current = _outputController.Current(outputs);
-    if (current) OnMouseCallBack(nullptr,
-        static_cast<double>(cursor.value.first - current->x),
-        static_cast<double>(cursor.value.second - current->y));
+    if (!current) return;
+    const auto look = _cursorLook.LookAt(current->x, current->y, _windowWidth,
+        _windowHeight, _lookCenterX, _lookCenterY, _service.Snapshot().transform);
+    _manager->OnDrag(look.first, look.second);
 }
 
 void LAppDelegate::OnMouseCallBack(void* window, int button, int action, int modify)
@@ -446,14 +454,6 @@ void LAppDelegate::OnMouseCallBack(void* window, double x, double y)
         }
         return;
     }
-    // Calculate viewX / viewY based on look center
-    int width, height;
-    width = _windowWidth; height = _windowHeight;
-    
-    const auto look = InputController::LookAt(_mouseX, _mouseY, width, height,
-        _lookCenterX, _lookCenterY, _service.Snapshot().transform);
-    _manager->OnDrag(look.first, look.second);
-
     if (_input.IsCaptured())
     {
         double curX = x;
@@ -475,6 +475,7 @@ void LAppDelegate::SetMousePosition(double x, double y)
 {
     _mouseX = static_cast<float>(x);
     _mouseY = static_cast<float>(y);
+    _cursorLook.LocalPosition(x, y);
 }
 
 void LAppDelegate::OnScrollCallBack(void* window, double xoffset, double yoffset)
