@@ -9,7 +9,14 @@
 #include <QLocalServer>
 #include <QTemporaryDir>
 #include <QDir>
+#include <QFile>
+#include <QScopeGuard>
 #include <QtTest>
+#include <cerrno>
+#include <cstring>
+#include <fcntl.h>
+#include <sys/un.h>
+#include <unistd.h>
 
 struct WindowRuntime : IApplicationRuntime
 {
@@ -32,12 +39,24 @@ private slots:
         QTemporaryDir directory;
         QVERIFY(directory.isValid());
         QVERIFY(directory.path().startsWith(QDir::tempPath() + "/"));
-        qputenv("XDG_RUNTIME_DIR", directory.path().toLocal8Bit());
+        if (qEnvironmentVariable("DESKWAIFU_EXPECT_LONG_TEMP") == QStringLiteral("ON")) {
+            sockaddr_un address{};
+            QVERIFY(QFile::encodeName(directory.path() + "/deskwaifu.sock").size() >= qsizetype(sizeof(address.sun_path)));
+        }
+        // Linux Unix socket names are limited to sun_path's size, even when
+        // their containing directory is a valid (long) filesystem path. Keep
+        // the socket in TMPDIR, but address it through this process's short
+        // directory-fd alias. The descriptor outlives both server and GUI.
+        const int runtimeFd = open(QFile::encodeName(directory.path()).constData(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+        QVERIFY2(runtimeFd >= 0, std::strerror(errno));
+        const auto closeRuntime = qScopeGuard([runtimeFd] { close(runtimeFd); });
+        const QString runtimePath = QStringLiteral("/proc/self/fd/%1").arg(runtimeFd);
+        qputenv("XDG_RUNTIME_DIR", runtimePath.toLocal8Bit());
         const auto path = (directory.path() + "/config.json").toStdString();
         WindowRuntime runtime; ApplicationService service(runtime);
         TransformEditor editor(service, path); QVERIFY(editor.Initialize({}));
         QLocalServer server;
-        QVERIFY(server.listen(directory.path() + "/deskwaifu.sock"));
+        QVERIFY2(server.listen(runtimePath + "/deskwaifu.sock"), qPrintable(server.errorString()));
         connect(&server, &QLocalServer::newConnection, this, [&] {
             auto* socket = server.nextPendingConnection();
             connect(socket, &QLocalSocket::readyRead, this, [&, socket] {
