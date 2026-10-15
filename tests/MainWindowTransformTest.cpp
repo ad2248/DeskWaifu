@@ -1,5 +1,7 @@
 #include "MainWindow.hpp"
 #include "TransformEditor.hpp"
+#include "ScreenCropInteraction.hpp"
+#include <QLabel>
 #include <QCheckBox>
 #include <QDoubleSpinBox>
 #include <QSpinBox>
@@ -82,7 +84,8 @@ private slots:
                         {"cropped", settings.cropped}, {"crop_x", settings.region.x}, {"crop_y", settings.region.y},
                         {"crop_width", settings.region.width}, {"crop_height", settings.region.height},
                         {"surface_width", 1920}, {"surface_height", 1080}, {"owned", editor.OwnedBy("gui")},
-                        {"editing", editor.Editing()}, {"revision", int(editor.Revision())}, {"config_path", QString::fromStdString(path)}};
+                        {"editing", editor.Editing()}, {"local_screen_editing", editor.LocalScreenEditing()},
+                        {"revision", int(editor.Revision())}, {"config_path", QString::fromStdString(path)}};
                     socket->write(QJsonDocument(response).toJson(QJsonDocument::Compact) + '\n');
                     socket->flush();
                 }
@@ -135,6 +138,22 @@ private slots:
         QCOMPARE(service.Snapshot().transform.scale, 1.f);
         QVERIFY(store.Read(disk, error)); QVERIFY(disk.values.empty());
         QVERIFY(!width->isEnabled());
+
+        // Polling reflects edits initiated in the model window and unlocks the
+        // panel when a frame double-click saves that transaction.
+        ScreenCropInteraction pointer;
+        QVERIFY(pointer.StartModelDrag(editor, 100, 100, 120, 100, 1920, 1080));
+        QVERIFY(pointer.Release(editor, 100, 120, 100).ok);
+        QTRY_VERIFY_WITH_TIMEOUT(!x->isEnabled(), 3000);
+        QVERIFY(!apply->isEnabled() && !reset->isEnabled());
+        QVERIFY(window.findChild<QLabel*>("transformStatusLabel")->text().contains(QStringLiteral("模型窗口")));
+        for (uint32_t time : {200u, 300u}) {
+            pointer.Press(editor.Display(), 0, 200);
+            QVERIFY(pointer.Release(editor, time, 0, 200).ok);
+        }
+        QTRY_VERIFY_WITH_TIMEOUT(x->isEnabled(), 3000);
+        QVERIFY(enabled->isChecked());
+        QVERIFY(store.Read(disk, error) && disk.values.count("model_region"));
     }
 };
 

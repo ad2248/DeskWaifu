@@ -221,7 +221,7 @@ bool LAppDelegate::Run()
             _input = InputController{};
             if (_wlContext.keyboardSurface.IsGrabbed()) SetModelKeyboardGrab(&_wlContext, false);
         }
-        if (!_settings->ScreenEditing()) _cropHandle = CropInteraction::None;
+        if (!_settings->ScreenEditing()) _cropInteraction = ScreenCropInteraction{};
 
         LAppPal::UpdateTime();
 
@@ -333,11 +333,11 @@ void LAppDelegate::OnMouseCallBack(void* window, int button, int action, int mod
         _input = InputController{};
         if (button == 0 && _settings->ScreenEditing()) {
             if (action == 1) {
-                _cropStart = _settings->Display();
-                _cropStartX = int(_mouseX); _cropStartY = int(_mouseY);
-                _cropHandle = _cropStart.cropped ? CropInteraction::Hit(_cropStart.region, _cropStartX, _cropStartY) : CropInteraction::None;
-                if (_cropHandle == CropInteraction::None) _cropHandle = CropInteraction::Model;
-            } else _cropHandle = CropInteraction::None;
+                _cropInteraction.Press(_settings->Display(), int(_mouseX), int(_mouseY));
+            } else if (action == 0) {
+                const auto result = _cropInteraction.Release(*_settings, ClickClock(), int(_mouseX), int(_mouseY));
+                if (!result.ok) LAppPal::PrintLogLn("[Crop] Save failed: %s", result.error.c_str());
+            }
         }
         return; // No model taps, skin changes or keyboard grabs during editing.
     }
@@ -447,15 +447,20 @@ void LAppDelegate::OnMouseCallBack(void* window, double x, double y)
     }
 
     if (_settings && _settings->Editing()) {
-        if (_cropHandle != CropInteraction::None) {
-            auto next = CropInteraction::Drag(_cropStart, _cropHandle,
-                int(x) - _cropStartX, int(y) - _cropStartY, _windowHeight);
-            _settings->Update(_settings->Owner(), next);
-        }
+        if (_settings->ScreenEditing()) _cropInteraction.Move(*_settings, int(x), int(y), _windowHeight);
         return;
     }
     if (_input.IsCaptured())
     {
+        if (_settings) {
+            if (_cropInteraction.StartModelDrag(*_settings, _input.StartX(), _input.StartY(),
+                    int(x), int(y), _windowWidth, _windowHeight)) {
+                _input = InputController{};
+                _manager->OnDrag(0.0f, 0.0f);
+                if (_wlContext.keyboardSurface.IsGrabbed()) SetModelKeyboardGrab(&_wlContext, false);
+            }
+            return;
+        }
         double curX = x;
         double curY = y;
         int deltaX = static_cast<int>(curX) - _input.DragX();

@@ -191,6 +191,7 @@ std::string AppCommandHandler::Execute(const std::string& json, const std::strin
             << ",\"revision\":" << editor.Revision() << ",\"editing\":" << (editor.Editing() ? "true" : "false")
             << ",\"owned\":" << (editor.OwnedBy(connection) ? "true" : "false")
             << ",\"screen_editing\":" << (editor.ScreenEditing() ? "true" : "false")
+            << ",\"local_screen_editing\":" << (editor.LocalScreenEditing() ? "true" : "false")
             << ",\"unsaved\":" << (editor.Dirty() ? "true" : "false") << ",\"conflict\":" << (editor.Conflict() ? "true" : "false")
             << ",\"known\":true,\"config_path\":\"" << JsonEscape(editor.Path()) << "\",\"warning\":\"" << JsonEscape(editor.Error()) << "\"}";
         const auto reply = out.str();

@@ -1,5 +1,6 @@
 #include "TransformEditor.hpp"
 #include "CropInteraction.hpp"
+#include "ScreenCropInteraction.hpp"
 #include "TestTemporaryDirectory.hpp"
 #include <fstream>
 #include <iostream>
@@ -106,6 +107,95 @@ int main()
     CHECK(recovered.region.x == 0 && recovered.region.y == 0);
     const auto extreme = CropInteraction::Drag(start, CropInteraction::Left | CropInteraction::Top, INT32_MIN, INT32_MIN, 1000);
     CHECK(extreme.region.width > 0 && extreme.region.height > 0);
+
+    // Ordinary clicks do not enter editing; the first real drag transfers its
+    // original press coordinates without losing or applying its delta twice.
+    write("{}");
+    CHECK(editor.ReloadAndDiscard("gui").ok);
+    ScreenCropInteraction pointer;
+    CHECK(!pointer.StartModelDrag(editor, 100, 100, 109, 109, 1000, 1000));
+    CHECK(!editor.Editing() && service.Snapshot().transform.x == 0);
+    CHECK(pointer.StartModelDrag(editor, 100, 100, 150, 120, 1000, 1000));
+    CHECK(editor.LocalScreenEditing() && editor.Display().cropped);
+    CHECK(editor.Display().region.width == 1000 && editor.Display().region.x == 0);
+    CHECK(std::abs(service.Snapshot().transform.x - .1f) < .00001f);
+    pointer.Move(editor, 200, 150, 1000);
+    CHECK(std::abs(service.Snapshot().transform.x - .2f) < .00001f);
+    CHECK(pointer.Release(editor, 100, 200, 150).ok);
+    CHECK(editor.ScreenEditing()); // Releasing never saves/hides the frame.
+    CHECK(store.Read(disk, error) && disk.values.empty());
+    CHECK(!editor.Begin("gui", true, 1000, 1000).ok);
+    CHECK(!editor.Update("gui", {}).ok && !editor.Apply("gui").ok);
+    editor.Disconnected("gui"); CHECK(editor.LocalScreenEditing());
+
+    // Double-clicking the model interior is not a frame save or model action.
+    for (uint32_t time : {200u, 300u}) {
+        pointer.Press(editor.Display(), 200, 200);
+        CHECK(pointer.Release(editor, time, 200, 200).ok);
+    }
+    CHECK(editor.Editing());
+    // A resize excursion returning to the press point still cannot be a click.
+    pointer.Press(editor.Display(), 0, 200);
+    CHECK(pointer.Release(editor, 400, 0, 200).ok);
+    pointer.Press(editor.Display(), 0, 200);
+    pointer.Move(editor, 20, 200, 1000);
+    pointer.Move(editor, 0, 200, 1000);
+    CHECK(pointer.Release(editor, 500, 0, 200).ok);
+    CHECK(editor.Editing());
+    pointer.Press(editor.Display(), 0, 200);
+    CHECK(pointer.Release(editor, 600, 0, 200).ok);
+    CHECK(editor.Editing());
+    pointer.Press(editor.Display(), 0, 200);
+    CHECK(pointer.Release(editor, 700, 0, 200).ok);
+    CHECK(!editor.Editing() && editor.Display().cropped);
+    CHECK(store.Read(disk, error) && disk.values.count("model_region"));
+    CHECK(std::abs(service.Snapshot().transform.x - .2f) < .00001f);
+
+    // Existing crops are preserved. Local entry cannot steal a GUI transaction;
+    // the same frame double-click can finish a GUI-owned screen transaction.
+    CHECK(editor.Begin("gui", true, 1000, 1000).ok);
+    CHECK(!pointer.StartModelDrag(editor, 100, 100, 150, 100, 1000, 1000));
+    CHECK(editor.OwnedBy("gui"));
+    for (uint32_t time : {1000u, 1100u}) {
+        pointer.Press(editor.Display(), 500, 0);
+        CHECK(pointer.Release(editor, time, 500, 0).ok);
+    }
+    CHECK(!editor.Editing());
+    CHECK(pointer.StartModelDrag(editor, 100, 100, 150, 100, 500, 500));
+    CHECK(editor.Display().region.width == 1000);
+    CHECK(pointer.Release(editor, 1200, 150, 100).ok);
+    // An external same-field edit makes save fail without discarding the draft.
+    const auto preview = editor.Display();
+    write("{\"model_x\":9}");
+    editor.Reload();
+    pointer.Press(editor.Display(), 0, 200);
+    CHECK(pointer.Release(editor, 1300, 0, 200).ok);
+    pointer.Press(editor.Display(), 0, 200);
+    CHECK(!pointer.Release(editor, 1400, 0, 200).ok);
+    CHECK(editor.LocalScreenEditing() && editor.Conflict() && !editor.Error().empty());
+    CHECK(editor.Display().transform.x == preview.transform.x);
+    // Resizing/changing outputs cancels local editing as it does panel editing.
+    editor.AbortScreenEdit();
+    CHECK(!editor.ScreenEditing() && service.Snapshot().transform.x == 9);
+
+    // A transient write/parse failure is retryable by another frame double-click.
+    pointer = ScreenCropInteraction{};
+    CHECK(store.Read(disk, error));
+    const auto savedDocument = disk.document;
+    CHECK(pointer.StartModelDrag(editor, 100, 100, 120, 100, 1000, 1000));
+    CHECK(pointer.Release(editor, 1500, 120, 100).ok);
+    write("broken");
+    pointer.Press(editor.Display(), 0, 200);
+    CHECK(pointer.Release(editor, 1600, 0, 200).ok);
+    pointer.Press(editor.Display(), 0, 200);
+    CHECK(!pointer.Release(editor, 1700, 0, 200).ok);
+    CHECK(editor.LocalScreenEditing());
+    write(savedDocument);
+    pointer.Press(editor.Display(), 0, 200);
+    CHECK(pointer.Release(editor, 1800, 0, 200).ok);
+    pointer.Press(editor.Display(), 0, 200);
+    CHECK(pointer.Release(editor, 1900, 0, 200).ok);
+    CHECK(!editor.Editing() && editor.Display().cropped && editor.Error().empty());
     CHECK(unlink(path.c_str()) == 0 && rmdir(directory.c_str()) == 0);
     return 0;
 }

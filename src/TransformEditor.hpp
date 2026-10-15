@@ -80,6 +80,12 @@ public:
     bool Editing() const { return !_owner.empty(); }
     bool OwnedBy(const std::string& owner) const { return Editing() && _owner == owner; }
     bool ScreenEditing() const { return Editing() && _screen; }
+    bool LocalScreenEditing() const { return ScreenEditing() && OwnedBy("local-screen"); }
+    AppResult BeginLocalScreenEdit(int width, int height)
+    {
+        if (Editing()) return AppResult::Failure("Another client is editing transforms");
+        return Begin("local-screen", true, width, height);
+    }
     bool Dirty() const { return _dirty; }
     bool Conflict() const { return _conflict; }
     const std::string& Error() const { return _error; }

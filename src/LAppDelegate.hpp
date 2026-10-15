@@ -14,7 +14,7 @@
 #include "CursorLook.hpp"
 #include "ApplicationService.hpp"
 #include "TransformEditor.hpp"
-#include "CropInteraction.hpp"
+#include "ScreenCropInteraction.hpp"
 #include <memory>
 #include "CompositorAdapter.hpp"
 #include "Type/csmVector.hpp"
@@ -189,9 +189,7 @@ private:
     AppCommandHandler* _commands;
     ApplicationService _service;
     std::unique_ptr<TransformEditor> _settings;
-    int _cropHandle = CropInteraction::None;
-    int _cropStartX = 0, _cropStartY = 0;
-    TransformSettings _cropStart;
+    ScreenCropInteraction _cropInteraction;
     OutputId _lastOutput = 0;
     float _mouseX;                               ///< マウスX座標
     float _mouseY;                               ///< マウスY座標
