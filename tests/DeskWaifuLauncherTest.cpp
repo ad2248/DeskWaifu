@@ -3,6 +3,7 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
+#include <QLockFile>
 #include <QProcess>
 #include <QScopeGuard>
 #include <QTemporaryDir>
@@ -34,6 +35,17 @@ private:
     {
         QVERIFY(QDir().mkpath(target));
         QVERIFY(QFile::copy(QStringLiteral(SPAWN_BACKEND_FIXTURE), target + "/deskwaifu"));
+    }
+    static void stopBackend(qint64 pid)
+    {
+        if (pid <= 0) return;
+        kill(pid, SIGKILL);
+        const auto active = [pid] {
+            QFile status(QStringLiteral("/proc/%1/status").arg(pid));
+            return status.open(QIODevice::ReadOnly) && !status.readAll().contains("State:\tZ");
+        };
+        // Detached fixtures are not our children: wait for exit, not waitpid().
+        QTRY_VERIFY_WITH_TIMEOUT(!active(), 2000);
     }
 
 private slots:
@@ -106,13 +118,86 @@ private slots:
         QCOMPARE(result.state, State::Failed);
         QVERIFY(result.message.contains("Failed to start"));
     }
+    void lockFailureDoesNotSpawn()
+    {
+        installBackend(app());
+        const auto result = DeskWaifuLauncher::spawn(false, app(), proc(), proc() + "/missing");
+        QCOMPARE(result.state, State::Failed);
+        QCOMPARE(result.pid, 0);
+        QVERIFY(result.message.contains("startup lock"));
+    }
+    void concurrentLaunchersStartOnlyOneBackend()
+    {
+        // Do not interact with a user's existing backend. PATH and the sibling
+        // directory are empty here, so this probe can only inspect, never launch.
+        const auto before = DeskWaifuLauncher::spawn(false, app(), "/proc", proc());
+        if (before.state == State::AlreadyRunning)
+            QSKIP("A deskwaifu backend is already running for this user.");
+        QCOMPARE(before.state, State::Failed);
+        QVERIFY(before.message.contains("Cannot find"));
+        installBackend(app());
+
+        QLockFile gate(proc() + "/deskwaifu-spawn.lock");
+        QVERIFY(gate.tryLock());
+        QProcess first, second;
+        const auto stopLaunchers = qScopeGuard([&] {
+            for (auto* launcher : {&first, &second}) {
+                if (launcher->state() != QProcess::NotRunning) {
+                    launcher->kill();
+                    launcher->waitForFinished();
+                }
+            }
+        });
+        const QStringList arguments{"--contend", app(), "/proc", proc()};
+        first.start(QCoreApplication::applicationFilePath(), arguments);
+        second.start(QCoreApplication::applicationFilePath(), arguments);
+        QVERIFY(first.waitForStarted());
+        QVERIFY(second.waitForStarted());
+        QTRY_VERIFY(first.canReadLine());
+        QCOMPARE(first.readLine().trimmed(), QByteArray("ready"));
+        QTRY_VERIFY(second.canReadLine());
+        QCOMPARE(second.readLine().trimmed(), QByteArray("ready"));
+        // Both independent callers must be blocked before process inspection.
+        QTest::qWait(100);
+        QCOMPARE(first.state(), QProcess::Running);
+        QCOMPARE(second.state(), QProcess::Running);
+        QVERIFY(first.readAllStandardOutput().isEmpty());
+        QVERIFY(second.readAllStandardOutput().isEmpty());
+        gate.unlock();
+
+        QVERIFY(first.waitForFinished(5000));
+        QVERIFY(second.waitForFinished(5000));
+        const auto firstFields = first.readAllStandardOutput().trimmed().split(' ');
+        const auto secondFields = second.readAllStandardOutput().trimmed().split(' ');
+        QCOMPARE(firstFields.size(), 2);
+        QCOMPARE(secondFields.size(), 2);
+        const qint64 firstPid = firstFields[1].toLongLong();
+        const qint64 secondPid = secondFields[1].toLongLong();
+        const auto stopSpawned = qScopeGuard([&] {
+            if (firstFields[0].toInt() == int(State::Started)) stopBackend(firstPid);
+            if (secondFields[0].toInt() == int(State::Started) &&
+                (firstFields[0].toInt() != int(State::Started) || secondPid != firstPid))
+                stopBackend(secondPid);
+        });
+        QCOMPARE(first.exitStatus(), QProcess::NormalExit);
+        QCOMPARE(second.exitStatus(), QProcess::NormalExit);
+        QCOMPARE(first.exitCode(), 0);
+        QCOMPARE(second.exitCode(), 0);
+        const int firstState = firstFields[0].toInt();
+        const int secondState = secondFields[0].toInt();
+        QVERIFY((firstState == int(State::Started) && secondState == int(State::AlreadyRunning)) ||
+                (secondState == int(State::Started) && firstState == int(State::AlreadyRunning)));
+        QVERIFY(firstPid > 0);
+        QCOMPARE(firstPid, secondPid);
+        QVERIFY(kill(firstPid, 0) == 0);
+    }
     void startsFromPath()
     {
         const QString path = directory.path() + "/path";
         installBackend(path);
         qputenv("PATH", path.toLocal8Bit());
         const auto result = DeskWaifuLauncher::spawn(false, app(), proc());
-        const auto stop = qScopeGuard([&] { if (result.pid > 0) kill(result.pid, SIGTERM); });
+        const auto stop = qScopeGuard([&] { stopBackend(result.pid); });
         QCOMPARE(result.state, State::Started);
         QVERIFY(result.pid > 0);
         QVERIFY(kill(result.pid, 0) == 0);
@@ -128,7 +213,7 @@ private slots:
         QCOMPARE(gui.exitStatus(), QProcess::NormalExit);
         QCOMPARE(gui.exitCode(), 0);
         const qint64 pid = gui.readAllStandardOutput().trimmed().toLongLong();
-        const auto stop = qScopeGuard([pid] { if (pid > 0) kill(pid, SIGTERM); });
+        const auto stop = qScopeGuard([pid] { stopBackend(pid); });
         QVERIFY(pid > 0);
         QTest::qWait(100);
         QVERIFY(kill(pid, 0) == 0);
@@ -148,6 +233,13 @@ int main(int argc, char** argv)
 {
     QCoreApplication application(argc, argv);
     const auto arguments = application.arguments();
+    if (arguments.size() == 5 && arguments[1] == "--contend")
+    {
+        QTextStream(stdout) << "ready" << Qt::endl;
+        const auto result = DeskWaifuLauncher::spawn(false, arguments[2], arguments[3], arguments[4]);
+        QTextStream(stdout) << int(result.state) << ' ' << result.pid << Qt::endl;
+        return result.state == State::Started || result.state == State::AlreadyRunning ? 0 : 1;
+    }
     if (arguments.size() == 4 && arguments[1] == "--launch-and-exit")
     {
         const auto result = DeskWaifuLauncher::spawn(false, arguments[2], arguments[3]);

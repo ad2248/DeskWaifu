@@ -13,7 +13,8 @@ struct Result
     qint64 pid = 0;
 };
 
-// procDirectory is injectable so tests never inspect or start the user's backend.
+// Directories are injectable to isolate process fixtures and cross-process locks in tests.
 Result spawn(bool connected, const QString& applicationDirectory,
-             const QString& procDirectory = QStringLiteral("/proc"));
+             const QString& procDirectory = QStringLiteral("/proc"),
+             const QString& lockDirectory = {});
 }

@@ -3,6 +3,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QLockFile>
 #include <QObject>
 #include <QProcess>
 #include <QStandardPaths>
@@ -10,11 +11,23 @@
 
 namespace DeskWaifuLauncher
 {
-Result spawn(bool connected, const QString& applicationDirectory, const QString& procDirectory)
+Result spawn(bool connected, const QString& applicationDirectory, const QString& procDirectory,
+             const QString& lockDirectory)
 {
     if (connected)
         return {State::Connected, QObject::tr("DeskWaifu is already connected.")};
 
+    const QString runtime = lockDirectory.isEmpty()
+        ? QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation) : lockDirectory;
+    if (runtime.isEmpty())
+        return {State::Failed, QObject::tr("Cannot find a runtime directory for the DeskWaifu startup lock.")};
+    QLockFile lock(QDir(runtime).filePath(QStringLiteral("deskwaifu-spawn.lock")));
+    lock.setStaleLockTime(0); // Never steal a live launcher's lock because startup is slow.
+    if (!lock.tryLock(2000))
+        return {State::Failed, QObject::tr("Cannot acquire the DeskWaifu startup lock; another launch may be in progress.")};
+
+    // Every GUI for this user shares the lock. Recheck only after acquiring it,
+    // and keep it held across startDetached's successful exec handshake.
     const QDir processes(procDirectory);
     if (!processes.exists() || !QFileInfo(procDirectory).isReadable())
         return {State::Failed, QObject::tr("Cannot inspect running processes; DeskWaifu was not started.")};
@@ -58,6 +71,8 @@ Result spawn(bool connected, const QString& applicationDirectory, const QString&
     // A detached session is independent of the GUI and survives its destruction/exit.
     if (!process.startDetached(&pid))
         return {State::Failed, QObject::tr("Failed to start DeskWaifu: %1").arg(process.errorString())};
+    // On Linux startDetached waits for exec to succeed, so /proc already exposes
+    // the executable/name before the RAII lock is released (no socket wait needed).
     return {State::Started, QObject::tr("Started DeskWaifu (PID %1); waiting for connection.").arg(pid), pid};
 }
 }

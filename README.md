@@ -190,6 +190,8 @@ and launches with the default backend settings. Existing processes are left
 alone while the control window retries connecting. The backend runs detached:
 closing the control window does not stop it. Startup errors appear in the status
 bar and response log; the control window retries connections every 1.5 seconds.
+Concurrent Spawn requests share a per-user runtime lock around process inspection
+and startup, so two control windows cannot both start a backend at the same time.
 
 ### Configuration
 
