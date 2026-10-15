@@ -6,6 +6,7 @@
 #include <QDoubleSpinBox>
 #include <QSpinBox>
 #include <QPushButton>
+#include <QPlainTextEdit>
 #include <QTabWidget>
 #include <QJsonDocument>
 #include <QLocalServer>
@@ -103,6 +104,12 @@ private slots:
         auto* screen = window.findChild<QPushButton*>("dragEditButton");
         QVERIFY(x && zoom && enabled && width && apply && cancel && reset && screen);
         QTRY_VERIFY_WITH_TIMEOUT(x->isEnabled(), 2000);
+        auto* spawn = window.findChild<QPushButton*>("spawnButton");
+        QVERIFY(spawn);
+        QCOMPARE(spawn->text(), QString("Spawn"));
+        QVERIFY(!window.findChild<QPushButton*>("refreshButton"));
+        spawn->click(); // A connected GUI must not start another backend.
+        QVERIFY(window.findChild<QPlainTextEdit*>("responseLog")->toPlainText().contains("already connected"));
         QTRY_VERIFY_WITH_TIMEOUT(!width->isEnabled(), 2000);
         QTest::qWait(100); // initial query has finished before the first user edit
         x->setValue(2.5); zoom->setValue(1.5); enabled->setChecked(true);

@@ -1,6 +1,8 @@
 #include "MainWindow.hpp"
 #include "ui_MainWindow.h"
 #include "HotkeyPanel.hpp"
+#include "DeskWaifuLauncher.hpp"
+#include <QCoreApplication>
 #include <QTimer>
 #include <QUuid>
 
@@ -91,7 +93,13 @@ void MainWindow::bindControls()
     ui->horizontalLayout->setColumnStretch(3, 1);
     ui->horizontalLayout_2->setColumnStretch(1, 1);
     ui->horizontalLayout_2->setColumnStretch(3, 1);
-    connect(ui->refreshButton, &QPushButton::clicked, this, &MainWindow::refreshAll);
+    connect(ui->spawnButton, &QPushButton::clicked, this, [this] {
+        const auto result = DeskWaifuLauncher::spawn(_client.isConnected(), QCoreApplication::applicationDirPath());
+        statusBar()->showMessage(result.message, 8000);
+        ui->responseLog->appendPlainText(result.message);
+        if (result.state != DeskWaifuLauncher::State::Failed && !_client.isConnected())
+            _client.connectToServer();
+    });
     connect(ui->previousModelButton, &QPushButton::clicked, this,
         [this] { _client.sendCommand(QStringLiteral("prev_model")); });
     connect(ui->nextModelButton, &QPushButton::clicked, this,

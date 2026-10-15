@@ -7,6 +7,8 @@ qt_add_executable(deskwaifu-control
   MainWindow.ui
   DeskWaifuClient.cpp
   DeskWaifuClient.hpp
+  DeskWaifuLauncher.cpp
+  DeskWaifuLauncher.hpp
   HotkeyPanel.cpp
   HotkeyPanel.hpp
 )
