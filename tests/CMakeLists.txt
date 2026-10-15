@@ -116,6 +116,22 @@ endif ()
 
 find_package(Qt6 REQUIRED COMPONENTS Test Network Widgets)
 
+qt_add_executable(spawn-backend-fixture SpawnBackendFixture.cpp)
+target_link_libraries(spawn-backend-fixture PRIVATE Qt6::Core)
+set_target_properties(spawn-backend-fixture PROPERTIES
+  OUTPUT_NAME deskwaifu
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/spawn-fixture")
+
+qt_add_executable(deskwaifu-launcher-test
+  DeskWaifuLauncherTest.cpp ../control/DeskWaifuLauncher.cpp)
+target_include_directories(deskwaifu-launcher-test PRIVATE ../control)
+target_link_libraries(deskwaifu-launcher-test PRIVATE Qt6::Test)
+target_compile_definitions(deskwaifu-launcher-test PRIVATE
+  SPAWN_BACKEND_FIXTURE="$<TARGET_FILE:spawn-backend-fixture>")
+add_dependencies(deskwaifu-launcher-test spawn-backend-fixture)
+set_target_properties(deskwaifu-launcher-test PROPERTIES AUTOMOC ON)
+add_test(NAME deskwaifu-launcher COMMAND deskwaifu-launcher-test)
+
 qt_add_executable(deskwaifu-client-test
   DeskWaifuClientTest.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../control/DeskWaifuClient.cpp
@@ -179,6 +195,7 @@ qt_add_executable(main-window-transform-test
   MainWindowTransformTest.cpp
   ../control/MainWindow.cpp ../control/MainWindow.hpp ../control/MainWindow.ui
   ../control/DeskWaifuClient.cpp ../control/DeskWaifuClient.hpp
+  ../control/DeskWaifuLauncher.cpp ../control/DeskWaifuLauncher.hpp
   ../control/HotkeyPanel.cpp ../control/HotkeyPanel.hpp
   ../src/ConfigStore.cpp ../src/InputController.cpp
 )

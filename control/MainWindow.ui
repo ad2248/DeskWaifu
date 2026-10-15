@@ -89,9 +89,9 @@
           </property>
           <layout class="QHBoxLayout" name="quickActionsLayout">
            <item>
-            <widget class="QPushButton" name="refreshButton">
+            <widget class="QPushButton" name="spawnButton">
              <property name="text">
-              <string>Refresh</string>
+              <string>Spawn</string>
              </property>
             </widget>
            </item>
