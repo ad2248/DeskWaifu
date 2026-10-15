@@ -94,6 +94,37 @@ int main()
     ReleaseCommandTransport(
         [&] { if (!serviceAlive) ok = false; disconnected = true; },
         [&] { if (!disconnected) ok = false; serviceAlive = false; });
+
+    // Exercise the real transport destructor with a connected stream. Cleanup
+    // and service destruction still work after the transport is gone; there is
+    // no reverse port dependency for either operation to dereference.
+    struct LifetimeCommands : FakeCommands
+    {
+        bool& ok;
+        bool& transportGone;
+        LifetimeCommands(bool& result, bool& gone) : ok(result), transportGone(gone) {}
+        ~LifetimeCommands() override
+        {
+            if (!transportGone || releases != 1 || controls.Frame().hasMouth) ok = false;
+            Disconnected(source);
+        }
+    };
+    bool transportGone = false;
+    auto* lifetime = new LifetimeCommands(ok, transportGone);
+    auto* owned = new LAppIPC;
+    owned->SetCommandService(*lifetime);
+    if (!owned->Initialize()) ok = false;
+    int live = socket(AF_UNIX, SOCK_STREAM, 0);
+    setsockopt(live, SOL_SOCKET, SO_RCVTIMEO, &limit, sizeof(limit));
+    if (connect(live, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) ok = false;
+    if (write(live, "mouth\n", 6) != 6) ok = false;
+    owned->Poll();
+    if (read(live, response, sizeof(response)) != 4 || !lifetime->controls.Frame().hasMouth) ok = false;
+    ReleaseCommandTransport(
+        [&] { delete owned; owned = nullptr; transportGone = true; },
+        [&] { delete lifetime; lifetime = nullptr; });
+    close(live);
+    if (access(addr.sun_path, F_OK) == 0) ok = false;
     if (previous) setenv("XDG_RUNTIME_DIR", saved.c_str(), 1);
     else unsetenv("XDG_RUNTIME_DIR");
     rmdir(path);

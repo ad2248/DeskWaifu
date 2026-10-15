@@ -11,6 +11,7 @@
 #include <GL/glew.h>
 #include "LAppWayland.hpp"
 #include "InputController.hpp"
+#include "CursorLook.hpp"
 #include "ApplicationService.hpp"
 #include "TransformEditor.hpp"
 #include "CropInteraction.hpp"
@@ -197,6 +198,8 @@ private:
     InputController _input;
     void FlushPendingTap();
     void TrackGlobalCursor();
+    void UpdateCursorLook();
+    CursorLook _cursorLook;
     bool _isEnd;                                 ///< APP終了しているか
     bool _cubismStarted = false;
     LAppTextureManager* _textureManager;         ///< テクスチャマネージャー
