@@ -423,7 +423,9 @@ void MainWindow::showTransform(const QJsonObject& response)
     ui->relocateCropButton->setEnabled(_transformOwned && cropped);
     ui->retryTransformButton->setEnabled(response.value(QStringLiteral("unsaved")).toBool() && !response.value(QStringLiteral("editing")).toBool());
     ui->xformResetButton->setEnabled(!busy);
-    QString status = busy ? tr("另一个控制窗口正在编辑") : _transformOwned ? tr("编辑预览：应用并保存或取消。顶部中央手柄同步移动模型和裁剪框，边角调整大小。")
+    QString status = busy ? (response.value(QStringLiteral("local_screen_editing")).toBool()
+        ? tr("正在模型窗口编辑，双击裁剪框线以保存并隐藏边框") : tr("另一个控制窗口正在编辑"))
+        : _transformOwned ? tr("编辑预览：应用并保存或取消，也可双击裁剪框线保存。顶部中央手柄同步移动模型和裁剪框，边角调整大小。")
         : response.value(QStringLiteral("unsaved")).toBool() ? tr("有未保存修改") : tr("与配置同步");
     if (_transformConflict) status += tr("；检测到外部配置冲突");
     const QString warning = response.value(QStringLiteral("warning")).toString();

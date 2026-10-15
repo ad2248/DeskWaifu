@@ -251,9 +251,17 @@ clipping; a disabled crop uses the entire current surface without a fixed rectan
   or resizes cancel screen editing. **Move back to screen** recovers offscreen crops.
 - **Reset** immediately saves position `(0, 0)`, zoom `1` and no crop by removing
   those four keys; all other configuration is retained.
-- Outside editing, a model drag saves on release, and scrolling saves after a
-  short idle interval. Failed saves keep the on-screen result and offer **Retry
-  save**. Automatic cross-output adaptation itself is not saved.
+- Dragging the model automatically enters screen editing once the drag threshold
+  is crossed. Releasing keeps the crop frame visible. Dragging the model moves
+  only the model; the top-center handle moves both model and crop. With no crop
+  configured, editing starts with a full-surface crop.
+- Double-click a crop frame edge or its top-center handle to apply and save, then
+  hide the frame (the crop remains active). This also works for **Drag edit**
+  started from the control panel. Failed saves keep the frame and preview; details
+  appear in the control panel and application log. Double-click again to retry
+  after resolving the error. Model taps and keyboard grabs are disabled in editing.
+- Outside editing, scrolling saves after a short idle interval. Failed automatic
+  saves offer **Retry save**. Automatic cross-output adaptation itself is not saved.
 
 Only the model process writes configuration, using the actual `--config` path
 (or the default path). Existing unrelated settings and comments outside replaced
