@@ -175,13 +175,21 @@ not migrated automatically:
 # Run with a custom config file
 ./build/bin/deskwaifu --config /path/to/config.json
 
-# Open the Qt control window after starting DeskWaifu
+# Open the Qt control window (or start DeskWaifu from its Spawn button)
 ./build/bin/deskwaifu-control
 ```
 
 The control window exposes the same model, expression, motion, lip-sync,
 transform, visibility, skin, and look-at commands as `deskwaifu-ctl`. Its page
 layout is stored in `control/MainWindow.ui` and can be edited with Qt Designer.
+
+In **Overview → Quick actions**, **Spawn** starts `deskwaifu` only when the
+control window is disconnected and no `deskwaifu` process owned by the current
+user is found. It looks beside the control executable first, then in `PATH`,
+and launches with the default backend settings. Existing processes are left
+alone while the control window retries connecting. The backend runs detached:
+closing the control window does not stop it. Startup errors appear in the status
+bar and response log; the control window retries connections every 1.5 seconds.
 
 ### Configuration
 

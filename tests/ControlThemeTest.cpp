@@ -26,13 +26,14 @@ private slots:
         QApplication::setFont(_originalFont);
     }
 
-    void overviewContainsRefreshWithoutConnectionLabel()
+    void overviewContainsSpawnWithoutConnectionLabel()
     {
         QMainWindow window;
         Ui::MainWindow ui;
         ui.setupUi(&window);
 
-        QVERIFY(ui.overviewTab->isAncestorOf(ui.refreshButton));
+        QVERIFY(ui.overviewTab->isAncestorOf(ui.spawnButton));
+        QCOMPARE(ui.spawnButton->text(), QString("Spawn"));
         QCOMPARE(ui.tabWidget->currentWidget(), ui.overviewTab);
         QVERIFY(!window.findChild<QLabel*>(QStringLiteral("connectionLabel")));
         QCOMPARE(window.statusBar(), ui.statusBar);
@@ -107,7 +108,7 @@ private slots:
             QCOMPARE(widget->style(), QApplication::style());
         }
         for (QWidget* widget : {static_cast<QWidget*>(&window),
-                 static_cast<QWidget*>(ui.refreshButton),
+                 static_cast<QWidget*>(ui.spawnButton),
                  static_cast<QWidget*>(ui.statusBar),
                  static_cast<QWidget*>(ui.currentModelLabel),
                  static_cast<QWidget*>(ui.modelCombo),
