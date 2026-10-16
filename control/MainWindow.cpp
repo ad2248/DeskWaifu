@@ -19,6 +19,19 @@ MainWindow::MainWindow(QWidget* parent)
     , ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
+    _connectionStatusLabel = new QLabel(tr("尚未连接"), this);
+    _connectionStatusLabel->setObjectName(QStringLiteral("connectionStatusLabel"));
+    _connectionStatusLabel->setTextFormat(Qt::PlainText);
+    _connectionStatusLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    statusBar()->addWidget(_connectionStatusLabel, 1);
+    _operationStatusLabel = new QLabel(this);
+    _operationStatusLabel->setObjectName(QStringLiteral("operationStatusLabel"));
+    _operationStatusLabel->setTextFormat(Qt::PlainText);
+    _operationStatusLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    _operationStatusLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    statusBar()->addPermanentWidget(_operationStatusLabel, 1);
+    _statusMessageTimer.setSingleShot(true);
+    connect(&_statusMessageTimer, &QTimer::timeout, this, [this] { setStatusMessage(QString()); });
     _hotkeys = new HotkeyPanel(this);
     ui->tabWidget->insertTab(2, _hotkeys, tr("Hotkeys"));
     connect(_hotkeys, &HotkeyPanel::triggered, this, [this](const QString& id) {
@@ -51,6 +64,7 @@ MainWindow::MainWindow(QWidget* parent)
             _hotkeys->setConnected(connected);
             if (!connected)
             {
+                if (_hoverSetPending) setStatusMessage(tr("连接断开：设置结果未确认，重新连接后将查询实际保存结果。"));
                 _transformOwned = _transformEditStarting = _transformQueryPending = false;
                 _transformPreviewInFlight = _transformPreviewPending = _transformSupported = false;
                 ui->transformStatusLabel->setText(tr("连接断开：未确认的编辑已取消，请重新查询保存结果。"));
@@ -58,9 +72,9 @@ MainWindow::MainWindow(QWidget* parent)
                 _lastHotkeyResponse = {};
                 _hotkeyQueryPending = false;
                 _hoverQueryPending = _hoverSetPending = _hoverSupported = false;
-                ui->hoverOpacityStatusLabel->setText(tr("连接断开：重新连接后将查询实际保存结果。"));
             }
-            statusBar()->showMessage(message);
+            _connectionStatusLabel->setText(message);
+            _connectionStatusLabel->setToolTip(message);
             ui->hoverOpacityGroup->setEnabled(false);
             ui->transformGroup->setEnabled(connected && _transformSupported);
             ui->positionEdit->setEnabled(connected && _transformSupported);
@@ -78,13 +92,16 @@ MainWindow::MainWindow(QWidget* parent)
     connect(&_client, &DeskWaifuClient::responseReceived,
         this, &MainWindow::handleResponse);
     connect(&_client, &DeskWaifuClient::protocolError, this,
-        [this](const QString& message) { ui->responseLog->appendPlainText(message); });
+        [this](const QString& message) {
+            ui->responseLog->appendPlainText(message);
+            setStatusMessage(message, 5000);
+        });
     connect(&_client, &DeskWaifuClient::commandOutcomeUnknown, this,
         [this](const QString& command) {
             const QString message = tr("Connection lost: outcome of '%1' is unknown; command was not retried.")
                 .arg(command);
             ui->responseLog->appendPlainText(message);
-            statusBar()->showMessage(message, 8000);
+            setStatusMessage(message, 8000);
         });
 
     _client.connectToServer();
@@ -95,6 +112,14 @@ MainWindow::~MainWindow()
     delete ui;
 }
 
+void MainWindow::setStatusMessage(const QString& message, int timeoutMs)
+{
+    _statusMessageTimer.stop();
+    _operationStatusLabel->setText(message);
+    _operationStatusLabel->setToolTip(message);
+    if (!message.isEmpty() && timeoutMs > 0) _statusMessageTimer.start(timeoutMs);
+}
+
 void MainWindow::bindControls()
 {
     ui->horizontalLayout->setColumnStretch(1, 1);
@@ -103,7 +128,7 @@ void MainWindow::bindControls()
     ui->horizontalLayout_2->setColumnStretch(3, 1);
     connect(ui->spawnButton, &QPushButton::clicked, this, [this] {
         const auto result = DeskWaifuLauncher::spawn(_client.isConnected(), QCoreApplication::applicationDirPath());
-        statusBar()->showMessage(result.message, 8000);
+        setStatusMessage(result.message, 8000);
         ui->responseLog->appendPlainText(result.message);
         if (result.state != DeskWaifuLauncher::State::Failed && !_client.isConnected())
             _client.connectToServer();
@@ -266,8 +291,8 @@ void MainWindow::handleResponse(const QString& command, const QJsonObject& respo
         }
         ui->hoverOpacityGroup->setEnabled(_client.isConnected() && _hoverSupported);
         const bool ok = response.value(QStringLiteral("ok")).toBool() && valid;
-        ui->hoverOpacityStatusLabel->setText(ok ? (mutation ? tr("已设置并保存") : tr("与后端同步；修改后自动保存"))
-            : response.value(QStringLiteral("error")).toString(tr("后端不支持悬停透明度设置")));
+        if (ok && mutation) setStatusMessage(tr("已设置并保存"));
+        if (!ok) setStatusMessage(response.value(QStringLiteral("error")).toString(tr("后端不支持悬停透明度设置")));
         if (mutation || !ok) logResponse(command, response);
         return;
     }
@@ -276,13 +301,15 @@ void MainWindow::handleResponse(const QString& command, const QJsonObject& respo
             ? tr("无法确认上次保存结果（后端可能已重启），请核对当前配置。")
             : response.value(QStringLiteral("ok")).toBool() ? tr("上次保存已成功。") : response.value(QStringLiteral("error")).toString();
         ui->responseLog->appendPlainText(message);
-        statusBar()->showMessage(message, 10000);
+        setStatusMessage(message, 10000);
         _transformSaveRequest.clear();
         requestTransform();
         return;
     }
-    if (command == QStringLiteral("apply_transform_edit") || command == QStringLiteral("reset_transform_settings") || command == QStringLiteral("retry_transform_save"))
+    if (command == QStringLiteral("apply_transform_edit") || command == QStringLiteral("reset_transform_settings") || command == QStringLiteral("retry_transform_save")) {
         _transformSaveRequest.clear();
+        if (response.value(QStringLiteral("ok")).toBool()) setStatusMessage(tr("变换设置已保存"));
+    }
     const bool transformResponse = command == QStringLiteral("get_transform_settings")
         || command.endsWith(QStringLiteral("transform_edit")) || command == QStringLiteral("reset_transform_settings")
         || command == QStringLiteral("relocate_crop") || command == QStringLiteral("retry_transform_save")
@@ -298,7 +325,6 @@ void MainWindow::handleResponse(const QString& command, const QJsonObject& respo
             if (!_transformPreviewPending && !_transformPreviewInFlight && !_transformEditStarting) showTransform(response);
             if (_transformPreviewPending) queueTransformPreview();
         } else {
-            ui->transformStatusLabel->setText(response.value(QStringLiteral("error")).toString());
             if (command == QStringLiteral("begin_transform_edit")) _transformPreviewPending = false;
             if (command != QStringLiteral("get_transform_settings")) requestTransform();
         }
@@ -329,7 +355,7 @@ void MainWindow::handleResponse(const QString& command, const QJsonObject& respo
     }
     if (!response.value(QStringLiteral("ok")).toBool())
     {
-        statusBar()->showMessage(response.value(QStringLiteral("error")).toString(), 5000);
+        setStatusMessage(response.value(QStringLiteral("error")).toString(), 5000);
         return;
     }
 
@@ -429,7 +455,7 @@ void MainWindow::setHoverOpacity(const QJsonObject& parameters)
     if (!_client.isConnected() || !_hoverSupported || _hoverSetPending) return;
     _hoverSetPending = true;
     ui->hoverOpacityGroup->setEnabled(false);
-    ui->hoverOpacityStatusLabel->setText(tr("正在设置并保存…"));
+    setStatusMessage(tr("正在设置并保存…"));
     _client.sendCommand(QStringLiteral("set_hover_opacity"), parameters);
 }
 
@@ -447,6 +473,7 @@ void MainWindow::sendTransformSave(const QString& command, QJsonObject parameter
 {
     if (!_transformSaveRequest.isEmpty()) return;
     _transformSaveRequest = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    setStatusMessage(tr("正在保存变换设置…"));
     ui->transformGroup->setEnabled(false); ui->positionEdit->setEnabled(false);
     ui->cancelTransformButton->setEnabled(false); ui->relocateCropButton->setEnabled(false);
     ui->retryTransformButton->setEnabled(false); ui->xformResetButton->setEnabled(false);

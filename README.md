@@ -258,6 +258,12 @@ show an error and restore the effective backend value. Disconnected or older,
 unsupported backends disable the controls; reconnecting queries the actual saved
 state rather than replaying a write with an unknown outcome.
 
+The bottom status bar keeps connection information on the left and operation
+feedback (saving, success, or errors) on the right, visible across all tabs.
+Successful background queries do not replace the latest operation message.
+`MainWindow::setStatusMessage(message, timeoutMs)` updates this shared feedback;
+an empty message clears it, and a positive timeout clears it automatically.
+
 To clip the model to a rectangle, add this entry to your configuration:
 
 ```json

@@ -579,12 +579,6 @@
               <property name="wordWrap"><bool>true</bool></property>
              </widget>
             </item>
-            <item row="3" column="0" colspan="3">
-             <widget class="QLabel" name="hoverOpacityStatusLabel">
-              <property name="text"><string>尚未连接</string></property>
-              <property name="wordWrap"><bool>true</bool></property>
-             </widget>
-            </item>
            </layout>
           </widget>
          </item>

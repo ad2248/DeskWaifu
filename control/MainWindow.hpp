@@ -2,6 +2,7 @@
 
 #include <QMainWindow>
 #include <QJsonArray>
+#include <QTimer>
 
 #include "DeskWaifuClient.hpp"
 
@@ -9,6 +10,7 @@ QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
 class HotkeyPanel;
+class QLabel;
 
 class MainWindow : public QMainWindow
 {
@@ -17,6 +19,10 @@ class MainWindow : public QMainWindow
 public:
     explicit MainWindow(QWidget* parent = nullptr);
     ~MainWindow() override;
+
+    // Update operation feedback without replacing the connection status.
+    // An empty message clears it; a positive timeout clears it after that delay.
+    void setStatusMessage(const QString& message, int timeoutMs = 0);
 
 signals:
     void backendReady();
@@ -30,6 +36,9 @@ private:
     Ui::MainWindow* ui;
     HotkeyPanel* _hotkeys;
     DeskWaifuClient _client;
+    QLabel* _connectionStatusLabel;
+    QLabel* _operationStatusLabel;
+    QTimer _statusMessageTimer;
     bool _backendReadyEmitted = false;
     QString _hotkeyModelToken;
     QJsonObject _lastHotkeyResponse;

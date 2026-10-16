@@ -11,6 +11,7 @@
 #include <QPushButton>
 #include <QPlainTextEdit>
 #include <QTabWidget>
+#include <QStatusBar>
 #include <QJsonDocument>
 #include <QLocalServer>
 #include <QTemporaryDir>
@@ -124,8 +125,12 @@ private slots:
         auto* slider = window.findChild<QSlider*>("hoverOpacitySlider");
         auto* enabled = window.findChild<QCheckBox*>("hoverOpacityEnabledCheck");
         auto* value = window.findChild<QLabel*>("hoverOpacityValueLabel");
-        auto* status = window.findChild<QLabel*>("hoverOpacityStatusLabel");
-        QVERIFY(group && slider && enabled && value && status);
+        auto* status = window.findChild<QLabel*>("operationStatusLabel");
+        auto* connectionStatus = window.findChild<QLabel*>("connectionStatusLabel");
+        QVERIFY(group && slider && enabled && value && status && connectionStatus);
+        QVERIFY(!window.findChild<QLabel*>("hoverOpacityStatusLabel"));
+        QVERIFY(window.statusBar()->isAncestorOf(status));
+        QVERIFY(window.statusBar()->isAncestorOf(connectionStatus));
         QVERIFY(!group->isEnabled());
         QTRY_VERIFY_WITH_TIMEOUT(group->isEnabled(), 2000);
         QVERIFY(enabled->isChecked());
@@ -133,6 +138,31 @@ private slots:
         QCOMPARE(value->text(), QString("37%"));
         QVERIFY(!slider->hasTracking());
         QVERIFY(mutations.isEmpty()); // Queries must never echo settings back as writes.
+        QVERIFY(status->text().isEmpty()); // Successful queries do not invent operation feedback.
+        const auto connectedText = connectionStatus->text();
+        QVERIFY(connectedText.startsWith("Connected"));
+        window.setStatusMessage("<saved>");
+        QCOMPARE(status->text(), QString("<saved>"));
+        QCOMPARE(status->textFormat(), Qt::PlainText);
+        QCOMPARE(status->toolTip(), status->text());
+        QCOMPARE(connectionStatus->text(), connectedText);
+        window.setStatusMessage("temporary", 30);
+        QTRY_VERIFY_WITH_TIMEOUT(status->text().isEmpty() && status->toolTip().isEmpty(), 500);
+        QCOMPARE(connectionStatus->text(), connectedText);
+        window.setStatusMessage("old timeout", 30);
+        window.setStatusMessage("new status");
+        QTest::qWait(60);
+        QCOMPARE(status->text(), QString("new status"));
+        // Long operation messages stay in the status bar, without expanding the
+        // window or hiding the connection area. The tooltip retains all text.
+        const auto originalSize = window.size();
+        window.setStatusMessage(QString(3000, 'x'));
+        QCoreApplication::processEvents();
+        QCOMPARE(window.size(), originalSize);
+        QVERIFY(connectionStatus->isVisible() && status->isVisible());
+        QVERIFY(connectionStatus->geometry().right() < status->geometry().left());
+        QCOMPARE(status->toolTip(), QString(3000, 'x'));
+        window.setStatusMessage(QString());
         delayQuery = true;
         QTRY_VERIFY_WITH_TIMEOUT(!delayedResponse.isEmpty(), 3000);
         QStyleOptionSlider option;
@@ -163,6 +193,15 @@ private slots:
         QCOMPARE(settings.Opacity(), float(released / 100.0));
         QVERIFY(mutations.last().contains("opacity") && !mutations.last().contains("enabled"));
         QVERIFY(status->text().contains(QStringLiteral("已设置并保存")));
+        QCOMPARE(connectionStatus->text(), connectedText);
+        window.findChild<QTabWidget*>("tabWidget")->setCurrentIndex(0);
+        QVERIFY(status->isVisible());
+        window.findChild<QTabWidget*>("tabWidget")->setCurrentWidget(window.findChild<QWidget*>("transformTab"));
+        const int beforeStatusPoll = queries;
+        QTRY_VERIFY_WITH_TIMEOUT(queries > beforeStatusPoll, 2500);
+        QTest::qWait(50);
+        QCOMPARE(status->text(), QStringLiteral("已设置并保存"));
+        QCOMPARE(connectionStatus->text(), connectedText);
         const auto screenshot = qEnvironmentVariable("DESKWAIFU_HOVER_SCREENSHOT");
         if (!screenshot.isEmpty()) QVERIFY(window.grab().save(screenshot));
         ConfigStore store(configPath.toStdString());
@@ -286,8 +325,14 @@ private slots:
         QVERIFY(spawn);
         QCOMPARE(spawn->text(), QString("Spawn"));
         QVERIFY(!window.findChild<QPushButton*>("refreshButton"));
+        auto* connectionStatus = window.findChild<QLabel*>("connectionStatusLabel");
+        auto* operationStatus = window.findChild<QLabel*>("operationStatusLabel");
+        QVERIFY(connectionStatus && operationStatus);
+        const auto connectedText = connectionStatus->text();
         spawn->click(); // A connected GUI must not start another backend.
         QVERIFY(window.findChild<QPlainTextEdit*>("responseLog")->toPlainText().contains("already connected"));
+        QVERIFY(operationStatus->text().contains("already connected"));
+        QCOMPARE(connectionStatus->text(), connectedText);
         QTRY_VERIFY_WITH_TIMEOUT(!width->isEnabled(), 2000);
         QTest::qWait(100); // initial query has finished before the first user edit
         x->setValue(2.5); zoom->setValue(1.5); enabled->setChecked(true);
