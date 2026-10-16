@@ -1,5 +1,6 @@
 #include "LAppWayland.hpp"
 #include "LAppWaylandRegion.hpp"
+#include "ModelInputRegion.hpp"
 #include <GL/glew.h>
 #include <vector>
 #include <iostream>
@@ -86,48 +87,8 @@ void UpdateWaylandInputRegion(WaylandContext* wl, ModelRegion clip, const std::v
 
     wl_region* region = wl_compositor_create_region(wl->compositor);
     if (!region) return;
-    const auto addRegion = [&](int x, int y, int w, int h) {
-        const auto box = IntersectModelRegions({x, y, w, h}, clip);
-        if (box.width > 0 && box.height > 0)
-            wl_region_add(region, box.x, box.y, box.width, box.height);
-    };
-
-    // Build region
-    // We process it in blocks of 'BLOCK_SIZE' (e.g. 10x10 pixels) to reduce the number of rectangles
-    const int BLOCK_SIZE = 10;
-    
-    for (int y = 0; y < height; y += BLOCK_SIZE) {
-        int start_x = -1;
-        for (int x = 0; x < width; x += BLOCK_SIZE) {
-            
-            bool opaque = false;
-            // Just check the center pixel of the block for speed
-            int test_x = x + BLOCK_SIZE/2;
-            int test_y = y + BLOCK_SIZE/2;
-            if (test_x < width && test_y < height) {
-                // OpenGL reads bottom-to-top, Wayland is top-to-bottom
-                int idx = (test_y * width + test_x) * 4;
-                if (full_pixels[idx + 3] > 10) { // Alpha > 10
-                    opaque = true;
-                }
-            }
-
-            if (opaque) {
-                if (start_x < 0) start_x = x;
-            } else {
-                if (start_x >= 0) {
-                    // OpenGL Y is bottom-to-top, Wayland surface Y is top-to-bottom
-                    int wayland_y = height - y - BLOCK_SIZE;
-                    addRegion(start_x, wayland_y, x - start_x, BLOCK_SIZE);
-                    start_x = -1;
-                }
-            }
-        }
-        if (start_x >= 0) {
-            int wayland_y = height - y - BLOCK_SIZE;
-            addRegion(start_x, wayland_y, width - start_x, BLOCK_SIZE);
-        }
-    }
+    for (const auto box : BuildModelInputRegion(full_pixels, width, height, clip))
+        wl_region_add(region, box.x, box.y, box.width, box.height);
 
     for (auto handle : handles) {
         auto box = IntersectModelRegions(handle, {0, 0, width, height});
