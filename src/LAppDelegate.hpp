@@ -196,7 +196,7 @@ private:
     InputController _input;
     void FlushPendingTap();
     void TrackGlobalCursor();
-    void UpdateCursorLook();
+    void UpdateCursorLook(ModelTransform transform);
     CursorLook _cursorLook;
     bool _isEnd;                                 ///< APP終了しているか
     bool _cubismStarted = false;

@@ -31,6 +31,7 @@
 #include "RuntimeLifecycle.hpp"
 #include "GpuTeardown.hpp"
 #include "InputController.hpp"
+#include "ModelFrame.hpp"
 
 using namespace Csm;
 using namespace std;
@@ -231,10 +232,11 @@ bool LAppDelegate::Run()
         glClearDepth(1.0);
 
         const auto state = _service.Snapshot();
-        if (!state.hidden) {
-            UpdateCursorLook();
-            _view->Render(state.transform, _service.FrameInput());
-        }
+        RenderModelFrame(_service, _settings->Editing(),
+            [this](ModelTransform transform) { UpdateCursorLook(transform); },
+            [this](ModelTransform transform, const ModelFrameInput& input) {
+                _view->Render(transform, input);
+            });
 
         if (!state.hidden || _settings->ScreenEditing()) {
             const auto& settings = _settings->Display();
@@ -310,14 +312,14 @@ void LAppDelegate::TrackGlobalCursor()
     _cursorLook.GlobalPosition(cursor.value.first, cursor.value.second);
 }
 
-void LAppDelegate::UpdateCursorLook()
+void LAppDelegate::UpdateCursorLook(ModelTransform transform)
 {
-    if (!_manager || !_cursorLook.HasPosition() || (_settings && _settings->Editing())) return;
+    if (!_manager || !_cursorLook.HasPosition()) return;
     const auto outputs = _waylandBackend.Outputs();
     const auto* current = _outputController.Current(outputs);
     if (!current) return;
     const auto look = _cursorLook.LookAt(current->x, current->y, _windowWidth,
-        _windowHeight, _lookCenterX, _lookCenterY, _service.Snapshot().transform);
+        _windowHeight, _lookCenterX, _lookCenterY, transform);
     _manager->OnDrag(look.first, look.second);
 }
 

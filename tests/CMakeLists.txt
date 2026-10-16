@@ -88,6 +88,10 @@ add_executable(cursor-look-test CursorLookTest.cpp)
 target_link_libraries(cursor-look-test PRIVATE deskwaifu_input)
 add_test(NAME cursor-look COMMAND cursor-look-test)
 
+add_executable(model-frame-test ModelFrameTest.cpp)
+target_link_libraries(model-frame-test PRIVATE deskwaifu_input)
+add_test(NAME model-frame COMMAND model-frame-test)
+
 add_executable(application-service-test ApplicationServiceTest.cpp)
 target_include_directories(application-service-test PRIVATE ../src)
 add_test(NAME application-service COMMAND application-service-test)
