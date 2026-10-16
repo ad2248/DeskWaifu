@@ -8,6 +8,7 @@ class IWaylandEvents
 public:
     virtual ~IWaylandEvents() = default;
     virtual void PointerEntered(double x, double y) = 0;
+    virtual void PointerLeft() = 0;
     virtual void PointerMoved(double x, double y) = 0;
     virtual void PointerButton(int button, bool pressed) = 0;
     virtual void PointerScroll(double vertical) = 0;

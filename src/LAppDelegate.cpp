@@ -232,6 +232,8 @@ bool LAppDelegate::Run()
         glClearDepth(1.0);
 
         const auto state = _service.Snapshot();
+        const auto& config = LAppConfig::GetInstance();
+        const bool opacityFrame = config.hoverOpacityEnabled && !state.hidden && _view->BeginOpacityFrame();
         RenderModelFrame(_service, _settings->Editing(),
             [this](ModelTransform transform) { UpdateCursorLook(transform); },
             [this](ModelTransform transform, const ModelFrameInput& input) {
@@ -242,12 +244,18 @@ bool LAppDelegate::Run()
             const auto& settings = _settings->Display();
             const auto region = ResolveModelRegion(settings.cropped, settings.region,
                 _windowWidth, _windowHeight);
+            // Sample only the model, before display opacity or editor handles.
+            const auto modelRegions = ReadModelInputRegion(opacityFrame ? _view->OpacityFramebuffer() : 0,
+                _windowWidth, _windowHeight, region, _inputPixels);
+            const auto handles = _settings->ScreenEditing() && settings.cropped
+                ? CropInteraction::Handles(settings.region) : std::vector<ModelRegion>{};
+            if (opacityFrame)
+                _view->PresentOpacityFrame(_hoverOpacity.Resolve(true, config.hoverOpacity, modelRegions, handles));
             ClipWaylandModelRegion(region, _windowWidth, _windowHeight);
             if (_settings->ScreenEditing()) {
-                const auto handles = settings.cropped ? CropInteraction::Handles(settings.region) : std::vector<ModelRegion>{};
                 DrawWaylandEditFrame(handles, _windowWidth, _windowHeight);
-                UpdateWaylandInputRegion(&_wlContext, region, handles);
-            } else UpdateWaylandInputRegion(&_wlContext, region);
+                UpdateWaylandInputRegion(&_wlContext, modelRegions, handles);
+            } else UpdateWaylandInputRegion(&_wlContext, modelRegions);
         }
         if (state.hidden && !_settings->ScreenEditing()) ClearWaylandInputRegion(&_wlContext);
         eglSwapBuffers(_wlContext.egl_display, _wlContext.egl_surface);
@@ -480,6 +488,7 @@ void LAppDelegate::OnMouseCallBack(void* window, double x, double y)
 
 void LAppDelegate::SetMousePosition(double x, double y)
 {
+    _hoverOpacity.Move(x, y);
     _mouseX = static_cast<float>(x);
     _mouseY = static_cast<float>(y);
     _cursorLook.LocalPosition(x, y);
@@ -507,6 +516,7 @@ bool LAppDelegate::SetHidden(bool hidden)
     if (hidden) {
         if (!_wlContext.compositor || !_wlContext.surface) return false;
         if (!ClearWaylandInputRegion(&_wlContext)) return false;
+        _hoverOpacity.Leave();
         SetModelKeyboardGrab(&_wlContext, false);
         _input.ResetKeyboard();
         return true;

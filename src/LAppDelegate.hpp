@@ -12,6 +12,7 @@
 #include "LAppWayland.hpp"
 #include "InputController.hpp"
 #include "CursorLook.hpp"
+#include "HoverOpacity.hpp"
 #include "ApplicationService.hpp"
 #include "TransformEditor.hpp"
 #include "ScreenCropInteraction.hpp"
@@ -146,7 +147,8 @@ public:
     int GetWindowHeight() { return _windowHeight; }
 
 private:
-    void PointerEntered(double x, double y) override { SetMousePosition(x, y); }
+    void PointerEntered(double x, double y) override { _hoverOpacity.Enter(x, y); SetMousePosition(x, y); }
+    void PointerLeft() override { _hoverOpacity.Leave(); }
     void PointerMoved(double x, double y) override { OnMouseCallBack(nullptr, x, y); }
     void PointerButton(int button, bool pressed) override { OnMouseCallBack(nullptr, button, pressed ? 1 : 0, 0); }
     void PointerScroll(double vertical) override { OnScrollCallBack(nullptr, 0, vertical); }
@@ -198,6 +200,8 @@ private:
     void TrackGlobalCursor();
     void UpdateCursorLook(ModelTransform transform);
     CursorLook _cursorLook;
+    HoverOpacity _hoverOpacity;
+    std::vector<unsigned char> _inputPixels;
     bool _isEnd;                                 ///< APP終了しているか
     bool _cubismStarted = false;
     LAppTextureManager* _textureManager;         ///< テクスチャマネージャー
