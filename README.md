@@ -286,16 +286,16 @@ Crop coordinates are integers in the current surface's top-left coordinate syste
 they are not the model's floating-point offsets. **Enable crop** explicitly selects
 clipping; a disabled crop uses the entire current surface without a fixed rectangle.
 
-- Numeric edits create a preview. **Apply and save** commits all four configuration
-  keys (`model_x`, `model_y`, `model_scale`, `model_region`) in one atomic update.
+- Numeric edits create a preview. **Apply and save** updates the transform/crop
+  fields and atomically serializes all current configuration values.
 - **Drag edit** draws an on-screen frame. Its top-center handle moves **both the
   crop and the model by the same screen distance**. Edges/corners resize the crop
   without moving or scaling the model. Dragging the model itself moves only the
   model; scrolling changes its zoom. Model tap/hotkey actions are disabled while editing.
 - **Cancel** or a disconnected control panel discards the preview. Output changes
   or resizes cancel screen editing. **Move back to screen** recovers offscreen crops.
-- **Reset** immediately saves position `(0, 0)`, zoom `1` and no crop by removing
-  those four keys; all other configuration is retained.
+- **Reset** immediately writes position `(0, 0)` and zoom `1`, omitting
+  `model_region` to disable cropping; other known configuration values are retained.
 - Dragging the model automatically enters screen editing once the drag threshold
   is crossed. Releasing keeps the crop frame visible. Dragging the model moves
   only the model; the top-center handle moves both model and crop. With no crop
@@ -309,17 +309,19 @@ clipping; a disabled crop uses the entire current surface without a fixed rectan
   saves offer **Retry save**. Automatic cross-output adaptation itself is not saved.
 
 Only the model process writes configuration, using the actual `--config` path
-(or the default path). Existing unrelated settings and comments outside replaced
-values are preserved, as are file permissions and existing symbolic links. A
+(or the default path). Every save writes all known configuration fields, including
+defaults, from the configuration value structure; internal metadata is excluded.
+Comments and unknown fields are not preserved. File permissions and existing symbolic links are preserved. A
 missing configuration is created; invalid documents and duplicate keys are never
 silently overwritten. Files are checked every 0.5 seconds, so external editor
-replacements are detected too. Transform/crop settings are hot-reloaded. Hover
-settings are refreshed when queried by the control panel (including its active
-window polling); other settings still require restarting the application.
+replacements are detected too. Transform/crop and hover settings are hot-reloaded.
+Hover settings are also refreshed when queried by the control panel; other settings
+still require restarting the application.
 
-External changes during preview do not replace the draft. Applying reports a
-conflict: explicitly overwrite just the four transform/crop keys, or discard the
-draft and reload. Only one connection can edit at a time. Save requests have IDs
+External changes during preview do not replace the draft. Applying checks the entire
+configuration for conflicts, including independent hover saves during preview:
+explicitly overwrite the complete configuration, or discard the draft and reload.
+Only one connection can edit at a time. Save requests have IDs
 whose recent outcomes can be queried after reconnecting; outcomes are not retained
 across a backend restart. External editors do not honor the application's save
 protocol: a content check immediately before rename narrows, but cannot completely
@@ -448,9 +450,10 @@ A convenience CLI client `deskwaifu-ctl` is included in the project root:
 
 Both commands return `enabled` and `opacity`, including the unchanged effective
 values when a save fails (`ok: false`, with `error`). Setting requires at least
-one of `enabled` (boolean) or `opacity` (finite number within `0..1`). Only supplied
-fields are patched into the backend's actual configuration path, preserving
-unrelated keys and comments. Runtime values change only after a successful atomic
+one of `enabled` (boolean) or `opacity` (finite number within `0..1`). Supplied
+fields update a configuration value structure loaded from disk, which is then
+serialized in full to the backend's actual configuration path. Other known fields
+are retained; comments and unknown fields are not. Runtime values change only after a successful atomic
 save. Queries refresh the current settings from disk. Do not automatically retry
 a set request after losing its acknowledgement; query the current settings instead.
 

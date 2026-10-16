@@ -124,18 +124,21 @@ bool LAppDelegate::Initialize()
     LAppPal::SetResourceBasePath(_executeAbsolutePath);
     InitializeCubism();
     _cubismStarted = true;
-    const auto& config = LAppConfig::GetInstance();
-    _settings.reset(new TransformEditor(_service, config.sourcePath.empty() ? LAppConfig::GetDefaultConfigPath() : config.sourcePath));
-    if (!_settings->Initialize({{config.modelScale, config.modelX, config.modelY}, config.hasModelRegion, config.modelRegion})) {
+    auto& config = LAppConfig::GetInstance();
+    _settings.reset(new TransformEditor(_service, config));
+    const auto& values = config.values;
+    if (!_settings->Initialize({{values.modelScale, values.modelX, values.modelY}, bool(values.modelRegion), values.modelRegion.value_or(ModelRegion{})})) {
         LAppPal::PrintLogLn("[Config] Invalid model transform; zoom must be finite and within 0.1..10");
         return false;
     }
-    _hoverSettings.reset(new HoverOpacitySettings(_settings->Path(), config.hoverOpacityEnabled, config.hoverOpacity));
+    _hoverSettings.reset(new HoverOpacitySettings(config));
     const auto hoverResult = _hoverSettings->Refresh();
     if (!hoverResult.ok) LAppPal::PrintLogLn("[Config] %s", hoverResult.error.c_str());
     _lastOutput = _waylandBackend.CurrentOutput();
+    auto modelDirs = values.additionalModelDirs;
+    for (auto& dir : modelDirs) dir = LAppConfig::ExpandTilde(dir);
     _manager = new LAppLive2DManager(*_textureManager, _windowWidth, _windowHeight,
-        {LAppDefine::ModelsDir, config.additionalModelDirs, config.defaultModel, config.emotionTimeout});
+        {LAppDefine::ModelsDir, modelDirs, values.defaultModel, values.emotionTimeout});
     if (!_manager->HasModels()) { _isEnd = true; return false; }
     _view = new LAppView(*_manager, *_textureManager);
 

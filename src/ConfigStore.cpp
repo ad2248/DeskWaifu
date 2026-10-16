@@ -1,5 +1,4 @@
 #include "ConfigStore.hpp"
-#include <algorithm>
 #include <cerrno>
 #include <climits>
 #include <cstring>
@@ -13,10 +12,9 @@
 #include <unistd.h>
 
 namespace {
-struct Member { std::string key; size_t start, valueStart, end, comma; };
+struct Member { std::string key; size_t valueStart, end; };
 
-// Validate the complete document, retaining source spans rather than reformatting
-// it. This also rejects duplicate keys (including escaped spellings).
+// Validate the complete document, rejecting duplicate keys (including escaped spellings).
 class Document
 {
 public:
@@ -29,7 +27,23 @@ public:
         return p == s.size();
     }
     std::vector<Member> members;
-    size_t close = 0;
+    bool Strings(std::vector<std::string>& values, bool array)
+    {
+        values.clear();
+        if (array && !Take('[')) return false;
+        Skip();
+        if (array && p < s.size() && s[p] == ']') ++p;
+        else {
+            do {
+                std::string value;
+                if (!String(value)) return false;
+                values.push_back(std::move(value));
+            } while (array && Take(','));
+            if (array && !Take(']')) return false;
+        }
+        Skip();
+        return p == s.size();
+    }
 private:
     const std::string& s;
     size_t p = 0;
@@ -109,18 +123,18 @@ private:
     bool Object(bool root, int depth)
     {
         if (depth > 64 || !Take('{')) return false;
-        Skip(); if (p < s.size() && s[p] == '}') { if (root) close = p; ++p; return true; }
+        Skip(); if (p < s.size() && s[p] == '}') { ++p; return true; }
         std::set<std::string> keys;
         for (;;) {
-            Skip(); Member m; m.start = p; m.comma = std::string::npos;
+            Skip(); Member m;
             if (!String(m.key) || !keys.insert(m.key).second || !Take(':')) return false;
             Skip(); m.valueStart = p;
             if (!Value(depth + 1)) return false;
             m.end = p; Skip();
             if (p < s.size() && s[p] == ',') {
-                m.comma = p++; if (root) members.push_back(m);
+                ++p; if (root) members.push_back(m);
             } else {
-                if (root) { members.push_back(m); close = p; }
+                if (root) members.push_back(m);
                 return Take('}');
             }
         }
@@ -160,10 +174,6 @@ std::string Canonical(const std::string& value)
         else if (c != ' ' && c != '\t' && c != '\r' && c != '\n') out += c;
     }
     return out;
-}
-std::string Get(const ConfigStore::Snapshot& s, const std::string& key)
-{
-    const auto it = s.values.find(key); return it == s.values.end() ? "" : it->second;
 }
 bool ResolvePath(const std::string& path, std::string& resolved, std::string& error)
 {
@@ -213,41 +223,28 @@ bool ConfigStore::Read(Snapshot& snapshot, std::string& error) const
     return ResolvePath(_path, path, error) && ReadPath(path, text, error) && Parse(text, snapshot, error);
 }
 
-bool ConfigStore::Commit(const Patch& patch, const Snapshot& expected, Snapshot& saved,
+bool ConfigStore::ParseString(const std::string& json, std::string& value)
+{
+    std::vector<std::string> strings;
+    if (!Document(json).Strings(strings, false)) return false;
+    value = std::move(strings.front());
+    return true;
+}
+
+bool ConfigStore::ParseStringArray(const std::string& json, std::vector<std::string>& values)
+{
+    return Document(json).Strings(values, true);
+}
+
+bool ConfigStore::Commit(const std::string& document, const Snapshot& expected, Snapshot& saved,
     std::string& error, bool overwrite) const
 {
     std::string path, text;
     if (!ResolvePath(_path, path, error) || !ReadPath(path, text, error)) return false;
     Snapshot latest;
     if (!Parse(text, latest, error)) return false;
-    for (const auto& entry : patch) {
-        if (!overwrite && Get(latest, entry.first) != Get(expected, entry.first)) { error = "Config conflict: " + entry.first; return false; }
-        // Validate key/value before inserting them into a document.
-        Snapshot check;
-        if (entry.first.find_first_of("\"\\\r\n") != std::string::npos ||
-            !Parse("{\"" + entry.first + "\":" + (entry.second.empty() ? "null" : entry.second) + "}", check, error)) return false;
-    }
-    std::string result = text;
-    for (const auto& entry : patch) {
-        Document parser(result); if (!parser.Parse()) { error = "Invalid patch result"; return false; }
-        auto it = std::find_if(parser.members.begin(), parser.members.end(), [&](const Member& m) { return m.key == entry.first; });
-        if (it != parser.members.end()) {
-            if (!entry.second.empty()) result.replace(it->valueStart, it->end - it->valueStart, entry.second);
-            else {
-                // Remove the member and its separator, not adjacent comments.
-                result.erase(it->start, it->end - it->start);
-                size_t comma = it->comma;
-                if (comma != std::string::npos) comma -= it->end - it->start;
-                else if (it != parser.members.begin()) comma = (it - 1)->comma;
-                if (comma != std::string::npos) result.erase(comma, 1);
-            }
-        } else if (!entry.second.empty()) {
-            size_t close = parser.close;
-            if (!parser.members.empty()) { result.insert(parser.members.back().end, ","); ++close; }
-            result.insert(close, "\n  \"" + entry.first + "\": " + entry.second + "\n");
-        }
-    }
-    Snapshot next; if (!Parse(result, next, error)) return false;
+    if (!overwrite && latest.values != expected.values) { error = "Config conflict: file changed"; return false; }
+    Snapshot next; if (!Parse(document, next, error)) return false;
     size_t slash = path.find_last_of('/');
     std::string directory = slash == std::string::npos ? "." : path.substr(0, slash);
     if (directory.empty()) directory = "/";
@@ -261,7 +258,7 @@ bool ConfigStore::Commit(const Patch& patch, const Snapshot& expected, Snapshot&
     if (ok && exists) { struct stat created; ok = fstat(fd, &created) == 0;
         if (ok && (created.st_uid != original.st_uid || created.st_gid != original.st_gid)) ok = fchown(fd, original.st_uid, original.st_gid) == 0; }
     size_t offset = 0;
-    while (ok && offset < result.size()) { ssize_t n = write(fd, result.data() + offset, result.size() - offset); if (n < 0 && errno == EINTR) continue; if (n <= 0) ok = false; else offset += n; }
+    while (ok && offset < document.size()) { ssize_t n = write(fd, document.data() + offset, document.size() - offset); if (n < 0 && errno == EINTR) continue; if (n <= 0) ok = false; else offset += n; }
     if (ok) ok = fsync(fd) == 0;
     if (close(fd) != 0) ok = false;
     // Editors need not honor locks. Narrow the race, but do not claim a CAS

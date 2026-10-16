@@ -52,36 +52,37 @@ int main()
     CHECK(fd >= 0);
     close(fd);
     struct Cleanup { const char* path; ~Cleanup() { std::remove(path); } } cleanup{path};
-    LAppConfig config;
+    LAppConfig application;
+    auto& config = application.values;
     const auto load = [&](const std::string& content) {
         { std::ofstream file(path); file << content; }
-        return config.LoadFromFile(path);
+        return application.LoadFromFile(path);
     };
     CHECK(load("{}"));
-    CHECK(!config.hasModelRegion);
+    CHECK(!config.modelRegion);
     CHECK(load(R"({"additional_model_dirs":["model_region"],"model_scale":2.0})"));
-    CHECK(!config.hasModelRegion);
+    CHECK(!config.modelRegion);
     CHECK(config.additionalModelDirs == std::vector<std::string>{"model_region"});
     CHECK(config.modelScale == 2.0f);
     CHECK(load(R"({"default_model":"model_region","model_scale":2.0})"));
-    CHECK(!config.hasModelRegion && config.defaultModel == "model_region");
+    CHECK(!config.modelRegion && config.defaultModel == "model_region");
     CHECK(load(R"({"metadata":{"model_region":{"width":50,"height":60}},"model_scale":2.0})"));
-    CHECK(!config.hasModelRegion && config.modelScale == 2.0f);
+    CHECK(!config.modelRegion && config.modelScale == 2.0f);
     CHECK(load(R"({"metadata":[{"model_region":{"width":50,"height":60}}]})"));
-    CHECK(!config.hasModelRegion);
+    CHECK(!config.modelRegion);
     CHECK(load(R"({"note":"escaped \"model_region\": { and }","model_scale":2.0})"));
-    CHECK(!config.hasModelRegion && config.modelScale == 2.0f);
+    CHECK(!config.modelRegion && config.modelScale == 2.0f);
     CHECK(load(R"({"metadata":{"model_region":{"width":50,"height":60}},"additional_model_dirs":["model_region"],"model_region":{"width":800,"height":700}})"));
-    CHECK(config.hasModelRegion && Equal(config.modelRegion, {0, 0, 800, 700}));
+    CHECK(config.modelRegion && Equal(*config.modelRegion, {0, 0, 800, 700}));
     CHECK(load(R"({"note":"escaped \"model_region\": { and }","model_region":{"width":800,"height":700}})"));
-    CHECK(config.hasModelRegion && Equal(config.modelRegion, {0, 0, 800, 700}));
+    CHECK(config.modelRegion && Equal(*config.modelRegion, {0, 0, 800, 700}));
     CHECK(load(R"({"model_region":{"x":100,"y":80,"width":800,"height":700},"model_x":0.5})"));
-    CHECK(config.hasModelRegion && Equal(config.modelRegion, {100, 80, 800, 700}));
+    CHECK(config.modelRegion && Equal(*config.modelRegion, {100, 80, 800, 700}));
     CHECK(config.modelX == 0.5f);
     CHECK(load("{\"model_region\": {\n\"height\":700, // comment\n\"width\":800}}"));
-    CHECK(Equal(config.modelRegion, {0, 0, 800, 700}));
+    CHECK(config.modelRegion && Equal(*config.modelRegion, {0, 0, 800, 700}));
     CHECK(load(R"({"model_region":{"x":-100,"width":800,"height":700}})"));
-    CHECK(config.modelRegion.x == -100);
+    CHECK(config.modelRegion && config.modelRegion->x == -100);
     for (const auto invalid : {
         R"({"model_region":null})", R"({"model_region":{}})",
         R"({"model_region":null,"metadata":{"model_region":{"width":50,"height":60}}})",
@@ -95,5 +96,5 @@ int main()
         R"({"model_region":{"width":10,"height":10,"width":20}})"})
         CHECK(!load(invalid));
     CHECK(load("{}"));
-    CHECK(!config.hasModelRegion); // Reload must reset the optional region.
+    CHECK(!config.modelRegion); // Reload must reset the optional region.
 }

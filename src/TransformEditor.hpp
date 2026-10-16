@@ -3,14 +3,13 @@
 #include "ApplicationService.hpp"
 #include "ConfigStore.hpp"
 #include "InputController.hpp"
+#include "LAppConfig.hpp"
 #include "ModelRegion.hpp"
-#include <iomanip>
 #include <limits>
-#include <sstream>
 
 struct TransformSettings
 {
-    ModelTransform transform{1, 0, 0};
+    ModelTransform transform{LAppConfig::Values{}.modelScale, LAppConfig::Values{}.modelX, LAppConfig::Values{}.modelY};
     bool cropped = false;
     ModelRegion region;
 };
@@ -19,17 +18,18 @@ struct TransformSettings
 class TransformEditor
 {
 public:
-    TransformEditor(ApplicationService& service, std::string path)
-        : _service(service), _store(std::move(path)) {}
+    TransformEditor(ApplicationService& service, LAppConfig& config)
+        : _service(service), _config(config), _store(config.sourcePath.empty() ? LAppConfig::GetDefaultConfigPath() : config.sourcePath) {}
 
     bool Initialize(const TransformSettings& initial)
     {
         _runtime = _disk = initial;
         if (!_service.SetTransform(initial.transform).ok) return false;
         ConfigStore::Snapshot snapshot;
-        if (!_store.Read(snapshot, _error)) { _loadFailed = true; return true; } // Never overwrite an invalid file.
         TransformSettings parsed;
-        if (!Decode(snapshot, parsed, _error)) { _loadFailed = true; return true; }
+        LAppConfig::Values values;
+        if (!Read(snapshot, values, parsed, _error)) { _loadFailed = true; return true; } // Never overwrite an invalid file.
+        _config.values = std::move(values);
         _snapshot = snapshot; _runtime = _disk = parsed;
         _service.SetTransform(parsed.transform);
         return true;
@@ -49,7 +49,14 @@ public:
 
     static bool Decode(const ConfigStore::Snapshot& snapshot, TransformSettings& value, std::string& error)
     {
-        value = {};
+        LAppConfig::Values values;
+        return Decode(snapshot, values, value, error);
+    }
+
+    static bool Decode(const ConfigStore::Snapshot& snapshot, LAppConfig::Values& values, TransformSettings& value, std::string& error)
+    {
+        if (!LAppConfig::Decode(snapshot, values, error)) return false;
+        value = {{values.modelScale, values.modelX, values.modelY}, bool(values.modelRegion), values.modelRegion.value_or(ModelRegion{})};
         auto number = [&](const char* key, float& destination) {
             auto it = snapshot.values.find(key); if (it == snapshot.values.end()) return true;
             try { size_t end; destination = std::stof(it->second, &end); return end == it->second.size() && std::isfinite(destination); }
@@ -57,21 +64,6 @@ public:
         };
         if (!number("model_x", value.transform.x) || !number("model_y", value.transform.y) || !number("model_scale", value.transform.scale)) {
             error = "Invalid model transform in config"; return false;
-        }
-        const auto region = snapshot.values.find("model_region");
-        if (region != snapshot.values.end()) {
-            ConfigStore::Snapshot rectangle;
-            if (!ConfigStore::Parse(region->second, rectangle, error)) return false;
-            auto integer = [&](const char* key, int& destination, bool required) {
-                auto it = rectangle.values.find(key); if (it == rectangle.values.end()) return !required;
-                try { size_t end; long long n = std::stoll(it->second, &end); if (end != it->second.size() || n < INT32_MIN || n > INT32_MAX) return false; destination = static_cast<int>(n); return true; }
-                catch (...) { return false; }
-            };
-            if (!integer("x", value.region.x, false) || !integer("y", value.region.y, false) ||
-                !integer("width", value.region.width, true) || !integer("height", value.region.height, true)) {
-                error = "Invalid integer model_region"; return false;
-            }
-            value.cropped = true;
         }
         return Validate(value, error);
     }
@@ -121,7 +113,7 @@ public:
     AppResult Apply(const std::string& owner, bool overwrite = false)
     {
         if (!OwnedBy(owner)) return AppResult::Failure("No edit transaction owned by this connection");
-        auto result = Save(_draft, _expected, overwrite, false);
+        auto result = Save(_draft, _expected, overwrite);
         if (result.ok) { _owner.clear(); _screen = false; }
         return result;
     }
@@ -142,7 +134,7 @@ public:
     AppResult Reset(const std::string& owner, bool overwrite = false)
     {
         if (Editing() && !OwnedBy(owner)) return AppResult::Failure("Another client is editing transforms");
-        auto result = Save({}, Editing() ? _expected : _snapshot, overwrite, true);
+        auto result = Save({}, Editing() ? _expected : _snapshot, overwrite);
         if (result.ok) { _owner.clear(); _screen = false; }
         return result;
     }
@@ -154,12 +146,14 @@ public:
         SyncRuntime(); _dirty = true; _saveAt = now + delay;
     }
     void PauseAutosave() { _saveAt = 0; }
-    AppResult Retry() { SyncRuntime(); return Save(_runtime, _snapshot, false, false); }
+    AppResult Retry() { SyncRuntime(); return Save(_runtime, _snapshot, false); }
     AppResult ReloadAndDiscard(const std::string& owner)
     {
         if (Editing() && !OwnedBy(owner)) return AppResult::Failure("Another client is editing transforms");
         ConfigStore::Snapshot latest; TransformSettings settings;
-        if (!_store.Read(latest, _error) || !Decode(latest, settings, _error)) return AppResult::Failure(_error);
+        LAppConfig::Values values;
+        if (!Read(latest, values, settings, _error)) return AppResult::Failure(_error);
+        _config.values = std::move(values);
         _snapshot = latest; _runtime = _disk = settings; _owner.clear();
         _dirty = _conflict = _screen = false; _saveAt = 0; ++_revision; _error.clear();
         _service.SetTransform(settings.transform);
@@ -173,8 +167,9 @@ public:
     void Reload()
     {
         ConfigStore::Snapshot latest; TransformSettings settings;
+        LAppConfig::Values values;
         std::string error;
-        if (!_store.Read(latest, error) || !Decode(latest, settings, error)) { _error = error; _loadFailed = true; return; }
+        if (!Read(latest, values, settings, error)) { _error = error; _loadFailed = true; return; }
         if (_loadFailed) { _error.clear(); _loadFailed = false; }
         if (latest.values == _snapshot.values) return;
         bool changed = false;
@@ -182,6 +177,7 @@ public:
             if (Get(latest, key) != Get(_snapshot, key)) changed = true;
         // Preserve the old comparison snapshot while unsaved local changes exist.
         if (_dirty && !Editing() && changed) { _conflict = true; _error = "External transform changes conflict with unsaved settings"; return; }
+        _config.values = std::move(values);
         _snapshot = latest; _disk = settings;
         if (changed) {
             ++_revision; _runtime = settings;
@@ -209,27 +205,28 @@ private:
     {
         auto it = s.values.find(key); return it == s.values.end() ? "" : it->second;
     }
-    static std::string Float(float value)
+    bool Read(ConfigStore::Snapshot& snapshot, LAppConfig::Values& values, TransformSettings& settings, std::string& error)
     {
-        std::ostringstream out; out.imbue(std::locale::classic()); out << std::setprecision(std::numeric_limits<float>::max_digits10) << value; return out.str();
+        return _store.Read(snapshot, error) && Decode(snapshot, values, settings, error);
     }
-    AppResult Save(const TransformSettings& settings, const ConfigStore::Snapshot& expected, bool overwrite, bool reset)
+    AppResult Save(const TransformSettings& settings, const ConfigStore::Snapshot& expected, bool overwrite)
     {
         std::string error;
         if (!Validate(settings, error)) return AppResult::Failure(error);
-        ConfigStore::Patch patch{{"model_x", reset ? "" : Float(settings.transform.x)},
-            {"model_y", reset ? "" : Float(settings.transform.y)}, {"model_scale", reset ? "" : Float(settings.transform.scale)}, {"model_region", ""}};
-        if (!reset && settings.cropped) {
-            auto r = settings.region;
-            patch["model_region"] = "{\"x\":" + std::to_string(r.x) + ",\"y\":" + std::to_string(r.y) + ",\"width\":" + std::to_string(r.width) + ",\"height\":" + std::to_string(r.height) + "}";
-        }
+        auto values = _config.values;
+        values.modelX = settings.transform.x; values.modelY = settings.transform.y; values.modelScale = settings.transform.scale;
+        values.modelRegion = settings.cropped ? std::experimental::optional<ModelRegion>(settings.region) : std::experimental::nullopt;
+        std::string document;
+        if (!LAppConfig::Serialize(values, document, _error)) return AppResult::Failure(_error);
         ConfigStore::Snapshot saved;
-        if (!_store.Commit(patch, expected, saved, _error, overwrite)) { _conflict = _error.find("conflict") != std::string::npos; return AppResult::Failure(_error); }
+        if (!_store.Commit(document, expected, saved, _error, overwrite)) { _conflict = _error.find("conflict") != std::string::npos; return AppResult::Failure(_error); }
+        _config.values = std::move(values);
         _snapshot = saved; _runtime = _disk = settings; _dirty = _conflict = false; _saveAt = 0; ++_revision;
         _service.SetTransform(settings.transform); _error.clear();
         return AppResult::Success();
     }
     ApplicationService& _service;
+    LAppConfig& _config;
     ConfigStore _store;
     ConfigStore::Snapshot _snapshot, _expected;
     TransformSettings _disk, _runtime, _draft;

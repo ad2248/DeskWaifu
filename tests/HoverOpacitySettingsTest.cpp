@@ -14,7 +14,8 @@ int main()
     CHECK(!directory.empty());
     const auto path = directory + "/custom.json";
     struct Cleanup { std::string path, directory; ~Cleanup() { std::remove(path.c_str()); rmdir(directory.c_str()); } } cleanup{path, directory};
-    HoverOpacitySettings settings(path);
+    LAppConfig config; config.sourcePath = path;
+    HoverOpacitySettings settings(config);
     CHECK(settings.Refresh().ok);
     CHECK(!settings.Enabled() && settings.Opacity() == 0.5f);
     CHECK(settings.Set(R"({"enabled":true})").ok);
@@ -31,8 +32,9 @@ int main()
     std::string error;
     CHECK(store.Read(disk, error));
     CHECK(disk.values.at("hover_opacity") == "0.25" && disk.values.at("hover_opacity_enabled") == "true");
-    CHECK(disk.values.at("model_x") == "2.5" && disk.values.at("extra") == "\"keep\"");
-    CHECK(disk.document.find("// keep comment") != std::string::npos);
+    CHECK(disk.values.at("model_x") == "2.5" && !disk.values.count("extra"));
+    CHECK(disk.values.size() == 10 && disk.values.at("window_width") == "1900");
+    CHECK(disk.document.find("// keep comment") == std::string::npos);
     CHECK(settings.Set(R"({"enabled":false})").ok);
     CHECK(!settings.Enabled() && settings.Opacity() == 0.25f);
     for (const auto value : {"0", "1", "0.01", "5e-1"})
@@ -59,13 +61,19 @@ int main()
     CHECK(rmdir(path.c_str()) == 0);
     write(saved);
     CHECK(settings.Set(R"({"enabled":true,"opacity":0.8})").ok);
-    HoverOpacitySettings restarted(path);
+    LAppConfig restartedConfig; restartedConfig.sourcePath = path;
+    HoverOpacitySettings restarted(restartedConfig);
     CHECK(restarted.Refresh().ok);
     CHECK(restarted.Enabled() && restarted.Opacity() == 0.8f);
     // A partial update preserves another writer's current, unrelated setting.
     CHECK(store.Read(disk, error));
     ConfigStore::Snapshot external;
-    CHECK(store.Commit({{"hover_opacity_enabled", "false"}, {"model_x", "3.5"}}, disk, external, error));
+    auto externalValues = config.values;
+    externalValues.hoverOpacityEnabled = false;
+    externalValues.modelX = 3.5f;
+    std::string document;
+    CHECK(LAppConfig::Serialize(externalValues, document, error));
+    CHECK(store.Commit(document, disk, external, error));
     CHECK(settings.Set(R"({"opacity":0.6})").ok);
     CHECK(!settings.Enabled() && settings.Opacity() == 0.6f);
     CHECK(store.Read(disk, error) && disk.values.at("model_x") == "3.5");
