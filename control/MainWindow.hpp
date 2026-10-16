@@ -36,6 +36,13 @@ private:
     bool _hotkeyQueryPending = false;
     void requestHotkeys();
     void requestTransform();
+    void requestHoverOpacity();
+    void setHoverOpacity(const QJsonObject& parameters);
+    void showHoverOpacity(const QJsonObject& response);
+    bool _hoverQueryPending = false;
+    bool _hoverSetPending = false;
+    bool _hoverSupported = false;
+    QJsonObject _lastHoverResponse;
     void queueTransformPreview();
     QJsonObject transformParameters() const;
     void showTransform(const QJsonObject& response);

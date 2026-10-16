@@ -542,8 +542,54 @@
           <property name="text"><string>尚未连接</string></property>
           <property name="wordWrap"><bool>true</bool></property>
          </widget></item>
-        <item>
-         <spacer name="transformSpacer">
+         <item>
+          <widget class="QGroupBox" name="hoverOpacityGroup">
+           <property name="enabled"><bool>false</bool></property>
+           <property name="title"><string>鼠标悬停透明度</string></property>
+           <layout class="QGridLayout" name="hoverOpacityLayout">
+            <item row="0" column="0" colspan="3">
+             <widget class="QCheckBox" name="hoverOpacityEnabledCheck">
+              <property name="text"><string>启用悬停半透明</string></property>
+             </widget>
+            </item>
+            <item row="1" column="0">
+             <widget class="QLabel" name="hoverOpacityLabel">
+              <property name="text"><string>不透明度</string></property>
+              <property name="buddy"><cstring>hoverOpacitySlider</cstring></property>
+             </widget>
+            </item>
+            <item row="1" column="1">
+             <widget class="QSlider" name="hoverOpacitySlider">
+              <property name="maximum"><number>100</number></property>
+              <property name="value"><number>50</number></property>
+              <property name="tracking"><bool>false</bool></property>
+              <property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property>
+              <property name="accessibleName"><string>鼠标悬停不透明度</string></property>
+             </widget>
+            </item>
+            <item row="1" column="2">
+             <widget class="QLabel" name="hoverOpacityValueLabel">
+              <property name="text"><string>50%</string></property>
+              <property name="minimumSize"><size><width>42</width><height>0</height></size></property>
+             </widget>
+            </item>
+            <item row="2" column="0" colspan="3">
+             <widget class="QLabel" name="hoverOpacityHintLabel">
+              <property name="text"><string>0% 完全透明，100% 不透明。拖动时只更新读数，松手立即设置并保存。</string></property>
+              <property name="wordWrap"><bool>true</bool></property>
+             </widget>
+            </item>
+            <item row="3" column="0" colspan="3">
+             <widget class="QLabel" name="hoverOpacityStatusLabel">
+              <property name="text"><string>尚未连接</string></property>
+              <property name="wordWrap"><bool>true</bool></property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item>
+          <spacer name="transformSpacer">
           <property name="orientation">
            <enum>Qt::Orientation::Vertical</enum>
           </property>

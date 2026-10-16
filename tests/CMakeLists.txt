@@ -48,6 +48,10 @@ add_executable(hover-opacity-test HoverOpacityTest.cpp ../src/LAppConfig.cpp)
 target_include_directories(hover-opacity-test PRIVATE ../src)
 add_test(NAME hover-opacity COMMAND hover-opacity-test)
 
+add_executable(hover-opacity-settings-test HoverOpacitySettingsTest.cpp ../src/ConfigStore.cpp)
+target_include_directories(hover-opacity-settings-test PRIVATE ../src)
+add_test(NAME hover-opacity-settings COMMAND hover-opacity-settings-test)
+
 add_executable(model-region-render-test ModelRegionRenderTest.cpp ../src/LAppWaylandRegion.cpp)
 add_dependencies(model-region-render-test ${APP_NAME}) # Generated Wayland protocol headers.
 target_include_directories(model-region-render-test PRIVATE ../src ${WAYLAND_GEN_DIR} ${WAYLAND_INCLUDE_DIRS} ${GLEW_PATH}/include)

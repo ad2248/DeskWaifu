@@ -117,6 +117,7 @@ void DeskWaifuClient::handleDisconnected()
     // A queued toggle is meaningful only for the current connection/model state.
     for (qsizetype i = _requests.size(); i-- > 0;)
         if (_requests[i].command == QStringLiteral("trigger_hotkey") ||
+            _requests[i].command == QStringLiteral("set_hover_opacity") ||
             _requests[i].command.endsWith(QStringLiteral("transform_edit")) ||
             _requests[i].command == QStringLiteral("reset_transform_settings") ||
             _requests[i].command == QStringLiteral("retry_transform_save") ||
@@ -158,5 +159,6 @@ bool DeskWaifuClient::isRetryableQuery(const QString& command)
         || command == QStringLiteral("get_motions")
         || command == QStringLiteral("get_model_position")
         || command == QStringLiteral("get_transform_settings")
+        || command == QStringLiteral("get_hover_opacity")
         || command == QStringLiteral("get_transform_save_result");
 }

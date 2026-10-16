@@ -13,6 +13,7 @@
 #include "InputController.hpp"
 #include "CursorLook.hpp"
 #include "HoverOpacity.hpp"
+#include "HoverOpacitySettings.hpp"
 #include "ApplicationService.hpp"
 #include "TransformEditor.hpp"
 #include "ScreenCropInteraction.hpp"
@@ -106,6 +107,7 @@ public:
     ApplicationService& Service() { return _service; }
     const ApplicationService& Service() const { return _service; }
     TransformEditor& Settings() { return *_settings; }
+    HoverOpacitySettings& HoverSettings() { return *_hoverSettings; }
 
     /**
     * @brief   アプリケーションを終了するかどうか。
@@ -191,6 +193,7 @@ private:
     AppCommandHandler* _commands;
     ApplicationService _service;
     std::unique_ptr<TransformEditor> _settings;
+    std::unique_ptr<HoverOpacitySettings> _hoverSettings;
     ScreenCropInteraction _cropInteraction;
     OutputId _lastOutput = 0;
     float _mouseX;                               ///< マウスX座標

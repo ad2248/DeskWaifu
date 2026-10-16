@@ -72,6 +72,22 @@ private slots:
         QTest::newRow("dark") << QColor("#303030") << QColor("#eeeeee");
     }
 
+    void hoverOpacityControlsLiveInTransformTab()
+    {
+        QMainWindow window;
+        Ui::MainWindow ui;
+        ui.setupUi(&window);
+        QVERIFY(ui.transformTab->isAncestorOf(ui.hoverOpacityGroup));
+        QVERIFY(ui.hoverOpacityGroup->isAncestorOf(ui.hoverOpacityEnabledCheck));
+        QVERIFY(ui.hoverOpacityGroup->isAncestorOf(ui.hoverOpacitySlider));
+        QVERIFY(!ui.hoverOpacityGroup->isEnabled());
+        QCOMPARE(ui.hoverOpacitySlider->orientation(), Qt::Horizontal);
+        QCOMPARE(ui.hoverOpacitySlider->minimum(), 0);
+        QCOMPARE(ui.hoverOpacitySlider->maximum(), 100);
+        QCOMPARE(ui.hoverOpacitySlider->value(), 50);
+        QVERIFY(!ui.hoverOpacitySlider->hasTracking());
+    }
+
     void followsApplicationTheme()
     {
         QFETCH(QColor, background);
