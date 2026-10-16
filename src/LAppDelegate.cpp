@@ -130,6 +130,9 @@ bool LAppDelegate::Initialize()
         LAppPal::PrintLogLn("[Config] Invalid model transform; zoom must be finite and within 0.1..10");
         return false;
     }
+    _hoverSettings.reset(new HoverOpacitySettings(_settings->Path(), config.hoverOpacityEnabled, config.hoverOpacity));
+    const auto hoverResult = _hoverSettings->Refresh();
+    if (!hoverResult.ok) LAppPal::PrintLogLn("[Config] %s", hoverResult.error.c_str());
     _lastOutput = _waylandBackend.CurrentOutput();
     _manager = new LAppLive2DManager(*_textureManager, _windowWidth, _windowHeight,
         {LAppDefine::ModelsDir, config.additionalModelDirs, config.defaultModel, config.emotionTimeout});
@@ -232,8 +235,7 @@ bool LAppDelegate::Run()
         glClearDepth(1.0);
 
         const auto state = _service.Snapshot();
-        const auto& config = LAppConfig::GetInstance();
-        const bool opacityFrame = config.hoverOpacityEnabled && !state.hidden && _view->BeginOpacityFrame();
+        const bool opacityFrame = _hoverSettings->Enabled() && !state.hidden && _view->BeginOpacityFrame();
         RenderModelFrame(_service, _settings->Editing(),
             [this](ModelTransform transform) { UpdateCursorLook(transform); },
             [this](ModelTransform transform, const ModelFrameInput& input) {
@@ -250,7 +252,7 @@ bool LAppDelegate::Run()
             const auto handles = _settings->ScreenEditing() && settings.cropped
                 ? CropInteraction::Handles(settings.region) : std::vector<ModelRegion>{};
             if (opacityFrame)
-                _view->PresentOpacityFrame(_hoverOpacity.Resolve(true, config.hoverOpacity, modelRegions, handles));
+                _view->PresentOpacityFrame(_hoverOpacity.Resolve(true, _hoverSettings->Opacity(), modelRegions, handles));
             ClipWaylandModelRegion(region, _windowWidth, _windowHeight);
             if (_settings->ScreenEditing()) {
                 DrawWaylandEditFrame(handles, _windowWidth, _windowHeight);

@@ -18,6 +18,7 @@ private slots:
     void doesNotReplayUnacknowledgedMutation();
     void doesNotReplayUnacknowledgedMutation_data();
     void retriesUnacknowledgedQuery();
+    void retriesUnacknowledgedQuery_data();
 };
 
 void DeskWaifuClientTest::sendsJsonAndParsesResponse()
@@ -75,6 +76,7 @@ void DeskWaifuClientTest::doesNotReplayUnacknowledgedMutation()
     QSignalSpy unknownSpy(&client, &DeskWaifuClient::commandOutcomeUnknown);
     client.sendCommand(command);
     client.sendCommand(QStringLiteral("trigger_hotkey"));
+    client.sendCommand(QStringLiteral("set_hover_opacity"), {{QStringLiteral("opacity"), 0.5}});
     client.sendCommand(QStringLiteral("get_status"));
 
     QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 2000);
@@ -106,10 +108,12 @@ void DeskWaifuClientTest::doesNotReplayUnacknowledgedMutation_data()
     QTest::newRow("model-hotkey") << QStringLiteral("trigger_hotkey");
     QTest::newRow("transform-apply") << QStringLiteral("apply_transform_edit");
     QTest::newRow("transform-reset") << QStringLiteral("reset_transform_settings");
+    QTest::newRow("hover-opacity") << QStringLiteral("set_hover_opacity");
 }
 
 void DeskWaifuClientTest::retriesUnacknowledgedQuery()
 {
+    QFETCH(QString, command);
     QTemporaryDir runtimeDir;
     QVERIFY(runtimeDir.isValid());
     qputenv("XDG_RUNTIME_DIR", runtimeDir.path().toLocal8Bit());
@@ -120,14 +124,14 @@ void DeskWaifuClientTest::retriesUnacknowledgedQuery()
 
     DeskWaifuClient client;
     QSignalSpy unknownSpy(&client, &DeskWaifuClient::commandOutcomeUnknown);
-    client.sendCommand(QStringLiteral("get_status"));
+    client.sendCommand(command);
 
     QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 2000);
     QLocalSocket* firstConnection = server.nextPendingConnection();
     QVERIFY(firstConnection);
     QTRY_VERIFY_WITH_TIMEOUT(firstConnection->canReadLine(), 2000);
     QCOMPARE(QJsonDocument::fromJson(firstConnection->readLine()).object()
-        .value(QStringLiteral("command")).toString(), QStringLiteral("get_status"));
+        .value(QStringLiteral("command")).toString(), command);
     firstConnection->disconnectFromServer();
 
     QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 4000);
@@ -135,11 +139,18 @@ void DeskWaifuClientTest::retriesUnacknowledgedQuery()
     QVERIFY(secondConnection);
     QTRY_VERIFY_WITH_TIMEOUT(secondConnection->canReadLine(), 2000);
     QCOMPARE(QJsonDocument::fromJson(secondConnection->readLine()).object()
-        .value(QStringLiteral("command")).toString(), QStringLiteral("get_status"));
+        .value(QStringLiteral("command")).toString(), command);
     QCOMPARE(unknownSpy.count(), 0);
 
     secondConnection->write("{\"ok\":true}\n");
     secondConnection->flush();
+}
+
+void DeskWaifuClientTest::retriesUnacknowledgedQuery_data()
+{
+    QTest::addColumn<QString>("command");
+    QTest::newRow("status") << QStringLiteral("get_status");
+    QTest::newRow("hover-opacity") << QStringLiteral("get_hover_opacity");
 }
 
 QTEST_GUILESS_MAIN(DeskWaifuClientTest)

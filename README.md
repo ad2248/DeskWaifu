@@ -231,7 +231,7 @@ Example `config.json`:
 
 All fields are optional. Missing fields use their default values. If the config file doesn't exist, all defaults are used.
 
-To make the model half-transparent on hover, add these fields and restart DeskWaifu:
+To configure half-transparency on hover at startup, add these fields:
 
 ```json
 "hover_opacity_enabled": true,
@@ -247,6 +247,22 @@ editor handles do not count as model hover. The silhouette follows the existing
 10-pixel block sampling rather than an exact per-pixel hit test. Invalid hover
 values reject the configuration with a diagnostic. The feature is disabled by
 default, with no extra offscreen rendering while disabled.
+
+The **Transform** tab also provides a **鼠标悬停透明度** section. Toggle
+**启用悬停半透明** to enable or disable the effect. Drag the opacity slider from
+`0%` to `100%`: the percentage updates while dragging, and releasing applies and
+saves the value immediately, without **Apply and save** or a restart. Keyboard
+and mouse-wheel adjustments also apply directly. This setting is independent of
+the position/crop edit transaction and its reset/cancel buttons. Failed saves
+show an error and restore the effective backend value. Disconnected or older,
+unsupported backends disable the controls; reconnecting queries the actual saved
+state rather than replaying a write with an unknown outcome.
+
+The bottom status bar keeps connection information on the left and operation
+feedback (saving, success, or errors) on the right, visible across all tabs.
+Successful background queries do not replace the latest operation message.
+`MainWindow::setStatusMessage(message, timeoutMs)` updates this shared feedback;
+an empty message clears it, and a positive timeout clears it automatically.
 
 To clip the model to a rectangle, add this entry to your configuration:
 
@@ -297,8 +313,9 @@ Only the model process writes configuration, using the actual `--config` path
 values are preserved, as are file permissions and existing symbolic links. A
 missing configuration is created; invalid documents and duplicate keys are never
 silently overwritten. Files are checked every 0.5 seconds, so external editor
-replacements are detected too. Only transform/crop settings are hot-reloaded;
-other settings still require restarting the application.
+replacements are detected too. Transform/crop settings are hot-reloaded. Hover
+settings are refreshed when queried by the control panel (including its active
+window polling); other settings still require restarting the application.
 
 External changes during preview do not replace the draft. Applying reports a
 conflict: explicitly overwrite just the four transform/crop keys, or discard the
@@ -420,6 +437,22 @@ A convenience CLI client `deskwaifu-ctl` is included in the project root:
 ```
 
 ### Available Commands
+
+#### `get_hover_opacity` / `set_hover_opacity` — Hover opacity
+
+```json
+{"command":"get_hover_opacity"}
+{"command":"set_hover_opacity","enabled":true}
+{"command":"set_hover_opacity","opacity":0.5}
+```
+
+Both commands return `enabled` and `opacity`, including the unchanged effective
+values when a save fails (`ok: false`, with `error`). Setting requires at least
+one of `enabled` (boolean) or `opacity` (finite number within `0..1`). Only supplied
+fields are patched into the backend's actual configuration path, preserving
+unrelated keys and comments. Runtime values change only after a successful atomic
+save. Queries refresh the current settings from disk. Do not automatically retry
+a set request after losing its acknowledgement; query the current settings instead.
 
 #### `get_hotkeys` / `trigger_hotkey` — Model hotkeys
 
