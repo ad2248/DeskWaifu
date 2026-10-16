@@ -22,6 +22,7 @@ struct FakeEvents : IWaylandEvents
 {
     int moves = 0, keys = 0, closed = 0;
     void PointerEntered(double, double) override {}
+    void PointerLeft() override {}
     void PointerMoved(double, double) override { ++moves; }
     void PointerButton(int, bool) override {}
     void PointerScroll(double) override {}

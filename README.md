@@ -225,9 +225,28 @@ Example `config.json`:
 | `model_y` | float | `0.0` | Initial model Y offset |
 | `window_width` | int | `1900` | Render target width in pixels |
 | `window_height` | int | `1000` | Render target height in pixels |
+| `hover_opacity_enabled` | bool | `false` | Reduce model opacity while the pointer is over its input silhouette |
+| `hover_opacity` | float | `0.5` | Hover opacity, from `0` (invisible) to `1` (unchanged); must be finite |
 | `model_region` | object | Entire current output | Optional clipping rectangle: integer `x`, `y` (default `0`), and required positive integer `width`, `height` |
 
 All fields are optional. Missing fields use their default values. If the config file doesn't exist, all defaults are used.
+
+To make the model half-transparent on hover, add these fields and restart DeskWaifu:
+
+```json
+"hover_opacity_enabled": true,
+"hover_opacity": 0.5
+```
+
+Configuration keys use snake_case. The model returns to its normal opacity when
+the pointer leaves. Hover opacity is applied after the model is rendered, preserving
+its own material/animation alpha. It does not enable click-through: even at `0`,
+the original model input silhouette remains active, so leaving restores visibility
+without flicker. Transparent background and cropped-out areas stay click-through;
+editor handles do not count as model hover. The silhouette follows the existing
+10-pixel block sampling rather than an exact per-pixel hit test. Invalid hover
+values reject the configuration with a diagnostic. The feature is disabled by
+default, with no extra offscreen rendering while disabled.
 
 To clip the model to a rectangle, add this entry to your configuration:
 

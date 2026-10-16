@@ -14,6 +14,8 @@ struct LAppConfig
     float modelY = 0.0f;
     int windowWidth = 1900;
     int windowHeight = 1000;
+    bool hoverOpacityEnabled = false;
+    float hoverOpacity = 0.5f;
     bool hasModelRegion = false;
     ModelRegion modelRegion;
     std::string sourcePath;
