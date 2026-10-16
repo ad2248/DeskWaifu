@@ -39,6 +39,13 @@ public:
         const auto handle = _handle;
         _handle = CropInteraction::None;
         if (handle == CropInteraction::None) return AppResult::Success();
+        if (!_moved && InputController::IsTap(_x, _y, x, y) &&
+            handle == CropInteraction::Model &&
+            OutsideCrop(_start, _x, _y) && OutsideCrop(editor.Display(), x, y) &&
+            CropInteraction::Hit(editor.Display().region, x, y) == CropInteraction::None) {
+            _clicks = ModelDoubleClick{};
+            return editor.Apply(editor.Owner());
+        }
         if (_moved || !InputController::IsTap(_x, _y, x, y) ||
             handle == CropInteraction::Model || !editor.Display().cropped ||
             CropInteraction::Hit(editor.Display().region, x, y) == CropInteraction::None) {
@@ -51,6 +58,13 @@ public:
     }
 
 private:
+    static bool OutsideCrop(const TransformSettings& settings, int x, int y)
+    {
+        const auto r = settings.region;
+        return settings.cropped && (x < r.x || y < r.y ||
+            int64_t(x) >= int64_t(r.x) + r.width || int64_t(y) >= int64_t(r.y) + r.height);
+    }
+
     TransformSettings _start;
     int _x = 0, _y = 0, _handle = CropInteraction::None;
     bool _moved = false;

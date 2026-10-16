@@ -196,6 +196,71 @@ int main()
     pointer.Press(editor.Display(), 0, 200);
     CHECK(pointer.Release(editor, 1900, 0, 200).ok);
     CHECK(!editor.Editing() && editor.Display().cropped && editor.Error().empty());
+
+    // One outside click saves the same draft for local and GUI screen edits.
+    for (const auto* owner : {"local-screen", "gui"}) {
+        for (const auto point : {std::pair<int, int>{50, 250}, {750, 250}, {300, 50}, {300, 650}}) {
+            CHECK(editor.Begin(owner, true, 1000, 1000).ok);
+            auto next = editor.Display(); next.region = {100, 100, 600, 500};
+            next.transform.scale = 1.5f;
+            CHECK(editor.Update(owner, next).ok);
+            pointer.Press(editor.Display(), point.first, point.second);
+            CHECK(pointer.Release(editor, 2000, point.first, point.second).ok);
+            CHECK(!editor.Editing());
+            CHECK(store.Read(disk, error));
+            TransformSettings saved;
+            CHECK(TransformEditor::Decode(disk, saved, error));
+            CHECK(saved.cropped && saved.region.x == 100 && saved.region.y == 100);
+            CHECK(saved.region.width == 600 && saved.region.height == 500);
+            CHECK(saved.transform.scale == 1.5f);
+        }
+    }
+
+    CHECK(editor.BeginLocalScreenEdit(1000, 1000).ok);
+    // Outside drags, including excursions back to the press point, never save.
+    pointer.Press(editor.Display(), 50, 250);
+    pointer.Move(editor, 70, 250, 1000);
+    pointer.Move(editor, 50, 250, 1000);
+    CHECK(pointer.Release(editor, 2100, 50, 250).ok && editor.Editing());
+    pointer.Press(editor.Display(), 50, 250);
+    CHECK(pointer.Release(editor, 2200, 70, 250).ok && editor.Editing());
+    // Crossing the boundary within the tap tolerance is not an outside click.
+    pointer.Press(editor.Display(), 109, 250);
+    CHECK(pointer.Release(editor, 2300, 99, 250).ok && editor.Editing());
+    pointer.Press(editor.Display(), 91, 250);
+    CHECK(pointer.Release(editor, 2400, 101, 250).ok && editor.Editing());
+    // The resize hot zone just outside the rectangle remains a frame gesture.
+    pointer.Press(editor.Display(), 95, 250);
+    CHECK(pointer.Release(editor, 2500, 95, 250).ok && editor.Editing());
+    pointer.Press(editor.Display(), 95, 250);
+    pointer.Move(editor, 75, 250, 1000);
+    CHECK(pointer.Release(editor, 2600, 75, 250).ok && editor.Editing());
+    CHECK(editor.Display().region.x == 80 && editor.Display().region.width == 620);
+
+    // Outside-click save failures preserve the draft and allow another click to retry.
+    CHECK(store.Read(disk, error));
+    const auto beforeOutsideSave = disk.document;
+    const auto outsidePreview = editor.Display();
+    write("broken");
+    pointer.Press(editor.Display(), 50, 250);
+    CHECK(!pointer.Release(editor, 2700, 50, 250).ok);
+    CHECK(editor.LocalScreenEditing() && !editor.Error().empty());
+    CHECK(editor.Display().region.x == outsidePreview.region.x);
+    write(beforeOutsideSave);
+    pointer.Press(editor.Display(), 50, 250);
+    CHECK(pointer.Release(editor, 2800, 50, 250).ok);
+    CHECK(!editor.Editing() && editor.Error().empty());
+    // Outside clicks do not bypass external-edit conflict protection either.
+    CHECK(editor.Begin("gui", true, 1000, 1000).ok);
+    auto conflictDraft = editor.Display(); conflictDraft.transform.x += 1;
+    CHECK(editor.Update("gui", conflictDraft).ok);
+    write("{\"model_x\":9}");
+    pointer.Press(editor.Display(), 50, 250);
+    CHECK(!pointer.Release(editor, 2900, 50, 250).ok);
+    CHECK(editor.OwnedBy("gui") && editor.Conflict());
+    CHECK(editor.Display().transform.x == conflictDraft.transform.x);
+    CHECK(store.Read(disk, error) && disk.values.at("model_x") == "9");
+    CHECK(editor.Cancel("gui").ok);
     CHECK(unlink(path.c_str()) == 0 && rmdir(directory.c_str()) == 0);
     return 0;
 }
