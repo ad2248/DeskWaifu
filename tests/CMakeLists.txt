@@ -40,6 +40,10 @@ add_executable(model-region-test ModelRegionTest.cpp ../src/LAppConfig.cpp)
 target_include_directories(model-region-test PRIVATE ../src)
 add_test(NAME model-region COMMAND model-region-test)
 
+add_executable(model-input-region-test ModelInputRegionTest.cpp)
+target_include_directories(model-input-region-test PRIVATE ../src)
+add_test(NAME model-input-region COMMAND model-input-region-test)
+
 add_executable(hover-opacity-test HoverOpacityTest.cpp ../src/LAppConfig.cpp)
 target_include_directories(hover-opacity-test PRIVATE ../src)
 add_test(NAME hover-opacity COMMAND hover-opacity-test)
