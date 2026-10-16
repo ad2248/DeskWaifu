@@ -59,11 +59,12 @@ private slots:
             return file.write(text) == text.size();
         };
         QVERIFY(writeConfig("{\"hover_opacity_enabled\":true,\"hover_opacity\":0.37,\"model_x\":2.5,\"extra\":\"keep\"}"));
-        HoverOpacitySettings settings(configPath.toStdString());
+        LAppConfig hoverConfig; hoverConfig.sourcePath = configPath.toStdString();
+        HoverOpacitySettings settings(hoverConfig);
         QVERIFY(settings.Refresh().ok);
         WindowRuntime runtime;
         ApplicationService service(runtime);
-        TransformEditor editor(service, configPath.toStdString());
+        TransformEditor editor(service, hoverConfig);
         QVERIFY(editor.Initialize({}));
         QLocalServer server;
         QVERIFY(server.listen(runtimePath + "/deskwaifu.sock"));
@@ -208,7 +209,8 @@ private slots:
         ConfigStore::Snapshot disk; std::string error;
         QVERIFY(store.Read(disk, error));
         QCOMPARE(disk.values.at("model_x"), std::string("2.5"));
-        QCOMPARE(disk.values.at("extra"), std::string("\"keep\""));
+        QVERIFY(!disk.values.count("extra"));
+        QCOMPARE(disk.values.size(), size_t(10));
         QTest::keyClick(slider, Qt::Key_Home);
         QTRY_VERIFY_WITH_TIMEOUT(settings.Opacity() == 0 && group->isEnabled(), 2000);
         QTest::keyClick(slider, Qt::Key_End);
@@ -225,8 +227,11 @@ private slots:
         QCOMPARE(settings.Opacity(), 1.f);
         QVERIFY(editor.Editing());
         QCOMPARE(service.Snapshot().transform.x, 4.5f);
+        // Whole-document saves detect the independent hover write during editing.
+        QVERIFY(!editor.Apply("another-client").ok);
         QVERIFY(editor.Cancel("another-client").ok);
         QCOMPARE(service.Snapshot().transform.x, 2.5f);
+        editor.Reload(); // The backend periodically refreshes the comparison snapshot.
         QVERIFY(editor.Reset("another-client").ok);
         QVERIFY(store.Read(disk, error));
         QVERIFY(disk.values.count("hover_opacity") && disk.values.count("hover_opacity_enabled"));
@@ -274,7 +279,8 @@ private slots:
         qputenv("XDG_RUNTIME_DIR", runtimePath.toLocal8Bit());
         const auto path = (directory.path() + "/config.json").toStdString();
         WindowRuntime runtime; ApplicationService service(runtime);
-        TransformEditor editor(service, path); QVERIFY(editor.Initialize({}));
+        LAppConfig config; config.sourcePath = path;
+        TransformEditor editor(service, config); QVERIFY(editor.Initialize({}));
         QLocalServer server;
         QVERIFY2(server.listen(runtimePath + "/deskwaifu.sock"), qPrintable(server.errorString()));
         connect(&server, &QLocalServer::newConnection, this, [&] {
@@ -359,7 +365,11 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(service.Snapshot().transform.x, 0.f, 2000);
         QTRY_VERIFY_WITH_TIMEOUT(!enabled->isChecked(), 2000);
         QCOMPARE(service.Snapshot().transform.scale, 1.f);
-        QVERIFY(store.Read(disk, error)); QVERIFY(disk.values.empty());
+        QVERIFY(store.Read(disk, error)); QCOMPARE(disk.values.size(), size_t(10));
+        QVERIFY(!disk.values.count("model_region"));
+        QCOMPARE(disk.values.at("model_x"), std::string("0"));
+        QCOMPARE(disk.values.at("model_y"), std::string("0"));
+        QCOMPARE(disk.values.at("model_scale"), std::string("1"));
         QVERIFY(!width->isEnabled());
 
         // Polling reflects edits initiated in the model window and unlocks the

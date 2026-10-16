@@ -1,111 +1,27 @@
 #include "LAppConfig.hpp"
-#include <fstream>
-#include <sstream>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
-#include <unistd.h>
-#include <sys/types.h>
+#include <fstream>
+#include <iomanip>
+#include <limits>
+#include <locale>
 #include <pwd.h>
-#include <cstdio>
-#include <regex>
-#include <cmath>
+#include <sstream>
+#include <unistd.h>
 
 namespace {
-// Advance past a complete quoted token so braces, colons and escaped quotes
-// inside string values never participate in the structural scan.
-void SkipJsonString(const std::string& content, size_t& pos)
+std::string Quote(const std::string& text)
 {
-    ++pos;
-    while (pos < content.size())
-    {
-        const char c = content[pos++];
-        if (c == '"') return;
-        if (c == '\\' && pos < content.size()) ++pos;
+    std::string result = "\"";
+    const char* hex = "0123456789abcdef";
+    for (unsigned char c : text) {
+        if (c == '"' || c == '\\') { result += '\\'; result += c; }
+        else if (c < 0x20) {
+            result += "\\u00"; result += hex[c >> 4]; result += hex[c & 15];
+        } else result += c;
     }
-}
-
-bool FindTopLevelValue(const std::string& content, const std::string& key, std::string& value)
-{
-    const size_t root = content.find_first_not_of(" \t\r\n");
-    if (root == std::string::npos || content[root] != '{') return false;
-    int depth = 0;
-    for (size_t pos = root; pos < content.size();)
-    {
-        const char c = content[pos];
-        if (c == '"')
-        {
-            const size_t start = pos;
-            SkipJsonString(content, pos);
-            if (depth != 1 || content.substr(start, pos - start) != "\"" + key + "\"") continue;
-            const size_t colon = content.find_first_not_of(" \t\r\n", pos);
-            // The same token as a string value or array element is not a key.
-            if (colon == std::string::npos || content[colon] != ':') continue;
-            const size_t begin = colon + 1;
-            pos = begin;
-            int nested = 0;
-            while (pos < content.size())
-            {
-                const char token = content[pos];
-                if (token == '"') { SkipJsonString(content, pos); continue; }
-                if (nested == 0 && (token == ',' || token == '}')) break;
-                if (token == '{' || token == '[') ++nested;
-                else if (token == '}' || token == ']') --nested;
-                ++pos;
-            }
-            value = content.substr(begin, pos - begin);
-            return true;
-        }
-        if (c == '{' || c == '[') ++depth;
-        else if (c == '}' || c == ']')
-        {
-            --depth;
-            if (depth == 0) break;
-        }
-        ++pos;
-    }
-    return false;
-}
-
-bool ParseModelRegion(const std::string& content, bool& configured, ModelRegion& region)
-{
-    std::string value;
-    if (!FindTopLevelValue(content, "model_region", value)) return true;
-    const std::regex object("\\s*\\{([^{}]*)\\}\\s*");
-    std::smatch match;
-    bool valid = std::regex_match(value, match, object);
-    if (valid)
-    {
-        std::string members = match[1].str();
-        const std::regex member("^\\s*\"(x|y|width|height)\"\\s*:\\s*(-?(?:0|[1-9][0-9]*))\\s*(,|$)");
-        bool seen[4] = {};
-        while (!members.empty())
-        {
-            if (!std::regex_search(members, match, member)) { valid = false; break; }
-            const std::string key = match[1].str();
-            const int index = key == "x" ? 0 : key == "y" ? 1 : key == "width" ? 2 : 3;
-            if (seen[index]) { valid = false; break; }
-            seen[index] = true;
-            int value;
-            try { value = std::stoi(match[2].str()); }
-            catch (...) { valid = false; break; }
-            if (index == 0) region.x = value;
-            else if (index == 1) region.y = value;
-            else if (index == 2) region.width = value;
-            else region.height = value;
-            const bool comma = match[3].str() == ",";
-            members = match.suffix().str();
-            if (comma && members.find_first_not_of(" \t\r\n") == std::string::npos)
-            { valid = false; break; }
-        }
-        valid = valid && seen[2] && seen[3] && region.width > 0 && region.height > 0;
-    }
-    if (!valid)
-    {
-        std::fprintf(stderr, "[Config] Invalid model_region: expected integer x/y and positive integer width/height\n");
-        return false;
-    }
-    configured = true;
-    return true;
+    return result + '"';
 }
 }
 
@@ -143,199 +59,109 @@ std::string LAppConfig::ExpandTilde(const std::string& path)
     return std::string(homeDir) + path.substr(1);
 }
 
-std::string LAppConfig::Trim(const std::string& s)
-{
-    size_t start = s.find_first_not_of(" \t\r\n");
-    if (start == std::string::npos) return "";
-    size_t end = s.find_last_not_of(" \t\r\n");
-    return s.substr(start, end - start + 1);
-}
-
-std::string LAppConfig::ParseStringValue(const std::string& s, const std::string& key)
-{
-    std::string pattern = "\"" + key + "\"";
-    size_t pos = s.find(pattern);
-    if (pos == std::string::npos) return "";
-
-    pos = s.find(':', pos + pattern.size());
-    if (pos == std::string::npos) return "";
-
-    pos = s.find('"', pos + 1);
-    if (pos == std::string::npos) return "";
-
-    size_t end = s.find('"', pos + 1);
-    if (end == std::string::npos) return "";
-
-    return s.substr(pos + 1, end - pos - 1);
-}
-
-float LAppConfig::ParseFloatValue(const std::string& s, const std::string& key, float defaultVal)
-{
-    std::string pattern = "\"" + key + "\"";
-    size_t pos = s.find(pattern);
-    if (pos == std::string::npos) return defaultVal;
-
-    pos = s.find(':', pos + pattern.size());
-    if (pos == std::string::npos) return defaultVal;
-
-    pos++;
-    while (pos < s.size() && (s[pos] == ' ' || s[pos] == '\t')) pos++;
-
-    try {
-        return std::stof(s.substr(pos));
-    } catch (...) {
-        return defaultVal;
-    }
-}
-
-int LAppConfig::ParseIntValue(const std::string& s, const std::string& key, int defaultVal)
-{
-    std::string pattern = "\"" + key + "\"";
-    size_t pos = s.find(pattern);
-    if (pos == std::string::npos) return defaultVal;
-
-    pos = s.find(':', pos + pattern.size());
-    if (pos == std::string::npos) return defaultVal;
-
-    pos++;
-    while (pos < s.size() && (s[pos] == ' ' || s[pos] == '\t')) pos++;
-
-    try {
-        return std::stoi(s.substr(pos));
-    } catch (...) {
-        return defaultVal;
-    }
-}
-
-std::vector<std::string> LAppConfig::ParseStringArray(const std::string& s, const std::string& key)
-{
-    std::vector<std::string> result;
-    std::string pattern = "\"" + key + "\"";
-    size_t pos = s.find(pattern);
-    if (pos == std::string::npos) return result;
-
-    pos = s.find('[', pos + pattern.size());
-    if (pos == std::string::npos) return result;
-
-    size_t end = s.find(']', pos);
-    if (end == std::string::npos) return result;
-
-    std::string arrayContent = s.substr(pos + 1, end - pos - 1);
-
-    size_t cur = 0;
-    while (cur < arrayContent.size())
-    {
-        size_t qStart = arrayContent.find('"', cur);
-        if (qStart == std::string::npos) break;
-
-        size_t qEnd = arrayContent.find('"', qStart + 1);
-        if (qEnd == std::string::npos) break;
-
-        result.push_back(arrayContent.substr(qStart + 1, qEnd - qStart - 1));
-        cur = qEnd + 1;
-    }
-
-    return result;
-}
-
-std::string LAppConfig::StripComments(const std::string& s)
-{
-    std::string result;
-    result.reserve(s.size());
-    bool inString = false;
-
-    for (size_t i = 0; i < s.size(); i++)
-    {
-        if (inString)
-        {
-            result += s[i];
-            if (s[i] == '\\' && i + 1 < s.size())
-            {
-                result += s[++i];
-            }
-            else if (s[i] == '"')
-            {
-                inString = false;
-            }
-        }
-        else if (s[i] == '"')
-        {
-            inString = true;
-            result += s[i];
-        }
-        else if (s[i] == '/' && i + 1 < s.size() && s[i + 1] == '/')
-        {
-            // Skip until end of line
-            while (i < s.size() && s[i] != '\n') i++;
-            if (i < s.size()) result += '\n';
-        }
-        else
-        {
-            result += s[i];
-        }
-    }
-
-    return result;
-}
-
 bool LAppConfig::LoadFromFile(const std::string& path)
 {
     sourcePath = path;
+    // Unlike ConfigStore::Read, startup distinguishes a missing file from {}.
     std::ifstream file(path);
-    if (!file.is_open())
-    {
-        return false;
+    if (!file.is_open()) return false;
+    std::stringstream text; text << file.rdbuf();
+    ConfigStore::Snapshot snapshot;
+    std::string error;
+    return ConfigStore::Parse(text.str(), snapshot, error) && Decode(snapshot, values, error);
+}
+
+bool LAppConfig::Decode(const ConfigStore::Snapshot& snapshot, Values& values, std::string& error)
+{
+    Values next;
+    const auto string = [&](const char* key, std::string& value) {
+        const auto it = snapshot.values.find(key);
+        return it == snapshot.values.end() || ConfigStore::ParseString(it->second, value);
+    };
+    auto dirs = snapshot.values.find("additional_model_dirs");
+    if ((dirs != snapshot.values.end() && !ConfigStore::ParseStringArray(dirs->second, next.additionalModelDirs)) ||
+        !string("default_model", next.defaultModel)) {
+        error = "Invalid model paths in config"; return false;
     }
-
-    std::stringstream ss;
-    ss << file.rdbuf();
-    std::string content = StripComments(ss.str());
-
-    bool regionConfigured = false;
-    ModelRegion region;
-    if (!ParseModelRegion(content, regionConfigured, region)) return false;
-
-    bool hoverEnabled = false;
-    float hoverAlpha = 0.5f;
-    std::string value;
-    if (FindTopLevelValue(content, "hover_opacity_enabled", value)) {
-        value = Trim(value);
-        if (value != "true" && value != "false") {
-            std::fprintf(stderr, "[Config] Invalid hover_opacity_enabled: expected a boolean\n");
-            return false;
+    // Missing or unconvertible legacy numeric fields keep construction defaults.
+    const auto number = [&](const char* key, auto& destination) {
+        const auto it = snapshot.values.find(key);
+        if (it == snapshot.values.end()) return;
+        std::istringstream input(it->second); input.imbue(std::locale::classic());
+        auto parsed = destination;
+        if ((input >> parsed) && input.peek() == std::char_traits<char>::eof() && std::isfinite(parsed)) destination = parsed;
+    };
+    number("emotion_timeout", next.emotionTimeout);
+    number("model_scale", next.modelScale);
+    number("model_x", next.modelX);
+    number("model_y", next.modelY);
+    number("window_width", next.windowWidth);
+    number("window_height", next.windowHeight);
+    auto enabled = snapshot.values.find("hover_opacity_enabled");
+    if (enabled != snapshot.values.end()) {
+        if (enabled->second != "true" && enabled->second != "false") {
+            error = "Invalid hover_opacity_enabled: expected a boolean"; return false;
         }
-        hoverEnabled = value == "true";
+        next.hoverOpacityEnabled = enabled->second == "true";
     }
-    if (FindTopLevelValue(content, "hover_opacity", value)) {
-        value = Trim(value);
-        const std::regex number("-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?");
-        bool valid = std::regex_match(value, number);
-        if (valid) {
-            try { hoverAlpha = std::stof(value); }
-            catch (...) { valid = false; }
+    auto opacity = snapshot.values.find("hover_opacity");
+    if (opacity != snapshot.values.end()) {
+        std::istringstream input(opacity->second); input.imbue(std::locale::classic());
+        double parsed;
+        if (!(input >> parsed) || input.peek() != std::char_traits<char>::eof() ||
+            !std::isfinite(parsed) || parsed < 0 || parsed > 1) {
+            error = "Invalid hover_opacity: expected a finite number within 0..1"; return false;
         }
-        if (!valid || !std::isfinite(hoverAlpha) || hoverAlpha < 0 || hoverAlpha > 1) {
-            std::fprintf(stderr, "[Config] Invalid hover_opacity: expected a finite number within 0..1\n");
-            return false;
+        next.hoverOpacity = static_cast<float>(parsed);
+    }
+    auto region = snapshot.values.find("model_region");
+    if (region != snapshot.values.end()) {
+        ConfigStore::Snapshot rectangle;
+        if (!ConfigStore::Parse(region->second, rectangle, error)) return false;
+        ModelRegion parsed;
+        for (const auto& field : rectangle.values) {
+            int* destination = field.first == "x" ? &parsed.x : field.first == "y" ? &parsed.y
+                : field.first == "width" ? &parsed.width : field.first == "height" ? &parsed.height : nullptr;
+            if (!destination || field.second.find_first_not_of("-0123456789") != std::string::npos) {
+                error = "Invalid integer model_region"; return false;
+            }
+            try { *destination = std::stoi(field.second); }
+            catch (...) { error = "Invalid integer model_region"; return false; }
         }
+        if (!rectangle.values.count("width") || !rectangle.values.count("height") || parsed.width <= 0 || parsed.height <= 0) {
+            error = "Crop dimensions must be positive integers"; return false;
+        }
+        next.modelRegion = parsed;
     }
+    values = std::move(next); error.clear(); return true;
+}
 
-    additionalModelDirs = ParseStringArray(content, "additional_model_dirs");
-    for (size_t i = 0; i < additionalModelDirs.size(); i++)
-    {
-        additionalModelDirs[i] = ExpandTilde(additionalModelDirs[i]);
+bool LAppConfig::Serialize(const Values& values, std::string& document, std::string& error)
+{
+    std::ostringstream out; out.imbue(std::locale::classic());
+    out << std::setprecision(std::numeric_limits<float>::max_digits10);
+    out << "{\n  \"additional_model_dirs\": [";
+    for (size_t i = 0; i < values.additionalModelDirs.size(); ++i) {
+        if (i) out << ", ";
+        out << Quote(values.additionalModelDirs[i]);
     }
-    defaultModel = ParseStringValue(content, "default_model");
-    emotionTimeout = ParseFloatValue(content, "emotion_timeout", 5.0f);
-    modelScale = ParseFloatValue(content, "model_scale", 1.0f);
-    modelX = ParseFloatValue(content, "model_x", 0.0f);
-    modelY = ParseFloatValue(content, "model_y", 0.0f);
-    windowWidth = ParseIntValue(content, "window_width", 1900);
-    windowHeight = ParseIntValue(content, "window_height", 1000);
-    hoverOpacityEnabled = hoverEnabled;
-    hoverOpacity = hoverAlpha;
-    hasModelRegion = regionConfigured;
-    modelRegion = region;
-
-    return true;
+    out << "],\n  \"default_model\": " << Quote(values.defaultModel)
+        << ",\n  \"emotion_timeout\": " << values.emotionTimeout
+        << ",\n  \"model_scale\": " << values.modelScale
+        << ",\n  \"model_x\": " << values.modelX
+        << ",\n  \"model_y\": " << values.modelY
+        << ",\n  \"window_width\": " << values.windowWidth
+        << ",\n  \"window_height\": " << values.windowHeight
+        << ",\n  \"hover_opacity_enabled\": " << (values.hoverOpacityEnabled ? "true" : "false")
+        << ",\n  \"hover_opacity\": " << values.hoverOpacity;
+    if (values.modelRegion) {
+        const auto& r = *values.modelRegion;
+        out << ",\n  \"model_region\": {\"x\": " << r.x << ", \"y\": " << r.y
+            << ", \"width\": " << r.width << ", \"height\": " << r.height << '}';
+    }
+    out << "\n}\n";
+    ConfigStore::Snapshot snapshot; Values check;
+    const std::string result = out.str();
+    if (!ConfigStore::Parse(result, snapshot, error) || !Decode(snapshot, check, error)) return false;
+    document = result; return true;
 }

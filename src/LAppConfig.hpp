@@ -1,38 +1,38 @@
 #pragma once
 
 #include <string>
+#include <experimental/optional>
 #include <vector>
 #include "ModelRegion.hpp"
+#include "ConfigStore.hpp"
 
 struct LAppConfig
 {
-    std::vector<std::string> additionalModelDirs;
-    std::string defaultModel;
-    float emotionTimeout = 5.0f;
-    float modelScale = 1.0f;
-    float modelX = 0.0f;
-    float modelY = 0.0f;
-    int windowWidth = 1900;
-    int windowHeight = 1000;
-    bool hoverOpacityEnabled = false;
-    float hoverOpacity = 0.5f;
-    bool hasModelRegion = false;
-    ModelRegion modelRegion;
+    // Only persisted fields belong here; runtime bookkeeping stays outside.
+    struct Values
+    {
+        std::vector<std::string> additionalModelDirs;
+        std::string defaultModel;
+        float emotionTimeout = 5.0f;
+        float modelScale = 1.0f;
+        float modelX = 0.0f;
+        float modelY = 0.0f;
+        int windowWidth = 1900;
+        int windowHeight = 1000;
+        bool hoverOpacityEnabled = false;
+        float hoverOpacity = 0.5f;
+        std::experimental::optional<ModelRegion> modelRegion;
+    };
+    Values values;
     std::string sourcePath;
 
     static LAppConfig& GetInstance();
 
     bool LoadFromFile(const std::string& path);
+    static bool Decode(const ConfigStore::Snapshot& snapshot, Values& values, std::string& error);
+    static bool Serialize(const Values& values, std::string& document, std::string& error);
 
     static std::string GetDefaultConfigPath();
 
     static std::string ExpandTilde(const std::string& path);
-
-private:
-    static std::string Trim(const std::string& s);
-    static std::string ParseStringValue(const std::string& s, const std::string& key);
-    static float ParseFloatValue(const std::string& s, const std::string& key, float defaultVal);
-    static int ParseIntValue(const std::string& s, const std::string& key, int defaultVal);
-    static std::vector<std::string> ParseStringArray(const std::string& s, const std::string& key);
-    static std::string StripComments(const std::string& s);
 };
