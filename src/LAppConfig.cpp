@@ -8,6 +8,7 @@
 #include <pwd.h>
 #include <cstdio>
 #include <regex>
+#include <cmath>
 
 namespace {
 // Advance past a complete quoted token so braces, colons and escaped quotes
@@ -23,7 +24,7 @@ void SkipJsonString(const std::string& content, size_t& pos)
     }
 }
 
-bool FindTopLevelModelRegion(const std::string& content, std::string& value)
+bool FindTopLevelValue(const std::string& content, const std::string& key, std::string& value)
 {
     const size_t root = content.find_first_not_of(" \t\r\n");
     if (root == std::string::npos || content[root] != '{') return false;
@@ -35,7 +36,7 @@ bool FindTopLevelModelRegion(const std::string& content, std::string& value)
         {
             const size_t start = pos;
             SkipJsonString(content, pos);
-            if (depth != 1 || content.substr(start, pos - start) != "\"model_region\"") continue;
+            if (depth != 1 || content.substr(start, pos - start) != "\"" + key + "\"") continue;
             const size_t colon = content.find_first_not_of(" \t\r\n", pos);
             // The same token as a string value or array element is not a key.
             if (colon == std::string::npos || content[colon] != ':') continue;
@@ -68,7 +69,7 @@ bool FindTopLevelModelRegion(const std::string& content, std::string& value)
 bool ParseModelRegion(const std::string& content, bool& configured, ModelRegion& region)
 {
     std::string value;
-    if (!FindTopLevelModelRegion(content, value)) return true;
+    if (!FindTopLevelValue(content, "model_region", value)) return true;
     const std::regex object("\\s*\\{([^{}]*)\\}\\s*");
     std::smatch match;
     bool valid = std::regex_match(value, match, object);
@@ -294,6 +295,31 @@ bool LAppConfig::LoadFromFile(const std::string& path)
     ModelRegion region;
     if (!ParseModelRegion(content, regionConfigured, region)) return false;
 
+    bool hoverEnabled = false;
+    float hoverAlpha = 0.5f;
+    std::string value;
+    if (FindTopLevelValue(content, "hover_opacity_enabled", value)) {
+        value = Trim(value);
+        if (value != "true" && value != "false") {
+            std::fprintf(stderr, "[Config] Invalid hover_opacity_enabled: expected a boolean\n");
+            return false;
+        }
+        hoverEnabled = value == "true";
+    }
+    if (FindTopLevelValue(content, "hover_opacity", value)) {
+        value = Trim(value);
+        const std::regex number("-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?");
+        bool valid = std::regex_match(value, number);
+        if (valid) {
+            try { hoverAlpha = std::stof(value); }
+            catch (...) { valid = false; }
+        }
+        if (!valid || !std::isfinite(hoverAlpha) || hoverAlpha < 0 || hoverAlpha > 1) {
+            std::fprintf(stderr, "[Config] Invalid hover_opacity: expected a finite number within 0..1\n");
+            return false;
+        }
+    }
+
     additionalModelDirs = ParseStringArray(content, "additional_model_dirs");
     for (size_t i = 0; i < additionalModelDirs.size(); i++)
     {
@@ -306,6 +332,8 @@ bool LAppConfig::LoadFromFile(const std::string& path)
     modelY = ParseFloatValue(content, "model_y", 0.0f);
     windowWidth = ParseIntValue(content, "window_width", 1900);
     windowHeight = ParseIntValue(content, "window_height", 1000);
+    hoverOpacityEnabled = hoverEnabled;
+    hoverOpacity = hoverAlpha;
     hasModelRegion = regionConfigured;
     modelRegion = region;
 

@@ -130,6 +130,27 @@ void LAppView::Render(ModelTransform transform, const ModelFrameInput& input)
     }
 }
 
+void LAppView::PresentOpacityFrame(float opacity)
+{
+    _opacityFrame.Present(opacity, [this](GLuint texture, float alpha) {
+        const GLfloat uv[] = {1, 1, 0, 1, 0, 0, 1, 0};
+        glUseProgram(_spriteShader->GetShaderId());
+        glActiveTexture(GL_TEXTURE0);
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+        glEnable(GL_BLEND);
+        glBlendEquation(GL_FUNC_ADD);
+        glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+        glDisable(GL_DEPTH_TEST);
+        glDisable(GL_CULL_FACE);
+        glDisable(GL_SCISSOR_TEST);
+        glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+        // Both RGB and alpha must be scaled for premultiplied-alpha blending.
+        _renderSprite->SetColor(alpha, alpha, alpha, alpha);
+        _renderSprite->RenderImmidiate(texture, uv);
+        _renderSprite->SetColor(1, 1, 1, 1);
+    });
+}
+
 void LAppView::InitializeSprite()
 {
     GLuint programId = _spriteShader->GetShaderId();

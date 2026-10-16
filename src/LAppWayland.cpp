@@ -17,9 +17,12 @@ static void ApplyLayerKeyboardInteractivity(WaylandContext* wl) {
 // --- Wayland Pointer Handlers ---
 static void pointer_handle_enter(void *data, struct wl_pointer *wl_pointer, uint32_t serial, struct wl_surface *surface, wl_fixed_t surface_x, wl_fixed_t surface_y) {
     auto* wl = static_cast<WaylandContext*>(data);
-    if (wl->events) wl->events->PointerEntered(wl_fixed_to_double(surface_x), wl_fixed_to_double(surface_y));
+    if (wl->events && surface == wl->surface) wl->events->PointerEntered(wl_fixed_to_double(surface_x), wl_fixed_to_double(surface_y));
 }
-static void pointer_handle_leave(void *, struct wl_pointer *, uint32_t, struct wl_surface *) {}
+static void pointer_handle_leave(void *data, struct wl_pointer *, uint32_t, struct wl_surface *surface) {
+    auto* wl = static_cast<WaylandContext*>(data);
+    if (wl->events && surface == wl->surface) wl->events->PointerLeft();
+}
 static void pointer_handle_motion(void *data, struct wl_pointer *wl_pointer, uint32_t time, wl_fixed_t surface_x, wl_fixed_t surface_y) {
     double x = wl_fixed_to_double(surface_x);
     double y = wl_fixed_to_double(surface_y);
@@ -81,6 +84,7 @@ static void seat_handle_capabilities(void *data, struct wl_seat *seat, uint32_t 
         wl->pointer = wl_seat_get_pointer(seat);
         wl_pointer_add_listener(wl->pointer, &pointer_listener, wl);
     } else if (!(caps & WL_SEAT_CAPABILITY_POINTER) && wl->pointer) {
+        if (wl->events) wl->events->PointerLeft();
         wl_pointer_release(wl->pointer);
         wl->pointer = nullptr;
     }
@@ -461,6 +465,7 @@ bool WaylandBackend::SwitchOutput(OutputId id)
 
     _wl.egl_window = window;
     _wl.egl_surface = eglSurface;
+    if (_wl.events) _wl.events->PointerLeft();
     if (previousEgl != EGL_NO_SURFACE) eglDestroySurface(_wl.egl_display, previousEgl);
     if (previousWindow) wl_egl_window_destroy(previousWindow);
     if (previousLayer) zwlr_layer_surface_v1_destroy(previousLayer);

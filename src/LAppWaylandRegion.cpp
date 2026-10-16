@@ -62,36 +62,27 @@ void DrawWaylandEditFrame(const std::vector<ModelRegion>& handles, int width, in
     glColorMask(mask[0], mask[1], mask[2], mask[3]);
 }
 
-void UpdateWaylandInputRegion(WaylandContext* wl, ModelRegion clip, const std::vector<ModelRegion>& handles) {
+std::vector<ModelRegion> ReadModelInputRegion(unsigned int framebuffer, int width, int height,
+    ModelRegion clip, std::vector<unsigned char>& pixels) {
+    if (width <= 0 || height <= 0) return {};
+    GLint previous;
+    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &previous);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer);
+    pixels.resize(size_t(width) * height * 4);
+    glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, previous);
+    return ExtractModelInputRegion(pixels.data(), width, height, clip);
+}
+
+void UpdateWaylandInputRegion(WaylandContext* wl, const std::vector<ModelRegion>& modelRegions,
+    const std::vector<ModelRegion>& handles) {
     if (!wl || !wl->compositor || !wl->surface) return;
-
-    int width = wl->width;
-    int height = wl->height;
-    if (width <= 0 || height <= 0) return;
-
-    // Use a downsampled buffer to avoid freezing the GPU pipeline with huge glReadPixels
-    // Downsample factor:
-    const int DOWNSAMPLE = 8;
-    int rw = width / DOWNSAMPLE;
-    int rh = height / DOWNSAMPLE;
-
-    std::vector<unsigned char> pixels(rw * rh * 4);
-
-    // Read a 1/8 downsampled screen! 
-    // To do this we could use glBlitFramebuffer, but GLES2 doesn't have it natively.
-    // Instead we just read the full frame buffer with a step size? No, glReadPixels reads a continuous block.
-    // Reading 1920x1080 takes ~2ms. We can afford to read it all and downsample on CPU.
-    
-    std::vector<unsigned char> full_pixels(width * height * 4);
-    glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, full_pixels.data());
-
     wl_region* region = wl_compositor_create_region(wl->compositor);
     if (!region) return;
-    for (const auto box : BuildModelInputRegion(full_pixels, width, height, clip))
+    for (const auto& box : modelRegions)
         wl_region_add(region, box.x, box.y, box.width, box.height);
-
     for (auto handle : handles) {
-        auto box = IntersectModelRegions(handle, {0, 0, width, height});
+        auto box = IntersectModelRegions(handle, {0, 0, wl->width, wl->height});
         if (box.width > 0 && box.height > 0) wl_region_add(region, box.x, box.y, box.width, box.height);
     }
     wl_surface_set_input_region(wl->surface, region);

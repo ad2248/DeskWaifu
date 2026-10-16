@@ -14,7 +14,7 @@ int main()
     // Non-block-aligned dimensions exercise both partial rows and columns.
     const int width = 27, height = 27;
     std::vector<unsigned char> pixels(width * height * 4, 255);
-    const auto full = BuildModelInputRegion(pixels, width, height, {0, 0, width, height});
+    const auto full = ExtractModelInputRegion(pixels.data(), width, height, {0, 0, width, height});
     CHECK(full.size() == 3);
     CHECK(Equal(full[0], {0, 17, 27, 10}));
     CHECK(Equal(full[1], {0, 7, 27, 10}));
@@ -26,7 +26,7 @@ int main()
         ModelRegion{-8, 0, 4, 9}, ModelRegion{0, -8, 9, 4}, ModelRegion{}})
     {
         const auto clip = ResolveModelRegion(true, requested, width, height);
-        const auto rectangles = BuildModelInputRegion(pixels, width, height, clip);
+        const auto rectangles = ExtractModelInputRegion(pixels.data(), width, height, requested);
         for (const auto box : rectangles) {
             CHECK(box.width > 0 && box.height > 0);
             CHECK(Equal(IntersectModelRegions(box, clip), box));
@@ -48,22 +48,23 @@ int main()
 
     // Transparent gaps split horizontal runs; alpha 10 is transparent, 11 is not.
     pixels.assign(width * height * 4, 0);
-    CHECK(BuildModelInputRegion(pixels, width, height, {0, 0, width, height}).empty());
+    CHECK(ExtractModelInputRegion(pixels.data(), width, height, {0, 0, width, height}).empty());
     pixels[(5 * width + 5) * 4 + 3] = 11;
     pixels[(5 * width + 15) * 4 + 3] = 10;
-    pixels[(5 * width + 25) * 4 + 3] = 255;
+    pixels[(5 * width + 23) * 4 + 3] = 255;
     pixels[(15 * width + 5) * 4 + 3] = 255;
     pixels[(15 * width + 15) * 4 + 3] = 255;
-    const auto sparse = BuildModelInputRegion(pixels, width, height, {0, 0, width, height});
+    const auto sparse = ExtractModelInputRegion(pixels.data(), width, height, {0, 0, width, height});
     CHECK(sparse.size() == 3);
     CHECK(Equal(sparse[0], {0, 17, 10, 10}));
     CHECK(Equal(sparse[1], {20, 17, 7, 10}));
     CHECK(Equal(sparse[2], {0, 7, 20, 10}));
 
-    // A partial block with its center outside the surface remains unsampled.
+    // Partial edge blocks use their actual dimensions for sampling and Y conversion.
     pixels.assign(23 * 24 * 4, 255);
-    const auto shortEdges = BuildModelInputRegion(pixels, 23, 24, {0, 0, 23, 24});
-    CHECK(shortEdges.size() == 2);
-    CHECK(Equal(shortEdges[0], {0, 14, 20, 10}));
-    CHECK(Equal(shortEdges[1], {0, 4, 20, 10}));
+    const auto shortEdges = ExtractModelInputRegion(pixels.data(), 23, 24, {0, 0, 23, 24});
+    CHECK(shortEdges.size() == 3);
+    CHECK(Equal(shortEdges[0], {0, 14, 23, 10}));
+    CHECK(Equal(shortEdges[1], {0, 4, 23, 10}));
+    CHECK(Equal(shortEdges[2], {0, 0, 23, 4}));
 }

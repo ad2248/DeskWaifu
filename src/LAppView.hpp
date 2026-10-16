@@ -17,6 +17,7 @@
 #include "LAppView_Common.hpp"
 #include "ModelTransform.hpp"
 #include "ModelFrameInput.hpp"
+#include "ModelOpacityFrame.hpp"
 
 class TouchManager_Common;
 class LAppSprite;
@@ -61,6 +62,10 @@ public:
     * @brief 描画する。
     */
     void Render(ModelTransform transform, const ModelFrameInput& input);
+
+    bool BeginOpacityFrame() { return _opacityFrame.Begin(_width, _height); }
+    GLuint OpacityFramebuffer() const { return _opacityFrame.Framebuffer(); }
+    void PresentOpacityFrame(float opacity);
 
     /**
     * @brief 画像の初期化を行う。
@@ -147,4 +152,5 @@ private:
     float _clearColor[4];           ///< レンダリングターゲットのクリアカラー
 
     LAppSpriteShader* _spriteShader;  ///< シェーダー作成委譲クラス
+    ModelOpacityFrame _opacityFrame;
 };
