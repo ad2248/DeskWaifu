@@ -256,7 +256,8 @@ bool LAppDelegate::Run()
             ClipWaylandModelRegion(region, _windowWidth, _windowHeight);
             if (_settings->ScreenEditing()) {
                 DrawWaylandEditFrame(handles, _windowWidth, _windowHeight);
-                UpdateWaylandInputRegion(&_wlContext, modelRegions, handles);
+                // Capture outside clicks to finish editing; normal mode restores click-through.
+                UpdateWaylandInputRegion(&_wlContext, {{0, 0, _windowWidth, _windowHeight}});
             } else UpdateWaylandInputRegion(&_wlContext, modelRegions);
         }
         if (state.hidden && !_settings->ScreenEditing()) ClearWaylandInputRegion(&_wlContext);
