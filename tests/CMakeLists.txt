@@ -138,6 +138,21 @@ add_executable(model-frame-test ModelFrameTest.cpp)
 target_link_libraries(model-frame-test PRIVATE deskwaifu_input)
 add_test(NAME model-frame COMMAND model-frame-test)
 
+add_executable(model-gaze-test ModelGazeTest.cpp
+  ../src/LAppModel.cpp ../src/ModelHotkeys.cpp ../src/LAppPal.cpp
+  ../src/LAppDefine.cpp ../src/LAppTextureManager.cpp
+  ${COMMON_SRC_PATH}/LAppAllocator_Common.cpp
+  ${COMMON_SRC_PATH}/LAppModel_Common.cpp
+  ${COMMON_SRC_PATH}/LAppTextureManager_Common.cpp
+  ${COMMON_SRC_PATH}/LAppWavFileHandler_Common.cpp)
+target_include_directories(model-gaze-test PRIVATE ../src ${COMMON_SRC_PATH}
+  ${STB_PATH} ${CMAKE_BINARY_DIR}/generated)
+target_link_libraries(model-gaze-test PRIVATE Framework OpenGL::EGL)
+target_compile_definitions(model-gaze-test PRIVATE SDK_RESOURCES="${SDK_ROOT_PATH}/Samples/Resources")
+add_test(NAME model-gaze COMMAND model-gaze-test)
+set_tests_properties(model-gaze PROPERTIES
+  ENVIRONMENT "EGL_PLATFORM=surfaceless" SKIP_RETURN_CODE 77)
+
 add_executable(application-service-test ApplicationServiceTest.cpp)
 target_include_directories(application-service-test PRIVATE ../src)
 add_test(NAME application-service COMMAND application-service-test)
