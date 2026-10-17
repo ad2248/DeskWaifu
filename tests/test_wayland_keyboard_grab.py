@@ -9,15 +9,12 @@ SOURCE = Path(__file__).resolve().parents[1] / "src/LAppWayland.cpp"
 
 
 class WaylandKeyboardGrabTest(unittest.TestCase):
-    def test_screen_edit_captures_outside_clicks_and_restores_model_input(self):
+    def test_screen_edit_uses_tested_frame_input_region_update(self):
         source = (SOURCE.parent / "LAppDelegate.cpp").read_text()
         self.assertRegex(
             source,
-            r"if \(_settings->ScreenEditing\(\)\) \{\s*"
-            r"DrawWaylandEditFrame\([^;]+;\s*"
-            r"//[^\n]*\n\s*"
-            r"UpdateWaylandInputRegion\(&_wlContext, \{\{0, 0, _windowWidth, _windowHeight\}\}\);\s*"
-            r"\} else UpdateWaylandInputRegion\(&_wlContext, modelRegions\);",
+            r"UpdateWaylandFrameInputRegion\(&_wlContext, _settings->ScreenEditing\(\),\s*"
+            r"_windowWidth, _windowHeight, modelRegions\);",
         )
 
     def test_each_created_layer_covers_reserved_panel_area(self):

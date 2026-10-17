@@ -261,11 +261,10 @@ bool LAppDelegate::Run()
             if (opacityFrame)
                 _view->PresentOpacityFrame(_hoverOpacity.Resolve(true, _hoverSettings->Opacity(), modelRegions, handles));
             ClipWaylandModelRegion(region, _windowWidth, _windowHeight);
-            if (_settings->ScreenEditing()) {
+            if (_settings->ScreenEditing())
                 DrawWaylandEditFrame(handles, _windowWidth, _windowHeight);
-                // Capture outside clicks to finish editing; normal mode restores click-through.
-                UpdateWaylandInputRegion(&_wlContext, {{0, 0, _windowWidth, _windowHeight}});
-            } else UpdateWaylandInputRegion(&_wlContext, modelRegions);
+            UpdateWaylandFrameInputRegion(&_wlContext, _settings->ScreenEditing(),
+                _windowWidth, _windowHeight, modelRegions);
         }
         if (state.hidden && !_settings->ScreenEditing()) ClearWaylandInputRegion(&_wlContext);
         eglSwapBuffers(_wlContext.egl_display, _wlContext.egl_surface);

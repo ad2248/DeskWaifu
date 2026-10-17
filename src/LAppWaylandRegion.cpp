@@ -74,6 +74,13 @@ std::vector<ModelRegion> ReadModelInputRegion(unsigned int framebuffer, int widt
     return ExtractModelInputRegion(pixels.data(), width, height, clip);
 }
 
+void UpdateWaylandFrameInputRegion(WaylandContext* wl, bool screenEditing, int width, int height,
+    const std::vector<ModelRegion>& modelRegions) {
+    // Capture outside clicks while editing; otherwise restore model click-through.
+    if (screenEditing) UpdateWaylandInputRegion(wl, {{0, 0, width, height}});
+    else UpdateWaylandInputRegion(wl, modelRegions);
+}
+
 void UpdateWaylandInputRegion(WaylandContext* wl, const std::vector<ModelRegion>& modelRegions,
     const std::vector<ModelRegion>& handles) {
     if (!wl || !wl->compositor || !wl->surface) return;

@@ -79,6 +79,15 @@ add_test(NAME model-region-render COMMAND model-region-render-test)
 set_tests_properties(model-region-render PROPERTIES
   ENVIRONMENT "EGL_PLATFORM=surfaceless" SKIP_RETURN_CODE 77)
 
+add_executable(wayland-edit-input-region-test WaylandEditInputRegionTest.cpp
+  ../src/LAppWaylandRegion.cpp ../src/ConfigStore.cpp ../src/LAppConfig.cpp ../src/InputController.cpp)
+add_dependencies(wayland-edit-input-region-test ${APP_NAME}) # Generated Wayland protocol headers.
+target_include_directories(wayland-edit-input-region-test PRIVATE ../src ${WAYLAND_GEN_DIR} ${WAYLAND_INCLUDE_DIRS} ${GLEW_PATH}/include)
+target_link_libraries(wayland-edit-input-region-test PRIVATE Framework glew_s OpenGL::EGL ${WAYLAND_LIBRARIES})
+target_link_options(wayland-edit-input-region-test PRIVATE
+  -Wl,--wrap=wl_proxy_marshal_flags -Wl,--wrap=wl_proxy_get_version)
+add_test(NAME wayland-edit-input-region COMMAND wayland-edit-input-region-test)
+
 add_executable(failure-diagnostics-test FailureDiagnosticsTest.cpp)
 target_include_directories(failure-diagnostics-test PRIVATE ../src)
 add_test(NAME failure-diagnostics COMMAND failure-diagnostics-test)
