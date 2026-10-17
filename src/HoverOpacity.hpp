@@ -10,10 +10,10 @@ public:
     void Leave() { _inside = false; }
 
     float Resolve(bool enabled, float opacity, const std::vector<ModelRegion>& modelRegions,
-        const std::vector<ModelRegion>& handles = {}) const
+        const std::vector<ModelRegion>& handles = {}, float idleOpacity = 1.0f) const
     {
         return enabled && _inside && ModelInputRegionContains(modelRegions, _x, _y)
-            && !ModelInputRegionContains(handles, _x, _y) ? opacity : 1.0f;
+            && !ModelInputRegionContains(handles, _x, _y) ? opacity : idleOpacity;
     }
 
 private:

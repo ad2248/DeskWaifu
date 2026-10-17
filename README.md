@@ -236,6 +236,7 @@ Example `config.json`:
 | `window_height` | int | `1000` | Render target height in pixels |
 | `hover_opacity_enabled` | bool | `false` | Reduce model opacity while the pointer is over its input silhouette |
 | `hover_opacity` | float | `0.5` | Hover opacity, from `0` (invisible) to `1` (unchanged); must be finite |
+| `idle_opacity` | float | `1.0` | Normal model opacity when not hovered, or when hover opacity is disabled; finite number within `0..1` |
 | `model_region` | object | Entire current output | Optional clipping rectangle: integer `x`, `y` (default `0`), and required positive integer `width`, `height` |
 
 All fields are optional. Missing fields use their default values. If the config file doesn't exist, all defaults are used.
@@ -467,17 +468,22 @@ A convenience CLI client `deskwaifu-ctl` is included in the project root:
 
 ### Available Commands
 
-#### `get_hover_opacity` / `set_hover_opacity` — Hover opacity
+#### `get_hover_opacity` / `set_hover_opacity` — Model opacity
 
 ```json
 {"command":"get_hover_opacity"}
 {"command":"set_hover_opacity","enabled":true}
 {"command":"set_hover_opacity","opacity":0.5}
+{"command":"set_hover_opacity","idle_opacity":0.8}
 ```
 
-Both commands return `enabled` and `opacity`, including the unchanged effective
+Both commands return `enabled`, `opacity` and `idle_opacity`, including the unchanged effective
 values when a save fails (`ok: false`, with `error`). Setting requires at least
-one of `enabled` (boolean) or `opacity` (finite number within `0..1`). Supplied
+one of `enabled` (boolean), `opacity` or `idle_opacity` (finite numbers within `0..1`).
+`enabled` controls only the hover override: otherwise `idle_opacity` applies.
+The two opacities are absolute display multipliers, not multiplied together.
+The control window provides independent normal and hover sliders; both save on release.
+Even at zero opacity, the model retains its original input silhouette. Supplied
 fields update a configuration value structure loaded from disk, which is then
 serialized in full to the backend's actual configuration path. Other known fields
 are retained; comments and unknown fields are not. Runtime values change only after a successful atomic
