@@ -136,8 +136,11 @@ int main()
         ModelOpacityFrame frame;
         HoverOpacity hover;
         hover.Enter(4, 4);
+        for (const bool hovering : {true, false})
         for (const float opacity : {1.0f, 0.5f, 0.01f, 0.0f})
         {
+            if (hovering) hover.Enter(4, 4);
+            else hover.Leave();
             glClearColor(0, 0, 0, 0); glClear(GL_COLOR_BUFFER_BIT);
             CHECK(frame.Begin(13, 9));
             // Model animation/material alpha is 0.8, not forced to 1.
@@ -145,9 +148,10 @@ int main()
             const auto modelRegions = ReadModelInputRegion(frame.Framebuffer(), 13, 9, {2, 1, 8, 7}, scratch);
             CHECK(ModelInputRegionContains(modelRegions, 4, 4));
             CHECK(!ModelInputRegionContains(modelRegions, 1, 4));
-            CHECK(hover.Resolve(true, opacity, modelRegions) == opacity);
+            const float resolved = hover.Resolve(hovering, opacity, modelRegions, {}, opacity);
+            CHECK(resolved == opacity);
             bool restored = false;
-            frame.Present(opacity, [&](GLuint texture, float alpha) {
+            frame.Present(resolved, [&](GLuint texture, float alpha) {
                 GLint framebuffer, viewport[4];
                 glGetIntegerv(GL_FRAMEBUFFER_BINDING, &framebuffer);
                 glGetIntegerv(GL_VIEWPORT, viewport);

@@ -101,6 +101,7 @@ std::string AppCommandHandler::Execute(const std::string& json, const std::strin
             << "{\"ok\":" << (result.ok ? "true" : "false")
             << ",\"enabled\":" << (settings.Enabled() ? "true" : "false")
             << ",\"opacity\":" << settings.Opacity()
+            << ",\"idle_opacity\":" << settings.IdleOpacity()
             << ",\"error\":\"" << JsonEscape(result.error) << "\"}";
         return out.str();
     }

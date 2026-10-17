@@ -1,4 +1,5 @@
 #include "OutputSettings.hpp"
+#include "HoverOpacitySettings.hpp"
 #include "TestTemporaryDirectory.hpp"
 #include <fstream>
 #include <iostream>
@@ -112,5 +113,14 @@ int main()
     CHECK(!selected.ok && backend.current == 1);
     CHECK(store.Read(disk, error) && disk.document == legacy);
     CHECK(settings.Initialize().ok && settings.Warning().empty());
+    // Display and idle-opacity saves must preserve each other's configuration.
+    HoverOpacitySettings opacity(config);
+    CHECK(opacity.Set("{\"idle_opacity\":0.65}").ok);
+    CHECK(config.values.modelOutput == "DP-1");
+    CHECK(settings.Select("HDMI-A-1").ok && config.values.idleOpacity == .65f);
+    CHECK(store.Read(disk, error));
+    LAppConfig::Values combined;
+    CHECK(LAppConfig::Decode(disk, combined, error));
+    CHECK(combined.modelOutput == "HDMI-A-1" && combined.idleOpacity == .65f);
     return 0;
 }

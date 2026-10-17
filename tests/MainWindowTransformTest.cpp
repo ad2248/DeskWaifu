@@ -143,6 +143,7 @@ private slots:
         QList<QJsonObject> mutations;
         int queries = 0;
         bool disconnectAfterSave = false, supported = true;
+        bool idleSupported = true;
         bool delayQuery = false;
         QByteArray delayedResponse;
         QLocalSocket* connection = nullptr;
@@ -172,6 +173,7 @@ private slots:
                             result = command == "get_hover_opacity" ? settings.Refresh() : settings.Set(json.toStdString());
                             response.insert("enabled", settings.Enabled());
                             response.insert("opacity", settings.Opacity());
+                            if (idleSupported) response.insert("idle_opacity", settings.IdleOpacity());
                         }
                         response.insert("ok", result.ok);
                         response.insert("error", QString::fromStdString(result.error));
@@ -285,7 +287,7 @@ private slots:
         QVERIFY(store.Read(disk, error));
         QCOMPARE(disk.values.at("model_x"), std::string("2.5"));
         QVERIFY(!disk.values.count("extra"));
-        QCOMPARE(disk.values.size(), size_t(10));
+        QCOMPARE(disk.values.size(), size_t(11));
         QTest::keyClick(slider, Qt::Key_Home);
         QTRY_VERIFY_WITH_TIMEOUT(settings.Opacity() == 0 && group->isEnabled(), 2000);
         QTest::keyClick(slider, Qt::Key_End);
@@ -319,6 +321,39 @@ private slots:
         QCOMPARE(slider->value(), 100); // Save failure restores the effective backend value.
         QCOMPARE(value->text(), QString("100%"));
         QVERIFY(writeConfig(saved));
+        auto* idleSlider = window.findChild<QSlider*>("idleOpacitySlider");
+        auto* idleValue = window.findChild<QLabel*>("idleOpacityValueLabel");
+        QVERIFY(idleSlider && idleValue);
+        QCOMPARE(idleSlider->value(), 100);
+        QVERIFY(!idleSlider->hasTracking());
+        const int beforeIdle = mutations.size();
+        // While dragging, polling cannot overwrite the idle slider position.
+        idleSlider->setSliderDown(true);
+        idleSlider->setSliderPosition(38);
+        QTest::qWait(1100);
+        QCOMPARE(idleValue->text(), QString("38%"));
+        QCOMPARE(mutations.size(), beforeIdle);
+        QCOMPARE(settings.IdleOpacity(), 1.f);
+        idleSlider->setSliderDown(false);
+        QTRY_VERIFY_WITH_TIMEOUT(settings.IdleOpacity() == 0.38f && group->isEnabled(), 2000);
+        QCOMPARE(mutations.size(), beforeIdle + 1);
+        QVERIFY(mutations.last().contains("idle_opacity") && !mutations.last().contains("opacity"));
+        QVERIFY(!settings.Enabled() && settings.Opacity() == 1.f);
+        LAppConfig restarted; restarted.sourcePath = configPath.toStdString();
+        HoverOpacitySettings restartedSettings(restarted);
+        QVERIFY(restartedSettings.Refresh().ok);
+        QCOMPARE(restartedSettings.IdleOpacity(), 0.38f);
+        QTest::keyClick(idleSlider, Qt::Key_Home);
+        QTRY_VERIFY_WITH_TIMEOUT(settings.IdleOpacity() == 0.f && group->isEnabled(), 2000);
+        QTest::keyClick(idleSlider, Qt::Key_End);
+        QTRY_VERIFY_WITH_TIMEOUT(settings.IdleOpacity() == 1.f && group->isEnabled(), 2000);
+        QVERIFY(store.Read(disk, error));
+        QVERIFY(writeConfig("{invalid"));
+        idleSlider->setValue(50);
+        QTRY_VERIFY_WITH_TIMEOUT(group->isEnabled() && status->text().contains("Invalid JSON"), 2000);
+        QCOMPARE(idleSlider->value(), 100);
+        QCOMPARE(settings.IdleOpacity(), 1.f);
+        QVERIFY(writeConfig(QByteArray::fromStdString(disk.document)));
         disconnectAfterSave = true;
         const int beforeDisconnect = mutations.size();
         slider->setValue(65);
@@ -327,6 +362,10 @@ private slots:
         QCOMPARE(slider->value(), 65);
         QCOMPARE(mutations.size(), beforeDisconnect + 1); // Lost acknowledgements are not replayed.
         QVERIFY(window.findChild<QPlainTextEdit*>("responseLog")->toPlainText().contains("unknown"));
+        idleSupported = false; // A hover-only backend keeps the old controls usable.
+        const int beforeHoverOnly = queries;
+        QTRY_VERIFY_WITH_TIMEOUT(queries > beforeHoverOnly && !idleSlider->isEnabled(), 3000);
+        QVERIFY(group->isEnabled() && slider->isEnabled());
         supported = false;
         const int beforeOldBackend = queries;
         connection->abort();
@@ -442,7 +481,7 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(service.Snapshot().transform.x, 0.f, 2000);
         QTRY_VERIFY_WITH_TIMEOUT(!enabled->isChecked(), 2000);
         QCOMPARE(service.Snapshot().transform.scale, 1.f);
-        QVERIFY(store.Read(disk, error)); QCOMPARE(disk.values.size(), size_t(10));
+        QVERIFY(store.Read(disk, error)); QCOMPARE(disk.values.size(), size_t(11));
         QVERIFY(!disk.values.count("model_region"));
         QCOMPARE(disk.values.at("model_x"), std::string("0"));
         QCOMPARE(disk.values.at("model_y"), std::string("0"));

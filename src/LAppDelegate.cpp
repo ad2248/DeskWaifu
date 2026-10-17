@@ -251,7 +251,8 @@ bool LAppDelegate::Run()
         glClearDepth(1.0);
 
         const auto state = _service.Snapshot();
-        const bool opacityFrame = _hoverSettings->Enabled() && !state.hidden && _view->BeginOpacityFrame();
+        const bool opacityFrame = (_hoverSettings->Enabled() || _hoverSettings->IdleOpacity() != 1.0f)
+            && !state.hidden && _view->BeginOpacityFrame();
         RenderModelFrame(_service, _settings->Editing(),
             [this](ModelTransform transform) { UpdateCursorLook(transform); },
             [this](ModelTransform transform, const ModelFrameInput& input) {
@@ -268,7 +269,8 @@ bool LAppDelegate::Run()
             const auto handles = _settings->ScreenEditing() && settings.cropped
                 ? CropInteraction::Handles(settings.region) : std::vector<ModelRegion>{};
             if (opacityFrame)
-                _view->PresentOpacityFrame(_hoverOpacity.Resolve(true, _hoverSettings->Opacity(), modelRegions, handles));
+                _view->PresentOpacityFrame(_hoverOpacity.Resolve(_hoverSettings->Enabled(), _hoverSettings->Opacity(),
+                    modelRegions, handles, _hoverSettings->IdleOpacity()));
             ClipWaylandModelRegion(region, _windowWidth, _windowHeight);
             if (_settings->ScreenEditing())
                 DrawWaylandEditFrame(handles, _windowWidth, _windowHeight);

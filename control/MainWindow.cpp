@@ -265,6 +265,13 @@ void MainWindow::bindControls()
     connect(ui->hoverOpacityEnabledCheck, &QCheckBox::toggled, this, [this](bool enabled) {
         setHoverOpacity({{QStringLiteral("enabled"), enabled}});
     });
+    connect(ui->idleOpacitySlider, &QSlider::sliderMoved, this, [this](int value) {
+        ui->idleOpacityValueLabel->setText(QStringLiteral("%1%").arg(value));
+    });
+    connect(ui->idleOpacitySlider, &QSlider::valueChanged, this, [this](int value) {
+        ui->idleOpacityValueLabel->setText(QStringLiteral("%1%").arg(value));
+        setHoverOpacity({{QStringLiteral("idle_opacity"), value / 100.0}});
+    });
     connect(ui->lookButton, &QPushButton::clicked, this, [this] {
         _client.sendCommand(QStringLiteral("set_look"), {
             {QStringLiteral("x"), ui->lookXSpin->value()},
@@ -300,11 +307,14 @@ void MainWindow::handleResponse(const QString& command, const QJsonObject& respo
         else _hoverQueryPending = false;
         // A query sent before the user's release must not overwrite their drag
         // position or a mutation queued behind that query.
-        if (!mutation && (_hoverSetPending || ui->hoverOpacitySlider->isSliderDown())) return;
+        if (!mutation && (_hoverSetPending || ui->hoverOpacitySlider->isSliderDown() || ui->idleOpacitySlider->isSliderDown())) return;
         const double opacity = response.value(QStringLiteral("opacity")).toDouble(-1);
+        const auto idleOpacity = response.value(QStringLiteral("idle_opacity"));
         const bool valid = response.value(QStringLiteral("enabled")).isBool()
             && response.value(QStringLiteral("opacity")).isDouble()
-            && std::isfinite(opacity) && opacity >= 0 && opacity <= 1;
+            && std::isfinite(opacity) && opacity >= 0 && opacity <= 1
+            && (idleOpacity.isUndefined() || (idleOpacity.isDouble() && std::isfinite(idleOpacity.toDouble())
+                && idleOpacity.toDouble() >= 0 && idleOpacity.toDouble() <= 1));
         if (valid) {
             _hoverSupported = true;
             _lastHoverResponse = response;
@@ -314,6 +324,7 @@ void MainWindow::handleResponse(const QString& command, const QJsonObject& respo
             else _hoverSupported = false;
         }
         ui->hoverOpacityGroup->setEnabled(_client.isConnected() && _hoverSupported);
+        ui->idleOpacitySlider->setEnabled(response.value(QStringLiteral("idle_opacity")).isDouble());
         const bool ok = response.value(QStringLiteral("ok")).toBool() && valid;
         if (ok && mutation) setStatusMessage(tr("已设置并保存"));
         if (!ok) setStatusMessage(response.value(QStringLiteral("error")).toString(tr("后端不支持悬停透明度设置")));
@@ -474,7 +485,7 @@ void MainWindow::requestTransform()
 
 void MainWindow::requestHoverOpacity()
 {
-    if (_hoverQueryPending || _hoverSetPending || ui->hoverOpacitySlider->isSliderDown()) return;
+    if (_hoverQueryPending || _hoverSetPending || ui->hoverOpacitySlider->isSliderDown() || ui->idleOpacitySlider->isSliderDown()) return;
     _hoverQueryPending = true;
     _client.sendCommand(QStringLiteral("get_hover_opacity"));
 }
@@ -492,10 +503,14 @@ void MainWindow::showHoverOpacity(const QJsonObject& response)
 {
     const QSignalBlocker blockEnabled(ui->hoverOpacityEnabledCheck);
     const QSignalBlocker blockOpacity(ui->hoverOpacitySlider);
+    const QSignalBlocker blockIdleOpacity(ui->idleOpacitySlider);
     ui->hoverOpacityEnabledCheck->setChecked(response.value(QStringLiteral("enabled")).toBool());
     const int value = qRound(response.value(QStringLiteral("opacity")).toDouble() * 100);
     ui->hoverOpacitySlider->setValue(value);
     ui->hoverOpacityValueLabel->setText(QStringLiteral("%1%").arg(value));
+    const int idleValue = qRound(response.value(QStringLiteral("idle_opacity")).toDouble(1) * 100);
+    ui->idleOpacitySlider->setValue(idleValue);
+    ui->idleOpacityValueLabel->setText(QStringLiteral("%1%").arg(idleValue));
 }
 
 void MainWindow::sendTransformSave(const QString& command, QJsonObject parameters)
