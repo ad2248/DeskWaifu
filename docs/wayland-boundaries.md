@@ -22,6 +22,8 @@
   and a cleared crop, preserving zoom. An unavailable startup name falls back to
   the first enumerated output and saves that replacement. Transform editing blocks
   explicit selection; a failed save attempts to restore the previous output.
+  Startup fallback persistence is best-effort: a write failure logs a warning but
+  keeps the available output and readable configuration's placement usable.
 
 The initial layer surface and each replacement must acknowledge the first
 `configure` before creating a corresponding EGL window. A replacement is

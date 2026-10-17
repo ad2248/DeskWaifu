@@ -297,6 +297,8 @@ the model at `(0, 0)`, preserves zoom, and clears the crop. Finish or cancel an 
 transform edit before switching. Restarting restores the selected display and saved
 placement; an unavailable display falls back to the first enumerated display, centers
 the model, clears the crop, and writes the replacement name to configuration.
+If startup cannot save that fallback, it logs a warning and continues on the first
+display using the readable configuration's placement instead of refusing to start.
 Crop coordinates are integers in the current surface's top-left coordinate system;
 they are not the model's floating-point offsets. **Enable crop** explicitly selects
 clipping; a disabled crop uses the entire current surface without a fixed rectangle.

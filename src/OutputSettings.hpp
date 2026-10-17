@@ -10,15 +10,23 @@ public:
     OutputSettings(IOutputBackend& backend, TransformEditor& editor, LAppConfig& config)
         : _backend(backend), _editor(editor), _config(config) {}
 
+    const std::string& Warning() const { return _warning; }
+
     AppResult Initialize()
     {
+        _warning.clear();
         const auto outputs = _backend.Outputs();
         if (outputs.empty()) return AppResult::Failure("No displays available");
         for (const auto& output : outputs)
             if (!output.name.empty() && output.name == _config.values.modelOutput)
                 return _backend.SwitchOutput(output.id) ? AppResult::Success()
                     : AppResult::Failure("Failed to restore configured display");
-        return Select(outputs.front().name);
+        if (!_backend.SwitchOutput(outputs.front().id)) return AppResult::Failure("Failed to select fallback display");
+        // A readable legacy configuration must remain usable even when it cannot
+        // be upgraded on disk. Only explicit selection rolls back on save failure.
+        const auto saved = _editor.SaveOutput(outputs.front().name);
+        if (!saved.ok) _warning = "Could not save fallback display: " + saved.error;
+        return AppResult::Success();
     }
 
     AppResult Select(const std::string& name)
@@ -41,4 +49,5 @@ private:
     IOutputBackend& _backend;
     TransformEditor& _editor;
     LAppConfig& _config;
+    std::string _warning;
 };

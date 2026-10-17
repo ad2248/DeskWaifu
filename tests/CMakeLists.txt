@@ -158,6 +158,7 @@ add_test(NAME output-controller COMMAND output-controller-test)
 
 add_executable(output-settings-test OutputSettingsTest.cpp ../src/ConfigStore.cpp ../src/LAppConfig.cpp ../src/OutputController.cpp)
 target_include_directories(output-settings-test PRIVATE ../src)
+target_link_options(output-settings-test PRIVATE -Wl,--wrap=mkstemp)
 add_test(NAME output-settings COMMAND output-settings-test)
 
 add_executable(compositor-adapter-test CompositorAdapterTest.cpp)

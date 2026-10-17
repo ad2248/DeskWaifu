@@ -140,6 +140,8 @@ bool LAppDelegate::Initialize()
         LAppPal::PrintLogLn("[Config] Display selection failed: %s", outputResult.error.c_str());
         return false;
     }
+    if (!outputSettings.Warning().empty())
+        LAppPal::PrintLogLn("[Config] Display selection warning: %s", outputSettings.Warning().c_str());
     _windowWidth = _wlContext.width;
     _windowHeight = _wlContext.height;
     _lastOutput = _waylandBackend.CurrentOutput();

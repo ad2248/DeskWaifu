@@ -2,8 +2,19 @@
 #include "TestTemporaryDirectory.hpp"
 #include <fstream>
 #include <iostream>
+#include <cerrno>
+#include <sys/stat.h>
 
 #define CHECK(c) do { if (!(c)) { std::cerr << __LINE__ << ": " << #c << '\n'; return 1; } } while (false)
+
+// Permission errors must be deterministic even when CI runs with root privileges.
+static bool denyConfigWrites = false;
+extern "C" int __real_mkstemp(char*);
+extern "C" int __wrap_mkstemp(char* name)
+{
+    if (denyConfigWrites) { errno = EACCES; return -1; }
+    return __real_mkstemp(name);
+}
 
 struct Runtime : IApplicationRuntime
 {
@@ -76,5 +87,30 @@ int main()
         CHECK(ConfigStore::Parse(json, disk, error));
         LAppConfig::Values values; CHECK(!LAppConfig::Decode(disk, values, error));
     }
+    // An upgrade must still start from a readable legacy config in a read-only directory.
+    const std::string legacy = R"({"model_x":0.25,"model_y":-0.5,"model_scale":2})";
+    write(legacy);
+    CHECK(editor.ReloadAndDiscard("gui").ok);
+    backend.outputs = {{1, "DP-1", 0, 0, 1920, 1080}, {2, "HDMI-A-1", 1920, 0, 1280, 1024}};
+    backend.current = 2;
+    backend.fail = true;
+    CHECK(!settings.Initialize().ok && settings.Warning().empty()); // A real display failure remains fatal.
+    backend.fail = false;
+    CHECK(chmod(directory.c_str(), 0555) == 0);
+    denyConfigWrites = true;
+    const auto startup = settings.Initialize();
+    denyConfigWrites = false;
+    CHECK(chmod(directory.c_str(), 0700) == 0);
+    CHECK(startup.ok && backend.current == 1);
+    CHECK(!settings.Warning().empty());
+    CHECK(editor.Display().transform.scale == 2 && editor.Display().transform.x == .25f && editor.Display().transform.y == -.5f);
+    CHECK(store.Read(disk, error) && disk.document == legacy && !disk.values.count("model_output"));
+    // An explicit switch must still fail and restore the previous output on the same error.
+    denyConfigWrites = true;
+    const auto selected = settings.Select("HDMI-A-1");
+    denyConfigWrites = false;
+    CHECK(!selected.ok && backend.current == 1);
+    CHECK(store.Read(disk, error) && disk.document == legacy);
+    CHECK(settings.Initialize().ok && settings.Warning().empty());
     return 0;
 }
