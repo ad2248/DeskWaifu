@@ -147,6 +147,18 @@ public:
     }
     void PauseAutosave() { _saveAt = 0; }
     AppResult Retry() { SyncRuntime(); return Save(_runtime, _snapshot, false); }
+    AppResult SaveOutput(const std::string& name)
+    {
+        if (Editing()) return AppResult::Failure("Finish transform editing before changing display");
+        Reload();
+        if (_loadFailed || _conflict) return AppResult::Failure(_error);
+        SyncRuntime();
+        auto settings = _runtime;
+        settings.transform.x = settings.transform.y = 0;
+        settings.cropped = false;
+        settings.region = {};
+        return Save(settings, _snapshot, false, &name);
+    }
     AppResult ReloadAndDiscard(const std::string& owner)
     {
         if (Editing() && !OwnedBy(owner)) return AppResult::Failure("Another client is editing transforms");
@@ -209,11 +221,13 @@ private:
     {
         return _store.Read(snapshot, error) && Decode(snapshot, values, settings, error);
     }
-    AppResult Save(const TransformSettings& settings, const ConfigStore::Snapshot& expected, bool overwrite)
+    AppResult Save(const TransformSettings& settings, const ConfigStore::Snapshot& expected, bool overwrite,
+        const std::string* output = nullptr)
     {
         std::string error;
         if (!Validate(settings, error)) return AppResult::Failure(error);
         auto values = _config.values;
+        if (output) values.modelOutput = *output;
         values.modelX = settings.transform.x; values.modelY = settings.transform.y; values.modelScale = settings.transform.scale;
         values.modelRegion = settings.cropped ? std::experimental::optional<ModelRegion>(settings.region) : std::experimental::nullopt;
         std::string document;

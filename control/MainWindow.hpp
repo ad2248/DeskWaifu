@@ -65,6 +65,7 @@ private:
     bool _transformPreviewPending = false;
     bool _transformPreviewInFlight = false;
     bool _transformSupported = false;
+    bool _outputSwitchPending = false;
     int _surfaceWidth = 1, _surfaceHeight = 1;
     QJsonObject _lastTransformResponse;
     QString _transformSaveRequest;

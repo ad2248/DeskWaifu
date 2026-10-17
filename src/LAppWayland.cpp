@@ -276,7 +276,7 @@ bool SetupWaylandContext(WaylandContext* wl, int width, int height) {
     
     // Choose OVERLAY or TOP for mascot. TOP gives desktop layer. OVERLAY gives full screen layer (above panels).
     wl->layer_surface = zwlr_layer_shell_v1_get_layer_surface(
-        wl->layer_shell, wl->surface, nullptr, 
+        wl->layer_shell, wl->surface, wl->outputs.empty() ? nullptr : wl->outputs.front()->output,
         ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY, "deskwaifu");
     
     zwlr_layer_surface_v1_add_listener(wl->layer_surface, &layer_surface_listener, wl);
