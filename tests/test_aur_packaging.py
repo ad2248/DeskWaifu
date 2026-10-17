@@ -6,6 +6,16 @@ import unittest
 
 
 class AurPackagingTest(unittest.TestCase):
+    def test_aur_build_disables_automated_tests(self):
+        recipe = Path(__file__).resolve().parents[1] / "packaging/aur"
+        pkgbuild = (recipe / "PKGBUILD").read_text()
+        self.assertIn("-DBUILD_TESTING=OFF", pkgbuild)
+        self.assertNotIn("-DBUILD_TESTING=ON", pkgbuild)
+        self.assertNotRegex(pkgbuild, r"(?m)^check\s*\(\s*\)")
+        self.assertNotIn("ctest", pkgbuild)
+        self.assertNotRegex(pkgbuild, r"(?m)^checkdepends=")
+        self.assertNotIn("\tcheckdepends =", (recipe / ".SRCINFO").read_text())
+
     def test_recipe_and_metadata_use_github_main(self):
         root = Path(__file__).resolve().parents[1]
         recipe = root / "packaging/aur"
