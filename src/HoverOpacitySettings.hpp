@@ -13,6 +13,7 @@ public:
 
     bool Enabled() const { return _config.values.hoverOpacityEnabled; }
     float Opacity() const { return _config.values.hoverOpacity; }
+    float IdleOpacity() const { return _config.values.idleOpacity; }
 
     AppResult Refresh()
     {
@@ -32,12 +33,14 @@ public:
         if (!ConfigStore::Parse(json, request, error)) return AppResult::Failure(error);
         const auto enabled = request.values.find("enabled");
         const auto opacity = request.values.find("opacity");
-        if (enabled == request.values.end() && opacity == request.values.end())
-            return AppResult::Failure("Specify enabled or opacity");
+        const auto idleOpacity = request.values.find("idle_opacity");
+        if (enabled == request.values.end() && opacity == request.values.end() && idleOpacity == request.values.end())
+            return AppResult::Failure("Specify enabled, opacity or idle_opacity");
         if (!_store.Read(latest, error)) return AppResult::Failure(error);
         auto proposed = latest;
         if (enabled != request.values.end()) proposed.values["hover_opacity_enabled"] = enabled->second;
         if (opacity != request.values.end()) proposed.values["hover_opacity"] = opacity->second;
+        if (idleOpacity != request.values.end()) proposed.values["idle_opacity"] = idleOpacity->second;
         LAppConfig::Values values;
         std::string document;
         if (!LAppConfig::Decode(proposed, values, error) || !LAppConfig::Serialize(values, document, error) ||

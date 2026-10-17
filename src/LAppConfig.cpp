@@ -104,15 +104,17 @@ bool LAppConfig::Decode(const ConfigStore::Snapshot& snapshot, Values& values, s
         }
         next.hoverOpacityEnabled = enabled->second == "true";
     }
-    auto opacity = snapshot.values.find("hover_opacity");
-    if (opacity != snapshot.values.end()) {
-        std::istringstream input(opacity->second); input.imbue(std::locale::classic());
-        double parsed;
-        if (!(input >> parsed) || input.peek() != std::char_traits<char>::eof() ||
-            !std::isfinite(parsed) || parsed < 0 || parsed > 1) {
-            error = "Invalid hover_opacity: expected a finite number within 0..1"; return false;
+    for (const auto key : {"hover_opacity", "idle_opacity"}) {
+        auto opacity = snapshot.values.find(key);
+        if (opacity != snapshot.values.end()) {
+            std::istringstream input(opacity->second); input.imbue(std::locale::classic());
+            double parsed;
+            if (!(input >> parsed) || input.peek() != std::char_traits<char>::eof() ||
+                !std::isfinite(parsed) || parsed < 0 || parsed > 1) {
+                error = std::string("Invalid ") + key + ": expected a finite number within 0..1"; return false;
+            }
+            (std::string(key) == "hover_opacity" ? next.hoverOpacity : next.idleOpacity) = static_cast<float>(parsed);
         }
-        next.hoverOpacity = static_cast<float>(parsed);
     }
     auto region = snapshot.values.find("model_region");
     if (region != snapshot.values.end()) {
@@ -153,7 +155,8 @@ bool LAppConfig::Serialize(const Values& values, std::string& document, std::str
         << ",\n  \"window_width\": " << values.windowWidth
         << ",\n  \"window_height\": " << values.windowHeight
         << ",\n  \"hover_opacity_enabled\": " << (values.hoverOpacityEnabled ? "true" : "false")
-        << ",\n  \"hover_opacity\": " << values.hoverOpacity;
+        << ",\n  \"hover_opacity\": " << values.hoverOpacity
+        << ",\n  \"idle_opacity\": " << values.idleOpacity;
     if (values.modelRegion) {
         const auto& r = *values.modelRegion;
         out << ",\n  \"model_region\": {\"x\": " << r.x << ", \"y\": " << r.y

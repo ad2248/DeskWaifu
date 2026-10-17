@@ -21,6 +21,7 @@ struct LAppConfig
         int windowHeight = 1000;
         bool hoverOpacityEnabled = false;
         float hoverOpacity = 0.5f;
+        float idleOpacity = 1.0f;
         std::experimental::optional<ModelRegion> modelRegion;
     };
     Values values;
