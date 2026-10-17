@@ -44,17 +44,35 @@ bool ScriptLoaded(const std::string& name)
     return loaded;
 }
 
+std::string KWinOwner()
+{
+    sd_bus* bus = nullptr;
+    if (sd_bus_open_user(&bus) < 0) return {};
+    sd_bus_message* reply = nullptr;
+    const char* owner = nullptr;
+    std::string result;
+    if (sd_bus_call_method(bus, "org.freedesktop.DBus", "/org/freedesktop/DBus",
+        "org.freedesktop.DBus", "GetNameOwner", nullptr, &reply, "s", "org.kde.KWin") >= 0 &&
+        sd_bus_message_read(reply, "s", &owner) > 0) result = owner;
+    sd_bus_message_unref(reply);
+    sd_bus_flush_close_unref(bus);
+    return result;
+}
+
 // Uses a private session bus via dbus-run-session; never installs scripts or
 // touches the user's real KWin. The real compositor smoke test is opt-in.
 struct FakeKWin
 {
     std::atomic<bool> ready{false}, done{false}, loaded{false}, failLoad{false};
     std::atomic<bool> restart{false}, invalid{false}, silent{false};
+    std::atomic<bool> retainOldConnection{false}, injectOldSample{false};
+    std::atomic<bool> oldConnectionClosed{false};
+    std::atomic<int> oldSampleResult{0};
     std::atomic<bool> delayLoad{false};
     std::atomic<bool> fractional{false};
     std::atomic<bool> blockRun{false}, runBlocked{false};
     std::atomic<bool> memoryFileClosed{false};
-    std::atomic<int> loads{0}, unloads{0}, runs{0};
+    std::atomic<int> loads{0}, unloads{0}, runs{0}, samples{0};
     std::thread thread;
     std::string destination, output, file, script, registeredName;
     bool running = false;
@@ -113,8 +131,10 @@ struct FakeKWin
     static int Reply(sd_bus_message* message, void* data, sd_bus_error*)
     {
         const char* name = nullptr;
-        if (sd_bus_message_read(message, "s", &name) > 0)
+        if (sd_bus_message_read(message, "s", &name) > 0) {
             static_cast<FakeKWin*>(data)->output = name;
+            ++static_cast<FakeKWin*>(data)->samples;
+        }
         auto& self = *static_cast<FakeKWin*>(data);
         if (access(self.file.c_str(), F_OK) < 0) self.memoryFileClosed = true;
         return 0;
@@ -134,20 +154,52 @@ struct FakeKWin
             SD_BUS_METHOD("run", "", "", RunScript, SD_BUS_VTABLE_UNPRIVILEGED),
             SD_BUS_VTABLE_END
         };
-        sd_bus_add_object_vtable(bus, nullptr, "/Scripting", "org.kde.kwin.Scripting", scripting, this);
-        sd_bus_add_object_vtable(bus, nullptr, "/Scripting/Script0", "org.kde.kwin.Script", scriptObject, this);
-        if (sd_bus_request_name(bus, "org.kde.KWin", 0) < 0) {
+        auto registerService = [&] {
+            return sd_bus_add_object_vtable(bus, nullptr, "/Scripting", "org.kde.kwin.Scripting", scripting, this) >= 0 &&
+                sd_bus_add_object_vtable(bus, nullptr, "/Scripting/Script0", "org.kde.kwin.Script", scriptObject, this) >= 0 &&
+                sd_bus_request_name(bus, "org.kde.KWin", 0) >= 0;
+        };
+        if (!registerService()) {
             sd_bus_unref(bus);
             return;
         }
         ready = true;
+        sd_bus* oldBus = nullptr;
         auto next = std::chrono::steady_clock::now();
         while (!done) {
             if (restart.exchange(false)) {
-                sd_bus_release_name(bus, "org.kde.KWin");
+                // Normally disconnect exactly like a dead compositor. Retain a
+                // released connection only for the separate stale-source probe.
+                if (retainOldConnection.exchange(false)) {
+                    sd_bus_release_name(bus, "org.kde.KWin");
+                    oldBus = bus;
+                } else {
+                    sd_bus_flush_close_unref(bus);
+                }
+                bus = nullptr;
+                for (const auto& pending : delayedLoads) sd_bus_message_unref(pending.first);
+                delayedLoads.clear();
                 loaded = false;
                 running = false;
-                sd_bus_request_name(bus, "org.kde.KWin", 0);
+                output.clear();
+                samples = 0;
+                if (sd_bus_open_user(&bus) < 0 || !registerService()) break;
+            }
+            if (injectOldSample.exchange(false) && oldBus) {
+                sd_bus_call_method_async(oldBus, nullptr, destination.c_str(), "/org/deskwaifu/Cursor",
+                    "org.deskwaifu.Cursor", "Sample",
+                    [](sd_bus_message* reply, void* data, sd_bus_error*) {
+                        static_cast<FakeKWin*>(data)->oldSampleResult =
+                            sd_bus_message_is_method_error(reply, SD_BUS_ERROR_ACCESS_DENIED) ? 1 : -1;
+                        return 0;
+                    }, this, "sssssss", "0", "0", "A", "0", "0", "100", "100");
+            }
+            if (oldBus) {
+                while (sd_bus_process(oldBus, nullptr) > 0) {}
+                if (oldSampleResult != 0) {
+                    oldBus = sd_bus_flush_close_unref(oldBus);
+                    oldConnectionClosed = true;
+                }
             }
             while (sd_bus_process(bus, nullptr) > 0) {}
             for (auto it = delayedLoads.begin(); it != delayedLoads.end();) {
@@ -171,6 +223,7 @@ struct FakeKWin
             usleep(1000);
         }
         for (const auto& pending : delayedLoads) sd_bus_message_unref(pending.first);
+        sd_bus_flush_close_unref(oldBus);
         sd_bus_flush_close_unref(bus);
     }
 };
@@ -194,6 +247,10 @@ int main(int argc, char** argv)
     if (argc == 2 && std::string(argv[1]) == "--load-timeout-client") {
         tracker.Start();
         for (;;) pause();
+    }
+    if (argc == 2 && std::string(argv[1]) == "--restart-client") {
+        CHECK(tracker.Start());
+        for (;;) { tracker.Poll("A"); usleep(5000); }
     }
     double x = 0, y = 0;
     if (argc > 1 && std::string(argv[1]) == "--live") {
@@ -299,11 +356,15 @@ int main(int argc, char** argv)
     tracker.Poll("B");
     CHECK(!tracker.LocalPosition(1000, 750, x, y)); // Invalid/stale samples are not usable.
     kwin.invalid = false;
+    const auto originalOwner = KWinOwner();
+    CHECK(!originalOwner.empty());
     kwin.restart = true;
     CHECK(Wait([&] {
         tracker.Poll("A");
         return kwin.loads >= 2 && tracker.LocalPosition(2000, 1600, x, y);
     }));
+    CHECK(KWinOwner() != originalOwner && !KWinOwner().empty());
+    CHECK(x == 500 && y == 400);
     kwin.silent = true;
     CHECK(Wait([&] { tracker.Poll("A"); return kwin.unloads == 1; }, 5000));
     CHECK(!tracker.LocalPosition(2000, 1600, x, y));
@@ -373,5 +434,36 @@ int main(int argc, char** argv)
     CHECK(blocked);
     CHECK(Wait([&] { return !kwin.loaded; }));
     CHECK(kwin.unloads == 8 && kwin.runs == runsBeforeCrash);
+
+    // Restart a polling client onto another unique owner, then leave the old
+    // connection alive briefly to prove it has lost permission to send samples.
+    char* restartArgs[] = {argv[0], const_cast<char*>("--restart-client"), nullptr};
+    const int loadsBeforeRestart = kwin.loads;
+    const int runsBeforeRestart = kwin.runs;
+    const int samplesBeforeRestart = kwin.samples;
+    CHECK(posix_spawn(&child, argv[0], nullptr, nullptr, restartArgs, environ) == 0);
+    const bool started = Wait([&] {
+        return kwin.loads > loadsBeforeRestart && kwin.runs > runsBeforeRestart &&
+            kwin.samples > samplesBeforeRestart;
+    });
+    const auto previousOwner = KWinOwner();
+    kwin.retainOldConnection = true;
+    kwin.restart = true;
+    const bool reloaded = Wait([&] {
+        return kwin.loads >= loadsBeforeRestart + 2 && kwin.runs >= runsBeforeRestart + 2 &&
+            kwin.samples >= 2;
+    });
+    const auto replacementOwner = KWinOwner();
+    kwin.injectOldSample = true;
+    const bool replied = Wait([&] { return kwin.oldConnectionClosed.load(); });
+    // Always reap the child, even if a restart assertion failed. SIGKILL skips
+    // Stop(), so only a guard targeting the replacement owner can unload it.
+    kill(child, SIGKILL);
+    waitpid(child, &status, 0);
+    CHECK(started && reloaded);
+    CHECK(!replacementOwner.empty() && replacementOwner != previousOwner);
+    CHECK(replied && kwin.oldSampleResult == 1);
+    CHECK(Wait([&] { return !kwin.loaded; }));
+    CHECK(kwin.unloads == 9);
     return 0;
 }
