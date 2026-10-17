@@ -37,7 +37,8 @@ int main()
         CHECK(ConfigStore::Parse(document, invalid, validationError));
         CHECK(!TransformEditor::Decode(invalid, decoded, validationError));
     }
-    TransformEditor editor(service, path);
+    LAppConfig config; config.sourcePath = path;
+    TransformEditor editor(service, config);
     CHECK(editor.Initialize({}));
     CHECK(editor.Display().transform.x == 1 && editor.Display().transform.scale == 2);
     CHECK(editor.Begin("gui", true, 1920, 1080).ok);
@@ -62,18 +63,21 @@ int main()
     CHECK(editor.Update("gui", draft).ok);
     write("{\"model_x\":6,\"model_scale\":2,\"other\":false}");
     CHECK(editor.Apply("gui", true).ok);
-    CHECK(store.Read(disk, error) && disk.values.at("model_x") == "3" && disk.values.at("other") == "false");
+    CHECK(store.Read(disk, error) && disk.values.at("model_x") == "3" && !disk.values.count("other"));
+    CHECK(disk.values.size() == 11 && disk.values.at("window_width") == "1900");
+    CHECK(config.values.modelX == 3 && config.values.modelRegion);
     // Position/zoom normal controls save only when their debounce expires.
     CHECK(service.SetTransform({1.5f, 2, -1}).ok);
     editor.ScheduleSave(10, .5); editor.Tick(10.2);
     CHECK(editor.Dirty());
     editor.Tick(10.6); CHECK(!editor.Dirty());
     CHECK(store.Read(disk, error) && disk.values.at("model_scale") == "1.5");
-    TransformEditor restarted(service, path); CHECK(restarted.Initialize({}));
+    TransformEditor restarted(service, config); CHECK(restarted.Initialize({}));
     CHECK(restarted.Display().transform.y == -1);
     CHECK(editor.Reset("gui").ok);
     CHECK(!editor.Display().cropped && service.Snapshot().transform.scale == 1 && service.Snapshot().transform.x == 0);
-    CHECK(store.Read(disk, error) && disk.values.size() == 1 && disk.values.count("other"));
+    CHECK(store.Read(disk, error) && disk.values.size() == 10 && !disk.values.count("model_region"));
+    CHECK(disk.values.at("model_x") == "0" && disk.values.at("model_y") == "0" && disk.values.at("model_scale") == "1");
     const auto oldRevision = editor.Revision();
     write("{\"model_x\":8,\"other\":false}");
     CHECK(!editor.Begin("gui", false, 1920, 1080, oldRevision).ok);
@@ -261,6 +265,42 @@ int main()
     CHECK(editor.Display().transform.x == conflictDraft.transform.x);
     CHECK(store.Read(disk, error) && disk.values.at("model_x") == "9");
     CHECK(editor.Cancel("gui").ok);
+    CHECK(editor.ReloadAndDiscard("gui").ok);
+
+    // Save all current object fields, not just transforms or old disk values.
+    config.values.additionalModelDirs = {"~/模型", "with \"quotes\" and \\slashes"};
+    config.values.defaultModel = "夕颜\nmodel";
+    config.values.emotionTimeout = 7.25f;
+    config.values.windowWidth = 812;
+    config.values.windowHeight = 613;
+    config.values.hoverOpacityEnabled = true;
+    config.values.hoverOpacity = 0.375f;
+    CHECK(editor.Begin("gui", false, 1920, 1080).ok);
+    CHECK(editor.Apply("gui").ok);
+    CHECK(store.Read(disk, error) && disk.values.size() == 10);
+    CHECK(disk.values.at("emotion_timeout") == "7.25");
+    CHECK(disk.values.at("window_width") == "812" && disk.values.at("window_height") == "613");
+    CHECK(disk.values.at("hover_opacity_enabled") == "true" && disk.values.at("hover_opacity") == "0.375");
+    LAppConfig loaded; CHECK(loaded.LoadFromFile(path));
+    CHECK(loaded.values.additionalModelDirs == config.values.additionalModelDirs);
+    CHECK(loaded.values.defaultModel == config.values.defaultModel);
+    CHECK(!disk.values.count("sourcePath"));
+
+    // Even a non-transform external edit conflicts with whole-object saves.
+    CHECK(editor.Begin("gui", false, 1920, 1080).ok);
+    auto external = config.values;
+    external.windowWidth = 999;
+    std::string externalDocument;
+    CHECK(LAppConfig::Serialize(external, externalDocument, error));
+    write(externalDocument);
+    CHECK(!editor.Apply("gui").ok && editor.Conflict());
+    CHECK(config.values.windowWidth == 812);
+    CHECK(store.Read(disk, error) && disk.values.at("window_width") == "999");
+    CHECK(editor.Apply("gui", true).ok);
+    CHECK(store.Read(disk, error) && disk.values.at("window_width") == "812");
+    CHECK(editor.Reset("gui").ok);
+    CHECK(store.Read(disk, error) && disk.values.size() == 10 && !disk.values.count("model_region"));
+    CHECK(disk.values.at("window_width") == "812" && disk.values.at("hover_opacity") == "0.375");
     CHECK(unlink(path.c_str()) == 0 && rmdir(directory.c_str()) == 0);
     return 0;
 }

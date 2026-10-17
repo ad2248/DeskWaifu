@@ -86,8 +86,8 @@ int main(int argc, char* argv[])
     LAppDefine::ModelsDir = modelsDir;
 
     // Apply config to LAppDefine
-    LAppDefine::RenderTargetWidth = config.windowWidth;
-    LAppDefine::RenderTargetHeight = config.windowHeight;
+    LAppDefine::RenderTargetWidth = config.values.windowWidth;
+    LAppDefine::RenderTargetHeight = config.values.windowHeight;
 
     // create the application instance
     if (LAppDelegate::GetInstance()->Initialize() == GL_FALSE)

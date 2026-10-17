@@ -232,7 +232,7 @@ Example `config.json`:
 
 All fields are optional. Missing fields use their default values. If the config file doesn't exist, all defaults are used.
 
-To make the model half-transparent on hover, add these fields and restart DeskWaifu:
+To configure half-transparency on hover at startup, add these fields:
 
 ```json
 "hover_opacity_enabled": true,
@@ -248,6 +248,22 @@ editor handles do not count as model hover. The silhouette follows the existing
 10-pixel block sampling rather than an exact per-pixel hit test. Invalid hover
 values reject the configuration with a diagnostic. The feature is disabled by
 default, with no extra offscreen rendering while disabled.
+
+The **Transform** tab also provides a **鼠标悬停透明度** section. Toggle
+**启用悬停半透明** to enable or disable the effect. Drag the opacity slider from
+`0%` to `100%`: the percentage updates while dragging, and releasing applies and
+saves the value immediately, without **Apply and save** or a restart. Keyboard
+and mouse-wheel adjustments also apply directly. This setting is independent of
+the position/crop edit transaction and its reset/cancel buttons. Failed saves
+show an error and restore the effective backend value. Disconnected or older,
+unsupported backends disable the controls; reconnecting queries the actual saved
+state rather than replaying a write with an unknown outcome.
+
+The bottom status bar keeps connection information on the left and operation
+feedback (saving, success, or errors) on the right, visible across all tabs.
+Successful background queries do not replace the latest operation message.
+`MainWindow::setStatusMessage(message, timeoutMs)` updates this shared feedback;
+an empty message clears it, and a positive timeout clears it automatically.
 
 To clip the model to a rectangle, add this entry to your configuration:
 
@@ -271,16 +287,16 @@ Crop coordinates are integers in the current surface's top-left coordinate syste
 they are not the model's floating-point offsets. **Enable crop** explicitly selects
 clipping; a disabled crop uses the entire current surface without a fixed rectangle.
 
-- Numeric edits create a preview. **Apply and save** commits all four configuration
-  keys (`model_x`, `model_y`, `model_scale`, `model_region`) in one atomic update.
+- Numeric edits create a preview. **Apply and save** updates the transform/crop
+  fields and atomically serializes all current configuration values.
 - **Drag edit** draws an on-screen frame. Its top-center handle moves **both the
   crop and the model by the same screen distance**. Edges/corners resize the crop
   without moving or scaling the model. Dragging the model itself moves only the
   model; scrolling changes its zoom. Model tap/hotkey actions are disabled while editing.
 - **Cancel** or a disconnected control panel discards the preview. Output changes
   or resizes cancel screen editing. **Move back to screen** recovers offscreen crops.
-- **Reset** immediately saves position `(0, 0)`, zoom `1` and no crop by removing
-  those four keys; all other configuration is retained.
+- **Reset** immediately writes position `(0, 0)` and zoom `1`, omitting
+  `model_region` to disable cropping; other known configuration values are retained.
 - Dragging the model automatically enters screen editing once the drag threshold
   is crossed. Releasing keeps the crop frame visible. Dragging the model moves
   only the model; the top-center handle moves both model and crop. With no crop
@@ -294,16 +310,19 @@ clipping; a disabled crop uses the entire current surface without a fixed rectan
   saves offer **Retry save**. Automatic cross-output adaptation itself is not saved.
 
 Only the model process writes configuration, using the actual `--config` path
-(or the default path). Existing unrelated settings and comments outside replaced
-values are preserved, as are file permissions and existing symbolic links. A
+(or the default path). Every save writes all known configuration fields, including
+defaults, from the configuration value structure; internal metadata is excluded.
+Comments and unknown fields are not preserved. File permissions and existing symbolic links are preserved. A
 missing configuration is created; invalid documents and duplicate keys are never
 silently overwritten. Files are checked every 0.5 seconds, so external editor
-replacements are detected too. Only transform/crop settings are hot-reloaded;
-other settings still require restarting the application.
+replacements are detected too. Transform/crop and hover settings are hot-reloaded.
+Hover settings are also refreshed when queried by the control panel; other settings
+still require restarting the application.
 
-External changes during preview do not replace the draft. Applying reports a
-conflict: explicitly overwrite just the four transform/crop keys, or discard the
-draft and reload. Only one connection can edit at a time. Save requests have IDs
+External changes during preview do not replace the draft. Applying checks the entire
+configuration for conflicts, including independent hover saves during preview:
+explicitly overwrite the complete configuration, or discard the draft and reload.
+Only one connection can edit at a time. Save requests have IDs
 whose recent outcomes can be queried after reconnecting; outcomes are not retained
 across a backend restart. External editors do not honor the application's save
 protocol: a content check immediately before rename narrows, but cannot completely
@@ -434,6 +453,23 @@ A convenience CLI client `deskwaifu-ctl` is included in the project root:
 ```
 
 ### Available Commands
+
+#### `get_hover_opacity` / `set_hover_opacity` — Hover opacity
+
+```json
+{"command":"get_hover_opacity"}
+{"command":"set_hover_opacity","enabled":true}
+{"command":"set_hover_opacity","opacity":0.5}
+```
+
+Both commands return `enabled` and `opacity`, including the unchanged effective
+values when a save fails (`ok: false`, with `error`). Setting requires at least
+one of `enabled` (boolean) or `opacity` (finite number within `0..1`). Supplied
+fields update a configuration value structure loaded from disk, which is then
+serialized in full to the backend's actual configuration path. Other known fields
+are retained; comments and unknown fields are not. Runtime values change only after a successful atomic
+save. Queries refresh the current settings from disk. Do not automatically retry
+a set request after losing its acknowledgement; query the current settings instead.
 
 #### `get_hotkeys` / `trigger_hotkey` — Model hotkeys
 

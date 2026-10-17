@@ -8,6 +8,7 @@
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
+#include <iomanip>
 #include <sstream>
 #include <limits>
 #include <stdexcept>
@@ -90,6 +91,19 @@ std::string AppCommandHandler::Execute(const std::string& json, const std::strin
     const auto lifetime = streaming ? ExternalControlState::Lifetime::Stream
         : ExternalControlState::Lifetime::Persistent;
     if (streaming && connection.empty()) return "{\"ok\":false,\"error\":\"stream requires a connection\"}";
+
+    if (command == "get_hover_opacity" || command == "set_hover_opacity") {
+        auto& settings = app->HoverSettings();
+        const auto result = command == "get_hover_opacity" ? settings.Refresh() : settings.Set(json);
+        std::ostringstream out;
+        out.imbue(std::locale::classic());
+        out << std::setprecision(std::numeric_limits<float>::max_digits10)
+            << "{\"ok\":" << (result.ok ? "true" : "false")
+            << ",\"enabled\":" << (settings.Enabled() ? "true" : "false")
+            << ",\"opacity\":" << settings.Opacity()
+            << ",\"error\":\"" << JsonEscape(result.error) << "\"}";
+        return out.str();
+    }
 
     auto& editor = app->Settings();
     if (editor.Editing() && (command == "set_model" || command == "next_model" || command == "prev_model" ||

@@ -124,18 +124,24 @@ bool LAppDelegate::Initialize()
     LAppPal::SetResourceBasePath(_executeAbsolutePath);
     InitializeCubism();
     _cubismStarted = true;
-    const auto& config = LAppConfig::GetInstance();
-    _settings.reset(new TransformEditor(_service, config.sourcePath.empty() ? LAppConfig::GetDefaultConfigPath() : config.sourcePath));
-    if (!_settings->Initialize({{config.modelScale, config.modelX, config.modelY}, config.hasModelRegion, config.modelRegion})) {
+    auto& config = LAppConfig::GetInstance();
+    _settings.reset(new TransformEditor(_service, config));
+    const auto& values = config.values;
+    if (!_settings->Initialize({{values.modelScale, values.modelX, values.modelY}, bool(values.modelRegion), values.modelRegion.value_or(ModelRegion{})})) {
         LAppPal::PrintLogLn("[Config] Invalid model transform; zoom must be finite and within 0.1..10");
         return false;
     }
+    _hoverSettings.reset(new HoverOpacitySettings(config));
+    const auto hoverResult = _hoverSettings->Refresh();
+    if (!hoverResult.ok) LAppPal::PrintLogLn("[Config] %s", hoverResult.error.c_str());
     _lastOutput = _waylandBackend.CurrentOutput();
     if (!_kwinCursor.Start())
         LAppPal::PrintLogLn("[KWin] Global cursor unavailable: %s; using surface events", _kwinCursor.Error().c_str());
     else LAppPal::PrintLogLn("[KWin] Transient global cursor script loaded");
+    auto modelDirs = values.additionalModelDirs;
+    for (auto& dir : modelDirs) dir = LAppConfig::ExpandTilde(dir);
     _manager = new LAppLive2DManager(*_textureManager, _windowWidth, _windowHeight,
-        {LAppDefine::ModelsDir, config.additionalModelDirs, config.defaultModel, config.emotionTimeout});
+        {LAppDefine::ModelsDir, modelDirs, values.defaultModel, values.emotionTimeout});
     if (!_manager->HasModels()) { _isEnd = true; return false; }
     _view = new LAppView(*_manager, *_textureManager);
 
@@ -236,8 +242,7 @@ bool LAppDelegate::Run()
         glClearDepth(1.0);
 
         const auto state = _service.Snapshot();
-        const auto& config = LAppConfig::GetInstance();
-        const bool opacityFrame = config.hoverOpacityEnabled && !state.hidden && _view->BeginOpacityFrame();
+        const bool opacityFrame = _hoverSettings->Enabled() && !state.hidden && _view->BeginOpacityFrame();
         RenderModelFrame(_service, _settings->Editing(),
             [this](ModelTransform transform) { UpdateCursorLook(transform); },
             [this](ModelTransform transform, const ModelFrameInput& input) {
@@ -254,7 +259,7 @@ bool LAppDelegate::Run()
             const auto handles = _settings->ScreenEditing() && settings.cropped
                 ? CropInteraction::Handles(settings.region) : std::vector<ModelRegion>{};
             if (opacityFrame)
-                _view->PresentOpacityFrame(_hoverOpacity.Resolve(true, config.hoverOpacity, modelRegions, handles));
+                _view->PresentOpacityFrame(_hoverOpacity.Resolve(true, _hoverSettings->Opacity(), modelRegions, handles));
             ClipWaylandModelRegion(region, _windowWidth, _windowHeight);
             if (_settings->ScreenEditing()) {
                 DrawWaylandEditFrame(handles, _windowWidth, _windowHeight);

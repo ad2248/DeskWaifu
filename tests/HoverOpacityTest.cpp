@@ -63,10 +63,11 @@ int main()
     CHECK(!directory.empty());
     const std::string path = directory + "/config.json";
     struct Cleanup { std::string path, directory; ~Cleanup() { std::remove(path.c_str()); rmdir(directory.c_str()); } } cleanup{path, directory};
-    LAppConfig config;
+    LAppConfig application;
+    auto& config = application.values;
     const auto load = [&](const std::string& text) {
         { std::ofstream file(path); file << text; }
-        return config.LoadFromFile(path);
+        return application.LoadFromFile(path);
     };
     CHECK(load("{}"));
     CHECK(!config.hoverOpacityEnabled && config.hoverOpacity == 0.5f);

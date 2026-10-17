@@ -41,7 +41,7 @@ add_executable(config-store-test ConfigStoreTest.cpp ../src/ConfigStore.cpp)
 target_include_directories(config-store-test PRIVATE ../src)
 add_test(NAME config-store COMMAND config-store-test)
 
-add_executable(transform-editor-test TransformEditorTest.cpp ../src/ConfigStore.cpp ../src/InputController.cpp)
+add_executable(transform-editor-test TransformEditorTest.cpp ../src/ConfigStore.cpp ../src/LAppConfig.cpp ../src/InputController.cpp)
 target_include_directories(transform-editor-test PRIVATE ../src)
 add_test(NAME transform-editor COMMAND transform-editor-test)
 add_test(NAME config-temp-directory
@@ -51,7 +51,11 @@ add_test(NAME config-temp-directory
     -DEDITOR_TEST=$<TARGET_FILE:transform-editor-test>
     -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckPortableTemporaryDirectory.cmake)
 
-add_executable(model-region-test ModelRegionTest.cpp ../src/LAppConfig.cpp)
+add_executable(lapp-config-test LAppConfigTest.cpp ../src/LAppConfig.cpp ../src/ConfigStore.cpp)
+target_include_directories(lapp-config-test PRIVATE ../src)
+add_test(NAME lapp-config COMMAND lapp-config-test)
+
+add_executable(model-region-test ModelRegionTest.cpp ../src/LAppConfig.cpp ../src/ConfigStore.cpp)
 target_include_directories(model-region-test PRIVATE ../src)
 add_test(NAME model-region COMMAND model-region-test)
 
@@ -59,9 +63,13 @@ add_executable(model-input-region-test ModelInputRegionTest.cpp)
 target_include_directories(model-input-region-test PRIVATE ../src)
 add_test(NAME model-input-region COMMAND model-input-region-test)
 
-add_executable(hover-opacity-test HoverOpacityTest.cpp ../src/LAppConfig.cpp)
+add_executable(hover-opacity-test HoverOpacityTest.cpp ../src/LAppConfig.cpp ../src/ConfigStore.cpp)
 target_include_directories(hover-opacity-test PRIVATE ../src)
 add_test(NAME hover-opacity COMMAND hover-opacity-test)
+
+add_executable(hover-opacity-settings-test HoverOpacitySettingsTest.cpp ../src/ConfigStore.cpp ../src/LAppConfig.cpp)
+target_include_directories(hover-opacity-settings-test PRIVATE ../src)
+add_test(NAME hover-opacity-settings COMMAND hover-opacity-settings-test)
 
 add_executable(model-region-render-test ModelRegionRenderTest.cpp ../src/LAppWaylandRegion.cpp)
 add_dependencies(model-region-render-test ${APP_NAME}) # Generated Wayland protocol headers.
@@ -224,7 +232,7 @@ qt_add_executable(main-window-transform-test
   ../control/DeskWaifuClient.cpp ../control/DeskWaifuClient.hpp
   ../control/DeskWaifuLauncher.cpp ../control/DeskWaifuLauncher.hpp
   ../control/HotkeyPanel.cpp ../control/HotkeyPanel.hpp
-  ../src/ConfigStore.cpp ../src/InputController.cpp
+  ../src/ConfigStore.cpp ../src/LAppConfig.cpp ../src/InputController.cpp
 )
 target_include_directories(main-window-transform-test PRIVATE ../control ../src)
 target_link_libraries(main-window-transform-test PRIVATE Qt6::Test Qt6::Widgets Qt6::Network)
