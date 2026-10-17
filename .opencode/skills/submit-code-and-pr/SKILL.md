@@ -28,6 +28,11 @@ description: 提交代码、回复工单并创建 PR。Use when the user asks to
    - 运行 `git status --short --branch`、`git diff --check`、`git diff`
      和 `git log --oneline -10`。
    - 确认当前分支、远端、base 分支、issue 要求与测试结果。
+   - 若当前分支是 `main`，必须先使用 OpenChamber 的
+     `session.moveToWorktree` 将当前会话及本任务改动移动到新的
+     工作树，使用专用工作分支继续任务，不得直接在 `main` 上提交。
+     移动后复查工作目录、分支与改动；若移动失败，停止并报告阻塞，
+     不得丢弃或夹带无关改动。
    - 按「关联工单判定」确认是否存在已明确关联的工单；没有则后
      续步骤一律省略工单相关操作，也不要为此搜索开放工单。
    - 未经用户明确同意，不得夹带无关改动。
