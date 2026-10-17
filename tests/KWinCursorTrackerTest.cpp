@@ -1,9 +1,12 @@
 #include "KWinCursorTracker.hpp"
 
 #include <atomic>
+#include <clocale>
+#include <cmath>
 #include <csignal>
 #include <fstream>
 #include <iostream>
+#include <locale>
 #include <sys/wait.h>
 #include <thread>
 #include <unistd.h>
@@ -44,6 +47,7 @@ struct FakeKWin
     std::atomic<bool> ready{false}, done{false}, loaded{false}, failLoad{false};
     std::atomic<bool> restart{false}, invalid{false}, silent{false};
     std::atomic<bool> delayLoad{false};
+    std::atomic<bool> fractional{false};
     std::atomic<bool> memoryFileClosed{false};
     std::atomic<int> loads{0}, unloads{0};
     std::thread thread;
@@ -139,9 +143,12 @@ struct FakeKWin
                 const bool second = output == "B";
                 sd_bus_call_method_async(bus, nullptr, destination.c_str(), "/org/deskwaifu/Cursor",
                     "org.deskwaifu.Cursor", "Sample", Reply, this, "sssssss",
-                    invalid ? "nan" : "50", "300", output.c_str(),
-                    second ? "1000" : "-200", second ? "0" : "100",
-                    second ? "800" : "1000", second ? "600" : "800");
+                    invalid ? "nan" : (fractional ? "50.5" : "50"),
+                    fractional ? "300.25" : "300", output.c_str(),
+                    second ? "1000" : (fractional ? "-200.25" : "-200"),
+                    second ? "0" : (fractional ? "100.125" : "100"),
+                    second ? "800" : (fractional ? "1000.5" : "1000"),
+                    second ? "600" : (fractional ? "800.25" : "800"));
                 next = std::chrono::steady_clock::now() + std::chrono::milliseconds(30);
             }
             usleep(1000);
@@ -157,6 +164,12 @@ int main(int argc, char** argv)
     if (argc == 2 && std::string(argv[1]) == "--script") {
         std::cout << KWinCursorScript(":1.42", "deskwaifu-test");
         return 0;
+    }
+    const bool localeTest = argc == 3 && std::string(argv[1]) == "--numeric-locale";
+    if (localeTest) {
+        std::locale::global(std::locale(argv[2]));
+        CHECK(std::setlocale(LC_NUMERIC, argv[2]));
+        CHECK(std::string(std::localeconv()->decimal_point) == ",");
     }
     KWinCursorTracker tracker;
     double x = 0, y = 0;
@@ -214,6 +227,21 @@ int main(int argc, char** argv)
         return tracker.LocalPosition(2000, 1600, x, y);
     }));
     CHECK(x == 500 && y == 400); // Negative output origin and 2x target scale.
+    if (localeTest) {
+        const std::string numericLocale = std::setlocale(LC_NUMERIC, nullptr);
+        kwin.fractional = true;
+        CHECK(Wait([&] {
+            tracker.Poll("A");
+            return tracker.LocalPosition(2000, 1600, x, y) &&
+                std::abs(x - (50.5 + 200.25) * 2000 / 1000.5) < 1e-9 &&
+                std::abs(y - (300.25 - 100.125) * 1600 / 800.25) < 1e-9;
+        }));
+        CHECK(numericLocale == std::setlocale(LC_NUMERIC, nullptr));
+        CHECK(std::use_facet<std::numpunct<char>>(std::locale()).decimal_point() == ',');
+        tracker.Stop();
+        CHECK(!kwin.loaded);
+        return 0;
+    }
     CHECK(Wait([&] { return kwin.memoryFileClosed.load(); }));
     CHECK(tracker.Start()); // Starting an already running tracker is idempotent.
     CHECK(kwin.loads == 1);

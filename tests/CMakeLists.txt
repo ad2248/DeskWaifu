@@ -85,6 +85,12 @@ add_test(NAME failure-diagnostics COMMAND failure-diagnostics-test)
 
 find_package(Python3 COMPONENTS Interpreter)
 if (Python3_Interpreter_FOUND)
+  if (DBUS_RUN_SESSION)
+    add_test(NAME kwin-cursor-locale
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_kwin_cursor_locale.py
+        $<TARGET_FILE:kwin-cursor-tracker-test> ${DBUS_RUN_SESSION} ${CMAKE_CURRENT_BINARY_DIR})
+    set_tests_properties(kwin-cursor-locale PROPERTIES SKIP_RETURN_CODE 77)
+  endif ()
   add_test(NAME wayland-layer-configuration
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_wayland_keyboard_grab.py)
   add_test(NAME opencode-review-cli

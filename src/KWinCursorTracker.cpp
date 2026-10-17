@@ -1,9 +1,9 @@
 #include "KWinCursorTracker.hpp"
 
 #include <cmath>
-#include <cerrno>
-#include <cstdlib>
 #include <cstring>
+#include <locale>
+#include <sstream>
 #include <sys/mman.h>
 #include <unistd.h>
 
@@ -16,10 +16,10 @@ constexpr const char* Scripting = "org.kde.kwin.Scripting";
 bool Number(const char* text, double& value)
 {
     if (!text || !*text || std::strlen(text) > 64) return false;
-    char* end = nullptr;
-    errno = 0;
-    value = std::strtod(text, &end);
-    return errno == 0 && *end == '\0' && std::isfinite(value);
+    std::istringstream input(text);
+    input.imbue(std::locale::classic()); // JavaScript always serializes decimal points as '.'.
+    input >> std::noskipws >> value;
+    return !input.fail() && input.eof() && std::isfinite(value);
 }
 }
 
