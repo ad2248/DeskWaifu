@@ -23,12 +23,16 @@ public:
 private:
     bool Load();
     bool Unload();
+    bool StartGuard();
+    void StopGuard();
     static int Sample(sd_bus_message*, void*, sd_bus_error*);
     static int OwnerChanged(sd_bus_message*, void*, sd_bus_error*);
     sd_bus* _bus = nullptr;
     sd_bus_slot* _object = nullptr;
     sd_bus_slot* _watch = nullptr;
     int _scriptFd = -1;
+    int _guardControl = -1, _guardStatus = -1;
+    std::string _guardOwner;
     bool _loaded = false;
     bool _registered = false; // Includes a loadScript request whose reply timed out.
     std::string _owner, _scriptName, _outputName, _sampleOutput, _error;
@@ -38,3 +42,6 @@ private:
 
 // Kept separate so the actual script can also be exercised without a compositor.
 std::string KWinCursorScript(const std::string& destination, const std::string& scriptName);
+
+// Internal subprocess entry point, dispatched before application initialization.
+int RunKWinCursorGuard(const char* owner, const char* scriptName, const char* client);

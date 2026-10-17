@@ -384,9 +384,14 @@ Global cursor tracking targets KDE Plasma 6 / KWin Wayland:
 
 On KDE, DeskWaifu loads a transient KWin script at startup through session D-Bus.
 The script is read from an anonymous memory file: nothing is installed in KDE's
-script list and no KDE configuration is changed. Normal shutdown unloads it;
-after a crash it detects the application's vanished D-Bus connection and unloads
-itself (normally within two seconds). If KWin restarts, DeskWaifu reloads the script.
+script list and no KDE configuration is changed. Before registering any script,
+DeskWaifu starts an independent cleanup subprocess. It watches a control pipe:
+normal shutdown or a crash closes that pipe, so it can unload even a registered
+script that never started (for example, after a lost `loadScript` reply). Cleanup
+targets the original KWin connection and retries transient failures. Running
+scripts additionally detect the application's vanished D-Bus connection and
+unload themselves (normally within two seconds). If KWin restarts, DeskWaifu
+reloads the script and starts a cleaner for the new connection.
 
 The script samples the global cursor and the model output's logical geometry at
 most once every 30 ms, with at most one sample call in flight. This supports gaze

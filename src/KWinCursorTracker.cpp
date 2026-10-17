@@ -4,8 +4,16 @@
 #include <cstring>
 #include <locale>
 #include <sstream>
+#include <cerrno>
+#include <fcntl.h>
+#include <poll.h>
+#include <spawn.h>
 #include <sys/mman.h>
+#include <sys/prctl.h>
+#include <sys/wait.h>
 #include <unistd.h>
+
+extern char** environ;
 
 namespace {
 constexpr const char* Path = "/org/deskwaifu/Cursor";
@@ -21,6 +29,53 @@ bool Number(const char* text, double& value)
     input >> std::noskipws >> value;
     return !input.fail() && input.eof() && std::isfinite(value);
 }
+}
+
+int RunKWinCursorGuard(const char* owner, const char* scriptName, const char* client)
+{
+    // Detach so the cleaner can outlive a SIGKILL of the renderer. The short-
+    // lived intermediate is reaped by StartGuard; init reaps the actual cleaner.
+    const pid_t child = fork();
+    if (child < 0) return 1;
+    if (child > 0) return 0;
+    // Survive terminal group signals; do not match the renderer's killall
+    // toggle/focus commands when reusing the same executable.
+    if (setsid() < 0 || prctl(PR_SET_NAME, "dw-kwin-clean", 0, 0, 0) < 0) _exit(1);
+    sd_bus* bus = nullptr;
+    if (sd_bus_open_user(&bus) < 0) _exit(1);
+    sd_bus_set_method_call_timeout(bus, 250000);
+    if (write(STDOUT_FILENO, "R", 1) != 1) _exit(1);
+    pollfd control{STDIN_FILENO, POLLIN, 0};
+    int result;
+    do { result = poll(&control, 1, -1); } while (result < 0 && errno == EINTR);
+    // EOF on the control pipe is independent of whether the script has run.
+    auto hasOwner = [bus](const char* name) {
+        sd_bus_message* reply = nullptr;
+        int alive = 1;
+        int result = sd_bus_call_method(bus, "org.freedesktop.DBus", "/org/freedesktop/DBus",
+            "org.freedesktop.DBus", "NameHasOwner", nullptr, &reply, "s", name);
+        if (result >= 0) result = sd_bus_message_read(reply, "b", &alive);
+        sd_bus_message_unref(reply);
+        return result < 0 ? result : alive;
+    };
+    // Wait until the broker has drained the dead client's messages. Otherwise
+    // cleanup from this connection could overtake a still-queued loadScript.
+    while (hasOwner(client) != 0) {
+        if (hasOwner(owner) == 0 || !sd_bus_is_open(bus)) _exit(0);
+        usleep(200000);
+    }
+    for (;;) {
+        sd_bus_error error = SD_BUS_ERROR_NULL;
+        result = sd_bus_call_method(bus, owner, "/Scripting", Scripting,
+            "unloadScript", &error, nullptr, "s", scriptName);
+        const bool gone = sd_bus_error_has_name(&error, SD_BUS_ERROR_SERVICE_UNKNOWN) ||
+            sd_bus_error_has_name(&error, SD_BUS_ERROR_NAME_HAS_NO_OWNER);
+        sd_bus_error_free(&error);
+        if (result >= 0 || gone || !sd_bus_is_open(bus)) break;
+        usleep(200000); // Keep cleaning after transient compositor timeouts.
+    }
+    sd_bus_flush_close_unref(bus);
+    _exit(0);
 }
 
 std::string KWinCursorScript(const std::string& destination, const std::string& scriptName)
@@ -126,6 +181,7 @@ bool KWinCursorTracker::Load()
         _error = "KWin unavailable: " + std::string(std::strerror(-result));
         return false;
     }
+    if (!StartGuard()) return false; // Must be ready before any registration request.
 
     // KWin opens this path when run() reads the script. No file is installed,
     // and the anonymous file disappears automatically if this process dies.
@@ -189,6 +245,71 @@ void KWinCursorTracker::Stop()
     _watch = sd_bus_slot_unref(_watch);
     _object = sd_bus_slot_unref(_object);
     _bus = sd_bus_flush_close_unref(_bus);
+    StopGuard();
+}
+
+bool KWinCursorTracker::StartGuard()
+{
+    if (_guardControl >= 0 && _guardOwner == _owner) return true;
+    StopGuard();
+    int control[2], status[2];
+    if (pipe2(control, O_CLOEXEC) < 0) {
+        _error = "Cannot create KWin cleanup control pipe";
+        return false;
+    }
+    if (pipe2(status, O_CLOEXEC) < 0) {
+        close(control[0]); close(control[1]);
+        _error = "Cannot create KWin cleanup status pipe";
+        return false;
+    }
+    posix_spawn_file_actions_t actions;
+    const int initialized = posix_spawn_file_actions_init(&actions);
+    int result = initialized;
+    if (result == 0) result = posix_spawn_file_actions_adddup2(&actions, control[0], STDIN_FILENO);
+    if (result == 0) result = posix_spawn_file_actions_adddup2(&actions, status[1], STDOUT_FILENO);
+    // Do not keep the renderer's Wayland, IPC, GPU or control-write FDs alive.
+    if (result == 0) result = posix_spawn_file_actions_addclosefrom_np(&actions, STDERR_FILENO + 1);
+    const char* client = nullptr;
+    sd_bus_get_unique_name(_bus, &client);
+    char* args[] = {const_cast<char*>("/proc/self/exe"), const_cast<char*>("--kwin-cursor-guard"),
+        const_cast<char*>(_owner.c_str()), const_cast<char*>(_scriptName.c_str()),
+        const_cast<char*>(client), nullptr};
+    pid_t child = -1;
+    if (result == 0) result = posix_spawn(&child, "/proc/self/exe", &actions, nullptr, args, environ);
+    if (initialized == 0) posix_spawn_file_actions_destroy(&actions);
+    close(control[0]); close(status[1]);
+    if (result == 0) {
+        int childStatus = 0;
+        while (waitpid(child, &childStatus, 0) < 0 && errno == EINTR) {}
+        pollfd ready{status[0], POLLIN, 0};
+        do { result = poll(&ready, 1, 1000); } while (result < 0 && errno == EINTR);
+        char ack = 0;
+        if (result > 0 && read(status[0], &ack, 1) == 1 && ack == 'R') {
+            _guardControl = control[1];
+            _guardStatus = status[0];
+            _guardOwner = _owner;
+            return true;
+        }
+    }
+    close(control[1]); close(status[0]);
+    _error = "Cannot start independent KWin script cleanup";
+    return false;
+}
+
+void KWinCursorTracker::StopGuard()
+{
+    if (_guardControl >= 0) close(_guardControl);
+    _guardControl = -1;
+    if (_guardStatus >= 0) {
+        // Usually immediate; never make shutdown wait indefinitely for KWin.
+        // A cleaner that is still retrying remains independent after we return.
+        pollfd finished{_guardStatus, POLLIN, 0};
+        int result;
+        do { result = poll(&finished, 1, 500); } while (result < 0 && errno == EINTR);
+        close(_guardStatus);
+    }
+    _guardStatus = -1;
+    _guardOwner.clear();
 }
 
 void KWinCursorTracker::Poll(const std::string& outputName)

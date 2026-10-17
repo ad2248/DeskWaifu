@@ -7,9 +7,13 @@
 #include <fstream>
 #include <iostream>
 #include <locale>
+#include <spawn.h>
 #include <sys/wait.h>
 #include <thread>
+#include <vector>
 #include <unistd.h>
+
+extern char** environ;
 
 #define CHECK(condition) do { if (!(condition)) { \
     std::cerr << "Line " << __LINE__ << ": " << #condition << '\n'; return 1; \
@@ -48,13 +52,13 @@ struct FakeKWin
     std::atomic<bool> restart{false}, invalid{false}, silent{false};
     std::atomic<bool> delayLoad{false};
     std::atomic<bool> fractional{false};
+    std::atomic<bool> blockRun{false}, runBlocked{false};
     std::atomic<bool> memoryFileClosed{false};
-    std::atomic<int> loads{0}, unloads{0};
+    std::atomic<int> loads{0}, unloads{0}, runs{0};
     std::thread thread;
-    std::string destination, output, file, script;
+    std::string destination, output, file, script, registeredName;
     bool running = false;
-    sd_bus_message* delayedLoad = nullptr;
-    std::chrono::steady_clock::time_point replyAt{};
+    std::vector<std::pair<sd_bus_message*, std::chrono::steady_clock::time_point>> delayedLoads;
 
     FakeKWin() { thread = std::thread([this] { Run(); }); }
     ~FakeKWin() { done = true; thread.join(); }
@@ -72,12 +76,13 @@ struct FakeKWin
             self.script.find(name) == std::string::npos)
             return sd_bus_reply_method_return(message, "i", -1);
         self.file = path;
+        self.registeredName = name;
         self.destination = sd_bus_message_get_sender(message);
         self.loaded = true;
         ++self.loads;
         if (self.delayLoad.exchange(false)) {
-            self.delayedLoad = sd_bus_message_ref(message);
-            self.replyAt = std::chrono::steady_clock::now() + std::chrono::milliseconds(400);
+            self.delayedLoads.emplace_back(sd_bus_message_ref(message),
+                std::chrono::steady_clock::now() + std::chrono::milliseconds(400));
             return 1; // Registered, but the reply arrives after the client's 250 ms timeout.
         }
         return sd_bus_reply_method_return(message, "i", 0);
@@ -85,6 +90,10 @@ struct FakeKWin
     static int Unload(sd_bus_message* message, void* data, sd_bus_error*)
     {
         auto& self = *static_cast<FakeKWin*>(data);
+        const char* name = nullptr;
+        if (sd_bus_message_read(message, "s", &name) < 0) return -1;
+        if (!self.loaded || self.registeredName != name)
+            return sd_bus_reply_method_return(message, "b", 0);
         self.loaded = false;
         self.running = false;
         ++self.unloads;
@@ -92,7 +101,13 @@ struct FakeKWin
     }
     static int RunScript(sd_bus_message* message, void* data, sd_bus_error*)
     {
-        static_cast<FakeKWin*>(data)->running = true;
+        auto& self = *static_cast<FakeKWin*>(data);
+        if (self.blockRun.exchange(false)) {
+            self.runBlocked = true;
+            return 1; // Do not start the script or reply before the client is killed.
+        }
+        self.running = true;
+        ++self.runs;
         return sd_bus_reply_method_return(message, "");
     }
     static int Reply(sd_bus_message* message, void* data, sd_bus_error*)
@@ -135,9 +150,11 @@ struct FakeKWin
                 sd_bus_request_name(bus, "org.kde.KWin", 0);
             }
             while (sd_bus_process(bus, nullptr) > 0) {}
-            if (delayedLoad && std::chrono::steady_clock::now() >= replyAt) {
-                sd_bus_reply_method_return(delayedLoad, "i", 0);
-                delayedLoad = sd_bus_message_unref(delayedLoad);
+            for (auto it = delayedLoads.begin(); it != delayedLoads.end();) {
+                if (std::chrono::steady_clock::now() < it->second) { ++it; continue; }
+                sd_bus_reply_method_return(it->first, "i", 0);
+                sd_bus_message_unref(it->first);
+                it = delayedLoads.erase(it);
             }
             if (running && !silent && std::chrono::steady_clock::now() >= next) {
                 const bool second = output == "B";
@@ -153,7 +170,7 @@ struct FakeKWin
             }
             usleep(1000);
         }
-        sd_bus_message_unref(delayedLoad);
+        for (const auto& pending : delayedLoads) sd_bus_message_unref(pending.first);
         sd_bus_flush_close_unref(bus);
     }
 };
@@ -161,6 +178,8 @@ struct FakeKWin
 
 int main(int argc, char** argv)
 {
+    if (argc == 5 && std::string(argv[1]) == "--kwin-cursor-guard")
+        return RunKWinCursorGuard(argv[2], argv[3], argv[4]);
     if (argc == 2 && std::string(argv[1]) == "--script") {
         std::cout << KWinCursorScript(":1.42", "deskwaifu-test");
         return 0;
@@ -172,6 +191,10 @@ int main(int argc, char** argv)
         CHECK(std::string(std::localeconv()->decimal_point) == ",");
     }
     KWinCursorTracker tracker;
+    if (argc == 2 && std::string(argv[1]) == "--load-timeout-client") {
+        tracker.Start();
+        for (;;) pause();
+    }
     double x = 0, y = 0;
     if (argc > 1 && std::string(argv[1]) == "--live") {
         CHECK(argc == 3);
@@ -215,7 +238,7 @@ int main(int argc, char** argv)
         waitpid(child, &status, 0);
         CHECK(!childName.empty());
         CHECK(Wait([&] { return !ScriptLoaded(childName); }, 6000));
-        std::cout << "SIGKILL watchdog unloaded the orphaned script" << std::endl;
+        std::cout << "SIGKILL cleanup unloaded the orphaned script" << std::endl;
         return 0;
     }
     CHECK(!tracker.Start()); // No KWin yet: a late compositor can recover.
@@ -323,5 +346,32 @@ int main(int argc, char** argv)
     CHECK(kwin.loaded);
     tracker.Stop();
     CHECK(kwin.unloads == 6 && !kwin.loaded);
+
+    // Kill a real client while loadScript is registered but its delayed reply
+    // has not arrived. Neither Stop() nor the script's watchdog can help here.
+    kwin.delayLoad = true;
+    const int loadsBeforeCrash = kwin.loads;
+    const int runsBeforeCrash = kwin.runs;
+    char* childArgs[] = {argv[0], const_cast<char*>("--load-timeout-client"), nullptr};
+    pid_t child = -1;
+    CHECK(posix_spawn(&child, argv[0], nullptr, nullptr, childArgs, environ) == 0);
+    const bool registered = Wait([&] { return kwin.loaded && kwin.loads > loadsBeforeCrash; });
+    kill(child, SIGKILL);
+    int status = 0;
+    waitpid(child, &status, 0);
+    CHECK(registered);
+    CHECK(Wait([&] { return !kwin.loaded; }));
+    CHECK(kwin.unloads == 7);
+    CHECK(kwin.runs == runsBeforeCrash);
+
+    // Also cover a prompt load reply followed by an unprocessed run request.
+    kwin.blockRun = true;
+    CHECK(posix_spawn(&child, argv[0], nullptr, nullptr, childArgs, environ) == 0);
+    const bool blocked = Wait([&] { return kwin.runBlocked.load(); });
+    kill(child, SIGKILL);
+    waitpid(child, &status, 0);
+    CHECK(blocked);
+    CHECK(Wait([&] { return !kwin.loaded; }));
+    CHECK(kwin.unloads == 8 && kwin.runs == runsBeforeCrash);
     return 0;
 }
