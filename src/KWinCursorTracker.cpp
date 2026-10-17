@@ -109,6 +109,12 @@ bool KWinCursorTracker::Load()
 {
     _retry = std::chrono::steady_clock::now() + std::chrono::seconds(2);
     _sampleTime = {};
+    // A timeout does not cancel a server-side registration. Clean it up before
+    // reusing the name, and let KWin finish its deferred deletion before retrying.
+    if (_registered) {
+        Unload();
+        return false;
+    }
     sd_bus_message* reply = nullptr;
     int result = sd_bus_call_method(_bus, "org.freedesktop.DBus", "/org/freedesktop/DBus",
         "org.freedesktop.DBus", "GetNameOwner", nullptr, &reply, "s", KWin);
@@ -134,38 +140,50 @@ bool KWinCursorTracker::Load()
     }
     const auto file = "/proc/" + std::to_string(getpid()) + "/fd/" + std::to_string(_scriptFd);
     reply = nullptr;
+    _registered = true;
     result = sd_bus_call_method(_bus, _owner.c_str(), "/Scripting", Scripting,
         "loadScript", nullptr, &reply, "ss", file.c_str(), _scriptName.c_str());
     int id = -1;
     if (result >= 0) result = sd_bus_message_read(reply, "i", &id);
     sd_bus_message_unref(reply);
+    if (result >= 0 && id < 0) _registered = false; // Explicit rejection, not a lost reply.
     if (result < 0 || id < 0) {
         _error = "KWin could not load transient cursor script";
         return false;
     }
-    _loaded = true;
-    _loadedAt = std::chrono::steady_clock::now();
     const auto path = "/Scripting/Script" + std::to_string(id);
     result = sd_bus_call_method(_bus, _owner.c_str(), path.c_str(), "org.kde.kwin.Script",
         "run", nullptr, nullptr, "");
     if (result < 0) {
-        sd_bus_call_method(_bus, _owner.c_str(), "/Scripting", Scripting,
-            "unloadScript", nullptr, nullptr, "s", _scriptName.c_str());
-        _loaded = false;
+        Unload();
         _error = "KWin could not run transient cursor script";
         return false;
     }
+    _loaded = true;
+    _loadedAt = std::chrono::steady_clock::now();
     _error.clear();
+    return true;
+}
+
+bool KWinCursorTracker::Unload()
+{
+    _loaded = false;
+    _sampleTime = {};
+    if (!_registered) return true;
+    const int result = sd_bus_call_method(_bus, _owner.c_str(), "/Scripting", Scripting,
+        "unloadScript", nullptr, nullptr, "s", _scriptName.c_str());
+    if (result < 0) {
+        _error = "KWin could not unload transient cursor script; retrying";
+        return false; // Still uncertain: do not overwrite the registration on retry.
+    }
+    _registered = false;
     return true;
 }
 
 void KWinCursorTracker::Stop()
 {
-    if (_bus && _loaded)
-        sd_bus_call_method(_bus, _owner.c_str(), "/Scripting", Scripting,
-            "unloadScript", nullptr, nullptr, "s", _scriptName.c_str());
-    _loaded = false;
-    _sampleTime = {};
+    if (_bus) Unload();
+    _registered = false;
     if (_scriptFd >= 0) close(_scriptFd);
     _scriptFd = -1;
     _watch = sd_bus_slot_unref(_watch);
@@ -181,9 +199,7 @@ void KWinCursorTracker::Poll(const std::string& outputName)
     for (int i = 0; i < 32 && sd_bus_process(_bus, nullptr) > 0; ++i) {}
     const auto lastSample = _sampleTime == std::chrono::steady_clock::time_point{} ? _loadedAt : _sampleTime;
     if (_loaded && std::chrono::steady_clock::now() - lastSample > std::chrono::seconds(3)) {
-        sd_bus_call_method(_bus, _owner.c_str(), "/Scripting", Scripting,
-            "unloadScript", nullptr, nullptr, "s", _scriptName.c_str());
-        _loaded = false;
+        Unload();
         _retry = std::chrono::steady_clock::now() + std::chrono::seconds(2);
         _error = "KWin cursor script stopped responding; retrying";
     }
@@ -228,9 +244,14 @@ int KWinCursorTracker::OwnerChanged(sd_bus_message* message, void* data, sd_bus_
     if (result < 0) return result;
     if (std::strcmp(name, KWin) == 0) {
         auto& self = *static_cast<KWinCursorTracker*>(data);
-        self._loaded = false;
-        self._sampleTime = {};
-        self._retry = {};
+        // An acquisition signal queued before GetNameOwner must not discard
+        // registration state for the very same KWin connection.
+        if (self._owner != newOwner) {
+            self._loaded = false;
+            self._registered = false;
+            self._sampleTime = {};
+            self._retry = {};
+        }
     }
     return 0;
 }

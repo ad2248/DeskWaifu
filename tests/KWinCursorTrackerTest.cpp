@@ -43,19 +43,22 @@ struct FakeKWin
 {
     std::atomic<bool> ready{false}, done{false}, loaded{false}, failLoad{false};
     std::atomic<bool> restart{false}, invalid{false}, silent{false};
+    std::atomic<bool> delayLoad{false};
     std::atomic<bool> memoryFileClosed{false};
     std::atomic<int> loads{0}, unloads{0};
     std::thread thread;
     std::string destination, output, file, script;
     bool running = false;
+    sd_bus_message* delayedLoad = nullptr;
+    std::chrono::steady_clock::time_point replyAt{};
 
-    FakeKWin() : thread([this] { Run(); }) {}
+    FakeKWin() { thread = std::thread([this] { Run(); }); }
     ~FakeKWin() { done = true; thread.join(); }
 
     static int Load(sd_bus_message* message, void* data, sd_bus_error*)
     {
         auto& self = *static_cast<FakeKWin*>(data);
-        if (self.failLoad) return sd_bus_reply_method_return(message, "i", -1);
+        if (self.failLoad || self.loaded) return sd_bus_reply_method_return(message, "i", -1);
         const char *path, *name;
         if (sd_bus_message_read(message, "ss", &path, &name) < 0) return -1;
         std::ifstream input(path);
@@ -68,6 +71,11 @@ struct FakeKWin
         self.destination = sd_bus_message_get_sender(message);
         self.loaded = true;
         ++self.loads;
+        if (self.delayLoad.exchange(false)) {
+            self.delayedLoad = sd_bus_message_ref(message);
+            self.replyAt = std::chrono::steady_clock::now() + std::chrono::milliseconds(400);
+            return 1; // Registered, but the reply arrives after the client's 250 ms timeout.
+        }
         return sd_bus_reply_method_return(message, "i", 0);
     }
     static int Unload(sd_bus_message* message, void* data, sd_bus_error*)
@@ -123,6 +131,10 @@ struct FakeKWin
                 sd_bus_request_name(bus, "org.kde.KWin", 0);
             }
             while (sd_bus_process(bus, nullptr) > 0) {}
+            if (delayedLoad && std::chrono::steady_clock::now() >= replyAt) {
+                sd_bus_reply_method_return(delayedLoad, "i", 0);
+                delayedLoad = sd_bus_message_unref(delayedLoad);
+            }
             if (running && !silent && std::chrono::steady_clock::now() >= next) {
                 const bool second = output == "B";
                 sd_bus_call_method_async(bus, nullptr, destination.c_str(), "/org/deskwaifu/Cursor",
@@ -134,6 +146,7 @@ struct FakeKWin
             }
             usleep(1000);
         }
+        sd_bus_message_unref(delayedLoad);
         sd_bus_flush_close_unref(bus);
     }
 };
@@ -262,5 +275,25 @@ int main(int argc, char** argv)
     }));
     tracker.Stop();
     CHECK(kwin.unloads == 3 && !kwin.loaded);
+
+    // A lost loadScript reply must not leave a registered, unstarted script
+    // blocking all subsequent loads with the same name.
+    kwin.delayLoad = true;
+    CHECK(!tracker.Start());
+    CHECK(kwin.loaded);
+    CHECK(Wait([&] {
+        tracker.Poll("A");
+        return tracker.LocalPosition(2000, 1600, x, y);
+    }, 7000));
+    tracker.Stop();
+    CHECK(kwin.unloads == 5 && !kwin.loaded);
+
+    // Shutdown immediately after an ambiguous load must clean up even though
+    // run() was never called and no script-side watchdog could have started.
+    kwin.delayLoad = true;
+    CHECK(!tracker.Start());
+    CHECK(kwin.loaded);
+    tracker.Stop();
+    CHECK(kwin.unloads == 6 && !kwin.loaded);
     return 0;
 }

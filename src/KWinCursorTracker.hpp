@@ -22,6 +22,7 @@ public:
 
 private:
     bool Load();
+    bool Unload();
     static int Sample(sd_bus_message*, void*, sd_bus_error*);
     static int OwnerChanged(sd_bus_message*, void*, sd_bus_error*);
     sd_bus* _bus = nullptr;
@@ -29,6 +30,7 @@ private:
     sd_bus_slot* _watch = nullptr;
     int _scriptFd = -1;
     bool _loaded = false;
+    bool _registered = false; // Includes a loadScript request whose reply timed out.
     std::string _owner, _scriptName, _outputName, _sampleOutput, _error;
     double _x = 0, _y = 0, _left = 0, _top = 0, _width = 0, _height = 0;
     std::chrono::steady_clock::time_point _sampleTime{}, _loadedAt{}, _retry{};
