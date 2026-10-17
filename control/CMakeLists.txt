@@ -9,6 +9,8 @@ qt_add_executable(deskwaifu-control
   DeskWaifuClient.hpp
   DeskWaifuLauncher.cpp
   DeskWaifuLauncher.hpp
+  DeskWaifuRespawner.cpp
+  DeskWaifuRespawner.hpp
   HotkeyPanel.cpp
   HotkeyPanel.hpp
 )

@@ -46,6 +46,12 @@ void DeskWaifuClient::sendCommand(const QString& command, const QJsonObject& par
     sendNext();
 }
 
+void DeskWaifuClient::cancelQueuedCommand(const QString& command)
+{
+    for (qsizetype i = _requests.size(); i-- > 0;)
+        if (_requests[i].command == command) _requests.removeAt(i);
+}
+
 bool DeskWaifuClient::isConnected() const
 {
     return _socket.state() == QLocalSocket::ConnectedState;
@@ -116,7 +122,8 @@ void DeskWaifuClient::handleDisconnected()
     _readBuffer.clear();
     // A queued toggle is meaningful only for the current connection/model state.
     for (qsizetype i = _requests.size(); i-- > 0;)
-        if (_requests[i].command == QStringLiteral("trigger_hotkey") ||
+        if (_requests[i].command == QStringLiteral("quit") ||
+            _requests[i].command == QStringLiteral("trigger_hotkey") ||
             _requests[i].command == QStringLiteral("set_hover_opacity") ||
             _requests[i].command.endsWith(QStringLiteral("transform_edit")) ||
             _requests[i].command == QStringLiteral("reset_transform_settings") ||

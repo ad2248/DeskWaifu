@@ -96,6 +96,16 @@
             </widget>
            </item>
            <item>
+            <widget class="QPushButton" name="respawnButton">
+              <property name="text">
+               <string>Respawn</string>
+              </property>
+              <property name="toolTip">
+               <string>Gracefully stop and restart the connected DeskWaifu backend.</string>
+              </property>
+             </widget>
+            </item>
+            <item>
             <widget class="QPushButton" name="toggleHiddenButton">
              <property name="text">
               <string>Toggle visibility</string>

@@ -77,6 +77,7 @@ void DeskWaifuClientTest::doesNotReplayUnacknowledgedMutation()
     client.sendCommand(command);
     client.sendCommand(QStringLiteral("trigger_hotkey"));
     client.sendCommand(QStringLiteral("set_hover_opacity"), {{QStringLiteral("opacity"), 0.5}});
+    client.sendCommand(QStringLiteral("quit"));
     client.sendCommand(QStringLiteral("get_status"));
 
     QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 2000);
@@ -109,6 +110,7 @@ void DeskWaifuClientTest::doesNotReplayUnacknowledgedMutation_data()
     QTest::newRow("transform-apply") << QStringLiteral("apply_transform_edit");
     QTest::newRow("transform-reset") << QStringLiteral("reset_transform_settings");
     QTest::newRow("hover-opacity") << QStringLiteral("set_hover_opacity");
+    QTest::newRow("quit") << QStringLiteral("quit");
 }
 
 void DeskWaifuClientTest::retriesUnacknowledgedQuery()

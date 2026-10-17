@@ -17,6 +17,7 @@
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
+    , _respawner(_client, QCoreApplication::applicationDirPath())
 {
     ui->setupUi(this);
     _connectionStatusLabel = new QLabel(tr("尚未连接"), this);
@@ -62,6 +63,7 @@ MainWindow::MainWindow(QWidget* parent)
     connect(&_client, &DeskWaifuClient::connectionChanged, this,
         [this](bool connected, const QString& message) {
             _hotkeys->setConnected(connected);
+            ui->respawnButton->setEnabled(connected && !_respawner.isRunning());
             if (!connected)
             {
                 if (_hoverSetPending) setStatusMessage(tr("连接断开：设置结果未确认，重新连接后将查询实际保存结果。"));
@@ -126,6 +128,17 @@ void MainWindow::bindControls()
     ui->horizontalLayout->setColumnStretch(3, 1);
     ui->horizontalLayout_2->setColumnStretch(1, 1);
     ui->horizontalLayout_2->setColumnStretch(3, 1);
+    ui->respawnButton->setEnabled(false);
+    connect(&_respawner, &DeskWaifuRespawner::runningChanged, this, [this](bool running) {
+        ui->spawnButton->setEnabled(!running);
+        ui->respawnButton->setEnabled(!running && _client.isConnected());
+        if (running) setStatusMessage(tr("Respawning DeskWaifu; waiting for the old process to exit…"));
+    });
+    connect(&_respawner, &DeskWaifuRespawner::finished, this, [this](bool, const QString& message) {
+        setStatusMessage(message, 8000);
+        ui->responseLog->appendPlainText(message);
+    });
+    connect(ui->respawnButton, &QPushButton::clicked, this, [this] { _respawner.start(); });
     connect(ui->spawnButton, &QPushButton::clicked, this, [this] {
         const auto result = DeskWaifuLauncher::spawn(_client.isConnected(), QCoreApplication::applicationDirPath());
         setStatusMessage(result.message, 8000);

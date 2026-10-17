@@ -182,6 +182,19 @@ add_dependencies(deskwaifu-launcher-test spawn-backend-fixture)
 set_target_properties(deskwaifu-launcher-test PROPERTIES AUTOMOC ON)
 add_test(NAME deskwaifu-launcher COMMAND deskwaifu-launcher-test)
 
+qt_add_executable(deskwaifu-respawner-test
+  DeskWaifuRespawnerTest.cpp
+  ../control/DeskWaifuRespawner.cpp ../control/DeskWaifuRespawner.hpp
+  ../control/DeskWaifuClient.cpp ../control/DeskWaifuClient.hpp
+  ../control/DeskWaifuLauncher.cpp)
+target_include_directories(deskwaifu-respawner-test PRIVATE ../control)
+target_link_libraries(deskwaifu-respawner-test PRIVATE Qt6::Test Qt6::Network)
+target_compile_definitions(deskwaifu-respawner-test PRIVATE
+  SPAWN_BACKEND_FIXTURE="$<TARGET_FILE:spawn-backend-fixture>")
+add_dependencies(deskwaifu-respawner-test spawn-backend-fixture)
+set_target_properties(deskwaifu-respawner-test PROPERTIES AUTOMOC ON)
+add_test(NAME deskwaifu-respawner COMMAND deskwaifu-respawner-test)
+
 qt_add_executable(deskwaifu-client-test
   DeskWaifuClientTest.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../control/DeskWaifuClient.cpp
@@ -246,6 +259,7 @@ qt_add_executable(main-window-transform-test
   ../control/MainWindow.cpp ../control/MainWindow.hpp ../control/MainWindow.ui
   ../control/DeskWaifuClient.cpp ../control/DeskWaifuClient.hpp
   ../control/DeskWaifuLauncher.cpp ../control/DeskWaifuLauncher.hpp
+  ../control/DeskWaifuRespawner.cpp ../control/DeskWaifuRespawner.hpp
   ../control/HotkeyPanel.cpp ../control/HotkeyPanel.hpp
   ../src/ConfigStore.cpp ../src/LAppConfig.cpp ../src/InputController.cpp
 )
