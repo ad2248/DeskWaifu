@@ -7,5 +7,7 @@ std::vector<ModelRegion> ReadModelInputRegion(unsigned int framebuffer, int widt
     ModelRegion clip, std::vector<unsigned char>& pixels);
 void UpdateWaylandInputRegion(WaylandContext* wl, const std::vector<ModelRegion>& modelRegions,
     const std::vector<ModelRegion>& handles = {});
+void UpdateWaylandFrameInputRegion(WaylandContext* wl, bool screenEditing, int width, int height,
+    const std::vector<ModelRegion>& modelRegions);
 void DrawWaylandEditFrame(const std::vector<ModelRegion>& handles, int width, int height);
 bool ClearWaylandInputRegion(WaylandContext* wl);
