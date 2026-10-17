@@ -9,7 +9,6 @@ url='https://github.com/ad2248/DeskWaifu'
 license=('LicenseRef-Live2D-Open-Software' 'LicenseRef-Live2D-Proprietary' 'BSD-3-Clause' 'MIT' 'Unlicense')
 depends=('glibc' 'gcc-libs' 'wayland' 'libglvnd' 'systemd-libs' 'qt6-base' 'qt6-wayland' 'bash' 'socat' 'psmisc')
 makedepends=('git' 'cmake' 'ninja')
-checkdepends=('desktop-file-utils')
 provides=('deskwaifu')
 conflicts=('deskwaifu')
 _sdk=CubismSdkForNative-5-r.5
@@ -40,14 +39,9 @@ build() {
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX=/usr \
     -DCMAKE_INSTALL_LIBDIR=lib \
-    -DBUILD_TESTING=ON \
+    -DBUILD_TESTING=OFF \
     -DDESKWAIFU_BUILD_CONTROL=ON
   cmake --build "$srcdir/build"
-}
-
-check() {
-  QT_QPA_PLATFORM=offscreen ctest --test-dir "$srcdir/build" --output-on-failure --no-tests=error
-  desktop-file-validate "$srcdir/deskwaifu/control/deskwaifu-control.desktop"
 }
 
 package() {

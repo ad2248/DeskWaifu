@@ -60,7 +60,8 @@ makepkg --printsrcinfo > .SRCINFO
 ```
 
 Validate with `makepkg`, `namcap PKGBUILD`, and `namcap` on the resulting
-package. `check()` runs CTest with Qt's offscreen backend and validates the
-desktop entry. `package()` uses the `DeskWaifu` CMake install component to avoid
+package. AUR builds disable automated tests (`BUILD_TESTING=OFF`) and do not
+provide a `check()` step; automated tests remain in CI.
+`package()` uses the `DeskWaifu` CMake install component to avoid
 shipping bundled GLEW development files. The SDK and sample models are build
 inputs only; they are not installed as SDK files.

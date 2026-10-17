@@ -9,7 +9,6 @@ pkgbase = deskwaifu-git
 	license = BSD-3-Clause
 	license = MIT
 	license = Unlicense
-	checkdepends = desktop-file-utils
 	makedepends = git
 	makedepends = cmake
 	makedepends = ninja
