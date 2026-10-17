@@ -327,6 +327,17 @@
        </attribute>
        <layout class="QVBoxLayout" name="transformLayout">
         <item>
+         <layout class="QHBoxLayout" name="outputLayout">
+          <item><widget class="QLabel" name="outputLabel">
+           <property name="text"><string>显示器</string></property>
+          </widget></item>
+          <item><widget class="QComboBox" name="outputCombo">
+           <property name="enabled"><bool>false</bool></property>
+           <property name="toolTip"><string>切换后立即保存，模型居中并清除裁剪，保留缩放。</string></property>
+          </widget></item>
+         </layout>
+        </item>
+        <item>
          <widget class="QGroupBox" name="transformGroup">
           <property name="title">
            <string>Position and scale</string>

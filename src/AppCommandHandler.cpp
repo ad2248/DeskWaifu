@@ -106,6 +106,7 @@ std::string AppCommandHandler::Execute(const std::string& json, const std::strin
     }
 
     auto& editor = app->Settings();
+    if (command == "set_output") return Reply(app->SelectOutput(JsonGetString(json, "name")));
     if (editor.Editing() && (command == "set_model" || command == "next_model" || command == "prev_model" ||
         command == "switch_skin" || command == "trigger_hotkey" || command == "set_expression" || command == "do_motion"))
         return Reply(AppResult::Failure("Finish transform editing before changing model actions"));
@@ -207,7 +208,16 @@ std::string AppCommandHandler::Execute(const std::string& json, const std::strin
             << ",\"screen_editing\":" << (editor.ScreenEditing() ? "true" : "false")
             << ",\"local_screen_editing\":" << (editor.LocalScreenEditing() ? "true" : "false")
             << ",\"unsaved\":" << (editor.Dirty() ? "true" : "false") << ",\"conflict\":" << (editor.Conflict() ? "true" : "false")
-            << ",\"known\":true,\"config_path\":\"" << JsonEscape(editor.Path()) << "\",\"warning\":\"" << JsonEscape(editor.Error()) << "\"}";
+            << ",\"known\":true,\"config_path\":\"" << JsonEscape(editor.Path()) << "\",\"warning\":\"" << JsonEscape(editor.Error()) << "\""
+            << ",\"outputs\":[";
+        bool first = true;
+        for (const auto& output : app->Outputs()) {
+            if (!first) out << ',';
+            first = false;
+            out << "{\"name\":\"" << JsonEscape(output.name) << "\",\"current\":"
+                << (output.id == app->CurrentOutput() ? "true" : "false") << '}';
+        }
+        out << "]}";
         const auto reply = out.str();
         if (saves && !requestId.empty()) {
             RememberSave(requestId, reply);

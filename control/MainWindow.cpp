@@ -69,6 +69,7 @@ MainWindow::MainWindow(QWidget* parent)
                 if (_hoverSetPending) setStatusMessage(tr("连接断开：设置结果未确认，重新连接后将查询实际保存结果。"));
                 _transformOwned = _transformEditStarting = _transformQueryPending = false;
                 _transformPreviewInFlight = _transformPreviewPending = _transformSupported = false;
+                _outputSwitchPending = false;
                 ui->transformStatusLabel->setText(tr("连接断开：未确认的编辑已取消，请重新查询保存结果。"));
                 _hotkeyModelToken.clear();
                 _lastHotkeyResponse = {};
@@ -79,6 +80,7 @@ MainWindow::MainWindow(QWidget* parent)
             _connectionStatusLabel->setToolTip(message);
             ui->hoverOpacityGroup->setEnabled(false);
             ui->transformGroup->setEnabled(connected && _transformSupported);
+            ui->outputCombo->setEnabled(false);
             ui->positionEdit->setEnabled(connected && _transformSupported);
             ui->xformResetButton->setEnabled(connected && _transformSupported);
             ui->cancelTransformButton->setEnabled(false);
@@ -124,6 +126,14 @@ void MainWindow::setStatusMessage(const QString& message, int timeoutMs)
 
 void MainWindow::bindControls()
 {
+    connect(ui->outputCombo, &QComboBox::activated, this, [this](int index) {
+        if (_outputSwitchPending || index < 0) return;
+        _outputSwitchPending = true;
+        ui->outputCombo->setEnabled(false);
+        ui->transformGroup->setEnabled(false);
+        ui->positionEdit->setEnabled(false);
+        _client.sendCommand(QStringLiteral("set_output"), {{QStringLiteral("name"), ui->outputCombo->itemData(index).toString()}});
+    });
     ui->horizontalLayout->setColumnStretch(1, 1);
     ui->horizontalLayout->setColumnStretch(3, 1);
     ui->horizontalLayout_2->setColumnStretch(1, 1);
@@ -242,6 +252,7 @@ void MainWindow::bindControls()
         queueTransformPreview();
     });
     ui->transformGroup->setEnabled(false); ui->positionEdit->setEnabled(false);
+    ui->outputCombo->setEnabled(false);
     ui->xformResetButton->setEnabled(false); ui->cancelTransformButton->setEnabled(false);
     ui->relocateCropButton->setEnabled(false); ui->retryTransformButton->setEnabled(false);
     connect(ui->hoverOpacitySlider, &QSlider::sliderMoved, this, [this](int value) {
@@ -322,6 +333,11 @@ void MainWindow::handleResponse(const QString& command, const QJsonObject& respo
     if (command == QStringLiteral("apply_transform_edit") || command == QStringLiteral("reset_transform_settings") || command == QStringLiteral("retry_transform_save")) {
         _transformSaveRequest.clear();
         if (response.value(QStringLiteral("ok")).toBool()) setStatusMessage(tr("变换设置已保存"));
+    }
+    if (command == QStringLiteral("set_output")) {
+        _outputSwitchPending = false;
+        if (response.value(QStringLiteral("ok")).toBool()) setStatusMessage(tr("显示器已保存，模型已居中并清除裁剪"));
+        requestTransform();
     }
     const bool transformResponse = command == QStringLiteral("get_transform_settings")
         || command.endsWith(QStringLiteral("transform_edit")) || command == QStringLiteral("reset_transform_settings")
@@ -487,6 +503,7 @@ void MainWindow::sendTransformSave(const QString& command, QJsonObject parameter
     if (!_transformSaveRequest.isEmpty()) return;
     _transformSaveRequest = QUuid::createUuid().toString(QUuid::WithoutBraces);
     setStatusMessage(tr("正在保存变换设置…"));
+    ui->outputCombo->setEnabled(false);
     ui->transformGroup->setEnabled(false); ui->positionEdit->setEnabled(false);
     ui->cancelTransformButton->setEnabled(false); ui->relocateCropButton->setEnabled(false);
     ui->retryTransformButton->setEnabled(false); ui->xformResetButton->setEnabled(false);
@@ -506,6 +523,7 @@ void MainWindow::queueTransformPreview()
 {
     if (_transformUpdating || !_client.isConnected() || !_transformSupported) return;
     _transformPreviewPending = true;
+    ui->outputCombo->setEnabled(false);
     ui->transformButton->setEnabled(false);
     if (_transformEditStarting || _transformPreviewInFlight) return;
     if (!_transformOwned) {
@@ -523,6 +541,30 @@ void MainWindow::showTransform(const QJsonObject& response)
 {
     _lastTransformResponse = response;
     _transformUpdating = true;
+    {
+        const QSignalBlocker blocker(ui->outputCombo);
+        QStringList names;
+        QString currentName;
+        for (const auto& value : response.value(QStringLiteral("outputs")).toArray()) {
+            const auto output = value.toObject();
+            const auto name = output.value(QStringLiteral("name")).toString();
+            if (name.isEmpty()) continue;
+            names.append(name);
+            if (output.value(QStringLiteral("current")).toBool()) currentName = name;
+        }
+        QStringList previousNames;
+        for (int i = 0; i < ui->outputCombo->count(); ++i) previousNames.append(ui->outputCombo->itemData(i).toString());
+        if (names != previousNames) {
+            ui->outputCombo->clear();
+            for (const auto& name : names) ui->outputCombo->addItem(name, name);
+        }
+        int current = -1;
+        if (!currentName.isEmpty()) current = ui->outputCombo->findData(currentName);
+        ui->outputCombo->setCurrentIndex(current);
+        ui->outputCombo->setEnabled(!_outputSwitchPending && _transformSaveRequest.isEmpty() &&
+            !_transformEditStarting && !_transformPreviewPending &&
+            !response.value(QStringLiteral("editing")).toBool() && ui->outputCombo->count() > 0);
+    }
     ui->positionXSpin->setValue(response.value(QStringLiteral("x")).toDouble());
     ui->positionYSpin->setValue(response.value(QStringLiteral("y")).toDouble());
     ui->zoomSpin->setValue(response.value(QStringLiteral("zoom")).toDouble());
@@ -535,7 +577,7 @@ void MainWindow::showTransform(const QJsonObject& response)
     ui->cropBox_w->setValue(cropped ? response.value(QStringLiteral("crop_width")).toInt(1) : _surfaceWidth);
     ui->cropBox_h->setValue(cropped ? response.value(QStringLiteral("crop_height")).toInt(1) : _surfaceHeight);
     for (auto* spin : {ui->cropBox_x, ui->cropBox_y, ui->cropBox_w, ui->cropBox_h}) spin->setEnabled(cropped);
-    const bool busy = response.value(QStringLiteral("editing")).toBool() && !_transformOwned;
+    const bool busy = _outputSwitchPending || (response.value(QStringLiteral("editing")).toBool() && !_transformOwned);
     ui->transformGroup->setEnabled(!busy); ui->positionEdit->setEnabled(!busy);
     ui->transformButton->setEnabled(_transformOwned);
     ui->cancelTransformButton->setEnabled(_transformOwned);

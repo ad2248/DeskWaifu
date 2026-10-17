@@ -83,6 +83,9 @@ bool LAppConfig::Decode(const ConfigStore::Snapshot& snapshot, Values& values, s
         !string("default_model", next.defaultModel)) {
         error = "Invalid model paths in config"; return false;
     }
+    if (!string("model_output", next.modelOutput)) {
+        error = "Invalid model_output: expected a display name string"; return false;
+    }
     // Missing or unconvertible legacy numeric fields keep construction defaults.
     const auto number = [&](const char* key, auto& destination) {
         const auto it = snapshot.values.find(key);
@@ -154,6 +157,7 @@ bool LAppConfig::Serialize(const Values& values, std::string& document, std::str
         << ",\n  \"window_height\": " << values.windowHeight
         << ",\n  \"hover_opacity_enabled\": " << (values.hoverOpacityEnabled ? "true" : "false")
         << ",\n  \"hover_opacity\": " << values.hoverOpacity;
+    if (!values.modelOutput.empty()) out << ",\n  \"model_output\": " << Quote(values.modelOutput);
     if (values.modelRegion) {
         const auto& r = *values.modelRegion;
         out << ",\n  \"model_region\": {\"x\": " << r.x << ", \"y\": " << r.y

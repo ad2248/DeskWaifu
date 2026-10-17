@@ -4,6 +4,7 @@
 #include "HoverOpacitySettings.hpp"
 #include <QLabel>
 #include <QCheckBox>
+#include <QComboBox>
 #include <QDoubleSpinBox>
 #include <QSpinBox>
 #include <QSlider>
@@ -41,6 +42,77 @@ class MainWindowTransformTest : public QObject
 {
     Q_OBJECT
 private slots:
+    void displaySelection()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const int fd = open(QFile::encodeName(directory.path()).constData(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+        QVERIFY(fd >= 0);
+        const auto closeRuntime = qScopeGuard([fd] { close(fd); });
+        const auto previousRuntime = qgetenv("XDG_RUNTIME_DIR");
+        const auto restoreRuntime = qScopeGuard([previousRuntime] { qputenv("XDG_RUNTIME_DIR", previousRuntime); });
+        const QString runtimePath = QStringLiteral("/proc/self/fd/%1").arg(fd);
+        qputenv("XDG_RUNTIME_DIR", runtimePath.toLocal8Bit());
+        QLocalServer server;
+        QVERIFY(server.listen(runtimePath + "/deskwaifu.sock"));
+        QString selected = "DP-1";
+        bool editing = false, fail = false;
+        int switches = 0;
+        connect(&server, &QLocalServer::newConnection, this, [&] {
+            auto* socket = server.nextPendingConnection();
+            connect(socket, &QLocalSocket::readyRead, this, [&, socket] {
+                while (socket->canReadLine()) {
+                    const auto input = QJsonDocument::fromJson(socket->readLine()).object();
+                    const auto command = input.value("command").toString();
+                    QJsonObject response{{"ok", true}};
+                    if (command == "get_transform_settings") {
+                        response.insert("outputs", QJsonArray{
+                            QJsonObject{{"name", "DP-1"}, {"current", selected == "DP-1"}},
+                            QJsonObject{{"name", "HDMI-A-1"}, {"current", selected == "HDMI-A-1"}}});
+                        response.insert("editing", editing);
+                        response.insert("zoom", 2);
+                    } else if (command == "set_output") {
+                        ++switches;
+                        response.insert("ok", !fail);
+                        if (fail) response.insert("error", "Display is no longer available");
+                        else selected = input.value("name").toString();
+                    }
+                    socket->write(QJsonDocument(response).toJson(QJsonDocument::Compact) + '\n');
+                    socket->flush();
+                }
+            });
+        });
+        MainWindow window;
+        window.show(); window.activateWindow();
+        window.findChild<QTabWidget*>("tabWidget")->setCurrentWidget(window.findChild<QWidget*>("transformTab"));
+        auto* combo = window.findChild<QComboBox*>("outputCombo");
+        QVERIFY(combo);
+        QTRY_VERIFY(combo->isEnabled() && combo->count() == 2);
+        QCOMPARE(combo->currentText(), QString("DP-1"));
+        QCOMPARE(switches, 0); // Polling must not write settings.
+        QSignalSpy removed(combo->model(), &QAbstractItemModel::rowsRemoved);
+        QTest::qWait(450);
+        QCOMPARE(removed.count(), 0); // Refreshes must not rebuild an open selector.
+        combo->setCurrentIndex(1);
+        QVERIFY(QMetaObject::invokeMethod(combo, "activated", Qt::DirectConnection, Q_ARG(int, 1)));
+        QVERIFY(!combo->isEnabled());
+        QTRY_VERIFY(combo->isEnabled() && switches == 1);
+        QCOMPARE(selected, QString("HDMI-A-1"));
+        QCOMPARE(window.findChild<QDoubleSpinBox*>("positionXSpin")->value(), 0.);
+        QCOMPARE(window.findChild<QDoubleSpinBox*>("zoomSpin")->value(), 2.);
+        QVERIFY(!window.findChild<QCheckBox*>("cropEnabledCheck")->isChecked());
+        editing = true;
+        QTRY_VERIFY(!combo->isEnabled());
+        editing = false;
+        QTRY_VERIFY(combo->isEnabled());
+        fail = true;
+        combo->setCurrentIndex(0);
+        QVERIFY(QMetaObject::invokeMethod(combo, "activated", Qt::DirectConnection, Q_ARG(int, 0)));
+        QTRY_VERIFY(combo->isEnabled() && switches == 2);
+        QCOMPARE(combo->currentText(), QString("HDMI-A-1"));
+        QVERIFY(window.findChild<QLabel*>("operationStatusLabel")->text().contains("no longer available"));
+    }
+
     void hoverOpacitySavesOnRelease()
     {
         QTemporaryDir directory;
