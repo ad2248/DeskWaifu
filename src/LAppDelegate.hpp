@@ -12,6 +12,7 @@
 #include "LAppWayland.hpp"
 #include "InputController.hpp"
 #include "CursorLook.hpp"
+#include "KWinCursorTracker.hpp"
 #include "HoverOpacity.hpp"
 #include "ApplicationService.hpp"
 #include "TransformEditor.hpp"
@@ -200,6 +201,7 @@ private:
     void TrackGlobalCursor();
     void UpdateCursorLook(ModelTransform transform);
     CursorLook _cursorLook;
+    KWinCursorTracker _kwinCursor;
     HoverOpacity _hoverOpacity;
     std::vector<unsigned char> _inputPixels;
     bool _isEnd;                                 ///< APP終了しているか

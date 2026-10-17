@@ -29,6 +29,7 @@ RUN { printf 'Server = %s/$repo/os/$arch\n' "${PACMAN_MIRROR}"; \
         qt6-base \
         qt6-wayland \
         socat \
+        systemd-libs \
         sway \
         unzip \
         wayland \
