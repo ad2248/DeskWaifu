@@ -18,6 +18,21 @@ add_test(NAME cursor-look-wiring
   COMMAND ${CMAKE_COMMAND} -DAPP_SOURCE=${CMAKE_SOURCE_DIR}/src
     -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckCursorLookWiring.cmake)
 
+find_package(Threads REQUIRED)
+add_executable(kwin-cursor-tracker-test KWinCursorTrackerTest.cpp)
+target_link_libraries(kwin-cursor-tracker-test PRIVATE deskwaifu_kwin_cursor Threads::Threads)
+find_program(DBUS_RUN_SESSION dbus-run-session)
+if (DBUS_RUN_SESSION)
+  add_test(NAME kwin-cursor-tracker
+    COMMAND ${DBUS_RUN_SESSION} -- $<TARGET_FILE:kwin-cursor-tracker-test>)
+endif ()
+find_program(NODE_EXECUTABLE NAMES node nodejs)
+if (NODE_EXECUTABLE)
+  add_test(NAME kwin-cursor-script
+    COMMAND ${NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_kwin_cursor_script.js
+      $<TARGET_FILE:kwin-cursor-tracker-test>)
+endif ()
+
 add_executable(json-command-test JsonCommandTest.cpp)
 target_include_directories(json-command-test PRIVATE ../src)
 add_test(NAME json-command COMMAND json-command-test)
@@ -70,6 +85,12 @@ add_test(NAME failure-diagnostics COMMAND failure-diagnostics-test)
 
 find_package(Python3 COMPONENTS Interpreter)
 if (Python3_Interpreter_FOUND)
+  if (DBUS_RUN_SESSION)
+    add_test(NAME kwin-cursor-locale
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_kwin_cursor_locale.py
+        $<TARGET_FILE:kwin-cursor-tracker-test> ${DBUS_RUN_SESSION} ${CMAKE_CURRENT_BINARY_DIR})
+    set_tests_properties(kwin-cursor-locale PROPERTIES SKIP_RETURN_CODE 77)
+  endif ()
   add_test(NAME wayland-layer-configuration
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_wayland_keyboard_grab.py)
   add_test(NAME opencode-review-cli

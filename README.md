@@ -43,12 +43,13 @@ https://github.com/user-attachments/assets/95dfdedc-4957-4bb7-b79f-f3addd97a6db
 
 | Dependency | Notes |
 |---|---|
-| **Linux with Wayland compositor** | Must support `wlr-layer-shell-v1` (Hyprland, Sway, river, etc.) |
+| **Linux with Wayland compositor** | Must support `wlr-layer-shell-v1`; KDE Plasma 6 / KWin is required for global cursor tracking |
 | **Live2D Cubism SDK for Native** | Download from [live2d.com/sdk](https://www.live2d.com/en/sdk/about/) (proprietary, not bundled) |
 | **C++ compiler** | GCC or Clang with C++14 support |
 | **CMake** | >= 3.16 |
 | **pkg-config** | For finding Wayland/EGL libraries |
 | **Wayland development libraries** | `wayland-client`, `wayland-egl`, `wayland-cursor` |
+| **libsystemd development library** | `sd-bus` for the transient KWin cursor bridge |
 | **EGL & OpenGL** | `libegl-dev`, `libgl-dev` or equivalent |
 | **wayland-scanner** | Usually part of `wayland-protocols` or `wayland` dev packages |
 | **Qt 6** | `Widgets`, `Network`, and the Qt Wayland platform plugin for the control window |
@@ -58,17 +59,17 @@ https://github.com/user-attachments/assets/95dfdedc-4957-4bb7-b79f-f3addd97a6db
 
 **Arch Linux:**
 ```bash
-sudo pacman -S --needed base-devel cmake pkgconf wayland wayland-protocols libglvnd egl-wayland qt6-base qt6-wayland curl unzip
+sudo pacman -S --needed base-devel cmake pkgconf wayland wayland-protocols libglvnd egl-wayland qt6-base qt6-wayland systemd-libs curl unzip
 ```
 
 **Ubuntu / Debian:**
 ```bash
-sudo apt install build-essential cmake pkg-config libwayland-dev wayland-protocols libegl-dev libgl-dev libglu1-mesa-dev qt6-base-dev qt6-wayland curl unzip
+sudo apt install build-essential cmake pkg-config libwayland-dev wayland-protocols libegl-dev libgl-dev libglu1-mesa-dev libsystemd-dev qt6-base-dev qt6-wayland curl unzip
 ```
 
 **Fedora:**
 ```bash
-sudo dnf install gcc-c++ cmake pkgconf-pkg-config wayland-devel wayland-protocols-devel mesa-libEGL-devel mesa-libGL-devel qt6-qtbase-devel qt6-qtwayland curl unzip
+sudo dnf install gcc-c++ cmake pkgconf-pkg-config wayland-devel wayland-protocols-devel mesa-libEGL-devel mesa-libGL-devel systemd-devel qt6-qtbase-devel qt6-qtwayland curl unzip
 ```
 
 ## Installation
@@ -369,23 +370,41 @@ pressing Tab again removes that expression's contribution.
 
 ### Compositor Compatibility
 
-DeskWaifu runs on any Wayland compositor that supports the `wlr-layer-shell` protocol. Some features require compositor-specific IPC and are only available on Hyprland:
+DeskWaifu runs on Wayland compositors that support `wlr-layer-shell`.
+Global cursor tracking targets KDE Plasma 6 / KWin Wayland:
 
-| Feature | Hyprland | Sway | Other wlroots |
-|---|---|---|---|
-| Overlay rendering | Yes | Yes | Yes |
-| Click-through transparency | Yes | Yes | Yes |
-| Mouse drag / tap / scroll | Yes | Yes | Yes |
-| Global cursor tracking (eyes follow cursor anywhere) | Yes | No | No |
-| Cross-monitor drag | Yes | No | No |
-| Move to focused monitor | Yes | Yes | No |
+| Feature | KDE / KWin | Hyprland | Sway | Other wlroots |
+|---|---|---|---|---|
+| Overlay rendering | Yes | Yes | Yes | Yes |
+| Click-through transparency | Yes | Yes | Yes | Yes |
+| Mouse drag / tap / scroll | Yes | Yes | Yes | Yes |
+| Global cursor tracking (eyes follow cursor anywhere) | Yes | No | No | No |
+| Cross-monitor drag | No | Yes | No | No |
+| Move to focused monitor | No | Yes | Yes | No |
 
-On Hyprland, gaze follows the cursor even outside the model's input/crop region
-or on another monitor. The latest cursor sample is applied every frame, so taps
-and model position changes do not stop tracking a stationary cursor. Global
-tracking does not synthesize model drag or crop-edit events. On Sway and other
-compositors, gaze falls back to pointer events on the model surface; standard
-Wayland does not expose the global cursor position.
+On KDE, DeskWaifu loads a transient KWin script at startup through session D-Bus.
+The script is read from an anonymous memory file: nothing is installed in KDE's
+script list and no KDE configuration is changed. Before registering any script,
+DeskWaifu starts an independent cleanup subprocess. It watches a control pipe:
+normal shutdown or a crash closes that pipe, so it can unload even a registered
+script that never started (for example, after a lost `loadScript` reply). Cleanup
+targets the original KWin connection and retries transient failures. Running
+scripts additionally detect the application's vanished D-Bus connection and
+unload themselves (normally within two seconds). If KWin restarts, DeskWaifu
+reloads the script and starts a cleaner for the new connection.
+
+The script samples the global cursor and the model output's logical geometry at
+most once every 30 ms, with at most one sample call in flight. This supports gaze
+outside the model/crop region and on other monitors, including scaled outputs.
+The latest sample is reapplied every visible frame, including for a stationary
+cursor after taps or model transform changes. It does not synthesize model drag
+or crop-edit events. If the KWin bridge is unavailable, or on another compositor,
+gaze falls back to pointer events on the model surface.
+
+For an opt-in real-KWin lifecycle smoke test (normal exit and SIGKILL cleanup), run
+`build/bin/kwin-cursor-tracker-test --live DP-1`, replacing `DP-1` with the model
+output's name. Automated tests use a private D-Bus session and a fake compositor;
+they do not alter the running desktop.
 
 The compositor is auto-detected at startup. Feature availability is logged to the console.
 

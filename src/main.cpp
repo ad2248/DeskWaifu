@@ -19,6 +19,8 @@
 
 int main(int argc, char* argv[])
 {
+    if (argc == 5 && std::strcmp(argv[1], "--kwin-cursor-guard") == 0)
+        return RunKWinCursorGuard(argv[2], argv[3], argv[4]);
     // deskwaifu toggle
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "toggle") == 0 || strcmp(argv[i], "--toggle") == 0) {

@@ -17,6 +17,7 @@ pkgbase = deskwaifu-git
 	depends = gcc-libs
 	depends = wayland
 	depends = libglvnd
+	depends = systemd-libs
 	depends = qt6-base
 	depends = qt6-wayland
 	depends = bash

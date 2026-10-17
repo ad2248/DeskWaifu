@@ -135,6 +135,9 @@ bool LAppDelegate::Initialize()
     const auto hoverResult = _hoverSettings->Refresh();
     if (!hoverResult.ok) LAppPal::PrintLogLn("[Config] %s", hoverResult.error.c_str());
     _lastOutput = _waylandBackend.CurrentOutput();
+    if (!_kwinCursor.Start())
+        LAppPal::PrintLogLn("[KWin] Global cursor unavailable: %s; using surface events", _kwinCursor.Error().c_str());
+    else LAppPal::PrintLogLn("[KWin] Transient global cursor script loaded");
     auto modelDirs = values.additionalModelDirs;
     for (auto& dir : modelDirs) dir = LAppConfig::ExpandTilde(dir);
     _manager = new LAppLive2DManager(*_textureManager, _windowWidth, _windowHeight,
@@ -155,6 +158,7 @@ bool LAppDelegate::Initialize()
 }
 bool LAppDelegate::Release()
 {
+    _kwinCursor.Stop();
     return ReleaseGpuResources(HasGpuResources(_view, _manager,
         _textureManager ? _textureManager->ResidentCount() : 0),
         [this] { return MakeWaylandGpuContextCurrent(&_wlContext); },
@@ -321,9 +325,12 @@ void LAppDelegate::InitializeCubism()
 
 void LAppDelegate::TrackGlobalCursor()
 {
-    const auto cursor = _compositor.TrackedCursor(std::chrono::steady_clock::now());
-    if (!cursor) return; // pointer-on-surface events still work without it
-    _cursorLook.GlobalPosition(cursor.value.first, cursor.value.second);
+    const auto outputs = _waylandBackend.Outputs();
+    const auto* current = _outputController.Current(outputs);
+    _kwinCursor.Poll(current ? current->name : "");
+    double x = 0, y = 0;
+    if (_kwinCursor.LocalPosition(_windowWidth, _windowHeight, x, y))
+        _cursorLook.LocalPosition(x, y);
 }
 
 void LAppDelegate::UpdateCursorLook(ModelTransform transform)
