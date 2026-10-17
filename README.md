@@ -194,6 +194,14 @@ bar and response log; the control window retries connections every 1.5 seconds.
 Concurrent Spawn requests share a per-user runtime lock around process inspection
 and startup, so two control windows cannot both start a backend at the same time.
 
+**Respawn** is available while connected. It sends `quit`, waits for the old
+process to exit, then uses the same detached startup and automatic reconnection
+as Spawn. Spawn and Respawn are disabled during this operation. If shutdown is
+rejected or takes more than 10 seconds, the GUI reports an error without forcing
+termination or starting an overlapping backend. Like Spawn, Respawn starts with
+default backend settings; custom command-line arguments (including `--config`)
+and unsaved runtime changes are not preserved.
+
 ### Configuration
 
 DeskWaifu reads a JSON config file from `$XDG_CONFIG_HOME/deskwaifu/config.json` (fallback: `~/.config/deskwaifu/config.json`). Override the path with `--config <path>`.

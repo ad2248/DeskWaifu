@@ -120,6 +120,8 @@ private slots:
             });
         });
         MainWindow window;
+        auto* respawn = window.findChild<QPushButton*>("respawnButton");
+        QVERIFY(respawn);
         window.show(); window.activateWindow();
         window.findChild<QTabWidget*>("tabWidget")->setCurrentWidget(window.findChild<QWidget*>("transformTab"));
         auto* group = window.findChild<QWidget*>("hoverOpacityGroup");
@@ -128,6 +130,7 @@ private slots:
         auto* value = window.findChild<QLabel*>("hoverOpacityValueLabel");
         auto* status = window.findChild<QLabel*>("operationStatusLabel");
         auto* connectionStatus = window.findChild<QLabel*>("connectionStatusLabel");
+        QTRY_VERIFY(respawn->isEnabled());
         QVERIFY(group && slider && enabled && value && status && connectionStatus);
         QVERIFY(!window.findChild<QLabel*>("hoverOpacityStatusLabel"));
         QVERIFY(window.statusBar()->isAncestorOf(status));
@@ -255,7 +258,9 @@ private slots:
         supported = false;
         const int beforeOldBackend = queries;
         connection->abort();
+        QTRY_VERIFY(!respawn->isEnabled());
         QTRY_VERIFY_WITH_TIMEOUT(queries > beforeOldBackend, 5000);
+        QTRY_VERIFY(respawn->isEnabled());
         QTRY_VERIFY_WITH_TIMEOUT(!group->isEnabled() && status->text() == "unknown command", 2000);
     }
 

@@ -5,6 +5,7 @@
 #include <QTimer>
 
 #include "DeskWaifuClient.hpp"
+#include "DeskWaifuRespawner.hpp"
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -36,6 +37,7 @@ private:
     Ui::MainWindow* ui;
     HotkeyPanel* _hotkeys;
     DeskWaifuClient _client;
+    DeskWaifuRespawner _respawner;
     QLabel* _connectionStatusLabel;
     QLabel* _operationStatusLabel;
     QTimer _statusMessageTimer;

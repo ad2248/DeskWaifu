@@ -13,6 +13,7 @@ struct Result
     qint64 pid = 0;
 };
 
+QString executablePath(const QString& applicationDirectory);
 // Directories are injectable to isolate process fixtures and cross-process locks in tests.
 Result spawn(bool connected, const QString& applicationDirectory,
              const QString& procDirectory = QStringLiteral("/proc"),

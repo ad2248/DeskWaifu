@@ -11,6 +11,14 @@
 
 namespace DeskWaifuLauncher
 {
+QString executablePath(const QString& applicationDirectory)
+{
+    const QString executable = QDir(applicationDirectory).absoluteFilePath(QStringLiteral("deskwaifu"));
+    const QFileInfo localExecutable(executable);
+    return localExecutable.isFile() && localExecutable.isExecutable()
+        ? executable : QStandardPaths::findExecutable(QStringLiteral("deskwaifu"));
+}
+
 Result spawn(bool connected, const QString& applicationDirectory, const QString& procDirectory,
              const QString& lockDirectory)
 {
@@ -54,10 +62,7 @@ Result spawn(bool connected, const QString& applicationDirectory, const QString&
                     QObject::tr("DeskWaifu is already running (PID %1); trying to connect.").arg(pid), pid};
     }
 
-    QString executable = QDir(applicationDirectory).absoluteFilePath(QStringLiteral("deskwaifu"));
-    const QFileInfo localExecutable(executable);
-    if (!localExecutable.isFile() || !localExecutable.isExecutable())
-        executable = QStandardPaths::findExecutable(QStringLiteral("deskwaifu"));
+    const QString executable = executablePath(applicationDirectory);
     if (executable.isEmpty())
         return {State::Failed, QObject::tr("Cannot find deskwaifu next to the GUI or in PATH.")};
 

@@ -16,6 +16,7 @@ public:
 
     void connectToServer();
     void sendCommand(const QString& command, const QJsonObject& parameters = {});
+    void cancelQueuedCommand(const QString& command);
     bool isConnected() const;
     QString socketPath() const;
 
