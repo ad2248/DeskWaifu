@@ -4,13 +4,13 @@ cmake_minimum_required(VERSION 3.16)
 set(APP_NAME deskwaifu)
 
 # Set directory paths based on the new layout
-set(SDK_ROOT_PATH ${CMAKE_CURRENT_SOURCE_DIR}/CubismSdkForNative-5-r.5)
+set(SDK_ROOT_PATH ${CMAKE_CURRENT_SOURCE_DIR}/CubismSdkForNative-5-r.5 CACHE PATH "Cubism SDK directory")
 set(CORE_PATH ${SDK_ROOT_PATH}/Core)
 set(FRAMEWORK_PATH ${SDK_ROOT_PATH}/Framework)
 set(THIRD_PARTY_PATH ${CMAKE_CURRENT_SOURCE_DIR}/thirdParty)
 
 set(STB_PATH ${THIRD_PARTY_PATH}/stb)
-set(GLEW_PATH ${THIRD_PARTY_PATH}/glew)
+set(GLEW_PATH ${THIRD_PARTY_PATH}/glew CACHE PATH "GLEW source directory")
 
 # Shaders from SDK
 set(SAMPLE_SHADER_PATH ${SDK_ROOT_PATH}/Samples/OpenGL/Shaders/Standard)
@@ -23,6 +23,11 @@ include(GNUInstallDirs)
 
 include(CTest)
 option(DESKWAIFU_BUILD_CONTROL "Build the Qt control application" ON)
+set(DESKWAIFU_WINDOW_BACKEND "wayland" CACHE STRING "Model window backend: wayland or qt")
+set_property(CACHE DESKWAIFU_WINDOW_BACKEND PROPERTY STRINGS wayland qt)
+if (NOT DESKWAIFU_WINDOW_BACKEND MATCHES "^(wayland|qt)$")
+  message(FATAL_ERROR "DESKWAIFU_WINDOW_BACKEND must be wayland or qt")
+endif ()
 
 # Define output directory.
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin)

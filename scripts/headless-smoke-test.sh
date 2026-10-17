@@ -296,5 +296,5 @@ else
     APP_PID=
     report_app_failure "$exit_code" "$LOG_DIR/deskwaifu.log" || exit "$exit_code"
 fi
-grep -q 'GPU resources released before EGL teardown' "$LOG_DIR/deskwaifu.log"
+grep -q 'GPU resources released before window teardown' "$LOG_DIR/deskwaifu.log"
 echo "Headless Wayland, Qt control, and IPC smoke test passed"
