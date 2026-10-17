@@ -1,0 +1,114 @@
+#include <GL/glew.h>
+#include <EGL/egl.h>
+#include "LAppModel.hpp"
+#include "LAppAllocator_Common.hpp"
+#include "LAppPal.hpp"
+#include "ExternalControlState.hpp"
+#include "TestTemporaryDirectory.hpp"
+#include <Id/CubismIdManager.hpp>
+#include <cmath>
+#include <iostream>
+#include <thread>
+#include <chrono>
+#include <fstream>
+#include <unistd.h>
+
+#define CHECK(condition) do { if (!(condition)) { \
+    std::cerr << "Line " << __LINE__ << ": " << #condition << '\n'; return 1; \
+} } while (false)
+
+int main()
+{
+    const auto display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+    if (display == EGL_NO_DISPLAY || !eglInitialize(display, nullptr, nullptr)) return 77;
+    const EGLint attributes[] = {EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
+        EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT, EGL_NONE};
+    EGLConfig config;
+    EGLint count = 0;
+    CHECK(eglChooseConfig(display, attributes, &config, 1, &count) && count == 1);
+    CHECK(eglBindAPI(EGL_OPENGL_API));
+    const EGLint size[] = {EGL_WIDTH, 16, EGL_HEIGHT, 16, EGL_NONE};
+    const auto surface = eglCreatePbufferSurface(display, config, size);
+    const auto context = eglCreateContext(display, config, EGL_NO_CONTEXT, nullptr);
+    CHECK(surface != EGL_NO_SURFACE && context != EGL_NO_CONTEXT);
+    CHECK(eglMakeCurrent(display, surface, surface, context));
+    glewExperimental = GL_TRUE;
+    CHECK(glewInit() == GLEW_OK);
+
+    LAppAllocator_Common allocator;
+    Csm::CubismFramework::Option option{};
+    option.LoadFileFunction = LAppPal::LoadFileAsBytes;
+    option.ReleaseBytesFunction = LAppPal::ReleaseBytes;
+    CHECK(Csm::CubismFramework::StartUp(&allocator, &option));
+    Csm::CubismFramework::Initialize();
+    {
+        LAppTextureManager textures;
+        LAppModel model(textures, 16, 16, -1);
+        // Keep motions/expressions out of the fixture so they cannot mask gaze.
+        const auto directory = MakeTestTemporaryDirectory("deskwaifu-gaze");
+        CHECK(!directory.empty());
+        const auto setting = directory + "/gaze.model3.json";
+        {
+            std::ofstream file(setting);
+            file << "{\"Version\":3,\"FileReferences\":{\"Moc\":\""
+                 << SDK_RESOURCES "/Haru/Haru.moc3\"},\"Groups\":["
+                 << "{\"Target\":\"Parameter\",\"Name\":\"LipSync\",\"Ids\":[\"ParamMouthOpenY\"]}]}";
+            CHECK(file.good());
+        }
+        CHECK(model.LoadAssets("", setting.c_str()));
+        CHECK(unlink(setting.c_str()) == 0);
+        CHECK(rmdir(directory.c_str()) == 0);
+        const auto eyeX = Csm::CubismFramework::GetIdManager()->GetId("ParamEyeBallX");
+        const auto eyeY = Csm::CubismFramework::GetIdManager()->GetId("ParamEyeBallY");
+        const auto mouth = Csm::CubismFramework::GetIdManager()->GetId("ParamMouthOpenY");
+        CHECK(model.GetModel()->GetParameterIndex(eyeX) < model.GetModel()->GetParameterCount());
+        CHECK(model.GetModel()->GetParameterIndex(eyeY) < model.GetModel()->GetParameterCount());
+
+        // Mirror the runtime: cached mouse gaze is reapplied before EVERY update.
+        // Test the real scheduler and eye parameters, not only a mock target.
+        const auto frames = [&](float mouseX, float mouseY, const ModelFrameInput& input) {
+            for (int i = 0; i < 90; ++i) {
+                model.SetDragging(mouseX, mouseY);
+                std::this_thread::sleep_for(std::chrono::milliseconds(16));
+                LAppPal::UpdateTime();
+                model.Update(input);
+            }
+        };
+        LAppPal::UpdateTime();
+        frames(-0.8f, -0.6f, {});
+        CHECK(model.GetModel()->GetParameterValue(eyeX) < -0.4f);
+        CHECK(model.GetModel()->GetParameterValue(eyeY) < -0.3f);
+        frames(0.8f, 0.6f, {});
+        CHECK(model.GetModel()->GetParameterValue(eyeX) > 0.4f);
+        CHECK(model.GetModel()->GetParameterValue(eyeY) > 0.3f);
+
+        ExternalControlState controls;
+        CHECK(controls.SetLook("control", ExternalControlState::Lifetime::Persistent, 0.8f, 0.6f));
+        CHECK(controls.SetMouth("control", ExternalControlState::Lifetime::Persistent, 0.7f));
+        frames(-0.8f, -0.6f, controls.Frame());
+        CHECK(model.GetModel()->GetParameterValue(eyeX) > 0.4f);
+        CHECK(model.GetModel()->GetParameterValue(eyeY) > 0.3f);
+        CHECK(std::abs(model.GetModel()->GetParameterValue(mouth) - 0.7f) < 0.001f);
+
+        CHECK(controls.SetLook("tracker", ExternalControlState::Lifetime::Stream, -0.8f, -0.6f));
+        frames(0.8f, 0.6f, controls.Frame());
+        CHECK(model.GetModel()->GetParameterValue(eyeX) < -0.4f);
+        CHECK(model.GetModel()->GetParameterValue(eyeY) < -0.3f);
+        controls.Release("tracker");
+        frames(-0.8f, -0.6f, controls.Frame());
+        CHECK(model.GetModel()->GetParameterValue(eyeX) > 0.4f);
+        CHECK(model.GetModel()->GetParameterValue(eyeY) > 0.3f);
+
+        controls.ResetLook("control");
+        frames(-0.8f, -0.6f, controls.Frame());
+        CHECK(model.GetModel()->GetParameterValue(eyeX) < -0.4f);
+        CHECK(model.GetModel()->GetParameterValue(eyeY) < -0.3f);
+    }
+    Csm::CubismFramework::Dispose();
+    Csm::CubismFramework::CleanUp();
+    CHECK(eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT));
+    CHECK(eglDestroyContext(display, context));
+    CHECK(eglDestroySurface(display, surface));
+    CHECK(eglTerminate(display));
+    return 0;
+}

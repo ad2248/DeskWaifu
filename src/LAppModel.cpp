@@ -547,6 +547,9 @@ void LAppModel::Update(const ModelFrameInput& input)
     // 不透明度
     _opacity = _model->GetModelOpacity();
 
+    // Override the mouse target before CubismLookUpdater consumes it. Applying
+    // this after the scheduler lets the next frame's mouse update erase it.
+    if (input.hasLook) _dragManager->Set(input.lookX, input.lookY);
     _updateScheduler.OnLateUpdate(_model, deltaTimeSeconds);
 
     // Apply persistent hotkey expressions after the transient expression pipeline.
@@ -555,13 +558,11 @@ void LAppModel::Update(const ModelFrameInput& input)
     _hotkeys.Apply(_model);
 
     // External mouth Y override (IPC lipsync)
-    DispatchModelFrameInput(input,
-        [this](float mouthValue)
-        {
-            for (csmUint32 i = 0; i < _lipSyncIds.GetSize(); ++i)
-                _model->SetParameterValue(_lipSyncIds[i], mouthValue);
-        },
-        [this](float x, float y) { _dragManager->Set(x, y); });
+    if (input.hasMouth)
+    {
+        for (csmUint32 i = 0; i < _lipSyncIds.GetSize(); ++i)
+            _model->SetParameterValue(_lipSyncIds[i], input.mouth);
+    }
 
     // Expression timeout: revert to default after emotion_timeout seconds
     // emotion_timeout < 0 means expressions never revert
