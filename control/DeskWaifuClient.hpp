@@ -23,7 +23,10 @@ public:
 signals:
     void connectionChanged(bool connected, const QString& message);
     void responseReceived(const QString& command, const QJsonObject& response);
+    // Connection lost after sending a mutation; it must not be retried.
     void commandOutcomeUnknown(const QString& command);
+    // Connection lost before a queued mutation was sent.
+    void commandCancelled(const QString& command);
     void protocolError(const QString& message);
 
 private slots:
