@@ -203,6 +203,7 @@ add_test(NAME output-settings COMMAND output-settings-test)
 
 add_executable(compositor-adapter-test CompositorAdapterTest.cpp)
 target_link_libraries(compositor-adapter-test PRIVATE deskwaifu_compositor)
+target_link_options(compositor-adapter-test PRIVATE -Wl,--wrap=waitpid)
 add_test(NAME compositor-adapter COMMAND compositor-adapter-test)
 
 if (NOT DESKWAIFU_BUILD_CONTROL)
