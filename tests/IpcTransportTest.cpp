@@ -11,6 +11,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/time.h>
+#include <sys/wait.h>
 #include <type_traits>
 #include <unistd.h>
 #include <vector>
@@ -72,6 +73,29 @@ int main()
     if (access(ownershipAddr.sun_path, F_OK) != 0) ok = false;
     if (replacement >= 0) close(replacement);
     unlink(ownershipAddr.sun_path);
+
+    LAppIPC execOwner;
+    execOwner.SetCommandService(commands);
+    if (!execOwner.Initialize()) ok = false;
+    int execPipe[2]{-1, -1};
+    if (pipe(execPipe) != 0 || fcntl(execPipe[1], F_SETFD, FD_CLOEXEC) != 0) ok = false;
+    const pid_t child = fork();
+    if (child == 0) {
+        close(execPipe[0]);
+        execl("/bin/sh", "sh", "-c", "sleep 0.2", static_cast<char*>(nullptr));
+        _exit(127);
+    }
+    if (child < 0) ok = false;
+    close(execPipe[1]);
+    char execByte;
+    if (read(execPipe[0], &execByte, 1) != 0) ok = false;
+    close(execPipe[0]);
+    execOwner.Release();
+    LAppIPC afterExec;
+    afterExec.SetCommandService(commands);
+    if (!afterExec.Initialize()) ok = false;
+    afterExec.Release();
+    if (child > 0 && waitpid(child, nullptr, 0) != child) ok = false;
 
     const std::string stalePath = std::string(path) + "/deskwaifu.sock";
     int stale = socket(AF_UNIX, SOCK_STREAM, 0);

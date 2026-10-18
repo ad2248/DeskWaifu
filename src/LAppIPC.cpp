@@ -200,7 +200,7 @@ void LAppIPC::Release()
 
 bool LAppIPC::AcquireSocketLock()
 {
-    _socketLockFd = open((_socketPath + ".lock").c_str(), O_CREAT | O_RDWR, 0600);
+    _socketLockFd = open((_socketPath + ".lock").c_str(), O_CREAT | O_RDWR | O_CLOEXEC, 0600);
     if (_socketLockFd < 0) return false;
     if (flock(_socketLockFd, LOCK_EX | LOCK_NB) == 0) return true;
     close(_socketLockFd);
