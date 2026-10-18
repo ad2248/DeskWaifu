@@ -10,6 +10,8 @@
 #include <QtTest>
 #include <Id/CubismIdManager.hpp>
 #include <Model/CubismMoc.hpp>
+#include <Model/CubismModel.hpp>
+#include <limits>
 
 using namespace Live2D::Cubism::Framework;
 
@@ -65,24 +67,54 @@ private slots:
         QCOMPARE(hotkeys.Expressions()[0].weight, 0.5f);
         QVERIFY(hotkeys.Trigger("blush", error));
         hotkeys.Update(10);
-        QVERIFY(hotkeys.IsActive(hotkeys.Bindings()[0]));
-        QVERIFY(hotkeys.IsActive(hotkeys.Bindings()[1]));
+        QVERIFY(hotkeys.IsActive(hotkeys.Bindings()[0].id));
+        QVERIFY(hotkeys.IsActive(hotkeys.Bindings()[1].id));
         QVERIFY(hotkeys.Trigger("watermark", error));
         hotkeys.Update(0.25f);
         QCOMPARE(hotkeys.Expressions()[0].weight, 0.5f);
         hotkeys.Update(0.25f);
         QCOMPARE(hotkeys.Expressions()[0].weight, 0.0f);
-        QVERIFY(hotkeys.IsActive(hotkeys.Bindings()[1]));
+        QVERIFY(hotkeys.IsActive(hotkeys.Bindings()[1].id));
         const auto token = hotkeys.Token();
         hotkeys.Reset();
         QVERIFY(token != hotkeys.Token());
-        QVERIFY(!hotkeys.IsActive(hotkeys.Bindings()[1]));
+        QVERIFY(!hotkeys.IsActive(hotkeys.Bindings()[1].id));
         QCOMPARE(hotkeys.Expressions()[1].weight, 0.0f);
         hotkeys.Load(directory.path().toStdString() + "/", "other.model3.json");
         QVERIFY(token != hotkeys.Token());
         QVERIFY(hotkeys.Bindings().empty());
         QVERIFY(hotkeys.Expressions().empty());
         QVERIFY(!hotkeys.Trigger("watermark", error));
+    }
+    void resolvesOnlyCurrentBindingIds()
+    {
+        QTemporaryDir directory;
+        fixture(directory.path(), {binding("watermark", "水印.exp3.json")});
+        ModelHotkeys hotkeys;
+        ModelHotkeys other;
+        other.Load(directory.path().toStdString() + "/", "test.model3.json");
+        auto foreign = other.Bindings()[0];
+        // No public query accepts Binding or its arbitrary internal index.
+        foreign.expression = std::numeric_limits<int>::max();
+        QVERIFY(!hotkeys.IsActive(foreign.id));
+        hotkeys.Load(directory.path().toStdString() + "/", "test.model3.json");
+        const auto old = hotkeys.Bindings()[0];
+        const auto token = hotkeys.Token();
+        std::string error;
+        QVERIFY(hotkeys.Trigger(old.id, error));
+        QVERIFY(hotkeys.IsActive(foreign.id)); // same ID means the current binding
+        QVERIFY(!other.IsActive(old.id)); // never the other owner's active state
+        QVERIFY(!hotkeys.IsActive("missing"));
+        QVERIFY(!hotkeys.IsActive(""));
+
+        fixture(directory.path(), {binding("replacement", "脸红.exp3.json")});
+        hotkeys.Load(directory.path().toStdString() + "/", "test.model3.json");
+        QVERIFY(token != hotkeys.Token());
+        QVERIFY(hotkeys.Trigger("replacement", error));
+        QVERIFY(hotkeys.IsActive("replacement"));
+        QVERIFY(!hotkeys.IsActive(old.id)); // old index 0 now belongs to another ID
+        hotkeys.Load(directory.path().toStdString() + "/", "absent.model3.json");
+        QVERIFY(!hotkeys.IsActive("replacement"));
     }
     void listsUnavailableActionsAndHonorsTimeout()
     {
@@ -103,9 +135,9 @@ private slots:
             QVERIFY(!hotkeys.Trigger(id, error));
         QVERIFY(hotkeys.Trigger("timed", error));
         hotkeys.Update(0.5f);
-        QVERIFY(hotkeys.IsActive(hotkeys.Bindings()[0]));
+        QVERIFY(hotkeys.IsActive(hotkeys.Bindings()[0].id));
         hotkeys.Update(1);
-        QVERIFY(!hotkeys.IsActive(hotkeys.Bindings()[0]));
+        QVERIFY(!hotkeys.IsActive(hotkeys.Bindings()[0].id));
         QCOMPARE(hotkeys.Expressions()[0].weight, 0.0f);
         write(directory.path() + "/test.vtube.json", "{invalid");
         hotkeys.Load(directory.path().toStdString() + "/", "test.model3.json");

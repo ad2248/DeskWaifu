@@ -144,6 +144,11 @@ add_test(NAME model-cache COMMAND model-cache-test)
 add_executable(model-session-test ModelSessionTest.cpp)
 target_include_directories(model-session-test PRIVATE ../src)
 add_test(NAME model-session COMMAND model-session-test)
+add_test(NAME model-hotkeys-header
+  COMMAND ${CMAKE_COMMAND} -DAPP_SOURCE=${CMAKE_SOURCE_DIR}/src
+    -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+    -DFIXTURE_SOURCE=${CMAKE_CURRENT_BINARY_DIR}/hotkeys-header
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckModelHotkeysHeader.cmake)
 
 add_executable(ipc-transport-test IpcTransportTest.cpp)
 target_include_directories(ipc-transport-test PRIVATE ../src)
@@ -342,7 +347,7 @@ add_test(NAME main-window-long-temp-directory
     -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckPortableTemporaryDirectory.cmake)
 
 qt_add_executable(model-keyboard-test ModelKeyboardTest.cpp)
-target_include_directories(model-keyboard-test PRIVATE ../src ${FRAMEWORK_PATH}/src ${CORE_PATH}/include)
+target_include_directories(model-keyboard-test PRIVATE ../src)
 target_link_libraries(model-keyboard-test PRIVATE Qt6::Test)
 set_target_properties(model-keyboard-test PROPERTIES AUTOMOC ON)
 add_test(NAME model-keyboard COMMAND model-keyboard-test)
