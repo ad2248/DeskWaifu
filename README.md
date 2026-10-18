@@ -479,6 +479,23 @@ DeskWaifu exposes a Unix domain socket for external control by scripts and progr
 - **Protocol:** Newline-delimited JSON — send `{"command":"<name>", ...}\n`, receive `{"ok":true, ...}\n`
 - **CLI requires:** Python 3 (standard library only; install via your package manager).
 
+### Transport limits
+
+The server accepts at most 16 concurrent clients. Request lines may contain up
+to 64 KiB and individual replies up to 8 MiB, excluding the terminating newline.
+An oversized frame closes only that connection; excess connections are closed
+without replacing existing clients. A lost reply does not prove that a command
+was not executed: query the resulting state rather than replaying a mutation.
+
+Replies are sent non-blockingly and in request order. Each connection retains
+only one pending reply; while it is pending, that client's further commands are
+not executed or read. This backpressure does not stop other clients. Every frame
+permits at most 4 accept attempts and 16 request lines (4 per client), with the
+first served client rotated. Each client reads at most 4 KiB and writes at most
+64 KiB in up to 16 send attempts per frame. Empty lines and interrupted attempts
+also consume their respective budgets. These bound transport work, not the cost
+of executing an individual application command or generating its reply.
+
 ### CLI Client
 
 A convenience CLI client `deskwaifu-ctl` is included in the project root:

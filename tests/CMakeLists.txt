@@ -149,6 +149,17 @@ add_executable(ipc-transport-test IpcTransportTest.cpp)
 target_include_directories(ipc-transport-test PRIVATE ../src)
 target_link_libraries(ipc-transport-test PRIVATE deskwaifu_ipc)
 add_test(NAME ipc-transport COMMAND ipc-transport-test)
+add_executable(ipc-bounded-transport-test IpcBoundedTransportTest.cpp)
+target_include_directories(ipc-bounded-transport-test PRIVATE ../src)
+target_link_libraries(ipc-bounded-transport-test PRIVATE deskwaifu_ipc)
+target_link_options(ipc-bounded-transport-test PRIVATE -Wl,--wrap=send -Wl,--wrap=read -Wl,--wrap=accept4)
+add_test(NAME ipc-bounded-transport COMMAND ipc-bounded-transport-test)
+set_tests_properties(ipc-bounded-transport PROPERTIES TIMEOUT 30)
+add_test(NAME ipc-transport-header
+  COMMAND ${CMAKE_COMMAND} -DAPP_SOURCE=${CMAKE_SOURCE_DIR}/src
+    -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+    -DFIXTURE_SOURCE=${CMAKE_CURRENT_BINARY_DIR}/transport-header
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckIpcTransportHeader.cmake)
 
 add_executable(input-controller-test InputControllerTest.cpp)
 target_link_libraries(input-controller-test PRIVATE deskwaifu_input)

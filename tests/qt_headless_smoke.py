@@ -237,6 +237,19 @@ def main():
                     request("release_source")
                     request("next_model")
                     request("get_hotkeys")
+                    # A pipelined client that never reads must not monopolize
+                    # command dispatch or stop actual Wayland frame commits.
+                    with socket.socket(socket.AF_UNIX) as pressure:
+                        pressure.settimeout(5)
+                        pressure.connect(str(runtime / "deskwaifu.sock"))
+                        commits_before = len(re.findall(r"wl_surface[@#]\d+\.commit\(",
+                                                        (logs / "model.log").read_text()))
+                        pressure.sendall(b'{"command":"get_status"}\n' * 256)
+                        for _ in range(16):
+                            request("get_status")
+                        commits_after = len(re.findall(r"wl_surface[@#]\d+\.commit\(",
+                                                       (logs / "model.log").read_text()))
+                        assert commits_after > commits_before, "IPC pressure stopped frame commits"
                     subprocess.run([sys.executable, str(Path(__file__).with_name("output_smoke.py"))],
                                    env=client_env, check=True, timeout=30)
                     model_log.flush()
