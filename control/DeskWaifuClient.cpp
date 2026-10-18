@@ -1,6 +1,6 @@
 #include "DeskWaifuClient.hpp"
+#include "IpcSocketPath.hpp"
 
-#include <QDir>
 #include <QJsonDocument>
 
 DeskWaifuClient::DeskWaifuClient(QObject* parent)
@@ -59,10 +59,7 @@ bool DeskWaifuClient::isConnected() const
 
 QString DeskWaifuClient::socketPath() const
 {
-    const QByteArray runtimeDir = qgetenv("XDG_RUNTIME_DIR");
-    return runtimeDir.isEmpty()
-        ? QStringLiteral("/tmp/deskwaifu.sock")
-        : QDir(QString::fromLocal8Bit(runtimeDir)).filePath(QStringLiteral("deskwaifu.sock"));
+    return QString::fromStdString(IpcSocketPath());
 }
 
 void DeskWaifuClient::readResponses()

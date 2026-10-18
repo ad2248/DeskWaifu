@@ -203,6 +203,7 @@ add_test(NAME output-settings COMMAND output-settings-test)
 
 add_executable(compositor-adapter-test CompositorAdapterTest.cpp)
 target_link_libraries(compositor-adapter-test PRIVATE deskwaifu_compositor)
+target_link_options(compositor-adapter-test PRIVATE -Wl,--wrap=waitpid)
 add_test(NAME compositor-adapter COMMAND compositor-adapter-test)
 
 if (NOT DESKWAIFU_BUILD_CONTROL)
@@ -232,7 +233,7 @@ qt_add_executable(deskwaifu-respawner-test
   ../control/DeskWaifuRespawner.cpp ../control/DeskWaifuRespawner.hpp
   ../control/DeskWaifuClient.cpp ../control/DeskWaifuClient.hpp
   ../control/DeskWaifuLauncher.cpp)
-target_include_directories(deskwaifu-respawner-test PRIVATE ../control)
+target_include_directories(deskwaifu-respawner-test PRIVATE ../control ../src)
 target_link_libraries(deskwaifu-respawner-test PRIVATE Qt6::Test Qt6::Network)
 target_compile_definitions(deskwaifu-respawner-test PRIVATE
   SPAWN_BACKEND_FIXTURE="$<TARGET_FILE:spawn-backend-fixture>")
@@ -248,6 +249,7 @@ qt_add_executable(deskwaifu-client-test
 
 target_include_directories(deskwaifu-client-test PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../control
+  ${CMAKE_CURRENT_SOURCE_DIR}/../src
 )
 
 target_link_libraries(deskwaifu-client-test PRIVATE

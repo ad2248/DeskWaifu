@@ -7,6 +7,7 @@ qt_add_executable(deskwaifu-control
   MainWindow.ui
   DeskWaifuClient.cpp
   DeskWaifuClient.hpp
+  ../src/IpcSocketPath.hpp
   DeskWaifuLauncher.cpp
   DeskWaifuLauncher.hpp
   DeskWaifuRespawner.cpp
@@ -19,6 +20,7 @@ target_link_libraries(deskwaifu-control PRIVATE
   Qt6::Widgets
   Qt6::Network
 )
+target_include_directories(deskwaifu-control PRIVATE ../src)
 
 set_target_properties(deskwaifu-control PROPERTIES
   AUTOUIC ON

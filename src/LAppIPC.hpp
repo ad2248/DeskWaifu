@@ -8,6 +8,7 @@
 #pragma once
 
 #include <string>
+#include <sys/types.h>
 #include <vector>
 #include "AppCommandHandler.hpp"
 
@@ -16,6 +17,8 @@ class LAppIPC
 public:
     LAppIPC();
     ~LAppIPC();
+    LAppIPC(const LAppIPC&) = delete;
+    LAppIPC& operator=(const LAppIPC&) = delete;
     void SetCommandService(ICommandService& commands) { _commands = &commands; }
 
     /**
@@ -45,7 +48,11 @@ private:
     ICommandService* _commands;
 
     int _serverFd;
+    int _socketLockFd = -1;
     std::string _socketPath;
+    dev_t _socketDevice = 0;
+    ino_t _socketInode = 0;
+    bool _ownsSocketPath = false;
     std::vector<int> _clients;
 
     // Partial read buffers per client fd
@@ -58,6 +65,8 @@ private:
 
     ClientBuffer& GetClientBuffer(int fd);
     void RemoveClientBuffer(int fd);
+    bool AcquireSocketLock();
+    void ReleaseSocketLock();
 
     unsigned long long _nextConnection = 0;
 };

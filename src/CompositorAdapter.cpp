@@ -3,12 +3,15 @@
 #include <algorithm>
 #include <cerrno>
 #include <chrono>
+#include <condition_variable>
 #include <climits>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <dirent.h>
 #include <fcntl.h>
 #include <linux/close_range.h>
+#include <mutex>
 #include <poll.h>
 #include <regex>
 #include <signal.h>
@@ -16,10 +19,83 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/wait.h>
+#include <thread>
 #include <unistd.h>
 
 namespace {
 constexpr int TimeoutMs = 250;
+constexpr int ExitPollIntervalMs = 5;
+
+// Only timed-out, unreaped children are transferred here. The worker owns their
+// PIDs until waitpid consumes them; it never waits for unrelated children.
+class DeferredChildReaper
+{
+public:
+    DeferredChildReaper() : _worker([this] { Run(); }) {}
+    ~DeferredChildReaper()
+    {
+        {
+            std::lock_guard<std::mutex> lock(_mutex);
+            _stopping = true;
+        }
+        _wake.notify_one();
+        _worker.join();
+    }
+
+    void Add(pid_t pid)
+    {
+        {
+            std::lock_guard<std::mutex> lock(_mutex);
+            _children.push_back(pid);
+        }
+        _wake.notify_one();
+    }
+
+private:
+    void Run()
+    {
+        std::unique_lock<std::mutex> lock(_mutex);
+        while (true) {
+            for (auto child = _children.begin(); child != _children.end();) {
+                const pid_t result = waitpid(*child, nullptr, WNOHANG);
+                if (result == *child || (result < 0 && errno == ECHILD))
+                    child = _children.erase(child);
+                else ++child;
+            }
+            // At process shutdown, remaining live children are reparented by
+            // the kernel. Never block shutdown on an uninterruptible child.
+            if (_stopping) return;
+            if (_children.empty())
+                _wake.wait(lock, [this] { return _stopping || !_children.empty(); });
+            else _wake.wait_for(lock, std::chrono::milliseconds(ExitPollIntervalMs));
+        }
+    }
+
+    std::mutex _mutex;
+    std::condition_variable _wake;
+    std::vector<pid_t> _children;
+    bool _stopping = false;
+    std::thread _worker;
+};
+
+DeferredChildReaper& ChildReaper()
+{
+    static DeferredChildReaper reaper;
+    return reaper;
+}
+
+bool WaitForExitBefore(pid_t pid, std::chrono::steady_clock::time_point deadline, int& status)
+{
+    while (true) {
+        const pid_t result = waitpid(pid, &status, WNOHANG);
+        if (result == pid) return true;
+        if (result < 0 && errno != EINTR) return false;
+        const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+            deadline - std::chrono::steady_clock::now()).count();
+        if (remaining <= 0) return false;
+        poll(nullptr, 0, std::min(static_cast<int>(remaining), ExitPollIntervalMs));
+    }
+}
 
 // Enumerate in the parent: readdir and sysconf are not async-signal-safe in a
 // forked multithreaded process. The command pipe already exists at this point.
@@ -149,11 +225,25 @@ Capability<std::string> BoundedCompositorTransport::Command(const std::vector<st
     }
     setpgid(pid, pid);
     close(pipes[1]);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(TimeoutMs);
     auto output = ReadBounded(pipes[0]);
     close(pipes[0]);
-    if (!output) kill(-pid, SIGKILL);
     int status = 0;
-    while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {}
+    if (!output || !WaitForExitBefore(pid, deadline, status)) {
+        output.status = CapabilityStatus::Unavailable;
+        kill(-pid, SIGKILL);
+        // The direct child can leave its original process group. Always signal
+        // its PID as well, and never follow a failed signal with an unbounded wait.
+        int killed;
+        do { killed = kill(pid, SIGKILL); } while (killed < 0 && errno == EINTR);
+        if (killed < 0 && errno != ESRCH)
+            std::fprintf(stderr, "[Compositor] Failed to terminate child: %s\n", std::strerror(errno));
+        const auto cleanupDeadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(TimeoutMs);
+        if (!WaitForExitBefore(pid, cleanupDeadline, status)) {
+            std::fprintf(stderr, "[Compositor] Deferring child reaping after cleanup deadline\n");
+            ChildReaper().Add(pid);
+        }
+    }
     if (output && (!WIFEXITED(status) || WEXITSTATUS(status))) output.status = CapabilityStatus::Failed;
     return output;
 }
