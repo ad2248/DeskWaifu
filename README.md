@@ -136,6 +136,11 @@ The binary will be at `build/bin/deskwaifu`.
 
 The Qt control window will be at `build/bin/deskwaifu-control`.
 
+An experimental Qt model-window backend is also available with
+`-DDESKWAIFU_WINDOW_BACKEND=qt` (Qt 6.5+, Qt WaylandClient/OpenGL and LayerShellQt 6.6+).
+The default remains the native Wayland backend. See
+[Qt backend build instructions, behavior and validation](docs/qt-window-backend.md).
+
 To install a source build system-wide (default prefix: `/usr/local`):
 
 ```bash

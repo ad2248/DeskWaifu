@@ -94,8 +94,7 @@ bool LAppDelegate::Initialize()
     _windowWidth = RenderTargetWidth;
     _windowHeight = RenderTargetHeight;
 
-    _wlContext.events = this;
-    if (!SetupWaylandContext(&_wlContext, RenderTargetWidth, RenderTargetHeight)) {
+    if (!_window->Initialize(RenderTargetWidth, RenderTargetHeight, *this)) {
         return false;
     }
 
@@ -134,7 +133,7 @@ bool LAppDelegate::Initialize()
     _hoverSettings.reset(new HoverOpacitySettings(config));
     const auto hoverResult = _hoverSettings->Refresh();
     if (!hoverResult.ok) LAppPal::PrintLogLn("[Config] %s", hoverResult.error.c_str());
-    OutputSettings outputSettings(_waylandBackend, *_settings, config);
+    OutputSettings outputSettings(*_window, *_settings, config);
     const auto outputResult = outputSettings.Initialize();
     if (!outputResult.ok) {
         LAppPal::PrintLogLn("[Config] Display selection failed: %s", outputResult.error.c_str());
@@ -142,9 +141,9 @@ bool LAppDelegate::Initialize()
     }
     if (!outputSettings.Warning().empty())
         LAppPal::PrintLogLn("[Config] Display selection warning: %s", outputSettings.Warning().c_str());
-    _windowWidth = _wlContext.width;
-    _windowHeight = _wlContext.height;
-    _lastOutput = _waylandBackend.CurrentOutput();
+    _windowWidth = _window->Width();
+    _windowHeight = _window->Height();
+    _lastOutput = _window->CurrentOutput();
     if (!_kwinCursor.Start())
         LAppPal::PrintLogLn("[KWin] Global cursor unavailable: %s; using surface events", _kwinCursor.Error().c_str());
     else LAppPal::PrintLogLn("[KWin] Transient global cursor script loaded");
@@ -171,7 +170,7 @@ bool LAppDelegate::Release()
     _kwinCursor.Stop();
     return ReleaseGpuResources(HasGpuResources(_view, _manager,
         _textureManager ? _textureManager->ResidentCount() : 0),
-        [this] { return MakeWaylandGpuContextCurrent(&_wlContext); },
+        [this] { return _window->MakeCurrent(); },
         [this] { ReleaseRuntimeInOrder(
         [this] {
             ReleaseCommandTransport(
@@ -182,33 +181,28 @@ bool LAppDelegate::Release()
         [this] { delete _manager; _manager = nullptr; },
         [this] { delete _textureManager; _textureManager = nullptr; },
         [this] { if (_cubismStarted) { CubismFramework::Dispose(); _cubismStarted = false; } },
-        [this] { CleanWaylandContext(&_wlContext); }); });
+        [this] { _window->Shutdown(); }); });
 }
 bool LAppDelegate::Run()
 {
-    while (!_isEnd) 
-    {
+    const bool ran = _window->Run([this] {
+        if (_isEnd) return false;
         if (pendingToggle) {
             pendingToggle = 0;
             _service.SetVisibility(_service.Snapshot().hidden);
         }
-        if (wl_display_dispatch_pending(_wlContext.display) == -1) {
-            break;
-        }
         _ipc->Poll();
-        if (_wlContext.outputNeedsRebind) _settings->AbortScreenEdit();
-        _waylandBackend.ReconcileOutputs();
-        if (_lastOutput != _waylandBackend.CurrentOutput()) {
+        if (_window->OutputNeedsRebind()) _settings->AbortScreenEdit();
+        _window->ReconcileOutputs();
+        if (_lastOutput != _window->CurrentOutput()) {
             _settings->AbortScreenEdit();
             _settings->PauseAutosave();
-            _lastOutput = _waylandBackend.CurrentOutput();
+            _lastOutput = _window->CurrentOutput();
         }
-        if (_isEnd) break;
+        if (_isEnd) return false;
         if (_input.TapExpired(ClickClock())) FlushPendingTap();
-        wl_display_flush(_wlContext.display);
-        
-        int width = _wlContext.width;
-        int height = _wlContext.height;
+        int width = _window->Width();
+        int height = _window->Height();
 
         if (_settings->ScreenEditing() && (width != _windowWidth || height != _windowHeight))
             _settings->AbortScreenEdit();
@@ -233,13 +227,13 @@ bool LAppDelegate::Run()
             } else LAppPal::PrintLogLn("[Wayland] Focus capability unavailable (%d)", static_cast<int>(focused.status));
         }
         TrackGlobalCursor();
-        _lastOutput = _waylandBackend.CurrentOutput();
+        _lastOutput = _window->CurrentOutput();
 
         if (_input.IsCaptured() && _settings->Dirty()) _settings->ScheduleSave(SettingsClock(), .5);
         _settings->Tick(SettingsClock());
         if (_settings->Editing()) {
             _input = InputController{};
-            if (_wlContext.keyboardSurface.IsGrabbed()) SetModelKeyboardGrab(&_wlContext, false);
+            if (_window->KeyboardGrabbed()) _window->SetKeyboardGrab(false);
         }
         if (!_settings->ScreenEditing()) _cropInteraction = ScreenCropInteraction{};
 
@@ -264,7 +258,7 @@ bool LAppDelegate::Run()
             const auto region = ResolveModelRegion(settings.cropped, settings.region,
                 _windowWidth, _windowHeight);
             // Sample only the model, before display opacity or editor handles.
-            const auto modelRegions = ReadModelInputRegion(opacityFrame ? _view->OpacityFramebuffer() : 0,
+            const auto modelRegions = ReadModelInputRegion(opacityFrame ? _view->OpacityFramebuffer() : _window->Framebuffer(),
                 _windowWidth, _windowHeight, region, _inputPixels);
             const auto handles = _settings->ScreenEditing() && settings.cropped
                 ? CropInteraction::Handles(settings.region) : std::vector<ModelRegion>{};
@@ -274,26 +268,22 @@ bool LAppDelegate::Run()
             ClipWaylandModelRegion(region, _windowWidth, _windowHeight);
             if (_settings->ScreenEditing())
                 DrawWaylandEditFrame(handles, _windowWidth, _windowHeight);
-            UpdateWaylandFrameInputRegion(&_wlContext, _settings->ScreenEditing(),
-                _windowWidth, _windowHeight, modelRegions);
+            _window->SetInputRegion(_settings->ScreenEditing()
+                ? std::vector<ModelRegion>{{0, 0, _windowWidth, _windowHeight}} : modelRegions);
         }
-        if (state.hidden && !_settings->ScreenEditing()) ClearWaylandInputRegion(&_wlContext);
-        eglSwapBuffers(_wlContext.egl_display, _wlContext.egl_surface);
-        
-        if (state.hidden) {
-            usleep(33000); // Reduce CPU usage when hidden
-        }
-    }
+        if (state.hidden && !_settings->ScreenEditing()) _window->SetInputRegion({});
+        return !_isEnd;
+    });
     const bool released = Release();
-    if (released) LAppPal::PrintLogLn("[APP]GPU resources released before EGL teardown");
+    if (released) LAppPal::PrintLogLn("[APP]GPU resources released before window teardown");
     else LAppPal::PrintLogLn("[APP]Could not restore GPU context for teardown; resources left to process cleanup");
     LAppDelegate::ReleaseInstance();
-    return released;
+    return ran && released;
 }
 LAppDelegate::LAppDelegate():
     _cubismOption(),
-    _waylandBackend(_wlContext),
-    _outputController(_waylandBackend),
+    _window(CreateDesktopWindow()),
+    _outputController(*_window),
     _compositor(CompositorAdapter::Detect(), _compositorTransport),
     _view(nullptr),
     _manager(nullptr),
@@ -335,7 +325,7 @@ void LAppDelegate::InitializeCubism()
 
 void LAppDelegate::TrackGlobalCursor()
 {
-    const auto outputs = _waylandBackend.Outputs();
+    const auto outputs = _window->Outputs();
     const auto* current = _outputController.Current(outputs);
     _kwinCursor.Poll(current ? current->name : "");
     double x = 0, y = 0;
@@ -346,7 +336,7 @@ void LAppDelegate::TrackGlobalCursor()
 void LAppDelegate::UpdateCursorLook(ModelTransform transform)
 {
     if (!_manager || !_cursorLook.HasPosition()) return;
-    const auto outputs = _waylandBackend.Outputs();
+    const auto outputs = _window->Outputs();
     const auto* current = _outputController.Current(outputs);
     if (!current) return;
     const auto look = _cursorLook.LookAt(current->x, current->y, _windowWidth,
@@ -391,11 +381,11 @@ void LAppDelegate::OnMouseCallBack(void* window, int button, int action, int mod
                 bool switched = false;
                 if (cursor) {
                     const auto geometry = _compositor.MonitorGeometry();
-                    if (geometry) _waylandBackend.ApplyMonitorGeometry(geometry.value);
+                    if (geometry) _window->ApplyMonitorGeometry(geometry.value);
                     auto transform = _service.Snapshot().transform;
-                    const OutputId oldId = _waylandBackend.CurrentOutput();
+                    const OutputId oldId = _window->CurrentOutput();
                     if (_outputController.MoveTo(cursor.value.first, cursor.value.second, transform) &&
-                         oldId != _waylandBackend.CurrentOutput()) {
+                          oldId != _window->CurrentOutput()) {
                          _service.SetTransform(transform);
                          _settings->PauseAutosave();
                          switched = true;
@@ -411,7 +401,7 @@ void LAppDelegate::OnMouseCallBack(void* window, int button, int action, int mod
                 if (result == InputController::ReleaseResult::DoubleClick)
                 {
                     _manager->OnDrag(0.0f, 0.0f);
-                    SetModelKeyboardGrab(&_wlContext, true);
+                    _window->SetKeyboardGrab(true);
                 }
                 else if (result == InputController::ReleaseResult::Drag)
                 {
@@ -455,13 +445,13 @@ void LAppDelegate::ResetKeyboardState()
 void LAppDelegate::OnModelKey(uint32_t code, bool pressed)
 {
     if (_settings && _settings->Editing()) return;
-    LAppModel* model = _wlContext.keyboardSurface.IsGrabbed()
+    LAppModel* model = _window->KeyboardGrabbed()
         ? _manager->GetModel(0) : nullptr;
     const auto* bindings = model ? &model->Hotkeys().Bindings() : nullptr;
     const ModelKeyDecision decision = _input.Key(
-        _wlContext.keyboardSurface.IsGrabbed(), code, pressed, bindings);
+        _window->KeyboardGrabbed(), code, pressed, bindings);
     if (decision.action == ModelKeyDecision::ReleaseGrab)
-        SetModelKeyboardGrab(&_wlContext, false);
+        _window->SetKeyboardGrab(false);
     else if (decision.action == ModelKeyDecision::Trigger)
     {
         const auto result = _service.TriggerHotkey(decision.bindingId);
@@ -490,7 +480,7 @@ void LAppDelegate::OnMouseCallBack(void* window, double x, double y)
                     int(x), int(y), _windowWidth, _windowHeight)) {
                 _input = InputController{};
                 _manager->OnDrag(0.0f, 0.0f);
-                if (_wlContext.keyboardSurface.IsGrabbed()) SetModelKeyboardGrab(&_wlContext, false);
+                if (_window->KeyboardGrabbed()) _window->SetKeyboardGrab(false);
             }
             return;
         }
@@ -537,14 +527,13 @@ int LAppDelegate::ModelCount() const { return _manager ? _manager->GetModelDirSi
 bool LAppDelegate::SetHidden(bool hidden)
 {
     if (hidden) {
-        if (!_wlContext.compositor || !_wlContext.surface) return false;
-        if (!ClearWaylandInputRegion(&_wlContext)) return false;
+        if (!_window->SetInputRegion({})) return false;
         _hoverOpacity.Leave();
-        SetModelKeyboardGrab(&_wlContext, false);
+        _window->SetKeyboardGrab(false);
         _input.ResetKeyboard();
         return true;
     }
-    return _wlContext.surface && _wlContext.compositor;
+    return _window->Available();
 }
 
 bool LAppDelegate::PlayMotion(const std::string& group, int index, int priority)

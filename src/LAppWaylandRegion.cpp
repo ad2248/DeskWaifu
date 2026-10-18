@@ -1,4 +1,6 @@
+#ifndef DESKWAIFU_QT_WINDOW
 #include "LAppWayland.hpp"
+#endif
 #include "LAppWaylandRegion.hpp"
 #include "ModelInputRegion.hpp"
 #include <GL/glew.h>
@@ -6,6 +8,7 @@
 #include <iostream>
 #include <chrono>
 
+#ifndef DESKWAIFU_QT_WINDOW
 bool ClearWaylandInputRegion(WaylandContext* wl) {
     if (!wl || !wl->compositor || !wl->surface) return false;
     wl_region* empty = wl_compositor_create_region(wl->compositor);
@@ -15,6 +18,7 @@ bool ClearWaylandInputRegion(WaylandContext* wl) {
     wl_surface_commit(wl->surface);
     return true;
 }
+#endif
 
 void ClipWaylandModelRegion(ModelRegion region, int width, int height) {
     if (region.x == 0 && region.y == 0 && region.width == width && region.height == height) return;
@@ -74,6 +78,7 @@ std::vector<ModelRegion> ReadModelInputRegion(unsigned int framebuffer, int widt
     return ExtractModelInputRegion(pixels.data(), width, height, clip);
 }
 
+#ifndef DESKWAIFU_QT_WINDOW
 void UpdateWaylandFrameInputRegion(WaylandContext* wl, bool screenEditing, int width, int height,
     const std::vector<ModelRegion>& modelRegions) {
     // Capture outside clicks while editing; otherwise restore model click-through.
@@ -95,3 +100,4 @@ void UpdateWaylandInputRegion(WaylandContext* wl, const std::vector<ModelRegion>
     wl_surface_set_input_region(wl->surface, region);
     wl_region_destroy(region);
 }
+#endif

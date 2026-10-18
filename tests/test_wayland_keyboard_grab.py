@@ -13,8 +13,8 @@ class WaylandKeyboardGrabTest(unittest.TestCase):
         source = (SOURCE.parent / "LAppDelegate.cpp").read_text()
         self.assertRegex(
             source,
-            r"UpdateWaylandFrameInputRegion\(&_wlContext, _settings->ScreenEditing\(\),\s*"
-            r"_windowWidth, _windowHeight, modelRegions\);",
+            r"_window->SetInputRegion\(_settings->ScreenEditing\(\)\s*"
+            r"\? std::vector<ModelRegion>\{\{0, 0, _windowWidth, _windowHeight\}\} : modelRegions\);",
         )
 
     def test_each_created_layer_covers_reserved_panel_area(self):

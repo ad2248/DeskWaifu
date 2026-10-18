@@ -9,7 +9,7 @@
 
 #include <string>
 #include <GL/glew.h>
-#include "LAppWayland.hpp"
+#include "DesktopWindow.hpp"
 #include "InputController.hpp"
 #include "CursorLook.hpp"
 #include "KWinCursorTracker.hpp"
@@ -100,7 +100,7 @@ public:
     /**
     * @brief   WaylandContextを取得する。
     */
-    WaylandContext* GetWindow() { return &_wlContext; }
+    DesktopWindow* GetWindow() { return _window.get(); }
 
     /**
     * @brief   View情報を取得する。
@@ -110,11 +110,11 @@ public:
     const ApplicationService& Service() const { return _service; }
     TransformEditor& Settings() { return *_settings; }
     HoverOpacitySettings& HoverSettings() { return *_hoverSettings; }
-    std::vector<OutputSnapshot> Outputs() const { return _waylandBackend.Outputs(); }
-    OutputId CurrentOutput() const { return _waylandBackend.CurrentOutput(); }
+    std::vector<OutputSnapshot> Outputs() const { return _window->Outputs(); }
+    OutputId CurrentOutput() const { return _window->CurrentOutput(); }
     AppResult SelectOutput(const std::string& name)
     {
-        OutputSettings settings(_waylandBackend, *_settings, LAppConfig::GetInstance());
+        OutputSettings settings(*_window, *_settings, LAppConfig::GetInstance());
         return settings.Select(name);
     }
 
@@ -191,8 +191,7 @@ private:
 
     LAppAllocator_Common _cubismAllocator;              ///< Cubism3 Allocator
     Csm::CubismFramework::Option _cubismOption;         ///< Cubism3 Option
-    WaylandContext _wlContext;                          ///< Wayland Context
-    WaylandBackend _waylandBackend;
+    std::unique_ptr<DesktopWindow> _window;
     OutputController _outputController;
     BoundedCompositorTransport _compositorTransport;
     CompositorAdapter _compositor;

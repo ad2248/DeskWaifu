@@ -46,7 +46,6 @@ else ()
       ${CMAKE_CURRENT_SOURCE_DIR}/LAppDelegate.hpp
       ${CMAKE_CURRENT_SOURCE_DIR}/AppCommandHandler.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/LAppIPC.hpp
-      ${CMAKE_CURRENT_SOURCE_DIR}/LAppWayland.cpp
 LAppWaylandRegion.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/LAppWayland.hpp
       ${CMAKE_CURRENT_SOURCE_DIR}/LAppLive2DManager.cpp
@@ -72,4 +71,13 @@ endif ()
 target_include_directories(${APP_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 if (NOT CSM_MINIMUM_DEMO)
   target_link_libraries(${APP_NAME} deskwaifu_loader deskwaifu_renderer deskwaifu_ipc deskwaifu_input deskwaifu_output deskwaifu_compositor deskwaifu_kwin_cursor)
+  if (DESKWAIFU_WINDOW_BACKEND STREQUAL "qt")
+    find_package(Qt6 6.5 REQUIRED COMPONENTS Gui OpenGL WaylandClient)
+    find_package(LayerShellQt 6.6 REQUIRED)
+    target_sources(${APP_NAME} PRIVATE QtDesktopWindow.cpp)
+    target_compile_definitions(${APP_NAME} PRIVATE DESKWAIFU_QT_WINDOW)
+    target_link_libraries(${APP_NAME} Qt6::Gui Qt6::OpenGL Qt6::WaylandClient LayerShellQt::Interface)
+  else ()
+    target_sources(${APP_NAME} PRIVATE LAppWayland.cpp NativeDesktopWindow.cpp)
+  endif ()
 endif ()
