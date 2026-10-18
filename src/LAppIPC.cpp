@@ -1,6 +1,7 @@
 #include "LAppIPC.hpp"
 
 #include <sys/socket.h>
+#include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/un.h>
 #include <unistd.h>
@@ -10,6 +11,55 @@
 #include <cstdlib>
 #include <cstdio>
 #include <algorithm>
+#include <chrono>
+#include <poll.h>
+
+namespace {
+constexpr int ProbeTimeoutMs = 50;
+
+enum class EndpointState { Active, Stale, Unknown };
+
+EndpointState ProbeEndpoint(const sockaddr_un& address)
+{
+    const int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0);
+    if (fd < 0) return EndpointState::Unknown;
+
+    if (connect(fd, reinterpret_cast<const sockaddr*>(&address), sizeof(address)) == 0) {
+        close(fd);
+        return EndpointState::Active;
+    }
+    const int connectError = errno;
+    if (connectError == ECONNREFUSED) {
+        close(fd);
+        return EndpointState::Stale;
+    }
+    if (connectError != EINPROGRESS && connectError != EAGAIN) {
+        close(fd);
+        return EndpointState::Unknown;
+    }
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ProbeTimeoutMs);
+    while (true) {
+        const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+            deadline - std::chrono::steady_clock::now()).count();
+        if (remaining <= 0) break;
+        pollfd pending{fd, POLLOUT, 0};
+        const int ready = poll(&pending, 1, static_cast<int>(remaining));
+        if (ready < 0 && errno == EINTR) continue;
+        if (ready <= 0) break;
+        int error = 0;
+        socklen_t length = sizeof(error);
+        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &length) == 0) {
+            close(fd);
+            return error == 0 ? EndpointState::Active :
+                (error == ECONNREFUSED ? EndpointState::Stale : EndpointState::Unknown);
+        }
+        break;
+    }
+    close(fd);
+    return EndpointState::Unknown;
+}
+}
 
 LAppIPC::LAppIPC()
     : _commands(nullptr)
@@ -35,11 +85,18 @@ bool LAppIPC::Initialize()
     {
         _socketPath = "/tmp/deskwaifu.sock";
     }
+    if (!AcquireSocketLock()) {
+        fprintf(stderr, "[IPC] Socket endpoint is being initialized by another instance\n");
+        _socketPath.clear();
+        return false;
+    }
 
     _serverFd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (_serverFd < 0)
     {
         fprintf(stderr, "[IPC] Failed to create socket: %s\n", strerror(errno));
+        ReleaseSocketLock();
+        _socketPath.clear();
         return false;
     }
 
@@ -57,15 +114,7 @@ bool LAppIPC::Initialize()
     {
         if (errno == EADDRINUSE)
         {
-            const int probe = socket(AF_UNIX, SOCK_STREAM, 0);
-            bool active = false;
-            int probeError = 0;
-            if (probe >= 0) {
-                active = connect(probe, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0;
-                if (!active) probeError = errno;
-                close(probe);
-            }
-            if (!active && probeError == ECONNREFUSED && unlink(_socketPath.c_str()) == 0 &&
+            if (ProbeEndpoint(addr) == EndpointState::Stale && unlink(_socketPath.c_str()) == 0 &&
                 bind(_serverFd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0) bound = true;
         }
     }
@@ -74,6 +123,7 @@ bool LAppIPC::Initialize()
         fprintf(stderr, "[IPC] Failed to bind socket: %s\n", strerror(errno));
         close(_serverFd);
         _serverFd = -1;
+        ReleaseSocketLock();
         _socketPath.clear();
         return false;
     }
@@ -84,6 +134,7 @@ bool LAppIPC::Initialize()
         close(_serverFd);
         _serverFd = -1;
         unlink(_socketPath.c_str());
+        ReleaseSocketLock();
         _socketPath.clear();
         return false;
     }
@@ -98,6 +149,7 @@ bool LAppIPC::Initialize()
         _serverFd = -1;
         if (_ownsSocketPath) unlink(_socketPath.c_str());
         _ownsSocketPath = false;
+        ReleaseSocketLock();
         _socketPath.clear();
         return false;
     }
@@ -130,7 +182,24 @@ void LAppIPC::Release()
         unlink(_socketPath.c_str());
     }
     _ownsSocketPath = false;
+    ReleaseSocketLock();
     _socketPath.clear();
+}
+
+bool LAppIPC::AcquireSocketLock()
+{
+    _socketLockFd = open((_socketPath + ".lock").c_str(), O_CREAT | O_RDWR, 0600);
+    if (_socketLockFd < 0) return false;
+    if (flock(_socketLockFd, LOCK_EX | LOCK_NB) == 0) return true;
+    close(_socketLockFd);
+    _socketLockFd = -1;
+    return false;
+}
+
+void LAppIPC::ReleaseSocketLock()
+{
+    if (_socketLockFd >= 0) close(_socketLockFd);
+    _socketLockFd = -1;
 }
 
 LAppIPC::ClientBuffer& LAppIPC::GetClientBuffer(int fd)

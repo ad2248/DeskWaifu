@@ -3,13 +3,17 @@
 #include "RuntimeLifecycle.hpp"
 
 #include <cstdlib>
+#include <chrono>
 #include <cstring>
+#include <fcntl.h>
 #include <string>
+#include <sys/file.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/time.h>
 #include <type_traits>
 #include <unistd.h>
+#include <vector>
 
 struct FakeCommands : ICommandService
 {
@@ -74,6 +78,42 @@ int main()
     sockaddr_un staleAddr{};
     staleAddr.sun_family = AF_UNIX;
     std::strncpy(staleAddr.sun_path, stalePath.c_str(), sizeof(staleAddr.sun_path) - 1);
+
+    const int preparing = socket(AF_UNIX, SOCK_STREAM, 0);
+    const int preparingLock = open((stalePath + ".lock").c_str(), O_CREAT | O_RDWR, 0600);
+    if (preparing < 0 || preparingLock < 0 || flock(preparingLock, LOCK_EX | LOCK_NB) != 0 ||
+        bind(preparing, reinterpret_cast<sockaddr*>(&staleAddr), sizeof(staleAddr)) != 0) ok = false;
+    LAppIPC racing;
+    racing.SetCommandService(commands);
+    if (racing.Initialize() || access(staleAddr.sun_path, F_OK) != 0) ok = false;
+    racing.Release();
+    if (preparingLock >= 0) close(preparingLock);
+    if (preparing >= 0) close(preparing);
+    unlink(staleAddr.sun_path);
+
+    const int congested = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (congested < 0 || bind(congested, reinterpret_cast<sockaddr*>(&staleAddr), sizeof(staleAddr)) != 0 ||
+        listen(congested, 1) != 0) ok = false;
+    std::vector<int> pending;
+    for (int i = 0; i < 32; ++i) {
+        const int client = socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0);
+        if (client < 0) { ok = false; break; }
+        const int result = connect(client, reinterpret_cast<sockaddr*>(&staleAddr), sizeof(staleAddr));
+        if (result == 0 || errno == EINPROGRESS) pending.push_back(client);
+        else { close(client); break; }
+    }
+    LAppIPC blocked;
+    blocked.SetCommandService(commands);
+    const auto blockedAt = std::chrono::steady_clock::now();
+    if (blocked.Initialize()) ok = false;
+    const auto blockedFor = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - blockedAt).count();
+    if (blockedFor > 500 || access(staleAddr.sun_path, F_OK) != 0) ok = false;
+    blocked.Release();
+    for (int client : pending) close(client);
+    if (congested >= 0) close(congested);
+    unlink(staleAddr.sun_path);
+
     if (stale < 0 || bind(stale, reinterpret_cast<sockaddr*>(&staleAddr), sizeof(staleAddr)) != 0) ok = false;
     if (stale >= 0) close(stale);
 
@@ -164,6 +204,7 @@ int main()
     if (access(addr.sun_path, F_OK) == 0) ok = false;
     if (previous) setenv("XDG_RUNTIME_DIR", saved.c_str(), 1);
     else unsetenv("XDG_RUNTIME_DIR");
+    unlink((stalePath + ".lock").c_str());
     rmdir(path);
     return ok ? 0 : 1;
 }
