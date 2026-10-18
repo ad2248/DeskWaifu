@@ -48,12 +48,13 @@ int main()
     Model model;
     bool editing = false;
     int updates = 0;
+    float radius = 5;
     auto frame = [&] {
         RenderModelFrame(service, editing,
             [&](ModelTransform transform) {
                 ++updates;
                 if (!cursor.HasPosition()) return;
-                const auto look = cursor.LookAt(-200, 100, 200, 200, .5f, .5f, transform);
+                const auto look = cursor.LookAt(-200, 100, 200, 200, .5f, .5f, transform, radius);
                 model.OnDrag(look.first, look.second);
             },
             [&](ModelTransform transform, const ModelFrameInput& input) {
@@ -113,5 +114,12 @@ int main()
     frame();
     CHECK(updates == 9 && model.drags.size() == 9 && model.rendered.size() == 11);
     CHECK(model.rendered.back() == mouse);
+    // A settings change takes effect without a fresh cursor sample.
+    radius = .25f;
+    frame();
+    CHECK(std::abs(std::hypot(model.rendered.back().first, model.rendered.back().second) - .25f) < .00001f);
+    radius = 0;
+    frame();
+    CHECK(model.rendered.back() == std::make_pair(0.f, 0.f));
     return 0;
 }

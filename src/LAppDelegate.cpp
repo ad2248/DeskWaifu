@@ -341,7 +341,7 @@ void LAppDelegate::UpdateCursorLook(ModelTransform transform)
     const auto* current = _outputController.Current(outputs);
     if (!current) return;
     const auto look = _cursorLook.LookAt(current->x, current->y, _windowWidth,
-        _windowHeight, _lookCenterX, _lookCenterY, transform);
+        _windowHeight, _lookCenterX, _lookCenterY, transform, LAppConfig::GetInstance().values.mouseLookRadius);
     _manager->OnDrag(look.first, look.second);
 }
 

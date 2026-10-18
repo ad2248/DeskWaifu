@@ -77,6 +77,7 @@ void DeskWaifuClientTest::doesNotReplayUnacknowledgedMutation()
     client.sendCommand(command);
     client.sendCommand(QStringLiteral("trigger_hotkey"));
     client.sendCommand(QStringLiteral("set_hover_opacity"), {{QStringLiteral("opacity"), 0.5}});
+    client.sendCommand(QStringLiteral("set_mouse_look"), {{QStringLiteral("radius"), 0.5}});
     client.sendCommand(QStringLiteral("quit"));
     client.sendCommand(QStringLiteral("get_status"));
 
@@ -110,6 +111,7 @@ void DeskWaifuClientTest::doesNotReplayUnacknowledgedMutation_data()
     QTest::newRow("transform-apply") << QStringLiteral("apply_transform_edit");
     QTest::newRow("transform-reset") << QStringLiteral("reset_transform_settings");
     QTest::newRow("hover-opacity") << QStringLiteral("set_hover_opacity");
+    QTest::newRow("mouse-look") << QStringLiteral("set_mouse_look");
     QTest::newRow("quit") << QStringLiteral("quit");
 }
 
@@ -153,6 +155,7 @@ void DeskWaifuClientTest::retriesUnacknowledgedQuery_data()
     QTest::addColumn<QString>("command");
     QTest::newRow("status") << QStringLiteral("get_status");
     QTest::newRow("hover-opacity") << QStringLiteral("get_hover_opacity");
+    QTest::newRow("mouse-look") << QStringLiteral("get_mouse_look");
 }
 
 QTEST_GUILESS_MAIN(DeskWaifuClientTest)

@@ -119,6 +119,16 @@ bool LAppConfig::Decode(const ConfigStore::Snapshot& snapshot, Values& values, s
             (std::string(key) == "hover_opacity" ? next.hoverOpacity : next.idleOpacity) = static_cast<float>(parsed);
         }
     }
+    auto radius = snapshot.values.find("mouse_look_radius");
+    if (radius != snapshot.values.end()) {
+        std::istringstream input(radius->second); input.imbue(std::locale::classic());
+        double parsed;
+        if (!(input >> parsed) || input.peek() != std::char_traits<char>::eof() ||
+            !std::isfinite(parsed) || parsed < 0 || parsed > std::numeric_limits<float>::max()) {
+            error = "Invalid mouse_look_radius: expected a finite non-negative float"; return false;
+        }
+        next.mouseLookRadius = static_cast<float>(parsed);
+    }
     auto region = snapshot.values.find("model_region");
     if (region != snapshot.values.end()) {
         ConfigStore::Snapshot rectangle;
@@ -159,7 +169,8 @@ bool LAppConfig::Serialize(const Values& values, std::string& document, std::str
         << ",\n  \"window_height\": " << values.windowHeight
         << ",\n  \"hover_opacity_enabled\": " << (values.hoverOpacityEnabled ? "true" : "false")
         << ",\n  \"hover_opacity\": " << values.hoverOpacity
-        << ",\n  \"idle_opacity\": " << values.idleOpacity;
+        << ",\n  \"idle_opacity\": " << values.idleOpacity
+        << ",\n  \"mouse_look_radius\": " << values.mouseLookRadius;
     if (!values.modelOutput.empty()) out << ",\n  \"model_output\": " << Quote(values.modelOutput);
     if (values.modelRegion) {
         const auto& r = *values.modelRegion;

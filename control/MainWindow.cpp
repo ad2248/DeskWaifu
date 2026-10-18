@@ -6,6 +6,7 @@
 #include <QTimer>
 #include <QUuid>
 #include <QSignalBlocker>
+#include <algorithm>
 #include <cmath>
 
 #include <QJsonArray>
@@ -46,6 +47,7 @@ MainWindow::MainWindow(QWidget* parent)
         if (_client.isConnected() && isActiveWindow()) {
             requestHotkeys();
             requestHoverOpacity();
+            requestMouseLook();
         }
     });
     hotkeyTimer->start();
@@ -66,7 +68,7 @@ MainWindow::MainWindow(QWidget* parent)
             ui->respawnButton->setEnabled(connected && !_respawner.isRunning());
             if (!connected)
             {
-                if (_hoverSetPending) setStatusMessage(tr("连接断开：设置结果未确认，重新连接后将查询实际保存结果。"));
+                if (_hoverSetPending || _mouseLookSetPending) setStatusMessage(tr("连接断开：设置结果未确认，重新连接后将查询实际保存结果。"));
                 _transformOwned = _transformEditStarting = _transformQueryPending = false;
                 _transformPreviewInFlight = _transformPreviewPending = _transformSupported = false;
                 _outputSwitchPending = false;
@@ -75,10 +77,12 @@ MainWindow::MainWindow(QWidget* parent)
                 _lastHotkeyResponse = {};
                 _hotkeyQueryPending = false;
                 _hoverQueryPending = _hoverSetPending = _hoverSupported = false;
+                _mouseLookQueryPending = _mouseLookSetPending = _mouseLookSupported = false;
             }
             _connectionStatusLabel->setText(message);
             _connectionStatusLabel->setToolTip(message);
             ui->hoverOpacityGroup->setEnabled(false);
+            ui->mouseLookGroup->setEnabled(false);
             ui->transformGroup->setEnabled(connected && _transformSupported);
             ui->outputCombo->setEnabled(false);
             ui->positionEdit->setEnabled(connected && _transformSupported);
@@ -272,6 +276,19 @@ void MainWindow::bindControls()
         ui->idleOpacityValueLabel->setText(QStringLiteral("%1%").arg(value));
         setHoverOpacity({{QStringLiteral("idle_opacity"), value / 100.0}});
     });
+    connect(ui->mouseLookRadiusSlider, &QSlider::sliderMoved, this, [this](int value) {
+        const QSignalBlocker block(ui->mouseLookRadiusSpin);
+        ui->mouseLookRadiusSpin->setValue(value / 100.0);
+    });
+    connect(ui->mouseLookRadiusSlider, &QSlider::valueChanged, this, [this](int value) {
+        showMouseLook(value / 100.0);
+        setMouseLook(value / 100.0);
+    });
+    ui->mouseLookRadiusSpin->setKeyboardTracking(false);
+    connect(ui->mouseLookRadiusSpin, &QDoubleSpinBox::valueChanged, this, [this](double value) {
+        showMouseLook(value);
+        setMouseLook(value);
+    });
     connect(ui->lookButton, &QPushButton::clicked, this, [this] {
         _client.sendCommand(QStringLiteral("set_look"), {
             {QStringLiteral("x"), ui->lookXSpin->value()},
@@ -297,10 +314,33 @@ void MainWindow::refreshAll()
     _client.sendCommand(QStringLiteral("get_motions"));
     requestTransform();
     requestHoverOpacity();
+    requestMouseLook();
 }
 
 void MainWindow::handleResponse(const QString& command, const QJsonObject& response)
 {
+    if (command == QStringLiteral("get_mouse_look") || command == QStringLiteral("set_mouse_look")) {
+        const bool mutation = command == QStringLiteral("set_mouse_look");
+        if (mutation) _mouseLookSetPending = false;
+        else _mouseLookQueryPending = false;
+        if (!mutation && (_mouseLookSetPending || ui->mouseLookRadiusSlider->isSliderDown() ||
+            ui->mouseLookRadiusSpin->hasFocus())) return;
+        const auto value = response.value(QStringLiteral("radius"));
+        const double radius = value.toDouble(-1);
+        const bool valid = value.isDouble() && std::isfinite(radius) && radius >= 0;
+        if (valid) {
+            _mouseLookSupported = true;
+            _lastMouseLookRadius = radius;
+        } else if (!mutation) _mouseLookSupported = false;
+        showMouseLook(_lastMouseLookRadius);
+        ui->mouseLookGroup->setEnabled(_client.isConnected() && _mouseLookSupported);
+        const bool ok = response.value(QStringLiteral("ok")).toBool() && valid;
+        if (ok && mutation) setStatusMessage(tr("已设置并保存"));
+        ui->mouseLookGroup->setToolTip(ok ? QString() : response.value(QStringLiteral("error")).toString(tr("后端不支持鼠标注视范围设置")));
+        if (!ok && (mutation || valid)) setStatusMessage(ui->mouseLookGroup->toolTip());
+        if (mutation || !ok) logResponse(command, response);
+        return;
+    }
     if (command == QStringLiteral("get_hover_opacity") || command == QStringLiteral("set_hover_opacity")) {
         const bool mutation = command == QStringLiteral("set_hover_opacity");
         if (mutation) _hoverSetPending = false;
@@ -511,6 +551,32 @@ void MainWindow::showHoverOpacity(const QJsonObject& response)
     const int idleValue = qRound(response.value(QStringLiteral("idle_opacity")).toDouble(1) * 100);
     ui->idleOpacitySlider->setValue(idleValue);
     ui->idleOpacityValueLabel->setText(QStringLiteral("%1%").arg(idleValue));
+}
+
+void MainWindow::requestMouseLook()
+{
+    if (_mouseLookQueryPending || _mouseLookSetPending || ui->mouseLookRadiusSlider->isSliderDown() ||
+        ui->mouseLookRadiusSpin->hasFocus()) return;
+    _mouseLookQueryPending = true;
+    _client.sendCommand(QStringLiteral("get_mouse_look"));
+}
+
+void MainWindow::setMouseLook(double radius)
+{
+    if (!_client.isConnected() || !_mouseLookSupported || _mouseLookSetPending) return;
+    _mouseLookSetPending = true;
+    ui->mouseLookGroup->setEnabled(false);
+    setStatusMessage(tr("正在设置并保存…"));
+    _client.sendCommand(QStringLiteral("set_mouse_look"), {{QStringLiteral("radius"), radius}});
+}
+
+void MainWindow::showMouseLook(double radius)
+{
+    const QSignalBlocker blockSlider(ui->mouseLookRadiusSlider);
+    const QSignalBlocker blockSpin(ui->mouseLookRadiusSpin);
+    ui->mouseLookRadiusSpin->setMaximum(std::max(10.0, radius));
+    ui->mouseLookRadiusSpin->setValue(radius);
+    ui->mouseLookRadiusSlider->setValue(qRound(std::min(radius, 2.0) * 100));
 }
 
 void MainWindow::sendTransformSave(const QString& command, QJsonObject parameters)
