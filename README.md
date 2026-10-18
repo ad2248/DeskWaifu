@@ -32,7 +32,7 @@ https://github.com/user-attachments/assets/95dfdedc-4957-4bb7-b79f-f3addd97a6db
 - **Wayland-native overlay** — renders as a layer-shell surface, always on top of your desktop
 - **Click-through transparency** — only the Live2D model area receives pointer events; everything else passes through
 - **Multi-compositor support** — works on any Wayland compositor supporting `wlr-layer-shell` (Hyprland, Sway, river, etc.)
-- **Multi-output support** — switch between monitors (Hyprland)
+- **Multi-output support** — choose and remember a monitor from the control panel
 - **Interactive** — responds to mouse drag, tap, and scroll input
 - **Motion & expression** — supports idle animations, lip-sync, eye-blink, physics, and expressions
 - **Configurable model directory** — load models from any path via CLI flag or XDG config
@@ -241,7 +241,9 @@ Example `config.json`:
 | `window_height` | int | `1000` | Render target height in pixels |
 | `hover_opacity_enabled` | bool | `false` | Reduce model opacity while the pointer is over its input silhouette |
 | `hover_opacity` | float | `0.5` | Hover opacity, from `0` (invisible) to `1` (unchanged); must be finite |
+| `idle_opacity` | float | `1.0` | Normal model opacity when not hovered, or when hover opacity is disabled; finite number within `0..1` |
 | `model_region` | object | Entire current output | Optional clipping rectangle: integer `x`, `y` (default `0`), and required positive integer `width`, `height` |
+| `model_output` | string | First enumerated output | Display connector name, e.g. `DP-1`; an unavailable or unset name is replaced with the first enumerated output and saved at startup |
 
 All fields are optional. Missing fields use their default values. If the config file doesn't exist, all defaults are used.
 
@@ -296,6 +298,13 @@ Malformed rectangles reject the configuration file with a diagnostic.
 ### Editing position, zoom and crop in the control panel
 
 The **Transform** tab edits model position, zoom and the crop rectangle together.
+Its **显示器** selector immediately switches and saves the display. Switching centers
+the model at `(0, 0)`, preserves zoom, and clears the crop. Finish or cancel an active
+transform edit before switching. Restarting restores the selected display and saved
+placement; an unavailable display falls back to the first enumerated display, centers
+the model, clears the crop, and writes the replacement name to configuration.
+If startup cannot save that fallback, it logs a warning and continues on the first
+display using the readable configuration's placement instead of refusing to start.
 Crop coordinates are integers in the current surface's top-left coordinate system;
 they are not the model's floating-point offsets. **Enable crop** explicitly selects
 clipping; a disabled crop uses the entire current surface without a fixed rectangle.
@@ -331,6 +340,11 @@ silently overwritten. Files are checked every 0.5 seconds, so external editor
 replacements are detected too. Transform/crop and hover settings are hot-reloaded.
 Hover settings are also refreshed when queried by the control panel; other settings
 still require restarting the application.
+
+For IPC clients, `get_transform_settings` includes `outputs`, an array of
+`{"name":"DP-1","current":true}` objects. `{"command":"set_output","name":"DP-1"}`
+selects an available display and returns `ok` or an error; failed saves attempt to
+restore the previous display. Selecting the already configured current display is a no-op.
 
 External changes during preview do not replace the draft. Applying checks the entire
 configuration for conflicts, including independent hover saves during preview:
@@ -472,17 +486,22 @@ A convenience CLI client `deskwaifu-ctl` is included in the project root:
 
 ### Available Commands
 
-#### `get_hover_opacity` / `set_hover_opacity` — Hover opacity
+#### `get_hover_opacity` / `set_hover_opacity` — Model opacity
 
 ```json
 {"command":"get_hover_opacity"}
 {"command":"set_hover_opacity","enabled":true}
 {"command":"set_hover_opacity","opacity":0.5}
+{"command":"set_hover_opacity","idle_opacity":0.8}
 ```
 
-Both commands return `enabled` and `opacity`, including the unchanged effective
+Both commands return `enabled`, `opacity` and `idle_opacity`, including the unchanged effective
 values when a save fails (`ok: false`, with `error`). Setting requires at least
-one of `enabled` (boolean) or `opacity` (finite number within `0..1`). Supplied
+one of `enabled` (boolean), `opacity` or `idle_opacity` (finite numbers within `0..1`).
+`enabled` controls only the hover override: otherwise `idle_opacity` applies.
+The two opacities are absolute display multipliers, not multiplied together.
+The control window provides independent normal and hover sliders; both save on release.
+Even at zero opacity, the model retains its original input silhouette. Supplied
 fields update a configuration value structure loaded from disk, which is then
 serialized in full to the backend's actual configuration path. Other known fields
 are retained; comments and unknown fields are not. Runtime values change only after a successful atomic

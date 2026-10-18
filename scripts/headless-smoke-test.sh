@@ -278,6 +278,7 @@ kill -0 "$APP_PID"
     if (( after <= before + 1 )); then cat "$LOG_DIR/deskwaifu.log" >&2; exit 1; fi
     assert_ok get_status
 }
+python3 tests/output_smoke.py
 assert_ok quit
 for _ in {1..200}; do
     state=$(ps -o stat= -p "$APP_PID" 2>/dev/null || true)

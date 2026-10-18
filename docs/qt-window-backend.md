@@ -25,6 +25,11 @@ The executable is still named `deskwaifu`; the CLI, IPC socket and config paths
 are unchanged. Do not run the two backends against the same runtime socket.
 The backend rejects non-Wayland platforms or compositors without layer-shell
 instead of silently presenting an ordinary desktop window.
+With the required Qt 6.5+, `LayerShellQt::Window::get()` selects the shell
+integration per window; the old application-wide `Shell::useLayerShell()` call
+is no longer required. The isolated smoke test removes shell integration
+environment overrides and asserts actual `get_layer_surface` requests, with
+no `get_xdg_surface` fallback, for both the window fixture and real model.
 
 ## Boundaries and behavior
 

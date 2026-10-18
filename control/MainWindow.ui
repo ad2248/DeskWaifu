@@ -327,6 +327,17 @@
        </attribute>
        <layout class="QVBoxLayout" name="transformLayout">
         <item>
+         <layout class="QHBoxLayout" name="outputLayout">
+          <item><widget class="QLabel" name="outputLabel">
+           <property name="text"><string>显示器</string></property>
+          </widget></item>
+          <item><widget class="QComboBox" name="outputCombo">
+           <property name="enabled"><bool>false</bool></property>
+           <property name="toolTip"><string>切换后立即保存，模型居中并清除裁剪，保留缩放。</string></property>
+          </widget></item>
+         </layout>
+        </item>
+        <item>
          <widget class="QGroupBox" name="transformGroup">
           <property name="title">
            <string>Position and scale</string>
@@ -555,7 +566,7 @@
          <item>
           <widget class="QGroupBox" name="hoverOpacityGroup">
            <property name="enabled"><bool>false</bool></property>
-           <property name="title"><string>鼠标悬停透明度</string></property>
+           <property name="title"><string>模型透明度</string></property>
            <layout class="QGridLayout" name="hoverOpacityLayout">
             <item row="0" column="0" colspan="3">
              <widget class="QCheckBox" name="hoverOpacityEnabledCheck">
@@ -564,7 +575,7 @@
             </item>
             <item row="1" column="0">
              <widget class="QLabel" name="hoverOpacityLabel">
-              <property name="text"><string>不透明度</string></property>
+              <property name="text"><string>悬停不透明度</string></property>
               <property name="buddy"><cstring>hoverOpacitySlider</cstring></property>
              </widget>
             </item>
@@ -583,9 +594,30 @@
               <property name="minimumSize"><size><width>42</width><height>0</height></size></property>
              </widget>
             </item>
-            <item row="2" column="0" colspan="3">
+            <item row="2" column="0">
+             <widget class="QLabel" name="idleOpacityLabel">
+              <property name="text"><string>平时不透明度</string></property>
+              <property name="buddy"><cstring>idleOpacitySlider</cstring></property>
+             </widget>
+            </item>
+            <item row="2" column="1">
+             <widget class="QSlider" name="idleOpacitySlider">
+              <property name="maximum"><number>100</number></property>
+              <property name="value"><number>100</number></property>
+              <property name="tracking"><bool>false</bool></property>
+              <property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property>
+              <property name="accessibleName"><string>平时不透明度</string></property>
+             </widget>
+            </item>
+            <item row="2" column="2">
+             <widget class="QLabel" name="idleOpacityValueLabel">
+              <property name="text"><string>100%</string></property>
+              <property name="minimumSize"><size><width>42</width><height>0</height></size></property>
+             </widget>
+            </item>
+            <item row="3" column="0" colspan="3">
              <widget class="QLabel" name="hoverOpacityHintLabel">
-              <property name="text"><string>0% 完全透明，100% 不透明。拖动时只更新读数，松手立即设置并保存。</string></property>
+              <property name="text"><string>0% 完全透明，100% 不透明。未启用悬停时始终使用平时值；启用后鼠标悬停使用悬停值。拖动时只更新读数，松手立即设置并保存。</string></property>
               <property name="wordWrap"><bool>true</bool></property>
              </widget>
             </item>

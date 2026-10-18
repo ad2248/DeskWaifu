@@ -27,6 +27,14 @@ def stop(process):
             process.wait()
 
 
+def assert_layer_shell(trace):
+    # Protocol advertisement and QWindow properties do not prove the window role.
+    assert re.search(r"zwlr_layer_shell_v1[@#]\d+\.get_layer_surface\(", trace), \
+        "Model window did not actually acquire a layer-shell role"
+    assert not re.search(r"xdg_wm_base[@#]\d+\.get_xdg_surface\(", trace), \
+        "Model window fell back to an ordinary xdg-shell window"
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("build", type=Path)
@@ -103,6 +111,7 @@ def main():
                         subprocess.run([str(build / "bin/qt-desktop-window-test")], env=client_env,
                                        stdout=log, stderr=subprocess.STDOUT, check=True, timeout=30)
                     window_log = (logs / "window.log").read_text()
+                    assert_layer_shell(window_log)
                     assert "outputs=2" in window_log, window_log[-3000:]
                     assert window_log.count("Output switch configured and committed") >= 2
                     if "DESKWAIFU_QT_TEST_HOTPLUG" in client_env:
@@ -172,12 +181,15 @@ def main():
                     request("release_source")
                     request("next_model")
                     request("get_hotkeys")
+                    subprocess.run([sys.executable, str(Path(__file__).with_name("output_smoke.py"))],
+                                   env=client_env, check=True, timeout=30)
                     model_log.flush()
                     assert "Mesa: error:" not in (logs / "model.log").read_text(), "OpenGL rendering error"
                     request("quit")
                 assert app.wait(timeout=15) == 0, "Model exited with a failure status"
                 model_log.flush()
                 text = (logs / "model.log").read_text()
+                assert_layer_shell(text)
                 assert "GPU resources released before" in text, "Missing ordered GPU teardown"
                 assert re.search(r"wl_region[@#]\d+\.add\(", text), "Real model produced no input silhouette"
                 # SDK shader sets share program IDs and delete some twice at shutdown.

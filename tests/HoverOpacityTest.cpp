@@ -58,6 +58,18 @@ int main()
     hover.Move(3, 4);
     CHECK(hover.Resolve(true, 0.5f, regions, {{2, 3, 3, 3}}) == 1); // Handle overlapping the model.
     CHECK(hover.Resolve(true, 0.5f, regions, handles) == 0.5f);
+    // Idle and hover values are independent, including fully transparent idle.
+    for (const float idle : {0.0f, 0.25f, 1.0f}) {
+        hover.Leave();
+        CHECK(hover.Resolve(true, 0.5f, regions, {}, idle) == idle);
+        hover.Enter(3, 4);
+        CHECK(hover.Resolve(true, 0.5f, regions, {}, idle) == 0.5f);
+        CHECK(hover.Resolve(false, 0.5f, regions, {}, idle) == idle);
+        CHECK(hover.Resolve(true, 0.5f, regions, {{2, 3, 3, 3}}, idle) == idle);
+        hover.Move(15, 15);
+        CHECK(hover.Resolve(true, 0.5f, regions, {}, idle) == idle);
+        CHECK(hover.Resolve(true, 0.5f, {}, {}, idle) == idle);
+    }
 
     const auto directory = MakeTestTemporaryDirectory("deskwaifu-hover");
     CHECK(!directory.empty());
@@ -70,7 +82,11 @@ int main()
         return application.LoadFromFile(path);
     };
     CHECK(load("{}"));
-    CHECK(!config.hoverOpacityEnabled && config.hoverOpacity == 0.5f);
+    CHECK(!config.hoverOpacityEnabled && config.hoverOpacity == 0.5f && config.idleOpacity == 1);
+    CHECK(load(R"({"idle_opacity":0.375})"));
+    CHECK(config.idleOpacity == 0.375f);
+    CHECK(load(R"({"idle_opacity":0})"));
+    CHECK(config.idleOpacity == 0);
     CHECK(load("{\"hover_opacity_enabled\":true,\"hover_opacity\":0.25}"));
     CHECK(config.hoverOpacityEnabled && config.hoverOpacity == 0.25f);
     CHECK(load("{\"hover_opacity_enabled\": false,\"hover_opacity\":1e0}"));
@@ -79,8 +95,10 @@ int main()
     CHECK(config.hoverOpacityEnabled && config.hoverOpacity == 0);
     CHECK(load(R"({"metadata":{"hover_opacity_enabled":true,"hover_opacity":0},"note":"hover_opacity"})"));
     CHECK(!config.hoverOpacityEnabled && config.hoverOpacity == 0.5f);
-    for (const auto value : {"-0.1", "1.1", "1e999", "NaN", "Infinity", "null", "true", "\"0.5\"", "0.5bad", "[]", "{}"})
+    for (const auto value : {"-0.1", "1.1", "1e999", "NaN", "Infinity", "null", "true", "\"0.5\"", "0.5bad", "[]", "{}"}) {
         CHECK(!load("{\"hover_opacity\":" + std::string(value) + "}"));
+        CHECK(!load("{\"idle_opacity\":" + std::string(value) + "}"));
+    }
     for (const auto value : {"1", "null", "\"true\"", "{}"})
         CHECK(!load("{\"hover_opacity_enabled\":" + std::string(value) + "}"));
     CHECK(load("{}"));

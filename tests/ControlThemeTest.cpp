@@ -86,6 +86,11 @@ private slots:
         QCOMPARE(ui.hoverOpacitySlider->maximum(), 100);
         QCOMPARE(ui.hoverOpacitySlider->value(), 50);
         QVERIFY(!ui.hoverOpacitySlider->hasTracking());
+        QVERIFY(ui.hoverOpacityGroup->isAncestorOf(ui.idleOpacitySlider));
+        QCOMPARE(ui.idleOpacitySlider->minimum(), 0);
+        QCOMPARE(ui.idleOpacitySlider->maximum(), 100);
+        QCOMPARE(ui.idleOpacitySlider->value(), 100);
+        QVERIFY(!ui.idleOpacitySlider->hasTracking());
     }
 
     void followsApplicationTheme()

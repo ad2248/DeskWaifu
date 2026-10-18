@@ -13,6 +13,7 @@ struct LAppConfig
     {
         std::vector<std::string> additionalModelDirs;
         std::string defaultModel;
+        std::string modelOutput;
         float emotionTimeout = 5.0f;
         float modelScale = 1.0f;
         float modelX = 0.0f;
@@ -21,6 +22,7 @@ struct LAppConfig
         int windowHeight = 1000;
         bool hoverOpacityEnabled = false;
         float hoverOpacity = 0.5f;
+        float idleOpacity = 1.0f;
         std::experimental::optional<ModelRegion> modelRegion;
     };
     Values values;

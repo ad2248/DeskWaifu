@@ -64,7 +64,7 @@ int main()
     write("{\"model_x\":6,\"model_scale\":2,\"other\":false}");
     CHECK(editor.Apply("gui", true).ok);
     CHECK(store.Read(disk, error) && disk.values.at("model_x") == "3" && !disk.values.count("other"));
-    CHECK(disk.values.size() == 11 && disk.values.at("window_width") == "1900");
+    CHECK(disk.values.size() == 12 && disk.values.at("window_width") == "1900");
     CHECK(config.values.modelX == 3 && config.values.modelRegion);
     // Position/zoom normal controls save only when their debounce expires.
     CHECK(service.SetTransform({1.5f, 2, -1}).ok);
@@ -76,7 +76,7 @@ int main()
     CHECK(restarted.Display().transform.y == -1);
     CHECK(editor.Reset("gui").ok);
     CHECK(!editor.Display().cropped && service.Snapshot().transform.scale == 1 && service.Snapshot().transform.x == 0);
-    CHECK(store.Read(disk, error) && disk.values.size() == 10 && !disk.values.count("model_region"));
+    CHECK(store.Read(disk, error) && disk.values.size() == 11 && !disk.values.count("model_region"));
     CHECK(disk.values.at("model_x") == "0" && disk.values.at("model_y") == "0" && disk.values.at("model_scale") == "1");
     const auto oldRevision = editor.Revision();
     write("{\"model_x\":8,\"other\":false}");
@@ -275,12 +275,14 @@ int main()
     config.values.windowHeight = 613;
     config.values.hoverOpacityEnabled = true;
     config.values.hoverOpacity = 0.375f;
+    config.values.idleOpacity = 0.625f;
     CHECK(editor.Begin("gui", false, 1920, 1080).ok);
     CHECK(editor.Apply("gui").ok);
-    CHECK(store.Read(disk, error) && disk.values.size() == 10);
+    CHECK(store.Read(disk, error) && disk.values.size() == 11);
     CHECK(disk.values.at("emotion_timeout") == "7.25");
     CHECK(disk.values.at("window_width") == "812" && disk.values.at("window_height") == "613");
     CHECK(disk.values.at("hover_opacity_enabled") == "true" && disk.values.at("hover_opacity") == "0.375");
+    CHECK(disk.values.at("idle_opacity") == "0.625");
     LAppConfig loaded; CHECK(loaded.LoadFromFile(path));
     CHECK(loaded.values.additionalModelDirs == config.values.additionalModelDirs);
     CHECK(loaded.values.defaultModel == config.values.defaultModel);
@@ -299,7 +301,8 @@ int main()
     CHECK(editor.Apply("gui", true).ok);
     CHECK(store.Read(disk, error) && disk.values.at("window_width") == "812");
     CHECK(editor.Reset("gui").ok);
-    CHECK(store.Read(disk, error) && disk.values.size() == 10 && !disk.values.count("model_region"));
+    CHECK(store.Read(disk, error) && disk.values.size() == 11 && !disk.values.count("model_region"));
+    CHECK(disk.values.at("idle_opacity") == "0.625");
     CHECK(disk.values.at("window_width") == "812" && disk.values.at("hover_opacity") == "0.375");
     CHECK(unlink(path.c_str()) == 0 && rmdir(directory.c_str()) == 0);
     return 0;

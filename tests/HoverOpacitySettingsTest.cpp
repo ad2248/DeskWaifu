@@ -33,7 +33,7 @@ int main()
     CHECK(store.Read(disk, error));
     CHECK(disk.values.at("hover_opacity") == "0.25" && disk.values.at("hover_opacity_enabled") == "true");
     CHECK(disk.values.at("model_x") == "2.5" && !disk.values.count("extra"));
-    CHECK(disk.values.size() == 10 && disk.values.at("window_width") == "1900");
+    CHECK(disk.values.size() == 11 && disk.values.at("window_width") == "1900");
     CHECK(disk.document.find("// keep comment") == std::string::npos);
     CHECK(settings.Set(R"({"enabled":false})").ok);
     CHECK(!settings.Enabled() && settings.Opacity() == 0.25f);
@@ -77,4 +77,19 @@ int main()
     CHECK(settings.Set(R"({"opacity":0.6})").ok);
     CHECK(!settings.Enabled() && settings.Opacity() == 0.6f);
     CHECK(store.Read(disk, error) && disk.values.at("model_x") == "3.5");
+    CHECK(settings.IdleOpacity() == 1.f);
+    for (const auto value : {"0", "1", "0.375"})
+        CHECK(settings.Set("{\"idle_opacity\":" + std::string(value) + "}").ok);
+    CHECK(settings.IdleOpacity() == 0.375f && !settings.Enabled() && settings.Opacity() == 0.6f);
+    CHECK(restarted.Refresh().ok && restarted.IdleOpacity() == 0.375f);
+    CHECK(store.Read(disk, error));
+    const auto idleSaved = disk.document;
+    for (const auto value : {"-0.1", "1.00000001", "1e999", "null", "true", "\"0.5\"", "[]", "{}"}) {
+        CHECK(!settings.Set("{\"idle_opacity\":" + std::string(value) + ",\"enabled\":true}").ok);
+        CHECK(settings.IdleOpacity() == 0.375f && !settings.Enabled());
+        CHECK(store.Read(disk, error) && disk.document == idleSaved);
+    }
+    write("{invalid");
+    CHECK(!settings.Set(R"({"idle_opacity":0.8})").ok);
+    CHECK(settings.IdleOpacity() == 0.375f);
 }

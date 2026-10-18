@@ -18,6 +18,7 @@
 #include "ApplicationService.hpp"
 #include "TransformEditor.hpp"
 #include "ScreenCropInteraction.hpp"
+#include "OutputSettings.hpp"
 #include <memory>
 #include "CompositorAdapter.hpp"
 #include "Type/csmVector.hpp"
@@ -109,6 +110,13 @@ public:
     const ApplicationService& Service() const { return _service; }
     TransformEditor& Settings() { return *_settings; }
     HoverOpacitySettings& HoverSettings() { return *_hoverSettings; }
+    std::vector<OutputSnapshot> Outputs() const { return _window->Outputs(); }
+    OutputId CurrentOutput() const { return _window->CurrentOutput(); }
+    AppResult SelectOutput(const std::string& name)
+    {
+        OutputSettings settings(*_window, *_settings, LAppConfig::GetInstance());
+        return settings.Select(name);
+    }
 
     /**
     * @brief   アプリケーションを終了するかどうか。
