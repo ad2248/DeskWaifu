@@ -8,6 +8,8 @@
 #include <QOpenGLContext>
 #include <QOpenGLExtraFunctions>
 #include <QOpenGLFramebufferObject>
+#include <QOpenGLFunctions_1_0>
+#include <QOpenGLVersionFunctionsFactory>
 #include <QPointer>
 #include <QScreen>
 #include <QTimer>
@@ -330,7 +332,12 @@ private:
         const int physicalHeight = qRound(height() * devicePixelRatio());
         auto* gl = _context->extraFunctions();
         gl->glBindFramebuffer(GL_READ_FRAMEBUFFER, _frame->handle());
-        gl->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, _context->defaultFramebufferObject());
+        const auto destination = _context->defaultFramebufferObject();
+        gl->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, destination);
+        // NVIDIA/EGL can leave the window draw target at GL_NONE. Binding its
+        // framebuffer alone does not restore it, and blitting then draws nothing.
+        auto* desktopGl = QOpenGLVersionFunctionsFactory::get<QOpenGLFunctions_1_0>(_context.get());
+        desktopGl->glDrawBuffer(destination ? GL_COLOR_ATTACHMENT0 : GL_BACK);
         gl->glBlitFramebuffer(0, 0, _frame->width(), _frame->height(), 0, 0,
             physicalWidth, physicalHeight, GL_COLOR_BUFFER_BIT, GL_LINEAR);
         _context->swapBuffers(this);

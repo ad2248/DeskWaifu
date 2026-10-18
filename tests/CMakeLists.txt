@@ -32,7 +32,8 @@ add_test(NAME qt-window-input COMMAND qt-window-input-test)
 
 add_executable(qt-desktop-window-test QtDesktopWindowTest.cpp ../src/QtDesktopWindow.cpp)
 target_include_directories(qt-desktop-window-test PRIVATE ../src)
-target_link_libraries(qt-desktop-window-test PRIVATE Qt6::Gui Qt6::OpenGL Qt6::WaylandClient LayerShellQt::Interface)
+target_link_libraries(qt-desktop-window-test PRIVATE Qt6::Gui Qt6::OpenGL Qt6::WaylandClient LayerShellQt::Interface OpenGL::EGL ${CMAKE_DL_LIBS})
+target_link_options(qt-desktop-window-test PRIVATE -Wl,--export-dynamic-symbol=eglSwapBuffers)
 add_test(NAME qt-window-reject-platform COMMAND qt-desktop-window-test --reject-platform)
 set_tests_properties(qt-window-reject-platform PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # Opt-in only: use an isolated compositor, never inject input into the user's session.
