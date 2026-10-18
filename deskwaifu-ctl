@@ -1,119 +1,121 @@
-#!/usr/bin/env bash
-#
-# deskwaifu-ctl - CLI client for controlling DeskWaifu via IPC socket.
-#
-# Usage:
-#   deskwaifu-ctl <command> [args...]
-#
-# Examples:
-#   deskwaifu-ctl get_status
-#   deskwaifu-ctl get_available_models
-#   deskwaifu-ctl set_model --name "MyModel"
-#   deskwaifu-ctl set_model --index 2
-#   deskwaifu-ctl get_expressions
-#   deskwaifu-ctl set_expression --id "happy.exp3.json"
-#   deskwaifu-ctl get_motions
-#   deskwaifu-ctl do_motion --group "TapBody" --index 0
-#   deskwaifu-ctl set_mouth_y --value 0.8
-#   deskwaifu-ctl set_model_zoom --value 1.5
-#   deskwaifu-ctl set_model_position --x 0.5 --y -0.3
-#   deskwaifu-ctl get_model_position
-#   deskwaifu-ctl toggle_hidden
-#   deskwaifu-ctl next_model
-#   deskwaifu-ctl prev_model
-#   deskwaifu-ctl switch_skin
-#   deskwaifu-ctl set_look --x 0.5 --y 0.3
-#   deskwaifu-ctl set_look --reset
-#   deskwaifu-ctl get_current_model
-#
-# The socket path is $XDG_RUNTIME_DIR/deskwaifu.sock (fallback: /tmp/deskwaifu.sock)
+#!/usr/bin/env python3
+"""Control DeskWaifu over its newline-delimited JSON Unix socket.
 
-set -euo pipefail
+Usage: deskwaifu-ctl <command> [--key value ...]
 
-SOCK="${XDG_RUNTIME_DIR:-/tmp}/deskwaifu.sock"
+Examples:
+  deskwaifu-ctl get_status
+  deskwaifu-ctl set_model --name "MyModel"
+  deskwaifu-ctl set_model --index 2
+  deskwaifu-ctl do_motion --group TapBody --index 0 --priority 2
+  deskwaifu-ctl set_mouth_y --value 0.8
+  deskwaifu-ctl set_look --x 0.5 --y -0.3
+  deskwaifu-ctl set_look --reset
 
-if [ $# -lt 1 ]; then
-    echo "Usage: deskwaifu-ctl <command> [--key value ...]"
-    echo ""
-    echo "Commands:"
-    echo "  get_status            Get general status"
-    echo "  get_available_models  List all available models"
-    echo "  get_current_model     Get current model name and index"
-    echo "  set_model             Set model (--name or --index)"
-    echo "  next_model            Switch to next model"
-    echo "  prev_model            Switch to previous model"
-    echo "  get_expressions       List expressions for current model"
-    echo "  set_expression        Set expression (--id)"
-    echo "  get_hotkeys           List model hotkeys and model token"
-    echo "  trigger_hotkey        Toggle a model expression (--id, --model_token)"
-    echo "  get_motions           List motions for current model"
-    echo "  do_motion             Play motion (--group, --index, --priority)"
-    echo "  set_mouth_y           Set mouth Y (--value 0.0-1.0) or --reset"
-    echo "  set_model_zoom        Set zoom level (--value 0.1-10.0)"
-    echo "  set_model_position    Set position (--x, --y)"
-    echo "  get_model_position    Get current position and zoom"
-    echo "  toggle_hidden         Toggle window visibility"
-    echo "  switch_skin           Switch model skin/outfit"
-    echo "  set_look              Set look direction (--x, --y) or --reset"
-    echo "  release_source        Release persistent CLI mouth and look"
-    echo "  get_control_status    Read the effective per-frame external input"
-    echo "  quit                  Gracefully stop the application"
-    echo "  Note: --stream_source true is for long-lived raw sockets, not one-shot CLI."
-    exit 1
-fi
+Commands:
+  get_status, get_available_models, get_current_model, set_model,
+  next_model, prev_model, get_expressions, set_expression, get_hotkeys,
+  trigger_hotkey, get_motions, do_motion, set_mouth_y, set_model_zoom,
+  set_model_position, get_model_position, toggle_hidden, switch_skin,
+  set_look, release_source, get_control_status, quit,
+  get_mouse_look, set_mouse_look, get_hover_opacity, set_hover_opacity,
+  get_transform_settings, begin_transform_edit, update_transform_edit,
+  apply_transform_edit, cancel_transform_edit, reset_transform_settings,
+  retry_transform_save, reload_transform_settings, get_transform_save_result,
+  relocate_crop, set_output
 
-if [ ! -S "$SOCK" ]; then
-    echo "Error: DeskWaifu is not running (socket not found: $SOCK)" >&2
-    exit 1
-fi
+The socket is $XDG_RUNTIME_DIR/deskwaifu.sock (fallback: /tmp/deskwaifu.sock).
+--reset is shorthand for --reset true. --stream_source is for long-lived
+raw sockets, not this one-shot CLI. Requires Python 3; no third-party modules.
+"""
+import json
+import math
+import os
+import re
+import socket
+import sys
 
-COMMAND="$1"
-shift
 
-# Build JSON from remaining args
-JSON="{\"command\":\"$COMMAND\""
+INTEGER_FIELDS = {"index", "priority", "crop_x", "crop_y", "crop_width", "crop_height", "expected_revision"}
+NUMBER_FIELDS = {"value", "x", "y", "zoom", "radius", "opacity", "idle_opacity"}
+BOOLEAN_FIELDS = {"reset", "stream_source", "screen", "overwrite", "cropped", "enabled"}
 
-while [ $# -gt 0 ]; do
-    key="${1#--}"  # strip leading --
-    shift
 
-    if [ "$key" = "reset" ]; then
-        JSON="$JSON,\"reset\":true"
-        continue
-    fi
+def reject_constant(value):
+    raise ValueError(f"Invalid JSON number: {value}")
 
-    if [ $# -eq 0 ]; then
-        echo "Error: missing value for --$key" >&2
-        exit 1
-    fi
-    value="$1"
-    shift
 
-    # Check if value is numeric
-    if [[ "$value" =~ ^-?[0-9]*\.?[0-9]+$ ]]; then
-        JSON="$JSON,\"$key\":$value"
-    else
-        JSON="$JSON,\"$key\":\"$value\""
-    fi
-done
+def unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"Duplicate response key: {key}")
+        result[key] = value
+    return result
 
-JSON="$JSON}"
 
-# Check if socat is available
-if ! command -v socat &>/dev/null; then
-    echo "Error: socat is required but not installed." >&2
-    exit 1
-fi
+def parameter(key, text):
+    if key in INTEGER_FIELDS:
+        if not re.fullmatch(r"-?(0|[1-9][0-9]*)", text):
+            raise ValueError(f"--{key} requires an integer")
+        value = int(text)
+        minimum, maximum = (0, 2**32 - 2) if key == "expected_revision" else (-2**31, 2**31 - 1)
+        if not minimum <= value <= maximum:
+            raise ValueError(f"--{key} is out of range")
+        return value
+    if key in NUMBER_FIELDS:
+        value = json.loads(text, parse_constant=reject_constant)
+        if type(value) not in (int, float) or not math.isfinite(value):
+            raise ValueError(f"--{key} requires a finite number")
+        return value
+    if key in BOOLEAN_FIELDS:
+        if text not in ("true", "false", "1", "0"):
+            raise ValueError(f"--{key} requires true or false")
+        return text in ("true", "1")
+    return text
 
-# Send command and read response
-RESPONSE=$(echo "$JSON" | socat - UNIX-CONNECT:"$SOCK" 2>/dev/null) || {
-    echo "Error: Failed to communicate with DeskWaifu (socket: $SOCK)." >&2
-    exit 1
-}
 
-# Pretty-print if python3+json available, otherwise raw
-if command -v python3 &>/dev/null; then
-    echo "$RESPONSE" | python3 -m json.tool 2>/dev/null || echo "$RESPONSE"
-else
-    echo "$RESPONSE"
-fi
+def main(args):
+    if not args or args == ["--help"]:
+        print(__doc__)
+        return 0 if args else 1
+    request = {"command": args[0]}
+    index = 1
+    while index < len(args):
+        option = args[index]
+        if not option.startswith("--") or len(option) == 2:
+            raise ValueError(f"Expected --key, got {option!r}")
+        key = option[2:]
+        if key in request:
+            raise ValueError(f"Duplicate or reserved option: {option}")
+        index += 1
+        if key == "reset" and (index == len(args) or args[index].startswith("--")):
+            request[key] = True
+            continue
+        if index == len(args):
+            raise ValueError(f"Missing value for {option}")
+        request[key] = parameter(key, args[index])
+        index += 1
+
+    path = os.path.join(os.environ.get("XDG_RUNTIME_DIR") or "/tmp", "deskwaifu.sock")
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+        connection.settimeout(5)
+        connection.connect(path)
+        connection.sendall((json.dumps(request, ensure_ascii=False, allow_nan=False) + "\n").encode("utf-8"))
+        with connection.makefile("rb") as stream:
+            line = stream.readline()
+    if not line.endswith(b"\n"):
+        raise ValueError("Empty or truncated response (missing newline)")
+    response = json.loads(line.decode("utf-8"), parse_constant=reject_constant, object_pairs_hook=unique_object)
+    if not isinstance(response, dict) or type(response.get("ok")) is not bool:
+        raise ValueError("Response must be an object with a boolean 'ok' field")
+    print(json.dumps(response, ensure_ascii=False, indent=2, allow_nan=False))
+    return 0 if response["ok"] else 1
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except (OSError, ValueError, OverflowError, RecursionError) as error:
+        print(f"Error: {error}", file=sys.stderr)
+        sys.exit(1)

@@ -56,7 +56,7 @@ if (NODE_EXECUTABLE)
       $<TARGET_FILE:kwin-cursor-tracker-test>)
 endif ()
 
-add_executable(json-command-test JsonCommandTest.cpp)
+add_executable(json-command-test JsonCommandTest.cpp ../src/ConfigStore.cpp)
 target_include_directories(json-command-test PRIVATE ../src)
 add_test(NAME json-command COMMAND json-command-test)
 
@@ -117,6 +117,7 @@ add_test(NAME failure-diagnostics COMMAND failure-diagnostics-test)
 
 find_package(Python3 COMPONENTS Interpreter)
 if (Python3_Interpreter_FOUND)
+  add_test(NAME ctl COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_ctl.py)
   if (DBUS_RUN_SESSION)
     add_test(NAME kwin-cursor-locale
       COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_kwin_cursor_locale.py

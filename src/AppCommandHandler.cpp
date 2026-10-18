@@ -6,9 +6,6 @@
 #include "LAppDefine.hpp"
 #include "MouseLookSettings.hpp"
 #include <algorithm>
-#include <cerrno>
-#include <cstdlib>
-#include <cstring>
 #include <iomanip>
 #include <sstream>
 #include <limits>
@@ -16,8 +13,7 @@
 
 using namespace Csm;
 
-// ─── Minimal JSON helpers (no external dependency) ───────────────────────────
-// We only need to produce JSON output and parse simple {"command":"...", ...} input.
+// ─── JSON replies ────────────────────────────────────────────────────────────
 
 static std::string JsonEscape(const std::string& s)
 {
@@ -50,24 +46,6 @@ static std::string Reply(const AppResult& result)
         : "{\"ok\":false,\"error\":\"" + JsonEscape(result.error) + "\"}";
 }
 
-static float JsonGetFloat(const std::string& json, const std::string& key, float defaultVal)
-{
-    std::string val = JsonGetString(json, key);
-    if (val.empty()) return defaultVal;
-    char* end = nullptr;
-    errno = 0;
-    float parsed = strtof(val.c_str(), &end);
-    return errno || end == val.c_str() || *end != '\0'
-        ? std::numeric_limits<float>::quiet_NaN() : parsed;
-}
-
-static int JsonGetInt(const std::string& json, const std::string& key, int defaultVal)
-{
-    std::string val = JsonGetString(json, key);
-    if (val.empty()) return defaultVal;
-    return atoi(val.c_str());
-}
-
 // ─── Command handlers ─────────────────────────────────────────────────────────
 
 void AppCommandHandler::Disconnected(const std::string& connection)
@@ -77,8 +55,13 @@ void AppCommandHandler::Disconnected(const std::string& connection)
 }
 
 std::string AppCommandHandler::Execute(const std::string& json, const std::string& connection)
+try
 {
-    std::string command = JsonGetString(json, "command");
+    ConfigStore::Snapshot request;
+    std::string error;
+    if (!ConfigStore::Parse(json, request, error, false))
+        return Reply(AppResult::Failure("Invalid JSON request or duplicate key"));
+    std::string command = JsonGetString(request, "command");
 
     if (command.empty())
     {
@@ -87,7 +70,7 @@ std::string AppCommandHandler::Execute(const std::string& json, const std::strin
 
     LAppDelegate* app = &_app;
     LAppLive2DManager* mgr = &_models;
-    const bool streaming = JsonGetBool(json, "stream_source");
+    const bool streaming = JsonGetBool(request, "stream_source");
     const std::string source = streaming ? connection : "cli";
     const auto lifetime = streaming ? ExternalControlState::Lifetime::Stream
         : ExternalControlState::Lifetime::Persistent;
@@ -95,7 +78,7 @@ std::string AppCommandHandler::Execute(const std::string& json, const std::strin
 
     if (command == "get_mouse_look" || command == "set_mouse_look") {
         MouseLookSettings settings(LAppConfig::GetInstance());
-        const auto result = command == "get_mouse_look" ? settings.Refresh() : settings.Set(json);
+        const auto result = command == "get_mouse_look" ? settings.Refresh() : settings.Set(request);
         std::ostringstream out;
         out.imbue(std::locale::classic());
         out << std::setprecision(std::numeric_limits<float>::max_digits10)
@@ -107,7 +90,7 @@ std::string AppCommandHandler::Execute(const std::string& json, const std::strin
 
     if (command == "get_hover_opacity" || command == "set_hover_opacity") {
         auto& settings = app->HoverSettings();
-        const auto result = command == "get_hover_opacity" ? settings.Refresh() : settings.Set(json);
+        const auto result = command == "get_hover_opacity" ? settings.Refresh() : settings.Set(request);
         std::ostringstream out;
         out.imbue(std::locale::classic());
         out << std::setprecision(std::numeric_limits<float>::max_digits10)
@@ -120,11 +103,11 @@ std::string AppCommandHandler::Execute(const std::string& json, const std::strin
     }
 
     auto& editor = app->Settings();
-    if (command == "set_output") return Reply(app->SelectOutput(JsonGetString(json, "name")));
+    if (command == "set_output") return Reply(app->SelectOutput(JsonGetString(request, "name")));
     if (editor.Editing() && (command == "set_model" || command == "next_model" || command == "prev_model" ||
         command == "switch_skin" || command == "trigger_hotkey" || command == "set_expression" || command == "do_motion"))
         return Reply(AppResult::Failure("Finish transform editing before changing model actions"));
-    const auto requestId = JsonGetString(json, "request_id");
+    const auto requestId = JsonGetString(request, "request_id");
     if (requestId.size() > 128) return Reply(AppResult::Failure("Request identifier too long"));
     if (command == "get_transform_save_result") {
         auto it = _saveReceipts.find(requestId);
@@ -141,8 +124,6 @@ std::string AppCommandHandler::Execute(const std::string& json, const std::strin
         command == "relocate_crop" || command == "retry_transform_save" || command == "reload_transform_settings")
     {
         editor.SyncRuntime();
-        ConfigStore::Snapshot request; std::string parseError;
-        if (!ConfigStore::Parse(json, request, parseError)) return Reply(AppResult::Failure(parseError));
         for (const auto* flag : {"screen", "overwrite", "cropped"}) {
             auto it = request.values.find(flag);
             if (it != request.values.end() && it->second != "true" && it->second != "false")
@@ -154,7 +135,13 @@ std::string AppCommandHandler::Execute(const std::string& json, const std::strin
             unsigned revision = std::numeric_limits<unsigned>::max();
             auto it = request.values.find("expected_revision");
             if (it != request.values.end()) {
-                try { size_t end; auto n = std::stoull(it->second, &end); if (end != it->second.size() || n >= std::numeric_limits<unsigned>::max()) throw std::out_of_range("revision"); revision = unsigned(n); }
+                try {
+                    if (it->second.empty() || it->second.find_first_not_of("0123456789") != std::string::npos)
+                        throw std::invalid_argument("revision");
+                    size_t end; auto n = std::stoull(it->second, &end);
+                    if (end != it->second.size() || n >= std::numeric_limits<unsigned>::max()) throw std::out_of_range("revision");
+                    revision = unsigned(n);
+                }
                 catch (...) { return Reply(AppResult::Failure("Invalid expected revision")); }
             }
             result = editor.Begin(connection, flag("screen"), app->GetWindowWidth(), app->GetWindowHeight(), revision);
@@ -162,18 +149,13 @@ std::string AppCommandHandler::Execute(const std::string& json, const std::strin
         else if (command == "update_transform_edit") {
             const auto previous = editor.Display();
             auto next = previous;
-            auto number = [&](const char* key, float& value) {
-                auto it = request.values.find(key); if (it == request.values.end()) return true;
-                try { size_t end; value = std::stof(it->second, &end); return end == it->second.size(); } catch (...) { return false; }
-            };
-            auto integer = [&](const char* key, int& value) {
-                auto it = request.values.find(key); if (it == request.values.end()) return true;
-                try { size_t end; long long n = std::stoll(it->second, &end); if (end != it->second.size() || n < INT32_MIN || n > INT32_MAX) return false; value = int(n); return true; } catch (...) { return false; }
-            };
-            if (!number("x", next.transform.x) || !number("y", next.transform.y) || !number("zoom", next.transform.scale) ||
-                !integer("crop_x", next.region.x) || !integer("crop_y", next.region.y) ||
-                !integer("crop_width", next.region.width) || !integer("crop_height", next.region.height))
-                return Reply(AppResult::Failure("Invalid transform or integer crop coordinates"));
+            next.transform.x = JsonGetFloat(request, "x", next.transform.x);
+            next.transform.y = JsonGetFloat(request, "y", next.transform.y);
+            next.transform.scale = JsonGetFloat(request, "zoom", next.transform.scale);
+            next.region.x = JsonGetInt(request, "crop_x", next.region.x);
+            next.region.y = JsonGetInt(request, "crop_y", next.region.y);
+            next.region.width = JsonGetInt(request, "crop_width", next.region.width);
+            next.region.height = JsonGetInt(request, "crop_height", next.region.height);
             auto cropped = request.values.find("cropped");
             if (cropped != request.values.end()) {
                 if (cropped->second != "true" && cropped->second != "false") return Reply(AppResult::Failure("cropped must be boolean"));
@@ -272,15 +254,16 @@ std::string AppCommandHandler::Execute(const std::string& json, const std::strin
     // ── set_model ──
     if (command == "set_model")
     {
-        std::string name = JsonGetString(json, "name");
-        int index = JsonGetInt(json, "index", -1);
+        std::string name = JsonGetString(request, "name");
+        int index = JsonGetInt(request, "index", -1);
 
         if (!name.empty())
         {
+            index = -1;
             csmVector<csmString> dirs = mgr->GetModelDir();
             for (csmInt32 i = 0; i < (csmInt32)dirs.GetSize(); i++)
             {
-                if (strcmp(dirs[i].GetRawString(), name.c_str()) == 0)
+                if (name == dirs[i].GetRawString())
                 {
                     index = i;
                     break;
@@ -307,9 +290,9 @@ std::string AppCommandHandler::Execute(const std::string& json, const std::strin
         auto& hotkeys = model->Hotkeys();
         if (command == "trigger_hotkey")
         {
-            if (JsonGetString(json, "model_token") != hotkeys.Token())
+            if (JsonGetString(request, "model_token") != hotkeys.Token())
                 return "{\"ok\":false,\"error\":\"Model changed; refresh hotkeys before triggering\"}";
-            const auto result = app->Service().TriggerHotkey(JsonGetString(json, "id"));
+            const auto result = app->Service().TriggerHotkey(JsonGetString(request, "id"));
             if (!result.ok) return Reply(result);
         }
         std::ostringstream out;
@@ -365,7 +348,7 @@ std::string AppCommandHandler::Execute(const std::string& json, const std::strin
             return "{\"ok\":false,\"error\":\"no model loaded\"}";
         }
 
-        std::string id = JsonGetString(json, "id");
+        std::string id = JsonGetString(request, "id");
         if (id.empty())
         {
             return "{\"ok\":false,\"error\":\"missing 'id'\"}";
@@ -406,9 +389,9 @@ std::string AppCommandHandler::Execute(const std::string& json, const std::strin
             return "{\"ok\":false,\"error\":\"no model loaded\"}";
         }
 
-        std::string group = JsonGetString(json, "group");
-        int index = JsonGetInt(json, "index", 0);
-        int priority = JsonGetInt(json, "priority", LAppDefine::PriorityNormal);
+        std::string group = JsonGetString(request, "group");
+        int index = JsonGetInt(request, "index", 0);
+        int priority = JsonGetInt(request, "priority", LAppDefine::PriorityNormal);
 
         return Reply(app->Service().PlayMotion(group, index, priority));
     }
@@ -416,11 +399,11 @@ std::string AppCommandHandler::Execute(const std::string& json, const std::strin
     // ── set_mouth_y ──
     if (command == "set_mouth_y")
     {
-        if (JsonGetBool(json, "reset")) {
+        if (JsonGetBool(request, "reset")) {
             app->Service().ResetMouth(source);
             return "{\"ok\":true}";
         }
-        float value = JsonGetFloat(json, "value", 0.0f);
+        float value = JsonGetFloat(request, "value", 0.0f);
         if (value < 0.0f) value = 0.0f;
         if (value > 1.0f) value = 1.0f;
         return Reply(app->Service().SetMouth(source, lifetime, value));
@@ -430,7 +413,7 @@ std::string AppCommandHandler::Execute(const std::string& json, const std::strin
     if (command == "set_model_zoom")
     {
         if (editor.Editing()) return Reply(AppResult::Failure("Transform editor is active"));
-        float zoom = JsonGetFloat(json, "value", -1.0f);
+        float zoom = JsonGetFloat(request, "value", -1.0f);
         if (zoom < 0.1f || zoom > 10.0f)
         {
             return "{\"ok\":false,\"error\":\"value must be 0.1..10.0\"}";
@@ -447,8 +430,8 @@ std::string AppCommandHandler::Execute(const std::string& json, const std::strin
     {
         if (editor.Editing()) return Reply(AppResult::Failure("Transform editor is active"));
         auto transform = app->Service().Snapshot().transform;
-        transform.x = JsonGetFloat(json, "x", transform.x);
-        transform.y = JsonGetFloat(json, "y", transform.y);
+        transform.x = JsonGetFloat(request, "x", transform.x);
+        transform.y = JsonGetFloat(request, "y", transform.y);
         auto result = app->Service().SetTransform(transform);
         if (result.ok && !streaming) { editor.ScheduleSave(0, 0); result = editor.Retry(); }
         return Reply(result);
@@ -478,13 +461,13 @@ std::string AppCommandHandler::Execute(const std::string& json, const std::strin
     // ── set_look ──
     if (command == "set_look")
     {
-        if (JsonGetBool(json, "reset"))
+        if (JsonGetBool(request, "reset"))
         {
             app->Service().ResetLook(source);
             return "{\"ok\":true}";
         }
-        float x = JsonGetFloat(json, "x", 0.0f);
-        float y = JsonGetFloat(json, "y", 0.0f);
+        float x = JsonGetFloat(request, "x", 0.0f);
+        float y = JsonGetFloat(request, "y", 0.0f);
         return Reply(app->Service().SetLook(source, lifetime, x, y));
     }
 
@@ -564,4 +547,8 @@ std::string AppCommandHandler::Execute(const std::string& json, const std::strin
     }
 
     return "{\"ok\":false,\"error\":\"unknown command\"}";
+}
+catch (const std::invalid_argument& error)
+{
+    return Reply(AppResult::Failure(error.what()));
 }

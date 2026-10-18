@@ -18,7 +18,7 @@ struct Member { std::string key; size_t valueStart, end; };
 class Document
 {
 public:
-    explicit Document(const std::string& text) : s(text) {}
+    explicit Document(const std::string& text, bool allowComments = true) : s(text), comments(allowComments) {}
     bool Parse()
     {
         Skip();
@@ -46,12 +46,13 @@ public:
     }
 private:
     const std::string& s;
+    bool comments;
     size_t p = 0;
     void Skip()
     {
         for (;;) {
             while (p < s.size() && (s[p] == ' ' || s[p] == '\t' || s[p] == '\r' || s[p] == '\n')) ++p;
-            if (p + 1 >= s.size() || s[p] != '/' || s[p + 1] != '/') return;
+            if (!comments || p + 1 >= s.size() || s[p] != '/' || s[p + 1] != '/') return;
             while (p < s.size() && s[p] != '\n') ++p;
         }
     }
@@ -208,9 +209,9 @@ bool EnsureDirectory(const std::string& path, std::string& error)
 }
 }
 
-bool ConfigStore::Parse(const std::string& document, Snapshot& snapshot, std::string& error)
+bool ConfigStore::Parse(const std::string& document, Snapshot& snapshot, std::string& error, bool allowComments)
 {
-    Document parser(document);
+    Document parser(document, allowComments);
     if (!parser.Parse()) { error = "Invalid JSON configuration or duplicate key"; return false; }
     Snapshot next; next.document = document;
     for (const auto& m : parser.members) next.values[m.key] = Canonical(document.substr(m.valueStart, m.end - m.valueStart));

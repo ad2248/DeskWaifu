@@ -64,7 +64,12 @@ def main():
         runtime.mkdir(mode=0o700)
         config = root / "config/deskwaifu"
         config.mkdir(parents=True)
-        (config / "config.json").write_text(json.dumps({"default_model": "Haru"}))
+        aliases = root / "models"
+        aliases.mkdir()
+        unusual_names = ['夕颜"\\\n001', '001']
+        for name in unusual_names:
+            (aliases / name).symlink_to(resources / "Haru", target_is_directory=True)
+        (config / "config.json").write_text(json.dumps({"default_model": "Haru", "additional_model_dirs": [str(aliases)]}))
         env = dict(os.environ, XDG_RUNTIME_DIR=str(runtime), XDG_CONFIG_HOME=str(root / "config"),
                    XDG_CACHE_HOME=str(root / "cache"), XDG_DATA_HOME=str(root / "data"),
                    LIBGL_ALWAYS_SOFTWARE="1", MESA_DEBUG="context",
@@ -150,6 +155,49 @@ def main():
                         assert response["ok"], (command, response)
                         return response
 
+                    # Exercise the real AppCommandHandler through its socket, not a
+                    # second implementation of command parsing in the test.
+                    def raw_request(payload):
+                        connection.sendall(payload.encode() + b"\n")
+                        return json.loads(stream.readline())
+
+                    for payload in [
+                        '{"metadata":{"command":"quit"},"command":"get_status"}',
+                        '{"note":"command","value":"quit","command":"get_status"}',
+                        '{"comm\\u0061nd":"get_status"}',
+                    ]:
+                        assert raw_request(payload)["ok"], payload
+                    cli = Path(__file__).resolve().parents[1] / "deskwaifu-ctl"
+                    for name in unusual_names:
+                        request("set_model", name=name)
+                        assert request("get_current_model")["model"] == name
+                        result = subprocess.run([str(cli), "set_model", "--name", name], env=client_env,
+                                                capture_output=True, text=True, timeout=10)
+                        assert result.returncode == 0, result.stderr
+                        assert request("get_current_model")["model"] == name
+                    result = subprocess.run([str(cli), "set_model", "--name", "missing"], env=client_env,
+                                            capture_output=True, text=True, timeout=10)
+                    assert result.returncode != 0 and json.loads(result.stdout)["ok"] is False
+                    request("set_model", name="Haru")
+                    before = request("get_status")
+                    for index in ['"banana"', '0.9', '2147483648', '-2147483649',
+                                  '1e100', 'null', 'true', '"0"', '"0junk"', '[]', '{}']:
+                        reply = raw_request('{"command":"set_model","index":' + index + '}')
+                        assert reply["ok"] is False, (index, reply)
+                        assert request("get_status")["model_index"] == before["model_index"]
+                    for payload in ['{"command":"set_model","name":"missing","index":0}',
+                                    '{"command":true}', '{"command":"quit","command":"get_status"}',
+                                    '{"command":"get_status"} trailing',
+                                    '{"command":"get_status"}//comment',
+                                    '{"command":"set_look","x":"bad"}']:
+                        assert raw_request(payload)["ok"] is False, payload
+                    for revision in [-1, -18446744073709551615, "0", .5, 4294967295]:
+                        payload = json.dumps(dict(command="begin_transform_edit", expected_revision=revision))
+                        assert raw_request(payload)["ok"] is False, revision
+                        assert request("get_transform_settings")["editing"] is False
+                    assert raw_request('{"command":"set_expression","id":"\\u0046\\u0030\\u0031"}')["ok"]
+                    for value in ['true', '"true"', '1', '"1"']:
+                        assert raw_request('{"command":"set_look","reset":' + value + '}')["ok"]
                     request("get_status")
                     request("get_current_model")
                     assert request("get_mouse_look")["radius"] == .5
@@ -158,6 +206,9 @@ def main():
                     assert request("get_mouse_look")["radius"] == .25
                     assert request("set_mouse_look", radius=0)["radius"] == 0
                     assert request("set_mouse_look", radius=.5)["radius"] == .5
+                    # Settings writes change the shared config snapshot. Refresh
+                    # explicitly instead of racing the editor's periodic reload.
+                    request("reload_transform_settings")
                     request("set_expression", id="F01")
                     request("do_motion", group="Idle", index=0, priority=2)
                     request("set_mouth_y", value=.5)
@@ -166,6 +217,9 @@ def main():
                     request("set_model_position", x=.1, y=-.1)
                     request("set_hover_opacity", enabled=True, opacity=0)
                     request("begin_transform_edit")
+                    for values in [{"crop_x": .5}, {"crop_width": 2147483648}, {"x": "0.5"}]:
+                        reply = raw_request(json.dumps(dict(command="update_transform_edit", **values)))
+                        assert reply["ok"] is False, (values, reply)
                     request("update_transform_edit", cropped=True, crop_x=10000, crop_y=10000,
                             crop_width=100, crop_height=100)
                     cropped = request("apply_transform_edit")
