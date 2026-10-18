@@ -59,6 +59,18 @@ EndpointState ProbeEndpoint(const sockaddr_un& address)
     close(fd);
     return EndpointState::Unknown;
 }
+
+bool RemoveStaleSocket(const std::string& path, const sockaddr_un& address)
+{
+    struct stat before{};
+    if (lstat(path.c_str(), &before) != 0 || !S_ISSOCK(before.st_mode)) return false;
+    if (ProbeEndpoint(address) != EndpointState::Stale) return false;
+
+    struct stat current{};
+    if (lstat(path.c_str(), &current) != 0 || current.st_dev != before.st_dev ||
+        current.st_ino != before.st_ino || !S_ISSOCK(current.st_mode)) return false;
+    return unlink(path.c_str()) == 0;
+}
 }
 
 LAppIPC::LAppIPC()
@@ -114,7 +126,7 @@ bool LAppIPC::Initialize()
     {
         if (errno == EADDRINUSE)
         {
-            if (ProbeEndpoint(addr) == EndpointState::Stale && unlink(_socketPath.c_str()) == 0 &&
+            if (RemoveStaleSocket(_socketPath, addr) &&
                 bind(_serverFd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0) bound = true;
         }
     }

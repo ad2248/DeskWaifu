@@ -79,6 +79,19 @@ int main()
     staleAddr.sun_family = AF_UNIX;
     std::strncpy(staleAddr.sun_path, stalePath.c_str(), sizeof(staleAddr.sun_path) - 1);
 
+    const int ordinary = open(stalePath.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0600);
+    if (ordinary < 0 || write(ordinary, "keep", 4) != 4) ok = false;
+    if (ordinary >= 0) close(ordinary);
+    LAppIPC occupied;
+    occupied.SetCommandService(commands);
+    if (occupied.Initialize()) ok = false;
+    char contents[5]{};
+    const int ordinaryRead = open(stalePath.c_str(), O_RDONLY);
+    if (ordinaryRead < 0 || read(ordinaryRead, contents, 4) != 4 || std::string(contents) != "keep") ok = false;
+    if (ordinaryRead >= 0) close(ordinaryRead);
+    occupied.Release();
+    unlink(staleAddr.sun_path);
+
     const int preparing = socket(AF_UNIX, SOCK_STREAM, 0);
     const int preparingLock = open((stalePath + ".lock").c_str(), O_CREAT | O_RDWR, 0600);
     if (preparing < 0 || preparingLock < 0 || flock(preparingLock, LOCK_EX | LOCK_NB) != 0 ||
