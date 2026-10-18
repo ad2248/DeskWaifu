@@ -25,6 +25,14 @@ class QtWindowConfigurationTest(unittest.TestCase):
         self.assertNotIn("DESKWAIFU_QT_WINDOW", (SOURCE / "main.cpp").read_text())
         self.assertNotIn("DESKWAIFU_WINDOW_BACKEND", (SOURCE / "CMakeLists.txt").read_text())
 
+    def test_legacy_minimum_demo_is_retired(self):
+        self.assertNotIn("CSM_MINIMUM_DEMO", (SOURCE / "CMakeLists.txt").read_text())
+        for name in ("mainMinimum.cpp", "CubismUserModelExtend.cpp",
+                     "CubismUserModelExtend.hpp", "MouseActionManager.cpp",
+                     "MouseActionManager.hpp"):
+            with self.subTest(name=name):
+                self.assertFalse((SOURCE / name).exists())
+
 
 if __name__ == "__main__":
     unittest.main()
