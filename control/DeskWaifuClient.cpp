@@ -139,7 +139,9 @@ void DeskWaifuClient::handleSocketError(QLocalSocket::LocalSocketError error)
 {
     Q_UNUSED(error)
     emit connectionChanged(false, _socket.errorString());
-    if (_socket.state() == QLocalSocket::UnconnectedState && !_reconnectTimer.isActive())
+    // Qt may emit the error before transitioning to UnconnectedState.
+    // Schedule the next attempt regardless of the state at signal delivery.
+    if (!_reconnectTimer.isActive())
     {
         _reconnectTimer.start();
     }

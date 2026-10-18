@@ -1,10 +1,12 @@
 #include "DeskWaifuClient.hpp"
 
 #include <QDir>
+#include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLocalServer>
 #include <QLocalSocket>
+#include <QScopeGuard>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QtTest>
@@ -19,7 +21,57 @@ private slots:
     void doesNotReplayUnacknowledgedMutation_data();
     void retriesUnacknowledgedQuery();
     void retriesUnacknowledgedQuery_data();
+    void reconnectsAfterFailedAttempts();
+    void reconnectsAfterFailedAttempts_data();
 };
+
+void DeskWaifuClientTest::reconnectsAfterFailedAttempts_data()
+{
+    QTest::addColumn<bool>("restart");
+    QTest::addColumn<bool>("staleSocket");
+    QTest::newRow("initial-missing") << false << false;
+    QTest::newRow("initial-stale") << false << true;
+    QTest::newRow("restart-missing") << true << false;
+    QTest::newRow("restart-stale") << true << true;
+}
+
+void DeskWaifuClientTest::reconnectsAfterFailedAttempts()
+{
+    QFETCH(bool, restart);
+    QFETCH(bool, staleSocket);
+    QTemporaryDir runtimeDir;
+    QVERIFY(runtimeDir.isValid());
+    const auto oldRuntime = qgetenv("XDG_RUNTIME_DIR");
+    const auto restoreRuntime = qScopeGuard([&] { qputenv("XDG_RUNTIME_DIR", oldRuntime); });
+    qputenv("XDG_RUNTIME_DIR", runtimeDir.path().toLocal8Bit());
+    DeskWaifuClient client;
+    QLocalServer server;
+    if (restart || staleSocket) {
+        QVERIFY(server.listen(client.socketPath()));
+        if (restart) {
+            client.connectToServer();
+            QTRY_VERIFY(server.hasPendingConnections() && client.isConnected());
+            server.nextPendingConnection()->abort();
+            QTRY_VERIFY(!client.isConnected());
+        }
+        // Preserve a filesystem entry without a listener to simulate a stale socket.
+        if (staleSocket) QVERIFY(QFile::rename(client.socketPath(), client.socketPath() + ".stale"));
+        server.close();
+        if (staleSocket) QVERIFY(QFile::rename(client.socketPath() + ".stale", client.socketPath()));
+    }
+    QSignalSpy connectionSpy(&client, &DeskWaifuClient::connectionChanged);
+    if (!restart) client.connectToServer();
+    QTest::qWait(3400); // The backend is unavailable for more than two retry intervals.
+    QVERIFY(!client.isConnected());
+    QVERIFY(connectionSpy.size() >= 2);
+    QVERIFY(QLocalServer::removeServer(client.socketPath()));
+    QVERIFY(server.listen(client.socketPath()));
+    QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections() && client.isConnected(), 4000);
+    auto* replacement = server.nextPendingConnection();
+    client.sendCommand(QStringLiteral("get_status"));
+    QTRY_VERIFY(replacement->canReadLine());
+    QCOMPARE(QJsonDocument::fromJson(replacement->readLine()).object().value("command").toString(), "get_status");
+}
 
 void DeskWaifuClientTest::sendsJsonAndParsesResponse()
 {
