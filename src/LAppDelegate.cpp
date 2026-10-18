@@ -213,14 +213,7 @@ bool LAppDelegate::Run()
 
         if (_settings->ScreenEditing() && (width != _windowWidth || height != _windowHeight))
             _settings->AbortScreenEdit();
-        if((_windowWidth!=width || _windowHeight!=height) && width>0 && height>0) {
-            _view->Initialize(width, height);
-            _view->ResizeSprite();
-            _view->DestroySpriteRenderTarget();
-            _manager->SetRenderTargetSize(width, height);
-            _windowWidth = width;
-            _windowHeight = height;
-        }
+        ResizeView(width, height);
 
         glViewport(0, 0, _windowWidth, _windowHeight);
 
@@ -351,7 +344,44 @@ void LAppDelegate::UpdateCursorLook(ModelTransform transform)
     _manager->OnDrag(look.first, look.second);
 }
 
-void LAppDelegate::OnMouseCallBack(void* window, int button, int action, int modify)
+void LAppDelegate::ResizeView(int width, int height)
+{
+    if ((_windowWidth == width && _windowHeight == height) || width <= 0 || height <= 0) return;
+    _view->Initialize(width, height);
+    _view->ResizeSprite();
+    _view->DestroySpriteRenderTarget();
+    _manager->SetRenderTargetSize(width, height);
+    _windowWidth = width;
+    _windowHeight = height;
+}
+
+void LAppDelegate::MoveScreenDrag()
+{
+    const auto cursor = _compositor.GlobalCursor();
+    if (!cursor) return; // Surface-local editing remains usable without this capability.
+    const auto outputs = _window->Outputs();
+    const auto oldId = _window->CurrentOutput();
+    const auto* next = OutputController::Find(outputs,
+        OutputController::At(outputs, cursor.value.first, cursor.value.second, oldId));
+    if (!next || next->id == oldId) return;
+
+    auto draft = _settings->Display();
+    if (!_outputController.MoveTo(cursor.value.first, cursor.value.second, draft.transform)) return;
+
+    // Crop coordinates belong to the old screen, not to the moving model.
+    // Start with the destination's full extent so the moved model stays visible
+    // and the user can continue adjusting the crop before explicitly saving.
+    draft.region = {0, 0, _window->Width(), _window->Height()};
+    _settings->Update(_settings->Owner(), draft);
+    _settings->PauseAutosave();
+    // This deliberate rebind must not be treated as a hotplug/resize cancellation
+    // on the next frame. The edit remains explicit: moving displays never saves it.
+    _lastOutput = _window->CurrentOutput();
+    ResizeView(_window->Width(), _window->Height());
+    SetMousePosition(cursor.value.first - next->x, cursor.value.second - next->y);
+}
+
+void LAppDelegate::PointerButton(int button, bool pressed)
 {
     if (_view == NULL)
     {
@@ -362,46 +392,32 @@ void LAppDelegate::OnMouseCallBack(void* window, int button, int action, int mod
     {
         _input = InputController{};
         if (button == 0 && _settings->ScreenEditing()) {
-            if (action == 1) {
+            if (pressed) {
                 _cropInteraction.Press(_settings->Display(), int(_mouseX), int(_mouseY));
-            } else if (action == 0) {
+            } else {
+                const bool moveOutput = _settings->LocalScreenEditing() && _cropInteraction.DraggingModel();
                 const auto result = _cropInteraction.Release(*_settings, ClickClock(), int(_mouseX), int(_mouseY));
                 if (!result.ok) LAppPal::PrintLogLn("[Crop] Save failed: %s", result.error.c_str());
+                if (moveOutput) MoveScreenDrag();
             }
         }
         return; // No model taps, skin changes or keyboard grabs during editing.
     }
     if (button == 0)
     {
-        if (1 == action)
+        if (pressed)
         {
             _input.Press(static_cast<int>(_mouseX), static_cast<int>(_mouseY));
             _view->OnTouchesBegan(_mouseX, _mouseY);
         }
-        else if (0 == action)
+        else
         {
             if (_input.IsCaptured())
             {
-                const bool moved = _input.DragX() != _input.StartX() || _input.DragY() != _input.StartY();
-                // Execute screen switch on release
-                const auto cursor = _compositor.GlobalCursor();
-                bool switched = false;
-                if (cursor) {
-                    auto transform = _service.Snapshot().transform;
-                    const OutputId oldId = _window->CurrentOutput();
-                    if (_outputController.MoveTo(cursor.value.first, cursor.value.second, transform) &&
-                          oldId != _window->CurrentOutput()) {
-                         _service.SetTransform(transform);
-                         _settings->PauseAutosave();
-                         switched = true;
-                    }
-                }
-
                 const auto result = _input.Release(ClickClock(), static_cast<int>(_mouseX),
                     static_cast<int>(_mouseY), [this](int x, int y)
                     {
-                        _view->OnTouchesBegan(x, y);
-                        _view->OnTouchesEnded(x, y);
+                        _view->OnTouchesEnded(x, y, _service.Snapshot().transform);
                     });
                 if (result == InputController::ReleaseResult::DoubleClick)
                 {
@@ -412,11 +428,10 @@ void LAppDelegate::OnMouseCallBack(void* window, int button, int action, int mod
                 {
                     _manager->OnDrag(0.0f, 0.0f); // End look
                 }
-                if (_settings && moved && !switched) _settings->ScheduleSave(SettingsClock(), .01);
             }
         }
     }
-    else if (button == 1 && action == 0)
+    else if (button == 1 && !pressed)
     {
         // Switch Models
         LAppPal::PrintLogLn("[Event] Switch Model Triggered");
@@ -424,7 +439,7 @@ void LAppDelegate::OnMouseCallBack(void* window, int button, int action, int mod
           const auto state = _service.Snapshot();
           if (state.modelCount) _service.SelectModel((state.modelIndex + 1) % state.modelCount);
     }
-    else if (button == 2 && action == 1)
+    else if (button == 2 && pressed)
     {
         // Switch Skin
         LAppPal::PrintLogLn("[Event] Switch Skin Triggered");
@@ -437,8 +452,7 @@ void LAppDelegate::FlushPendingTap()
     if (_settings && _settings->Editing()) return;
     _input.FlushTap([this](int x, int y)
     {
-        _view->OnTouchesBegan(x, y);
-        _view->OnTouchesEnded(x, y);
+        _view->OnTouchesEnded(x, y, _service.Snapshot().transform);
     });
 }
 
@@ -465,7 +479,7 @@ void LAppDelegate::OnModelKey(uint32_t code, bool pressed)
     }
 }
 
-void LAppDelegate::OnMouseCallBack(void* window, double x, double y)
+void LAppDelegate::PointerMoved(double x, double y)
 {
     SetMousePosition(x, y);
 
@@ -489,18 +503,6 @@ void LAppDelegate::OnMouseCallBack(void* window, double x, double y)
             }
             return;
         }
-        double curX = x;
-        double curY = y;
-        int deltaX = static_cast<int>(curX) - _input.DragX();
-        int deltaY = static_cast<int>(curY) - _input.DragY();
-        
-        if (deltaX != 0 || deltaY != 0) {
-            const auto next = InputController::Drag(_service.Snapshot().transform,
-                deltaX, deltaY, _windowHeight);
-            _service.SetTransform(next);
-            
-            _input.SetDragPosition(static_cast<int>(curX), static_cast<int>(curY));
-        }
     }
 }
 
@@ -512,11 +514,11 @@ void LAppDelegate::SetMousePosition(double x, double y)
     _cursorLook.LocalPosition(x, y);
 }
 
-void LAppDelegate::OnScrollCallBack(void* window, double xoffset, double yoffset)
+void LAppDelegate::PointerScroll(double vertical)
 {
     const ModelTransform transform = ZoomModelFromScroll(
         _service.Snapshot().transform, _view, _mouseX, _mouseY,
-        static_cast<float>(yoffset));
+        static_cast<float>(vertical));
     if (_settings && _settings->Editing()) {
         if (_settings->ScreenEditing()) { auto next = _settings->Display(); next.transform = transform; _settings->Update(_settings->Owner(), next); }
     } else {

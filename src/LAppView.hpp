@@ -99,7 +99,7 @@ public:
     * @param[in]       pointX            スクリーンX座標
     * @param[in]       pointY            スクリーンY座標
     */
-    void OnTouchesEnded(float pointX, float pointY) const;
+    void OnTouchesEnded(float pointX, float pointY, ModelTransform transform) const;
 
     /**
      * @brief   モデル1体を描画する直前にコールされる
