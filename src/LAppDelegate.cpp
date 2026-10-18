@@ -28,7 +28,6 @@
 #include "LAppIPC.hpp"
 #include "AppCommandHandler.hpp"
 #include "ModelScroll.hpp"
-#include "ModelHotkeyTrigger.hpp"
 #include "RuntimeLifecycle.hpp"
 #include "GpuTeardown.hpp"
 #include "InputController.hpp"

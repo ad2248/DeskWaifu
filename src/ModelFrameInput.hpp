@@ -10,10 +10,3 @@ struct ModelFrameInput
     float lookX = 0.0f;
     float lookY = 0.0f;
 };
-
-template<typename MouthSink, typename LookSink>
-void DispatchModelFrameInput(const ModelFrameInput& input, MouthSink mouth, LookSink look)
-{
-    if (input.hasMouth) mouth(input.mouth);
-    if (input.hasLook) look(input.lookX, input.lookY);
-}

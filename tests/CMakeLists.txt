@@ -193,6 +193,20 @@ add_test(NAME model-gaze COMMAND model-gaze-test)
 set_tests_properties(model-gaze PROPERTIES
   ENVIRONMENT "EGL_PLATFORM=surfaceless" SKIP_RETURN_CODE 77)
 
+# Exercise the actual composition root with an isolated headless platform.
+get_target_property(DELEGATE_TEST_SOURCES ${APP_NAME} SOURCES)
+list(FILTER DELEGATE_TEST_SOURCES EXCLUDE REGEX "/(main|QtDesktopWindow)\\.cpp$")
+get_target_property(DELEGATE_TEST_INCLUDES ${APP_NAME} INCLUDE_DIRECTORIES)
+get_target_property(DELEGATE_TEST_LIBRARIES ${APP_NAME} LINK_LIBRARIES)
+add_executable(delegate-keyboard-test DelegateKeyboardTest.cpp ${DELEGATE_TEST_SOURCES})
+target_include_directories(delegate-keyboard-test PRIVATE ${DELEGATE_TEST_INCLUDES})
+target_link_libraries(delegate-keyboard-test PRIVATE ${DELEGATE_TEST_LIBRARIES} OpenGL::EGL)
+target_compile_definitions(delegate-keyboard-test PRIVATE SDK_RESOURCES="${SDK_ROOT_PATH}/Samples/Resources")
+target_link_options(delegate-keyboard-test PRIVATE
+  -Wl,--wrap=_ZN12ModelHotkeys7TriggerERKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEERS5_)
+add_test(NAME delegate-keyboard COMMAND delegate-keyboard-test)
+set_tests_properties(delegate-keyboard PROPERTIES ENVIRONMENT "EGL_PLATFORM=surfaceless" TIMEOUT 30)
+
 add_executable(application-service-test ApplicationServiceTest.cpp)
 target_include_directories(application-service-test PRIVATE ../src)
 add_test(NAME application-service COMMAND application-service-test)
