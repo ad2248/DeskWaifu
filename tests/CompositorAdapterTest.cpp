@@ -68,6 +68,11 @@ int main(int argc, char** argv)
     const auto eofElapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - eofBegin).count();
     if (earlyEof.status != CapabilityStatus::Unavailable || eofElapsed > 750) return 1;
+    const auto shortEofBegin = std::chrono::steady_clock::now();
+    const auto shortEof = actual.Command({"sh", "-c", "exec 1>&-; sleep 0.01"});
+    const auto shortEofElapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - shortEofBegin).count();
+    if (!shortEof || shortEofElapsed > 150) return 1;
     if (actual.Command({"/definitely/missing/compositor"}).status != CapabilityStatus::Failed) return 1;
     struct stat procFd{};
     if (stat("/proc/self/fd/1", &procFd) != 0) return 1;

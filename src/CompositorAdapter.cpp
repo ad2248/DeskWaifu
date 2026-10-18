@@ -20,6 +20,7 @@
 
 namespace {
 constexpr int TimeoutMs = 250;
+constexpr int ExitPollIntervalMs = 5;
 
 bool WaitForExitBefore(pid_t pid, std::chrono::steady_clock::time_point deadline, int& status)
 {
@@ -30,7 +31,7 @@ bool WaitForExitBefore(pid_t pid, std::chrono::steady_clock::time_point deadline
         const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
             deadline - std::chrono::steady_clock::now()).count();
         if (remaining <= 0) return false;
-        poll(nullptr, 0, static_cast<int>(remaining));
+        poll(nullptr, 0, std::min(static_cast<int>(remaining), ExitPollIntervalMs));
     }
 }
 
