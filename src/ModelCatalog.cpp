@@ -4,6 +4,7 @@
 #include <cstring>
 #include <dirent.h>
 #include <limits.h>
+#include <set>
 #include <sys/stat.h>
 
 namespace {
@@ -34,8 +35,9 @@ std::vector<ModelDescriptor> ModelCatalog::Scan(const std::vector<std::string>& 
         {
             const std::string name = entry->d_name;
             if (name == "." || name == "..") continue;
-            const std::string modelDir = base + "/" + name + "/";
-            if (!IsDirectory(modelDir)) continue;
+            const std::string resolved = Canonical(base + "/" + name);
+            if (resolved.empty() || !IsDirectory(resolved)) continue;
+            const std::string modelDir = resolved + "/";
             DIR* inner = opendir(modelDir.c_str());
             if (!inner) continue;
             while (dirent* file = readdir(inner))
@@ -58,7 +60,10 @@ std::vector<ModelDescriptor> ModelCatalog::Scan(const std::vector<std::string>& 
     {
         return a.name == b.name ? a.id < b.id : a.name < b.name;
     });
-    result.erase(std::unique(result.begin(), result.end(), [](const ModelDescriptor& a, const ModelDescriptor& b)
-        { return a.id == b.id; }), result.end());
+    // Name order chooses the first alias deterministically. Equal identities
+    // need not be adjacent when other models sort between their display names.
+    std::set<std::string> seen;
+    result.erase(std::remove_if(result.begin(), result.end(), [&](const ModelDescriptor& model)
+        { return !seen.insert(model.id).second; }), result.end());
     return result;
 }
