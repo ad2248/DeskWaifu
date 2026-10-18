@@ -42,13 +42,14 @@ public:
     * @brief 描画する
     *
     */
-    void Render() const;
+    // Target dimensions are supplied by the caller, independently of the window.
+    void Render(int maxWidth, int maxHeight) const;
 
     /**
     * @brief テクスチャを指定しての描画
     *
     */
-    void RenderImmidiate(GLuint textureId, const GLfloat uvVertex[8]) const;
+    void RenderImmidiate(GLuint textureId, const GLfloat uvVertex[8], int maxWidth, int maxHeight) const;
 
     /**
     * @brief コンストラクタ
@@ -56,7 +57,7 @@ public:
     * @param[in]       pointX    x座標
     * @param[in]       pointY    y座標
     */
-    bool IsHit(float pointX, float pointY) const;
+    bool IsHit(float pointX, float pointY, int maxWidth, int maxHeight) const;
 
     /**
      * @brief 色設定
@@ -87,4 +88,3 @@ private:
 
     float _spriteColor[4];  ///< 表示カラー
 };
-

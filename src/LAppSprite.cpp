@@ -6,7 +6,6 @@
  */
 
 #include "LAppSprite.hpp"
-#include "LAppDelegate.hpp"
 
 LAppSprite::LAppSprite(float x, float y, float width, float height, GLuint textureId, GLuint programId)
     : LAppSprite_Common(textureId)
@@ -33,13 +32,9 @@ LAppSprite::~LAppSprite()
 {
 }
 
-void LAppSprite::Render() const
+void LAppSprite::Render(int maxWidth, int maxHeight) const
 {
-    // 画面サイズを取得する
-    int maxWidth, maxHeight;
-    maxWidth = LAppDelegate::GetInstance()->GetWindowWidth(); maxHeight = LAppDelegate::GetInstance()->GetWindowHeight();
-
-    if(maxWidth==0 || maxHeight==0)
+    if(maxWidth<=0 || maxHeight<=0)
     {
         return;
     }
@@ -82,13 +77,9 @@ void LAppSprite::Render() const
     glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
 }
 
-void LAppSprite::RenderImmidiate(GLuint textureId, const GLfloat uvVertex[8]) const
+void LAppSprite::RenderImmidiate(GLuint textureId, const GLfloat uvVertex[8], int maxWidth, int maxHeight) const
 {
-    // 画面サイズを取得する
-    int maxWidth, maxHeight;
-    maxWidth = LAppDelegate::GetInstance()->GetWindowWidth(); maxHeight = LAppDelegate::GetInstance()->GetWindowHeight();
-
-    if(maxWidth==0 || maxHeight==0)
+    if(maxWidth<=0 || maxHeight<=0)
     {
         return;
     }
@@ -120,13 +111,9 @@ void LAppSprite::RenderImmidiate(GLuint textureId, const GLfloat uvVertex[8]) co
     glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
 }
 
-bool LAppSprite::IsHit(float pointX, float pointY) const
+bool LAppSprite::IsHit(float pointX, float pointY, int maxWidth, int maxHeight) const
 {
-    // 画面サイズを取得する
-    int maxWidth, maxHeight;
-    maxWidth = LAppDelegate::GetInstance()->GetWindowWidth(); maxHeight = LAppDelegate::GetInstance()->GetWindowHeight();
-
-    if(maxWidth==0 || maxHeight==0)
+    if(maxWidth<=0 || maxHeight<=0)
     {
         return false;
     }

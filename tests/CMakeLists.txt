@@ -105,6 +105,14 @@ add_test(NAME model-region-render COMMAND model-region-render-test)
 set_tests_properties(model-region-render PROPERTIES
   ENVIRONMENT "EGL_PLATFORM=surfaceless" SKIP_RETURN_CODE 77)
 
+add_executable(lapp-sprite-test LAppSpriteTest.cpp ../src/LAppSprite.cpp
+  ${COMMON_SRC_PATH}/LAppSprite_Common.cpp)
+target_include_directories(lapp-sprite-test PRIVATE ../src ${COMMON_SRC_PATH})
+target_link_libraries(lapp-sprite-test PRIVATE Framework glew_s OpenGL::EGL)
+add_test(NAME lapp-sprite COMMAND lapp-sprite-test)
+set_tests_properties(lapp-sprite PROPERTIES
+  ENVIRONMENT "EGL_PLATFORM=surfaceless" SKIP_RETURN_CODE 77)
+
 add_executable(edit-input-region-test EditInputRegionTest.cpp
   ../src/ConfigStore.cpp ../src/LAppConfig.cpp ../src/InputController.cpp)
 target_include_directories(edit-input-region-test PRIVATE ../src)

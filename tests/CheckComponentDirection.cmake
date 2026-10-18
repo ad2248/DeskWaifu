@@ -1,4 +1,4 @@
-foreach(component LAppView LAppLive2DManager LAppModel LAppPal
+foreach(component LAppView LAppLive2DManager LAppModel LAppPal LAppSprite
     ModelHotkeys ModelInputDispatch ModelScroll)
   if (component MATCHES "^Model(InputDispatch|Scroll)$")
     set(required_extension .hpp)
