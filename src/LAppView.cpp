@@ -94,9 +94,9 @@ void LAppView::Initialize(int width, int height)
 void LAppView::Render(ModelTransform transform, const ModelFrameInput& input)
 {
     // Disable background and UI to make it a transparent desktop pet
-    // _back->Render();
-    // _gear->Render();
-    // _power->Render();
+    // _back->Render(_width, _height);
+    // _gear->Render(_width, _height);
+    // _power->Render(_width, _height);
 
     _manager.SetViewMatrix(_viewMatrix);
 
@@ -124,7 +124,7 @@ void LAppView::Render(ModelTransform transform, const ModelFrameInput& input)
 
             if (model)
             {
-                _renderSprite->RenderImmidiate(model->GetRenderBuffer().GetColorBuffer(), uvVertex);
+                _renderSprite->RenderImmidiate(model->GetRenderBuffer().GetColorBuffer(), uvVertex, _width, _height);
             }
         }
     }
@@ -146,7 +146,7 @@ void LAppView::PresentOpacityFrame(float opacity)
         glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
         // Both RGB and alpha must be scaled for premultiplied-alpha blending.
         _renderSprite->SetColor(alpha, alpha, alpha, alpha);
-        _renderSprite->RenderImmidiate(texture, uv);
+        _renderSprite->RenderImmidiate(texture, uv, _width, _height);
         _renderSprite->SetColor(1, 1, 1, 1);
     });
 }
@@ -253,7 +253,7 @@ void LAppView::PostModelDraw(LAppModel &refModel)
             };
 
             _renderSprite->SetColor(1.0f * GetSpriteAlpha(0), 1.0f * GetSpriteAlpha(0), 1.0f * GetSpriteAlpha(0), GetSpriteAlpha(0));
-            _renderSprite->RenderImmidiate(useTarget->GetColorBuffer(), uvVertex);
+            _renderSprite->RenderImmidiate(useTarget->GetColorBuffer(), uvVertex, _width, _height);
         }
     }
 }
