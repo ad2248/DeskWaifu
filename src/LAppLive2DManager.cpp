@@ -158,15 +158,17 @@ void LAppLive2DManager::OnDrag(csmFloat32 x, csmFloat32 y) const
     }
 }
 
-void LAppLive2DManager::OnTap(csmFloat32 x, csmFloat32 y)
+void LAppLive2DManager::OnTap(csmFloat32 clipX, csmFloat32 clipY, int width, int height, ModelTransform transform)
 {
-    if (DebugLogEnable)
-    {
-        LAppPal::PrintLogLn("[APP]tap point: {x:%.2f y:%.2f}", x, y);
-    }
-
+    if (width <= 0 || height <= 0) return;
     for (csmUint32 i = 0; i < _models.GetSize(); i++)
     {
+        auto projection = BuildModelProjection(_models[i]->GetModel()->GetCanvasWidth(),
+            width, height, transform, _viewMatrix);
+        const float x = projection.InvertTransformX(clipX);
+        const float y = projection.InvertTransformY(clipY);
+        if (DebugLogEnable)
+            LAppPal::PrintLogLn("[APP]tap point: {x:%.2f y:%.2f}", x, y);
         if (_models[i]->HitTest(HitAreaNameHead, x, y))
         {
             if (DebugLogEnable)

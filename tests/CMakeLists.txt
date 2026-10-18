@@ -204,6 +204,24 @@ add_executable(external-control-test ExternalControlTest.cpp)
 target_include_directories(external-control-test PRIVATE ../src)
 add_test(NAME external-control COMMAND external-control-test)
 
+# Exercise the actual application wiring; replace only the window/context and
+# compositor socket, not Delegate, View, Manager or model hit testing.
+get_target_property(INPUT_APP_SOURCES ${APP_NAME} SOURCES)
+list(FILTER INPUT_APP_SOURCES EXCLUDE REGEX "/(main|QtDesktopWindow)\\.cpp$")
+add_executable(model-pointer-test ModelPointerTest.cpp ${INPUT_APP_SOURCES})
+target_include_directories(model-pointer-test PRIVATE ../src ${COMMON_SRC_PATH}
+  ${STB_PATH} ${CMAKE_BINARY_DIR}/generated)
+get_target_property(INPUT_APP_LIBRARIES ${APP_NAME} LINK_LIBRARIES)
+target_link_libraries(model-pointer-test PRIVATE ${INPUT_APP_LIBRARIES} OpenGL::EGL)
+target_compile_definitions(model-pointer-test PRIVATE SDK_RESOURCES="${SDK_ROOT_PATH}/Samples/Resources")
+target_link_options(model-pointer-test PRIVATE
+  -Wl,--wrap=_ZN7LAppPal10PrintLogLnEPKcz)
+foreach(scenario release transform drag)
+  add_test(NAME model-pointer-${scenario} COMMAND model-pointer-test ${scenario})
+  set_tests_properties(model-pointer-${scenario} PROPERTIES
+    ENVIRONMENT "EGL_PLATFORM=surfaceless" SKIP_RETURN_CODE 77 TIMEOUT 30)
+endforeach()
+
 add_executable(texture-residency-test TextureResidencyTest.cpp)
 target_include_directories(texture-residency-test PRIVATE ../src ${GLEW_PATH}/include ${FRAMEWORK_PATH}/src ${CORE_PATH}/include ${COMMON_SRC_PATH})
 add_test(NAME texture-residency COMMAND texture-residency-test)

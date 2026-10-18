@@ -22,18 +22,12 @@ void ModelRenderer::Draw(const csmVector<LAppModel*>& models, CubismMatrix44* vi
             LAppPal::PrintLogLn("Failed to model->GetModel().");
             continue;
         }
-        CubismMatrix44 projection;
         if (model->GetModel()->GetCanvasWidth() > 1.0f && width < height)
         {
             model->GetModelMatrix()->SetWidth(2.0f);
-            projection.Scale(1.0f, static_cast<float>(width) / static_cast<float>(height));
         }
-        else
-        {
-            projection.Scale(static_cast<float>(height) / static_cast<float>(width), 1.0f);
-        }
-        ApplyModelTransform(projection, transform);
-        if (view) projection.MultiplyByMatrix(view);
+        auto projection = BuildModelProjection(model->GetModel()->GetCanvasWidth(),
+            width, height, transform, view);
         beforeDraw(*model);
         model->Update(input);
         model->Draw(projection);
