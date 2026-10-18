@@ -21,7 +21,7 @@ public:
     bool Read(Snapshot& snapshot, std::string& error) const;
     bool Commit(const std::string& document, const Snapshot& expected, Snapshot& saved,
         std::string& error, bool overwrite = false) const;
-    static bool Parse(const std::string& document, Snapshot& snapshot, std::string& error);
+    static bool Parse(const std::string& document, Snapshot& snapshot, std::string& error, bool allowComments = true);
     static bool ParseString(const std::string& json, std::string& value);
     static bool ParseStringArray(const std::string& json, std::vector<std::string>& values);
 

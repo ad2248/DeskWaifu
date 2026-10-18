@@ -21,7 +21,7 @@ pkgbase = deskwaifu-git
 	depends = qt6-wayland>=6.5
 	depends = layer-shell-qt>=6.6
 	depends = bash
-	depends = socat
+	depends = python
 	depends = psmisc
 	provides = deskwaifu
 	conflicts = deskwaifu

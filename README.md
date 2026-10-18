@@ -477,7 +477,7 @@ DeskWaifu exposes a Unix domain socket for external control by scripts and progr
 
 - **Socket path:** `$XDG_RUNTIME_DIR/deskwaifu.sock` (fallback: `/tmp/deskwaifu.sock`)
 - **Protocol:** Newline-delimited JSON — send `{"command":"<name>", ...}\n`, receive `{"ok":true, ...}\n`
-- **Requires:** `socat` (install via your package manager)
+- **CLI requires:** Python 3 (standard library only; install via your package manager).
 
 ### CLI Client
 
@@ -486,6 +486,20 @@ A convenience CLI client `deskwaifu-ctl` is included in the project root:
 ```bash
 ./deskwaifu-ctl <command> [--key value ...]
 ```
+
+The CLI serializes names/IDs as strings (including numeric-looking names such
+as `001`) and numeric/boolean parameters by their protocol type. It exits with
+status 0 only for a complete JSON response containing `"ok":true`. Backend
+errors remain visible in the printed response and return status 1, as do
+communication errors, a five-second socket timeout, and empty, malformed or
+truncated responses. No `socat` dependency is needed for the CLI.
+
+Raw requests must be a single valid JSON object per line, without comments or
+duplicate keys. Only top-level fields participate in command dispatch. Names,
+IDs and tokens must be strings; numeric fields must be JSON numbers, and integer
+fields reject fractions, overflow and numeric strings. `reset` and
+`stream_source` retain legacy boolean spellings: booleans, `0`/`1`, and the
+strings `"false"`/`"true"`/`"0"`/`"1"`. Other boolean fields require JSON booleans.
 
 ### Available Commands
 

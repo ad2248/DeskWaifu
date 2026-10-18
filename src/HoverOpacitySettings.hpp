@@ -28,9 +28,16 @@ public:
 
     AppResult Set(const std::string& json)
     {
-        ConfigStore::Snapshot request, latest, saved;
+        ConfigStore::Snapshot request;
         std::string error;
         if (!ConfigStore::Parse(json, request, error)) return AppResult::Failure(error);
+        return Set(request);
+    }
+
+    AppResult Set(const ConfigStore::Snapshot& request)
+    {
+        ConfigStore::Snapshot latest, saved;
+        std::string error;
         const auto enabled = request.values.find("enabled");
         const auto opacity = request.values.find("opacity");
         const auto idleOpacity = request.values.find("idle_opacity");
