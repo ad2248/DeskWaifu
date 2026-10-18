@@ -11,8 +11,8 @@ permissions:
 jobs:
   test:
     name: Arch build and headless Wayland test
-    # This label must map to the digest-pinned deskwaifu-ci image.
-    # Rebuild and publish it with scripts/rebuild-ci-image.sh.
+    # This label must map to the image-ID-pinned deskwaifu-ci image (force_pull=false).
+    # Rebuild and privately transfer it with scripts/rebuild-ci-image.sh.
     runs-on: deskwaifu-arch
     timeout-minutes: 30
     steps:
@@ -77,7 +77,7 @@ jobs:
             cmake --build "$build_dir" --parallel "$(nproc)"
           done
 
-      - name: Test Qt IPC client
+      - name: Test Qt model window, rendering, and IPC client
         run: ctest --test-dir build-ci --output-on-failure --no-tests=error
 
       - name: Test headless Wayland and IPC
@@ -89,3 +89,4 @@ jobs:
           test ! -f build-ci/test-logs/sway.log || cat build-ci/test-logs/sway.log
           test ! -f build-ci/test-logs/deskwaifu.log || cat build-ci/test-logs/deskwaifu.log
           test ! -f build-ci/test-logs/deskwaifu-control.log || cat build-ci/test-logs/deskwaifu-control.log
+          test ! -f build-ci/test-logs/qt-window.log || cat build-ci/test-logs/qt-window.log

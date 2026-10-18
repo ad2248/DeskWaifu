@@ -34,7 +34,7 @@ class AppCommandHandler;
 * @brief   アプリケーションクラス。
 *   Cubism3の管理を行う。
 */
-class LAppDelegate : private IApplicationRuntime, public IWaylandEvents
+class LAppDelegate : private IApplicationRuntime, public IDesktopWindowEvents
 {
 public:
     /**
@@ -98,7 +98,7 @@ public:
     static void GetClientSize(int& rWidth, int& rHeight);
 
     /**
-    * @brief   WaylandContextを取得する。
+    * @brief   デスクトップウィンドウを取得する。
     */
     DesktopWindow* GetWindow() { return _window.get(); }
 

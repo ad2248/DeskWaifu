@@ -19,29 +19,27 @@ add_test(NAME cursor-look-wiring
     -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckCursorLookWiring.cmake)
 
 find_package(Threads REQUIRED)
-if (DESKWAIFU_WINDOW_BACKEND STREQUAL "qt")
-  find_package(Qt6 6.5 REQUIRED COMPONENTS Gui OpenGL WaylandClient)
-  find_package(LayerShellQt 6.6 REQUIRED)
-  add_test(NAME qt-layer-shell-version
-    COMMAND ${CMAKE_COMMAND} -DAPP_SOURCE=${CMAKE_SOURCE_DIR}/src
-      -DFIXTURE_DIR=${CMAKE_CURRENT_BINARY_DIR}/layer-shell-version
-      -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckLayerShellQtVersion.cmake)
-  add_executable(qt-window-input-test QtWindowInputTest.cpp)
-  target_include_directories(qt-window-input-test PRIVATE ../src)
-  target_link_libraries(qt-window-input-test PRIVATE Qt6::Gui)
-  add_test(NAME qt-window-input COMMAND qt-window-input-test)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Gui OpenGL WaylandClient)
+find_package(LayerShellQt 6.6 REQUIRED)
+add_test(NAME qt-layer-shell-version
+  COMMAND ${CMAKE_COMMAND} -DAPP_SOURCE=${CMAKE_SOURCE_DIR}/src
+    -DFIXTURE_DIR=${CMAKE_CURRENT_BINARY_DIR}/layer-shell-version
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckLayerShellQtVersion.cmake)
+add_executable(qt-window-input-test QtWindowInputTest.cpp)
+target_include_directories(qt-window-input-test PRIVATE ../src)
+target_link_libraries(qt-window-input-test PRIVATE Qt6::Gui)
+add_test(NAME qt-window-input COMMAND qt-window-input-test)
 
-  add_executable(qt-desktop-window-test QtDesktopWindowTest.cpp ../src/QtDesktopWindow.cpp ${PROTOCOL_SOURCES})
-  target_include_directories(qt-desktop-window-test PRIVATE ../src ${WAYLAND_GEN_DIR})
-  target_link_libraries(qt-desktop-window-test PRIVATE Qt6::Gui Qt6::OpenGL Qt6::WaylandClient LayerShellQt::Interface)
-  add_test(NAME qt-window-reject-platform COMMAND qt-desktop-window-test --reject-platform)
-  set_tests_properties(qt-window-reject-platform PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-  # Opt-in only: use an isolated compositor, never inject input into the user's session.
-  option(DESKWAIFU_QT_LIVE_TEST "Run Qt window integration test on the selected Wayland display" OFF)
-  if (DESKWAIFU_QT_LIVE_TEST)
-    add_test(NAME qt-desktop-window COMMAND qt-desktop-window-test)
-    set_tests_properties(qt-desktop-window PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 30)
-  endif ()
+add_executable(qt-desktop-window-test QtDesktopWindowTest.cpp ../src/QtDesktopWindow.cpp)
+target_include_directories(qt-desktop-window-test PRIVATE ../src)
+target_link_libraries(qt-desktop-window-test PRIVATE Qt6::Gui Qt6::OpenGL Qt6::WaylandClient LayerShellQt::Interface)
+add_test(NAME qt-window-reject-platform COMMAND qt-desktop-window-test --reject-platform)
+set_tests_properties(qt-window-reject-platform PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# Opt-in only: use an isolated compositor, never inject input into the user's session.
+option(DESKWAIFU_QT_LIVE_TEST "Run Qt window integration test on the selected Wayland display" OFF)
+if (DESKWAIFU_QT_LIVE_TEST)
+  add_test(NAME qt-desktop-window COMMAND qt-desktop-window-test)
+  set_tests_properties(qt-desktop-window PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 30)
 endif ()
 add_executable(kwin-cursor-tracker-test KWinCursorTrackerTest.cpp)
 target_link_libraries(kwin-cursor-tracker-test PRIVATE deskwaifu_kwin_cursor Threads::Threads)
@@ -95,22 +93,18 @@ add_executable(hover-opacity-settings-test HoverOpacitySettingsTest.cpp ../src/C
 target_include_directories(hover-opacity-settings-test PRIVATE ../src)
 add_test(NAME hover-opacity-settings COMMAND hover-opacity-settings-test)
 
-add_executable(model-region-render-test ModelRegionRenderTest.cpp ../src/LAppWaylandRegion.cpp)
-add_dependencies(model-region-render-test ${APP_NAME}) # Generated Wayland protocol headers.
-target_include_directories(model-region-render-test PRIVATE ../src ${WAYLAND_GEN_DIR} ${WAYLAND_INCLUDE_DIRS} ${GLEW_PATH}/include)
-target_link_libraries(model-region-render-test PRIVATE Framework glew_s OpenGL::EGL ${WAYLAND_LIBRARIES})
+add_executable(model-region-render-test ModelRegionRenderTest.cpp ../src/ModelFrameRegion.cpp)
+target_include_directories(model-region-render-test PRIVATE ../src ${GLEW_PATH}/include)
+target_link_libraries(model-region-render-test PRIVATE Framework glew_s OpenGL::EGL)
 add_test(NAME model-region-render COMMAND model-region-render-test)
 set_tests_properties(model-region-render PROPERTIES
   ENVIRONMENT "EGL_PLATFORM=surfaceless" SKIP_RETURN_CODE 77)
 
-add_executable(wayland-edit-input-region-test WaylandEditInputRegionTest.cpp
-  ../src/LAppWaylandRegion.cpp ../src/ConfigStore.cpp ../src/LAppConfig.cpp ../src/InputController.cpp)
-add_dependencies(wayland-edit-input-region-test ${APP_NAME}) # Generated Wayland protocol headers.
-target_include_directories(wayland-edit-input-region-test PRIVATE ../src ${WAYLAND_GEN_DIR} ${WAYLAND_INCLUDE_DIRS} ${GLEW_PATH}/include)
-target_link_libraries(wayland-edit-input-region-test PRIVATE Framework glew_s OpenGL::EGL ${WAYLAND_LIBRARIES})
-target_link_options(wayland-edit-input-region-test PRIVATE
-  -Wl,--wrap=wl_proxy_marshal_flags -Wl,--wrap=wl_proxy_get_version)
-add_test(NAME wayland-edit-input-region COMMAND wayland-edit-input-region-test)
+add_executable(edit-input-region-test EditInputRegionTest.cpp
+  ../src/ConfigStore.cpp ../src/LAppConfig.cpp ../src/InputController.cpp)
+target_include_directories(edit-input-region-test PRIVATE ../src)
+target_link_libraries(edit-input-region-test PRIVATE Qt6::Gui)
+add_test(NAME edit-input-region COMMAND edit-input-region-test)
 
 add_executable(failure-diagnostics-test FailureDiagnosticsTest.cpp)
 target_include_directories(failure-diagnostics-test PRIVATE ../src)
@@ -124,8 +118,8 @@ if (Python3_Interpreter_FOUND)
         $<TARGET_FILE:kwin-cursor-tracker-test> ${DBUS_RUN_SESSION} ${CMAKE_CURRENT_BINARY_DIR})
     set_tests_properties(kwin-cursor-locale PROPERTIES SKIP_RETURN_CODE 77)
   endif ()
-  add_test(NAME wayland-layer-configuration
-    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_wayland_keyboard_grab.py)
+  add_test(NAME qt-window-configuration
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_qt_window_configuration.py)
   add_test(NAME opencode-review-cli
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/.gitea/scripts/test_opencode_review_cli.py)
   add_test(NAME opencode-review-extraction
@@ -190,6 +184,8 @@ target_include_directories(texture-residency-test PRIVATE ../src ${GLEW_PATH}/in
 add_test(NAME texture-residency COMMAND texture-residency-test)
 add_test(NAME smoke-exit-status
   COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/SmokeExitStatusTest.sh ${CMAKE_SOURCE_DIR})
+add_test(NAME ci-image-private-transfer
+  COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/CiImagePrivateTransferTest.sh ${CMAKE_SOURCE_DIR})
 
 add_executable(output-controller-test OutputControllerTest.cpp)
 target_link_libraries(output-controller-test PRIVATE deskwaifu_output)

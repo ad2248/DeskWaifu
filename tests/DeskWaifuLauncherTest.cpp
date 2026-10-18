@@ -45,7 +45,9 @@ private:
             return status.open(QIODevice::ReadOnly) && !status.readAll().contains("State:\tZ");
         };
         // Detached fixtures are not our children: wait for exit, not waitpid().
-        QTRY_VERIFY_WITH_TIMEOUT(!active(), 2000);
+        // Scope-guard cleanup can run after QtTest marks the test resolved;
+        // QTRY may stop polling then, but the detached process still must exit.
+        QVERIFY(QTest::qWaitFor([&] { return !active(); }, 2000));
     }
 
 private slots:

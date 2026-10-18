@@ -1,6 +1,6 @@
 #include <GL/glew.h>
 #include <EGL/egl.h>
-#include "LAppWaylandRegion.hpp"
+#include "ModelFrameRegion.hpp"
 #include "ModelOpacityFrame.hpp"
 #include "HoverOpacity.hpp"
 #include <cmath>
@@ -55,7 +55,7 @@ int main()
         glScissor(1, 2, 3, 4);
         glColorMask(GL_FALSE, GL_TRUE, GL_FALSE, GL_FALSE);
         glClearColor(0.25f, 0.5f, 0.75f, 1);
-        ClipWaylandModelRegion(clip, 13, 9);
+        ClipModelRegion(clip, 13, 9);
         CHECK(glIsEnabled(GL_SCISSOR_TEST));
         GLint scissor[4];
         GLboolean mask[4];
@@ -80,7 +80,7 @@ int main()
         CHECK(glGetError() == GL_NO_ERROR);
     }
     glDisable(GL_SCISSOR_TEST);
-    ClipWaylandModelRegion({3, 2, 5, 4}, 13, 9);
+    ClipModelRegion({3, 2, 5, 4}, 13, 9);
     CHECK(!glIsEnabled(GL_SCISSOR_TEST));
     // Editor frame is drawn after clipping, including outside the model clip,
     // and restores the renderer's GL state.
@@ -90,7 +90,7 @@ int main()
     glEnable(GL_SCISSOR_TEST); glScissor(1, 2, 3, 4);
     glColorMask(GL_FALSE, GL_TRUE, GL_FALSE, GL_FALSE);
     glClearColor(.25f, .5f, .75f, 1);
-    DrawWaylandEditFrame({{0, 0, 13, 1}, {-5, 3, 7, 2}}, 13, 9);
+    DrawModelEditFrame({{0, 0, 13, 1}, {-5, 3, 7, 2}}, 13, 9);
     GLint frameScissor[4]; GLboolean frameMask[4]; GLfloat frameColor[4];
     glGetIntegerv(GL_SCISSOR_BOX, frameScissor); glGetBooleanv(GL_COLOR_WRITEMASK, frameMask);
     glGetFloatv(GL_COLOR_CLEAR_VALUE, frameColor);
@@ -178,8 +178,8 @@ int main()
             GLint read;
             glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &read);
             CHECK(read == 0);
-            ClipWaylandModelRegion({2, 1, 8, 7}, 13, 9);
-            DrawWaylandEditFrame({{10, 0, 3, 9}}, 13, 9);
+            ClipModelRegion({2, 1, 8, 7}, 13, 9);
+            DrawModelEditFrame({{10, 0, 3, 9}}, 13, 9);
             CHECK(!ModelInputRegionContains(modelRegions, 11, 4));
             hover.Leave();
             CHECK(hover.Resolve(true, opacity, modelRegions) == 1);

@@ -1,8 +1,9 @@
-# Experimental Qt model window backend
+# Qt model window
 
-The Qt backend is opt-in. The default `wayland` backend is retained for comparison
-and rollback; both run the same Cubism model/session, application service, editing,
-configuration and JSON IPC code. The control panel remains a separate process.
+Qt is the only model-window implementation. The native Wayland/EGL window backend
+and backend-selection build option have been removed. Cubism model/session,
+application service, editing, configuration and JSON IPC remain independent of
+Qt windowing. The optional control panel remains a separate process.
 
 ## Build and run
 
@@ -12,17 +13,17 @@ existing Cubism/GLEW dependencies. On Arch the extra package is `layer-shell-qt`
 other distributions may split its library and development headers into packages.
 
 ```sh
-cmake -S . -B build-qt -DDESKWAIFU_WINDOW_BACKEND=qt
+cmake -S . -B build-qt
 cmake --build build-qt
 QT_QPA_PLATFORM=wayland build-qt/bin/deskwaifu --models_dir /path/to/models
 ```
 
 `SDK_ROOT_PATH` and `GLEW_PATH` can point to existing dependency source directories
-when working in an independent worktree. Use another build directory with
-`-DDESKWAIFU_WINDOW_BACKEND=wayland` to build the original backend.
+when working in an independent worktree. Qt remains required when
+`DESKWAIFU_BUILD_CONTROL=OFF`; this switch only disables the control panel.
 
 The executable is still named `deskwaifu`; the CLI, IPC socket and config paths
-are unchanged. Do not run the two backends against the same runtime socket.
+are unchanged. Do not run multiple model processes against the same runtime socket.
 The backend rejects non-Wayland platforms or compositors without layer-shell
 instead of silently presenting an ordinary desktop window.
 With the required Qt 6.5+, `LayerShellQt::Window::get()` selects the shell
@@ -33,14 +34,14 @@ no `get_xdg_surface` fallback, for both the window fixture and real model.
 
 ## Boundaries and behavior
 
-- `DesktopWindow` is the application's window/output/input port.
-  `NativeDesktopWindow` delegates to the existing Wayland/EGL implementation;
-  `QtDesktopWindow` uses `QWindow`, `QOpenGLContext` and LayerShellQt. Qt owns its
+- `DesktopWindow` is the application's window/output/input port, implemented by
+  `QtDesktopWindow` using `QWindow`, `QOpenGLContext` and LayerShellQt. Qt owns its
   connection and surface: the application never dispatches Qt's Wayland socket
   or manages Qt's EGL handles itself.
 - A Qt timer drives the shared frame callback through the Qt event loop. IPC and
   config polling retain their existing semantics; this phase does not replace
   their transports with Qt alternatives. Empty-input frames use a slower timer.
+  `IDesktopWindowEvents` carries input without exposing native protocol objects.
 - The GL compatibility profile is necessary because the current Cubism/sprite
   renderer uses client-side vertex/index arrays. A core-only or OpenGL ES context
   is rejected. The integration test catches accidental core-context creation.
@@ -67,7 +68,7 @@ no `get_xdg_surface` fallback, for both the window fixture and real model.
 - Global cursor gaze still uses the existing KWin bridge. Focused-output and
   cross-output drag capabilities retain their compositor-specific limitations.
   Qt does not grant global-pointer access on Wayland. Sway/Hyprland behavior still
-  needs real-compositor validation before making this backend the default.
+  needs physical-pointer and visual-quality checks on real desktops.
 
 ## Validation
 
@@ -91,8 +92,7 @@ expression, mouth/look, transform/crop saves, screen-edit, visibility, model
 switch and quit IPC. This does **not** replace manual checks of physical pointer
 click-through, compositor focus policy or visual quality on real desktops.
 
-For the native model/IPC baseline, use the same runner with a native build and
-`--native`. Both backends currently emit the SDK's existing
+The model currently emits the SDK's existing
 `GL_INVALID_VALUE in glDeleteProgram` teardown diagnostic (shader sets share
 program IDs). The smoke test allows only that exact diagnostic **after quit**;
 OpenGL errors during rendering still fail the test. No third-party SDK source

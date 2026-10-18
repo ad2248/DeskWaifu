@@ -1,26 +1,9 @@
-#ifndef DESKWAIFU_QT_WINDOW
-#include "LAppWayland.hpp"
-#endif
-#include "LAppWaylandRegion.hpp"
+#include "ModelFrameRegion.hpp"
 #include "ModelInputRegion.hpp"
 #include <GL/glew.h>
 #include <vector>
-#include <iostream>
-#include <chrono>
 
-#ifndef DESKWAIFU_QT_WINDOW
-bool ClearWaylandInputRegion(WaylandContext* wl) {
-    if (!wl || !wl->compositor || !wl->surface) return false;
-    wl_region* empty = wl_compositor_create_region(wl->compositor);
-    if (!empty) return false;
-    wl_surface_set_input_region(wl->surface, empty);
-    wl_region_destroy(empty);
-    wl_surface_commit(wl->surface);
-    return true;
-}
-#endif
-
-void ClipWaylandModelRegion(ModelRegion region, int width, int height) {
+void ClipModelRegion(ModelRegion region, int width, int height) {
     if (region.x == 0 && region.y == 0 && region.width == width && region.height == height) return;
 
     // Clear only after Cubism has finished drawing: its mask/offscreen passes
@@ -47,7 +30,7 @@ void ClipWaylandModelRegion(ModelRegion region, int width, int height) {
     glClearColor(clearColor[0], clearColor[1], clearColor[2], clearColor[3]);
 }
 
-void DrawWaylandEditFrame(const std::vector<ModelRegion>& handles, int width, int height) {
+void DrawModelEditFrame(const std::vector<ModelRegion>& handles, int width, int height) {
     const GLboolean enabled = glIsEnabled(GL_SCISSOR_TEST);
     GLint scissor[4]; GLfloat color[4]; GLboolean mask[4];
     glGetIntegerv(GL_SCISSOR_BOX, scissor); glGetFloatv(GL_COLOR_CLEAR_VALUE, color);
@@ -77,27 +60,3 @@ std::vector<ModelRegion> ReadModelInputRegion(unsigned int framebuffer, int widt
     glBindFramebuffer(GL_READ_FRAMEBUFFER, previous);
     return ExtractModelInputRegion(pixels.data(), width, height, clip);
 }
-
-#ifndef DESKWAIFU_QT_WINDOW
-void UpdateWaylandFrameInputRegion(WaylandContext* wl, bool screenEditing, int width, int height,
-    const std::vector<ModelRegion>& modelRegions) {
-    // Capture outside clicks while editing; otherwise restore model click-through.
-    if (screenEditing) UpdateWaylandInputRegion(wl, {{0, 0, width, height}});
-    else UpdateWaylandInputRegion(wl, modelRegions);
-}
-
-void UpdateWaylandInputRegion(WaylandContext* wl, const std::vector<ModelRegion>& modelRegions,
-    const std::vector<ModelRegion>& handles) {
-    if (!wl || !wl->compositor || !wl->surface) return;
-    wl_region* region = wl_compositor_create_region(wl->compositor);
-    if (!region) return;
-    for (const auto& box : modelRegions)
-        wl_region_add(region, box.x, box.y, box.width, box.height);
-    for (auto handle : handles) {
-        auto box = IntersectModelRegions(handle, {0, 0, wl->width, wl->height});
-        if (box.width > 0 && box.height > 0) wl_region_add(region, box.x, box.y, box.width, box.height);
-    }
-    wl_surface_set_input_region(wl->surface, region);
-    wl_region_destroy(region);
-}
-#endif

@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
-# Build and publish the private Arch Linux CI image used by the Gitea runner.
+# Build and privately transfer the Arch Linux CI image used by the Gitea runner.
 set -euo pipefail
 
-REGISTRY=git.kals.top
-IMAGE_REPO=kals/deskwaifu-ci
+IMAGE_REPO=localhost/deskwaifu-ci
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$(dirname "$SCRIPT_DIR")"
 CONTAINERFILE="$SOURCE_DIR/Containerfile"
 PACMAN_MIRROR=${DESKWAIFU_PACMAN_MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/archlinux}
-BOX_HOST=${DESKWAIFU_BOX_HOST:-box}
+RUNNER_HOST=${DESKWAIFU_RUNNER_HOST:-st}
 
 if ! command -v podman >/dev/null 2>&1; then
     echo "Error: podman is required" >&2
@@ -25,7 +24,7 @@ fi
 
 CONTAINER_HASH=$(git -C "$SOURCE_DIR" hash-object Containerfile)
 TAG="arch-$(date -u +%Y%m%d%H%M)-${CONTAINER_HASH:0:12}"
-IMAGE="$REGISTRY/$IMAGE_REPO:$TAG"
+IMAGE="$IMAGE_REPO:$TAG"
 
 echo "Building $IMAGE"
 podman build --target ci \
@@ -38,25 +37,19 @@ podman run --rm "$IMAGE" bash -ceu '
     ninja --version
     wayland-scanner --version
     sway --version
-    pkgconf --modversion Qt6Core Qt6Widgets Qt6WaylandClient
+    pkgconf --modversion Qt6Core Qt6Widgets Qt6OpenGL Qt6WaylandClient
+    test -f /usr/lib/cmake/LayerShellQt/LayerShellQtConfig.cmake
     test -f /opt/deskwaifu-deps/CubismSdkForNative-5-r.5/Core/include/Live2DCubismCore.h
     test -f /opt/deskwaifu-deps/glew/include/GL/glew.h
     test ! -S /var/run/docker.sock
 '
 
-if ! podman login --get-login "$REGISTRY" >/dev/null 2>&1; then
-    echo "Error: log in first with: podman login $REGISTRY --username kals" >&2
-    exit 1
-fi
-
-echo "Pushing $IMAGE"
-podman push "$IMAGE"
-
-if DOCKER_DIGEST=$(ssh "$BOX_HOST" \
-        "docker pull '$IMAGE' >/dev/null && docker image inspect '$IMAGE' --format '{{index .RepoDigests 0}}'"); then
-    echo "Docker digest: $DOCKER_DIGEST"
-    echo "Configure the runner label as:"
-    echo "  deskwaifu-arch:docker://$DOCKER_DIGEST"
-else
-    echo "Warning: could not obtain the Docker digest from $BOX_HOST" >&2
-fi
+# Gitea packages inherit their owner's visibility, not the linked repository's.
+# Never push this SDK-containing image into a potentially public user namespace.
+IMAGE_ID=$(podman image inspect "$IMAGE" --format '{{.Id}}')
+IMAGE_ID="sha256:${IMAGE_ID#sha256:}"
+echo "Transferring $IMAGE privately to $RUNNER_HOST"
+podman save --format oci-archive "$IMAGE" | ssh "$RUNNER_HOST" podman load
+ssh "$RUNNER_HOST" podman image exists "$IMAGE_ID"
+echo "Configure the runner label as (force_pull must remain false):"
+echo "  deskwaifu-arch:docker://$IMAGE_ID"

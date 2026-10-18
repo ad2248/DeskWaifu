@@ -12,7 +12,7 @@ main → Delegate (composition/lifetime)
          └─ View → Manager (render/touch) and borrowed texture store
 
 IPC → Delegate → Manager          (legacy command access; #77/#78 will extract it)
-Wayland callbacks → Delegate     (legacy event access; #80 will extract it)
+Qt window → IDesktopWindowEvents → Delegate (explicit input event sink)
 Pal → explicit resource base path (configured before Cubism startup)
 ```
 

@@ -4,7 +4,7 @@
 
 A Linux desktop Live2D model viewer that renders Live2D characters as transparent Wayland overlay windows using the `wlr-layer-shell` protocol.
 
-Live2D models float on your desktop with click-through transparency — only the model itself receives input. Built with the Live2D Cubism SDK for Native, OpenGL (EGL), and native Wayland (no X11, no GLFW windowing).
+Live2D models float on your desktop with click-through transparency — only the model itself receives input. Built with the Live2D Cubism SDK for Native, OpenGL, Qt 6 and LayerShellQt. Qt manages the Wayland window and its graphics context; there is no separate native window backend.
 
 <!-- Screenshot or GIF placeholder: place a demo image/gif here -->
 <!-- ![DeskWaifu Demo](docs/demo.gif) -->
@@ -45,32 +45,35 @@ https://github.com/user-attachments/assets/95dfdedc-4957-4bb7-b79f-f3addd97a6db
 |---|---|
 | **Linux with Wayland compositor** | Must support `wlr-layer-shell-v1`; KDE Plasma 6 / KWin is required for global cursor tracking |
 | **Live2D Cubism SDK for Native** | Download from [live2d.com/sdk](https://www.live2d.com/en/sdk/about/) (proprietary, not bundled) |
-| **C++ compiler** | GCC or Clang with C++14 support |
+| **C++ compiler** | GCC or Clang with C++17 support for Qt 6 |
 | **CMake** | >= 3.16 |
 | **pkg-config** | For finding Wayland/EGL libraries |
-| **Wayland development libraries** | `wayland-client`, `wayland-egl`, `wayland-cursor` |
+| **Wayland development libraries** | Required by Qt Wayland; Qt owns protocol dispatch |
 | **libsystemd development library** | `sd-bus` for the transient KWin cursor bridge |
 | **EGL & OpenGL** | `libegl-dev`, `libgl-dev` or equivalent |
-| **wayland-scanner** | Usually part of `wayland-protocols` or `wayland` dev packages |
-| **Qt 6** | `Widgets`, `Network`, and the Qt Wayland platform plugin for the control window |
+| **Qt 6.5+** | `Gui`, `OpenGL`, `WaylandClient` and the Qt Wayland platform plugin; `Widgets` and `Network` for the optional control panel |
+| **LayerShellQt 6.6+** | Required for the model's desktop overlay window |
 | **curl, unzip** | For downloading third-party dependencies (GLEW) |
 
 ### Installing system dependencies
 
 **Arch Linux:**
 ```bash
-sudo pacman -S --needed base-devel cmake pkgconf wayland wayland-protocols libglvnd egl-wayland qt6-base qt6-wayland systemd-libs curl unzip
+sudo pacman -S --needed base-devel cmake pkgconf wayland wayland-protocols libglvnd egl-wayland qt6-base qt6-wayland layer-shell-qt systemd-libs curl unzip
 ```
 
 **Ubuntu / Debian:**
 ```bash
-sudo apt install build-essential cmake pkg-config libwayland-dev wayland-protocols libegl-dev libgl-dev libglu1-mesa-dev libsystemd-dev qt6-base-dev qt6-wayland curl unzip
+sudo apt install build-essential cmake pkg-config libwayland-dev wayland-protocols libegl-dev libgl-dev libglu1-mesa-dev libsystemd-dev qt6-base-dev libqt6opengl6-dev qt6-wayland qt6-wayland-dev curl unzip
 ```
 
 **Fedora:**
 ```bash
-sudo dnf install gcc-c++ cmake pkgconf-pkg-config wayland-devel wayland-protocols-devel mesa-libEGL-devel mesa-libGL-devel systemd-devel qt6-qtbase-devel qt6-qtwayland curl unzip
+sudo dnf install gcc-c++ cmake pkgconf-pkg-config wayland-devel wayland-protocols-devel mesa-libEGL-devel mesa-libGL-devel systemd-devel qt6-qtbase-devel qt6-qtwayland-devel layer-shell-qt-devel curl unzip
 ```
+
+Install LayerShellQt **6.6+** development files as well. On distributions shipping
+older Qt/Plasma packages, a newer package repository or source build may be needed.
 
 ## Installation
 
@@ -136,10 +139,9 @@ The binary will be at `build/bin/deskwaifu`.
 
 The Qt control window will be at `build/bin/deskwaifu-control`.
 
-An experimental Qt model-window backend is also available with
-`-DDESKWAIFU_WINDOW_BACKEND=qt` (Qt 6.5+, Qt WaylandClient/OpenGL and LayerShellQt 6.6+).
-The default remains the native Wayland backend. See
-[Qt backend build instructions, behavior and validation](docs/qt-window-backend.md).
+The model window always uses Qt and LayerShellQt; no backend-selection flag is
+needed. Disabling `DESKWAIFU_BUILD_CONTROL` only omits the control panel, not the
+Qt model window. See [window behavior and validation](docs/qt-window-backend.md).
 
 To install a source build system-wide (default prefix: `/usr/local`):
 
@@ -839,17 +841,14 @@ deskwaifu/
 ├── src/                    # Application source code
 │   ├── main.cpp            # Entry point, CLI argument parsing
 │   ├── LAppConfig.*        # JSON config file reader (singleton)
-│   ├── LAppWayland.*       # Wayland client setup (display, compositor, EGL, layer-shell)
-│   ├── LAppWaylandRegion.* # Input region management (click-through transparency)
+│   ├── QtDesktopWindow.*   # Qt window, GL context, layer-shell and input masking
+│   ├── ModelFrameRegion.* # GL clipping, model alpha sampling and editor frames
 │   ├── LAppDelegate.*      # Main app controller, render loop, input handling
 │   ├── LAppLive2DManager.* # Model lifecycle management
 │   ├── LAppView.*          # View/projection matrices, rendering coordination
 │   ├── LAppModel.*         # Individual Live2D model instance
 │   ├── LAppIPC.*           # IPC socket server for external control
 │   └── LAppDefine.*        # Global constants and configuration
-├── protocol/               # Wayland protocol XML files
-│   ├── xdg-shell.xml
-│   └── wlr-layer-shell-unstable-v1.xml
 ├── thirdParty/             # Third-party dependencies (GLEW, stb)
 ├── cmake/                  # CMake helper scripts
 └── CMakeLists.txt          # Build configuration
@@ -857,8 +856,8 @@ deskwaifu/
 
 ### Key design decisions
 
-- **No GLFW windowing** — Wayland surfaces are created directly via `wl_compositor` and `zwlr_layer_shell_v1` for overlay behavior that GLFW cannot provide.
-- **EGL rendering** — OpenGL context is managed through EGL, bound directly to the Wayland display.
+- **Qt-only windowing** — `QWindow` and LayerShellQt own the overlay window, input and screen lifecycle; the application does not manage raw Wayland surfaces.
+- **OpenGL rendering** — Cubism draws into a Qt-managed context. Qt's Wayland platform plugin may use EGL internally; the application does not create or swap EGL window surfaces.
 - **Layer-shell overlay** — the application renders as a Wayland layer surface, sitting above normal windows.
 - **Input region masking** — only the model's bounding area accepts input; the rest of the surface is fully transparent and click-through.
 
@@ -868,6 +867,7 @@ deskwaifu/
 - [GLEW](https://github.com/nigels-com/glew) — OpenGL extension loading
 - [stb_image](https://github.com/nothings/stb) — Image loading
 - [wlr-layer-shell](https://wayland.app/protocols/wlr-layer-shell-unstable-v1) — Wayland overlay protocol
+- [Qt 6](https://www.qt.io/) / [LayerShellQt](https://invent.kde.org/plasma/layer-shell-qt) — Model window and desktop overlay integration
 - **Wayland** / **EGL** / **OpenGL** — Display and rendering stack
 
 ## License

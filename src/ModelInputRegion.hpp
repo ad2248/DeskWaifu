@@ -43,3 +43,10 @@ inline bool ModelInputRegionContains(const std::vector<ModelRegion>& regions, do
             return true;
     return false;
 }
+
+// Editing must receive outside clicks even when the model/crop is fully empty.
+inline std::vector<ModelRegion> ModelFrameInputRegions(bool screenEditing, int width, int height,
+    const std::vector<ModelRegion>& modelRegions)
+{
+    return screenEditing ? std::vector<ModelRegion>{{0, 0, width, height}} : modelRegions;
+}

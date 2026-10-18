@@ -23,11 +23,6 @@ include(GNUInstallDirs)
 
 include(CTest)
 option(DESKWAIFU_BUILD_CONTROL "Build the Qt control application" ON)
-set(DESKWAIFU_WINDOW_BACKEND "wayland" CACHE STRING "Model window backend: wayland or qt")
-set_property(CACHE DESKWAIFU_WINDOW_BACKEND PROPERTY STRINGS wayland qt)
-if (NOT DESKWAIFU_WINDOW_BACKEND MATCHES "^(wayland|qt)$")
-  message(FATAL_ERROR "DESKWAIFU_WINDOW_BACKEND must be wayland or qt")
-endif ()
 
 # Define output directory.
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin)
@@ -73,38 +68,12 @@ target_include_directories(Framework PUBLIC ${GLEW_PATH}/include)
 # Link libraries to framework.
 target_link_libraries(Framework Live2DCubismCore glew_s)
 
-# Find Wayland & EGL via PkgConfig
+# System D-Bus dependency used by the compositor adapter.
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(WAYLAND REQUIRED wayland-client wayland-egl wayland-cursor egl)
-pkg_get_variable(WAYLAND_SCANNER wayland-scanner wayland_scanner)
-
-# Generate Wayland protocol files
-set(PROTOCOL_DIR ${CMAKE_CURRENT_SOURCE_DIR}/protocol)
-set(WAYLAND_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
-file(MAKE_DIRECTORY ${WAYLAND_GEN_DIR})
-
-macro(wayland_generate_protocol PROTOCOL_XML NAMESPACE)
-    set(HEADER "${WAYLAND_GEN_DIR}/${NAMESPACE}-client-protocol.h")
-    set(CODE "${WAYLAND_GEN_DIR}/${NAMESPACE}-protocol.c")
-
-    add_custom_command(
-        OUTPUT ${HEADER}
-        COMMAND ${WAYLAND_SCANNER} client-header ${PROTOCOL_XML} ${HEADER}
-        DEPENDS ${PROTOCOL_XML}
-    )
-    add_custom_command(
-        OUTPUT ${CODE}
-        COMMAND ${WAYLAND_SCANNER} private-code ${PROTOCOL_XML} ${CODE}
-        DEPENDS ${PROTOCOL_XML} ${HEADER}
-    )
-    list(APPEND PROTOCOL_SOURCES ${CODE} ${HEADER})
-endmacro()
-
-wayland_generate_protocol(${PROTOCOL_DIR}/xdg-shell.xml xdg-shell)
-wayland_generate_protocol(${PROTOCOL_DIR}/wlr-layer-shell-unstable-v1.xml wlr-layer-shell-unstable-v1)
+file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/generated)
 
 # Make executable app.
-add_executable(${APP_NAME} ${PROTOCOL_SOURCES})
+add_executable(${APP_NAME})
 # Add common source files from SDK.
 add_subdirectory(${COMMON_SRC_PATH} ${CMAKE_CURRENT_BINARY_DIR}/src/Common)
 # Add our source files in ./src
@@ -119,13 +88,10 @@ install(PROGRAMS deskwaifu-ctl
 target_link_libraries(${APP_NAME}
   Framework
   ${OPENGL_LIBRARIES}
-  ${WAYLAND_LIBRARIES}
 )
 # Specify include directories.
 target_include_directories(${APP_NAME} PRIVATE 
   ${STB_PATH}
-  ${WAYLAND_GEN_DIR}
-  ${WAYLAND_INCLUDE_DIRS}
 )
 
 # Generate embedded shaders header at configure time.

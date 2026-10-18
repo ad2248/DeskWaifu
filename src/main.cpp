@@ -16,9 +16,7 @@
 #include <string>
 #include <climits>
 #include <cstdio>
-#ifdef DESKWAIFU_QT_WINDOW
 #include <QGuiApplication>
-#endif
 
 int main(int argc, char* argv[])
 {
@@ -95,11 +93,9 @@ int main(int argc, char* argv[])
     LAppDefine::RenderTargetHeight = config.values.windowHeight;
 
     // The guard subprocess above intentionally does not initialize Qt or Wayland.
-#ifdef DESKWAIFU_QT_WINDOW
     QGuiApplication application(argc, argv);
     application.setApplicationName("deskwaifu");
     application.setQuitOnLastWindowClosed(false);
-#endif
     // create the application instance
     if (LAppDelegate::GetInstance()->Initialize() == GL_FALSE)
     {

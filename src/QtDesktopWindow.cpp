@@ -12,22 +12,24 @@
 #include <QScreen>
 #include <QTimer>
 #include <QWaylandClientExtension>
+#include <wayland-util.h>
 #include <QWindow>
 #include <LayerShellQt/Window>
 #include <algorithm>
 #include <iostream>
 
-#define namespace wayland_namespace
-#include "wlr-layer-shell-unstable-v1-client-protocol.h"
-#undef namespace
-
 namespace {
-// Probe via Qt's registry, without owning a second Wayland connection or shell.
+// Only name/version are needed to query Qt's registry. This extension never
+// binds or sends requests; LayerShellQt owns the real protocol implementation.
 class LayerShellProbe : public QWaylandClientExtension
 {
 public:
     LayerShellProbe() : QWaylandClientExtension(1) { initialize(); }
-    const wl_interface* extensionInterface() const override { return &zwlr_layer_shell_v1_interface; }
+    const wl_interface* extensionInterface() const override
+    {
+        static const wl_interface interface = {"zwlr_layer_shell_v1", 1, 0, nullptr, 0, nullptr};
+        return &interface;
+    }
     void bind(wl_registry*, int, int) override {}
 };
 
@@ -40,7 +42,7 @@ public:
         (void)_frame.release();
         (void)_context.release();
     }
-    bool Initialize(int width, int height, IWaylandEvents& events) override
+    bool Initialize(int width, int height, IDesktopWindowEvents& events) override
     {
         if (!QGuiApplication::platformName().startsWith("wayland")) {
             std::cerr << "[Qt] The model window requires the Qt Wayland platform plugin\n";
@@ -104,7 +106,7 @@ public:
             std::cerr << "[Qt] Cubism requires a desktop OpenGL 3.3 compatibility context\n";
             return false;
         }
-        std::cout << "[Qt] Layer-shell model window configured: " << Width() << 'x' << Height() << '\n';
+        std::cout << "[Qt] Layer-shell model window configured: " << Width() << 'x' << Height() << std::endl;
         return true;
     }
 
@@ -173,14 +175,14 @@ public:
         return true;
     }
     bool KeyboardGrabbed() const override { return _keyboard.IsGrabbed(); }
-    KeyboardSurfaceLifecycle::GrabResult SetKeyboardGrab(bool grabbed) override
+    ModelKeyboardGrabState::GrabResult SetKeyboardGrab(bool grabbed) override
     {
         const auto devices = QInputDevice::devices();
         const bool hasKeyboard = std::any_of(devices.begin(), devices.end(), [](const QInputDevice* device) {
             return device->type() == QInputDevice::DeviceType::Keyboard;
         });
         const auto result = _keyboard.SetGrabbed(grabbed, Available(), hasKeyboard);
-        if (result != KeyboardSurfaceLifecycle::GrabResult::Changed) return result;
+        if (result != ModelKeyboardGrabState::GrabResult::Changed) return result;
         LayerShellQt::Window::get(this)->setKeyboardInteractivity(grabbed
             ? LayerShellQt::Window::KeyboardInteractivityExclusive
             : LayerShellQt::Window::KeyboardInteractivityNone);
@@ -194,8 +196,6 @@ public:
         if (_screens.empty() || !SwitchOutput(_screens.front().id))
             if (_events) _events->SurfaceClosed();
     }
-    // QScreen already exposes logical geometry; do not overwrite it with native modes.
-    void ApplyMonitorGeometry(const std::vector<OutputSnapshot>&) override {}
     std::vector<OutputSnapshot> Outputs() const override
     {
         std::vector<OutputSnapshot> outputs;
@@ -242,7 +242,7 @@ public:
         _needsRebind = false;
         _switching = false;
         SetKeyboardGrab(grabbed);
-        std::cout << "[Qt] Output switch configured and committed: " << id << '\n';
+        std::cout << "[Qt] Output switch configured and committed: " << id << std::endl;
         return true;
     }
 
@@ -288,7 +288,7 @@ protected:
             }
             case QEvent::FocusIn: _events->KeyboardChanged(); break;
             case QEvent::FocusOut:
-                if (SetKeyboardGrab(false) != KeyboardSurfaceLifecycle::GrabResult::Changed)
+                if (SetKeyboardGrab(false) != ModelKeyboardGrabState::GrabResult::Changed)
                     _events->KeyboardChanged();
                 break;
             case QEvent::Close:
@@ -342,8 +342,8 @@ private:
     bool _needsRebind = false;
     bool _emptyInput = true;
     bool _switching = false;
-    IWaylandEvents* _events = nullptr;
-    KeyboardSurfaceLifecycle _keyboard;
+    IDesktopWindowEvents* _events = nullptr;
+    ModelKeyboardGrabState _keyboard;
     std::unique_ptr<QOpenGLContext> _context;
     std::unique_ptr<QOpenGLFramebufferObject> _frame;
 };
