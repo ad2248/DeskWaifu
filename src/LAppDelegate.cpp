@@ -18,7 +18,8 @@
 
 #include "LAppView.hpp"
 #include "LAppPal.hpp"
-#include "LAppWaylandRegion.hpp"
+#include "ModelFrameRegion.hpp"
+#include "ModelInputRegion.hpp"
 #include "LAppDefine.hpp"
 #include "LAppConfig.hpp"
 #include "LAppLive2DManager.hpp"
@@ -265,11 +266,11 @@ bool LAppDelegate::Run()
             if (opacityFrame)
                 _view->PresentOpacityFrame(_hoverOpacity.Resolve(_hoverSettings->Enabled(), _hoverSettings->Opacity(),
                     modelRegions, handles, _hoverSettings->IdleOpacity()));
-            ClipWaylandModelRegion(region, _windowWidth, _windowHeight);
+            ClipModelRegion(region, _windowWidth, _windowHeight);
             if (_settings->ScreenEditing())
-                DrawWaylandEditFrame(handles, _windowWidth, _windowHeight);
-            _window->SetInputRegion(_settings->ScreenEditing()
-                ? std::vector<ModelRegion>{{0, 0, _windowWidth, _windowHeight}} : modelRegions);
+                DrawModelEditFrame(handles, _windowWidth, _windowHeight);
+            _window->SetInputRegion(ModelFrameInputRegions(_settings->ScreenEditing(),
+                _windowWidth, _windowHeight, modelRegions));
         }
         if (state.hidden && !_settings->ScreenEditing()) _window->SetInputRegion({});
         return !_isEnd;
@@ -380,8 +381,6 @@ void LAppDelegate::OnMouseCallBack(void* window, int button, int action, int mod
                 const auto cursor = _compositor.GlobalCursor();
                 bool switched = false;
                 if (cursor) {
-                    const auto geometry = _compositor.MonitorGeometry();
-                    if (geometry) _window->ApplyMonitorGeometry(geometry.value);
                     auto transform = _service.Snapshot().transform;
                     const OutputId oldId = _window->CurrentOutput();
                     if (_outputController.MoveTo(cursor.value.first, cursor.value.second, transform) &&

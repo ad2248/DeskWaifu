@@ -1,5 +1,5 @@
 pkgbase = deskwaifu-git
-	pkgdesc = Live2D desktop characters for Wayland with a Qt control panel
+	pkgdesc = Qt Live2D desktop characters for Wayland with a control panel
 	pkgver = r52.g1ddfd09
 	pkgrel = 2
 	url = https://github.com/ad2248/DeskWaifu
@@ -17,8 +17,9 @@ pkgbase = deskwaifu-git
 	depends = wayland
 	depends = libglvnd
 	depends = systemd-libs
-	depends = qt6-base
-	depends = qt6-wayland
+	depends = qt6-base>=6.5
+	depends = qt6-wayland>=6.5
+	depends = layer-shell-qt>=6.6
 	depends = bash
 	depends = socat
 	depends = psmisc

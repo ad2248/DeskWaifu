@@ -3,7 +3,7 @@
 #include "ModelKeyboardGrab.hpp"
 #include "ModelRegion.hpp"
 #include "OutputController.hpp"
-#include "WaylandEvents.hpp"
+#include "DesktopWindowEvents.hpp"
 #include <functional>
 #include <memory>
 
@@ -12,7 +12,7 @@
 class DesktopWindow : public IOutputBackend
 {
 public:
-    virtual bool Initialize(int width, int height, IWaylandEvents& events) = 0;
+    virtual bool Initialize(int width, int height, IDesktopWindowEvents& events) = 0;
     virtual bool Run(const std::function<bool()>& frame) = 0;
     virtual bool MakeCurrent() = 0;
     virtual void Shutdown() = 0;
@@ -22,10 +22,9 @@ public:
     virtual unsigned int Framebuffer() const = 0;
     virtual bool SetInputRegion(const std::vector<ModelRegion>& regions) = 0;
     virtual bool KeyboardGrabbed() const = 0;
-    virtual KeyboardSurfaceLifecycle::GrabResult SetKeyboardGrab(bool grabbed) = 0;
+    virtual ModelKeyboardGrabState::GrabResult SetKeyboardGrab(bool grabbed) = 0;
     virtual bool OutputNeedsRebind() const = 0;
     virtual void ReconcileOutputs() = 0;
-    virtual void ApplyMonitorGeometry(const std::vector<OutputSnapshot>& monitors) = 0;
 };
 
 std::unique_ptr<DesktopWindow> CreateDesktopWindow();

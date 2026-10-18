@@ -180,9 +180,8 @@ private slots:
 
     void externalFocusLossAllowsRegrab()
     {
-        using GrabResult = KeyboardSurfaceLifecycle::GrabResult;
-        KeyboardSurfaceLifecycle lifecycle;
-        lifecycle.BeginSurface();
+        using GrabResult = ModelKeyboardGrabState::GrabResult;
+        ModelKeyboardGrabState lifecycle;
         QCOMPARE(lifecycle.SetGrabbed(true, false, true), GrabResult::Rejected);
         QCOMPARE(lifecycle.SetGrabbed(true, true, false), GrabResult::Rejected);
         QCOMPARE(lifecycle.SetGrabbed(false, false, false), GrabResult::Unchanged);
@@ -192,52 +191,15 @@ private slots:
         QCOMPARE(lifecycle.SetGrabbed(true, true, true), GrabResult::Changed);
     }
 
-    void focusLossDuringOutputSwitchDefersCommitAndOnlyResetsOnce()
+    void shutdownClearsKeyboardGrab()
     {
-        using GrabResult = KeyboardSurfaceLifecycle::GrabResult;
-        KeyboardSurfaceLifecycle lifecycle;
-        lifecycle.BeginSurface(); // output switch creates an unconfigured layer
-        QCOMPARE(lifecycle.SetGrabbed(true, true, true), GrabResult::Changed);
-        QVERIFY(lifecycle.RequestInteractivityUpdate()); // no pre-configure commit
-        QCOMPARE(lifecycle.SetGrabbed(false, true, true), GrabResult::Changed);
-        QCOMPARE(lifecycle.SetGrabbed(false, true, true), GrabResult::Unchanged);
-        QVERIFY(lifecycle.RequestInteractivityUpdate()); // lock/focus loss is deferred
-        QVERIFY(lifecycle.OnConfigure()); // apply latest state after ack
-        QVERIFY(!lifecycle.OnConfigure()); // repeated configure must not reapply
-        QCOMPARE(lifecycle.SetGrabbed(true, true, true), GrabResult::Changed);
-        QVERIFY(!lifecycle.RequestInteractivityUpdate()); // configured surface updates now
-    }
-
-    void configureBeforeFocusLossAppliesImmediately()
-    {
-        KeyboardSurfaceLifecycle lifecycle;
-        lifecycle.BeginSurface();
-        QVERIFY(!lifecycle.OnConfigure()); // ordinary first configure
+        ModelKeyboardGrabState lifecycle;
         QCOMPARE(lifecycle.SetGrabbed(true, true, true),
-            KeyboardSurfaceLifecycle::GrabResult::Changed);
-        QVERIFY(!lifecycle.RequestInteractivityUpdate());
-        QCOMPARE(lifecycle.SetGrabbed(false, true, true),
-            KeyboardSurfaceLifecycle::GrabResult::Changed);
-        QVERIFY(!lifecycle.RequestInteractivityUpdate()); // no dirty deferred work
-        QVERIFY(!lifecycle.OnConfigure());
-    }
-
-    void cleanSetupReuseClearsOldSurfaceAndDirtyState()
-    {
-        KeyboardSurfaceLifecycle lifecycle;
-        lifecycle.BeginSurface();
-        QCOMPARE(lifecycle.SetGrabbed(true, true, true),
-            KeyboardSurfaceLifecycle::GrabResult::Changed);
-        QVERIFY(lifecycle.RequestInteractivityUpdate());
-        lifecycle.Reset(); // CleanWaylandContext
+            ModelKeyboardGrabState::GrabResult::Changed);
+        lifecycle.Reset();
         QVERIFY(!lifecycle.IsGrabbed());
-        QVERIFY(!lifecycle.IsConfigured());
-        lifecycle.BeginSurface(); // SetupWaylandContext on reused context
-        QVERIFY(!lifecycle.IsGrabbed());
-        QVERIFY(!lifecycle.IsConfigured());
         QCOMPARE(lifecycle.SetGrabbed(false, true, true),
-            KeyboardSurfaceLifecycle::GrabResult::Unchanged);
-        QVERIFY(!lifecycle.OnConfigure()); // no stale dirty commit
+            ModelKeyboardGrabState::GrabResult::Unchanged);
     }
 
     void reportsHotkeyTriggerFailureWithBindingId()

@@ -1,11 +1,10 @@
 # Arch Linux CI image for DeskWaifu.
 #
 # The ci target contains the proprietary Cubism SDK from the local build
-# context. Publish it only to the private project registry.
+# context. Keep it private: Gitea packages under a public owner are public too.
 #
-# Build and publish:
-#   podman build --target ci -t git.kals.top/kals/deskwaifu-ci:<tag> .
-#   podman push git.kals.top/kals/deskwaifu-ci:<tag>
+# Build and privately transfer to the runner:
+#   bash scripts/rebuild-ci-image.sh
 
 FROM archlinux:base-devel AS ci
 
@@ -21,6 +20,7 @@ RUN { printf 'Server = %s/$repo/os/$arch\n' "${PACMAN_MIRROR}"; \
         git \
         glu \
         libglvnd \
+        layer-shell-qt \
         mesa \
         ninja \
         nodejs \

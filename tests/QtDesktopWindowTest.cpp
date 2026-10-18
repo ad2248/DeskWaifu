@@ -14,7 +14,7 @@ void Require(bool condition, const char* message)
 {
     if (!condition) { std::cerr << message << '\n'; std::abort(); }
 }
-struct Events : IWaylandEvents
+struct Events : IDesktopWindowEvents
 {
     int presses = 0, releases = 0, resets = 0;
     uint32_t key = 0;
@@ -97,8 +97,9 @@ int main(int argc, char** argv)
             QKeyEvent repeat(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier, 9, 0, 0, {}, true);
             QCoreApplication::sendEvent(qt, &repeat);
             Require(events.key == 15, "Auto-repeat should not trigger a model binding");
-            window->SetKeyboardGrab(true);
-            Require(window->KeyboardGrabbed(), "Keyboard interactivity not enabled");
+            const auto grab = window->SetKeyboardGrab(true);
+            Require(window->KeyboardGrabbed() == (grab != ModelKeyboardGrabState::GrabResult::Rejected),
+                "Keyboard interactivity must match the compositor's keyboard capability");
             QEvent focusOut(QEvent::FocusOut);
             QCoreApplication::sendEvent(qt, &focusOut);
             Require(!window->KeyboardGrabbed() && events.resets > 0, "Lost focus must release/reset keys");

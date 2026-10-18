@@ -50,6 +50,8 @@ export WLR_LIBINPUT_NO_DEVICES=1
 export WLR_RENDERER=pixman
 export LIBGL_ALWAYS_SOFTWARE=1
 export GALLIUM_DRIVER=llvmpipe
+export QT_QPA_PLATFORM=wayland
+unset QT_WAYLAND_SHELL_INTEGRATION
 
 sway --config containers/sway.config >"$LOG_DIR/sway.log" 2>&1 &
 SWAY_PID=$!
@@ -247,8 +249,8 @@ timeout 20 "$BUILD_DIR/bin/deskwaifu-control" --smoke-test \
     >"$LOG_DIR/deskwaifu-control.log" 2>&1
 kill -0 "$APP_PID"
 {
-    # Exercise the actual layer-surface configure/EGL rebind path, including
-    # switching back with an already live GPU context and active model.
+    # Exercise Qt/LayerShellQt surface replacement while keeping the model's
+    # original OpenGL context and resources alive.
     swaymsg create_output >/dev/null
     for _ in {1..100}; do
         count=$(swaymsg -t get_outputs -r | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')
@@ -279,6 +281,14 @@ kill -0 "$APP_PID"
     assert_ok get_status
 }
 python3 tests/output_smoke.py
+WAYLAND_DEBUG=client timeout 30 "$BUILD_DIR/bin/qt-desktop-window-test" \
+    >"$LOG_DIR/qt-window.log" 2>&1
+python3 - "$LOG_DIR/qt-window.log" <<'PY'
+import pathlib, sys
+sys.path.insert(0, "tests")
+from qt_headless_smoke import assert_layer_shell
+assert_layer_shell(pathlib.Path(sys.argv[1]).read_text())
+PY
 assert_ok quit
 for _ in {1..200}; do
     state=$(ps -o stat= -p "$APP_PID" 2>/dev/null || true)

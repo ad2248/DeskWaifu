@@ -17,9 +17,9 @@ next model. Counts are deliberately conservative when paths are shared; the
 texture store reports actual deduplicated residency and retains *no unleased
 model texture*. Model count alone is not used as a memory budget.
 
-Teardown binds the **original EGL display/surface/context current on the
+Teardown binds the **original Qt OpenGL context current on the
 calling thread** before destroying the View, model/session, offscreen targets,
-texture store and Cubism framework; only then are EGL and Wayland destroyed.
+texture store and Cubism framework; only then are Qt's FBO, context and window destroyed.
 Before GPU initialization no binding is attempted. If a live GPU context
 cannot be made current, teardown reports failure and intentionally leaves
 dependent objects to process-level cleanup rather than invoking invalid GL

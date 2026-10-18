@@ -1,7 +1,7 @@
 # Module responsibilities (#77)
 
-`LAppDelegate` remains the composition root and currently retains legacy
-Wayland/output event glue (tracked by #80). Core responsibilities are split
+`LAppDelegate` remains the composition root; its window/output port is implemented
+only by `QtDesktopWindow`. Core responsibilities are split
 as follows; the arrows below are build dependencies, not ownership transfers.
 
 ```text
@@ -29,7 +29,8 @@ assets without merging model sessions); the existing name-based IPC lookup still
 selects the first sorted match for compatibility.
 
 `BUILD_TESTING=ON` runs catalog, cache, session, input, dependency direction
-and IPC transport tests even when `DESKWAIFU_BUILD_CONTROL=OFF`. The Qt client
+and IPC transport tests even when `DESKWAIFU_BUILD_CONTROL=OFF`. The Qt model
+window and its tests remain enabled in that configuration. The Qt client
 and panel tests are gated on the control application only. Configuration
 validation, state mutation invariants and visibility are owned by the future
 ApplicationService (#78); persistent/stream external controls belong to #79;

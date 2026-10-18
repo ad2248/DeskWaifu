@@ -2,11 +2,11 @@
 
 #include <cstdint>
 
-// Protocol callbacks report input; only the application chooses policy.
-class IWaylandEvents
+// Window events report input; only the application chooses policy.
+class IDesktopWindowEvents
 {
 public:
-    virtual ~IWaylandEvents() = default;
+    virtual ~IDesktopWindowEvents() = default;
     virtual void PointerEntered(double x, double y) = 0;
     virtual void PointerLeft() = 0;
     virtual void PointerMoved(double x, double y) = 0;

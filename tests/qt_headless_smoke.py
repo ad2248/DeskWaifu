@@ -40,7 +40,6 @@ def main():
     parser.add_argument("build", type=Path)
     parser.add_argument("sdk", type=Path)
     parser.add_argument("--scale", default="1")
-    parser.add_argument("--native", action="store_true", help="Run the model/IPC baseline with the native backend")
     args = parser.parse_args()
     for program in ("kwin_wayland", "dbus-run-session"):
         if not shutil.which(program):
@@ -105,17 +104,15 @@ def main():
                 client_env["DESKWAIFU_EXPECT_DPR"] = args.scale
                 if shutil.which("kscreen-doctor"):
                     client_env["DESKWAIFU_QT_TEST_HOTPLUG"] = "1"
-                window_log = ""
-                if not args.native:
-                    with (logs / "window.log").open("w") as log:
-                        subprocess.run([str(build / "bin/qt-desktop-window-test")], env=client_env,
-                                       stdout=log, stderr=subprocess.STDOUT, check=True, timeout=30)
-                    window_log = (logs / "window.log").read_text()
-                    assert_layer_shell(window_log)
-                    assert "outputs=2" in window_log, window_log[-3000:]
-                    assert window_log.count("Output switch configured and committed") >= 2
-                    if "DESKWAIFU_QT_TEST_HOTPLUG" in client_env:
-                        assert "hotplug=1" in window_log
+                with (logs / "window.log").open("w") as log:
+                    subprocess.run([str(build / "bin/qt-desktop-window-test")], env=client_env,
+                                   stdout=log, stderr=subprocess.STDOUT, check=True, timeout=30)
+                window_log = (logs / "window.log").read_text()
+                assert_layer_shell(window_log)
+                assert "outputs=2" in window_log, window_log[-3000:]
+                assert window_log.count("Output switch configured and committed") >= 2
+                if "DESKWAIFU_QT_TEST_HOTPLUG" in client_env:
+                    assert "hotplug=1" in window_log
                 # Ensure actual Wayland input regions include empty and nonempty states.
                 populated = set()
                 empty = nonempty = False
@@ -132,8 +129,7 @@ def main():
                     match = re.search(r"wl_region[@#](\d+)\.destroy\(", line)
                     if match:
                         populated.discard(match[1])
-                if not args.native:
-                    assert empty and nonempty, "Qt did not submit both empty and shaped input regions"
+                assert empty and nonempty, "Qt did not submit both empty and shaped input regions"
 
                 app = subprocess.Popen([str(build / "bin/deskwaifu"), "--models_dir", str(resources)],
                                        env=client_env, stdout=model_log, stderr=subprocess.STDOUT)
@@ -193,13 +189,13 @@ def main():
                 assert "GPU resources released before" in text, "Missing ordered GPU teardown"
                 assert re.search(r"wl_region[@#]\d+\.add\(", text), "Real model produced no input silhouette"
                 # SDK shader sets share program IDs and delete some twice at shutdown.
-                # The same diagnostic occurs with the native backend; do not hide any
-                # rendering error or expand this allowlist to unrelated GL failures.
+                # Do not hide rendering errors or expand this allowlist to unrelated
+                # GL failures. This diagnostic predates the Qt window migration.
                 errors = [line for line in text.splitlines() if "Mesa: error:" in line]
                 assert all(line == "Mesa: error: GL_INVALID_VALUE in glDeleteProgram" for line in errors), errors
                 assert "Wayland protocol error" not in text
                 if errors:
-                    print("Known Cubism SDK teardown diagnostic: duplicate glDeleteProgram (also present in native baseline)")
+                    print("Known Cubism SDK teardown diagnostic: duplicate glDeleteProgram")
                 print(f"Qt two-output/model/IPC/teardown smoke passed (scale={args.scale}); logs: {logs}")
             finally:
                 stop(app)

@@ -1,5 +1,5 @@
 #include "OutputController.hpp"
-#include "WaylandEvents.hpp"
+#include "DesktopWindowEvents.hpp"
 #include <vector>
 
 struct FakeBackend : IOutputBackend
@@ -18,7 +18,7 @@ struct FakeBackend : IOutputBackend
     }
 };
 
-struct FakeEvents : IWaylandEvents
+struct FakeEvents : IDesktopWindowEvents
 {
     int moves = 0, keys = 0, closed = 0;
     void PointerEntered(double, double) override {}
