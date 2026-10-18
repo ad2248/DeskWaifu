@@ -7,6 +7,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <string>
 #include <sys/types.h>
 #include <vector>
@@ -44,7 +45,17 @@ public:
     const std::string& GetSocketPath() const { return _socketPath; }
 
 private:
-    void HandleClient(int clientFd);
+    // Fixed transport bounds, not command semantics. Oversized frames close
+    // only their connection; a slow reader pauses its own command dispatch.
+    static constexpr std::size_t MaxClients = 16;
+    static constexpr std::size_t MaxRequestBytes = 64 * 1024;
+    static constexpr std::size_t MaxResponseBytes = 8 * 1024 * 1024;
+    static constexpr std::size_t AcceptsPerPoll = 4;
+    static constexpr std::size_t CommandsPerPoll = 16;
+    static constexpr std::size_t CommandsPerClient = 4;
+    static constexpr std::size_t WriteBytesPerClient = 64 * 1024;
+    static constexpr std::size_t WriteAttemptsPerClient = 16;
+
     ICommandService* _commands;
 
     int _serverFd;
@@ -53,18 +64,19 @@ private:
     dev_t _socketDevice = 0;
     ino_t _socketInode = 0;
     bool _ownsSocketPath = false;
-    std::vector<int> _clients;
-
-    // Partial read buffers per client fd
+    // One pending reply per connection; no unbounded response queue.
     struct ClientBuffer {
         int fd;
         std::string buf;
         std::string source;
+        std::string response;
+        std::size_t sent = 0;
+        bool eof = false;
     };
-    std::vector<ClientBuffer> _clientBuffers;
+    std::vector<ClientBuffer> _clients;
 
-    ClientBuffer& GetClientBuffer(int fd);
-    void RemoveClientBuffer(int fd);
+    bool FlushClient(ClientBuffer& client, std::size_t& bytes, std::size_t& attempts);
+    void CloseClient(const ClientBuffer& client);
     bool AcquireSocketLock();
     void ReleaseSocketLock();
 

@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <chrono>
 #include <poll.h>
+#include <utility>
 
 namespace {
 constexpr int ProbeTimeoutMs = 50;
@@ -111,7 +112,7 @@ bool LAppIPC::Initialize()
         return false;
     }
 
-    _serverFd = socket(AF_UNIX, SOCK_STREAM, 0);
+    _serverFd = socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
     if (_serverFd < 0)
     {
         fprintf(stderr, "[IPC] Failed to create socket: %s\n", strerror(errno));
@@ -119,10 +120,6 @@ bool LAppIPC::Initialize()
         _socketPath.clear();
         return false;
     }
-
-    // Set non-blocking
-    int flags = fcntl(_serverFd, F_GETFL, 0);
-    fcntl(_serverFd, F_SETFL, flags | O_NONBLOCK);
 
     struct sockaddr_un addr;
     memset(&addr, 0, sizeof(addr));
@@ -180,14 +177,8 @@ bool LAppIPC::Initialize()
 
 void LAppIPC::Release()
 {
-    for (size_t i = 0; i < _clients.size(); i++)
-    {
-        for (const auto& client : _clientBuffers)
-            if (client.fd == _clients[i] && _commands) _commands->Disconnected(client.source);
-        close(_clients[i]);
-    }
+    for (const auto& client : _clients) CloseClient(client);
     _clients.clear();
-    _clientBuffers.clear();
 
     if (_serverFd >= 0)
     {
@@ -222,91 +213,96 @@ void LAppIPC::ReleaseSocketLock()
     _socketLockFd = -1;
 }
 
-LAppIPC::ClientBuffer& LAppIPC::GetClientBuffer(int fd)
+void LAppIPC::CloseClient(const ClientBuffer& client)
 {
-    for (size_t i = 0; i < _clientBuffers.size(); i++)
-    {
-        if (_clientBuffers[i].fd == fd) return _clientBuffers[i];
-    }
-    ClientBuffer cb;
-    cb.fd = fd;
-    cb.source = "stream:" + std::to_string(++_nextConnection);
-    _clientBuffers.push_back(cb);
-    return _clientBuffers.back();
+    if (_commands) _commands->Disconnected(client.source);
+    close(client.fd);
 }
 
-void LAppIPC::RemoveClientBuffer(int fd)
+bool LAppIPC::FlushClient(ClientBuffer& client, std::size_t& bytes, std::size_t& attempts)
 {
-    for (size_t i = 0; i < _clientBuffers.size(); i++)
+    while (client.sent < client.response.size() && bytes && attempts)
     {
-        if (_clientBuffers[i].fd == fd)
-        {
-            _clientBuffers.erase(_clientBuffers.begin() + i);
-            return;
-        }
+        --attempts;
+        const ssize_t n = send(client.fd, client.response.data() + client.sent,
+            std::min(bytes, client.response.size() - client.sent), MSG_NOSIGNAL);
+        if (n > 0) {
+            client.sent += static_cast<std::size_t>(n);
+            bytes -= static_cast<std::size_t>(n);
+        } else if (n < 0 && errno == EINTR) continue;
+        else if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) return true;
+        else return false;
     }
+    if (client.sent == client.response.size()) {
+        // Release the large allocation as well as the logical pending bytes.
+        std::string{}.swap(client.response);
+        client.sent = 0;
+    }
+    return true;
 }
 
 void LAppIPC::Poll()
 {
     if (_serverFd < 0) return;
 
-    // Accept new connections
-    while (true)
+    // Count attempts as well as successes, so EINTR cannot bypass the budget.
+    for (std::size_t i = 0; i < AcceptsPerPoll; ++i)
     {
-        int clientFd = accept(_serverFd, NULL, NULL);
-        if (clientFd < 0) break;
-
-        int flags = fcntl(clientFd, F_GETFL, 0);
-        fcntl(clientFd, F_SETFL, flags | O_NONBLOCK);
-        _clients.push_back(clientFd);
-        GetClientBuffer(clientFd);
+        const int fd = accept4(_serverFd, nullptr, nullptr, SOCK_NONBLOCK | SOCK_CLOEXEC);
+        if (fd < 0) {
+            if (errno == EINTR) continue;
+            break;
+        }
+        if (_clients.size() == MaxClients) { close(fd); continue; }
+        ClientBuffer client;
+        client.fd = fd;
+        client.source = "stream:" + std::to_string(++_nextConnection);
+        _clients.push_back(std::move(client));
     }
 
-    // Process existing clients
-    std::vector<int> toRemove;
-    for (size_t i = 0; i < _clients.size(); i++)
+    // Rotate the first served connection so a global command budget does not
+    // permanently favor the first clients under sustained pipelined input.
+    if (!_clients.empty()) std::rotate(_clients.begin(), _clients.begin() + 1, _clients.end());
+    std::size_t commands = 0;
+    for (auto it = _clients.begin(); it != _clients.end();)
     {
-        int fd = _clients[i];
-        char buf[4096];
-        ssize_t n = read(fd, buf, sizeof(buf) - 1);
-
-        if (n > 0)
-        {
-            buf[n] = '\0';
-            ClientBuffer& client = GetClientBuffer(fd);
-            std::string& clientBuf = client.buf;
-            clientBuf += buf;
-
-            // Process complete lines
-            size_t pos;
-            while ((pos = clientBuf.find('\n')) != std::string::npos)
-            {
-                std::string line = clientBuf.substr(0, pos);
-                clientBuf.erase(0, pos + 1);
-
-                if (!line.empty())
-                {
-                    std::string response = _commands->Execute(line, client.source);
-                    response += "\n";
-                    // Best-effort write
-                    send(fd, response.c_str(), response.size(), MSG_NOSIGNAL);
-                }
+        auto& client = *it;
+        std::size_t bytes = WriteBytesPerClient, attempts = WriteAttemptsPerClient;
+        bool alive = FlushClient(client, bytes, attempts);
+        // Backpressure: do not execute another command or keep reading while
+        // this client's reply is still pending. Other clients keep progressing.
+        if (alive && client.response.empty()) {
+            char buffer[4096];
+            const auto capacity = std::min(sizeof(buffer), MaxRequestBytes + 1 - client.buf.size());
+            if (!client.eof && capacity) {
+                const ssize_t n = read(client.fd, buffer, capacity);
+                if (n > 0) client.buf.append(buffer, static_cast<std::size_t>(n));
+                else if (n == 0) client.eof = true;
+                else if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) alive = false;
             }
-        }
-        else if (n == 0 || (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK))
-        {
-            close(fd);
-            for (const auto& client : _clientBuffers)
-                if (client.fd == fd && _commands) _commands->Disconnected(client.source);
-            RemoveClientBuffer(fd);
-            toRemove.push_back(fd);
-        }
-    }
 
-    // Remove disconnected clients
-    for (size_t i = 0; i < toRemove.size(); i++)
-    {
-        _clients.erase(std::remove(_clients.begin(), _clients.end(), toRemove[i]), _clients.end());
+            for (std::size_t lines = 0; alive && client.response.empty() &&
+                lines < CommandsPerClient && commands < CommandsPerPoll; ++lines) {
+                const auto pos = client.buf.find('\n');
+                if (pos == std::string::npos) break;
+                if (pos > MaxRequestBytes) { alive = false; break; }
+                const std::string line = client.buf.substr(0, pos);
+                client.buf.erase(0, pos + 1);
+                ++commands; // Empty lines also consume work budget.
+                if (line.empty()) continue;
+                client.response = _commands->Execute(line, client.source);
+                if (client.response.size() > MaxResponseBytes) { alive = false; break; }
+                client.response += '\n';
+                alive = FlushClient(client, bytes, attempts);
+            }
+            const auto newline = client.buf.find('\n');
+            if (newline > MaxRequestBytes && client.buf.size() > MaxRequestBytes) alive = false;
+            // A peer may half-close its write end and still read our replies.
+            if (client.eof && client.response.empty() && newline == std::string::npos) alive = false;
+        }
+        if (!alive) {
+            CloseClient(client);
+            it = _clients.erase(it);
+        } else ++it;
     }
 }

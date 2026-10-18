@@ -19,7 +19,9 @@ App/Delegate (wiring, event loop)
 
 The catalog and input library do not link SDK, GL, Qt or Wayland. The IPC
 transport links none of these either; the application command handler is the
-only module interpreting JSON as model operations. The renderer and loader
+only module interpreting JSON as model operations. Both transport and handler
+include the small `ICommandService.hpp` contract; the transport does not include
+the concrete handler header. The renderer and loader
 depend on Cubism. The manager keeps cached model pointers private, with
 `ModelSession` owning them; View borrows only active pointers for the duration
 of a frame. A failed selection keeps the previous model active, while failed
