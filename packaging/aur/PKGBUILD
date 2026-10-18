@@ -1,8 +1,8 @@
 # Maintainer: kals
 # Cubism SDK is downloaded from Live2D. See README.md for its license terms.
 pkgname=deskwaifu-git
-pkgver=r52.g1ddfd09
-pkgrel=2
+pkgver=r262.g508b9ab
+pkgrel=1
 pkgdesc='Live2D desktop characters for Wayland with a Qt control panel'
 arch=('x86_64')
 url='https://github.com/ad2248/DeskWaifu'
