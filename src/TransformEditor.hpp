@@ -23,14 +23,14 @@ public:
 
     bool Initialize(const TransformSettings& initial)
     {
-        _runtime = _disk = initial;
+        _runtime = initial;
         if (!_service.SetTransform(initial.transform).ok) return false;
         ConfigStore::Snapshot snapshot;
         TransformSettings parsed;
         LAppConfig::Values values;
         if (!Read(snapshot, values, parsed, _error)) { _loadFailed = true; return true; } // Never overwrite an invalid file.
         _config.values = std::move(values);
-        _snapshot = snapshot; _runtime = _disk = parsed;
+        _snapshot = snapshot; _runtime = parsed;
         _service.SetTransform(parsed.transform);
         return true;
     }
@@ -166,7 +166,7 @@ public:
         LAppConfig::Values values;
         if (!Read(latest, values, settings, _error)) return AppResult::Failure(_error);
         _config.values = std::move(values);
-        _snapshot = latest; _runtime = _disk = settings; _owner.clear();
+        _snapshot = latest; _runtime = settings; _owner.clear();
         _dirty = _conflict = _screen = false; _saveAt = 0; ++_revision; _error.clear();
         _service.SetTransform(settings.transform);
         return AppResult::Success();
@@ -190,7 +190,7 @@ public:
         // Preserve the old comparison snapshot while unsaved local changes exist.
         if (_dirty && !Editing() && changed) { _conflict = true; _error = "External transform changes conflict with unsaved settings"; return; }
         _config.values = std::move(values);
-        _snapshot = latest; _disk = settings;
+        _snapshot = latest;
         if (changed) {
             ++_revision; _runtime = settings;
             if (Editing()) { _conflict = true; _dirty = false; _saveAt = 0; }
@@ -235,7 +235,7 @@ private:
         ConfigStore::Snapshot saved;
         if (!_store.Commit(document, expected, saved, _error, overwrite)) { _conflict = _error.find("conflict") != std::string::npos; return AppResult::Failure(_error); }
         _config.values = std::move(values);
-        _snapshot = saved; _runtime = _disk = settings; _dirty = _conflict = false; _saveAt = 0; ++_revision;
+        _snapshot = saved; _runtime = settings; _dirty = _conflict = false; _saveAt = 0; ++_revision;
         _service.SetTransform(settings.transform); _error.clear();
         return AppResult::Success();
     }
@@ -243,7 +243,7 @@ private:
     LAppConfig& _config;
     ConfigStore _store;
     ConfigStore::Snapshot _snapshot, _expected;
-    TransformSettings _disk, _runtime, _draft;
+    TransformSettings _runtime, _draft;
     std::string _owner, _error;
     bool _screen = false, _dirty = false, _conflict = false, _loadFailed = false;
     double _saveAt = 0, _reloadAt = 0;
