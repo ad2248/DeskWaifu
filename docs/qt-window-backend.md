@@ -84,7 +84,11 @@ with software rendering. If `kscreen-doctor` is installed it also disables and
 re-enables an output to exercise hotplug. It does not send input to the user's
 desktop. Logs remain in `BUILD_DIR/qt-smoke-logs/SCALE/`.
 
-The window integration executable verifies GL color/alpha, logical input masks,
+The window integration executable verifies GL color/alpha in both the model FBO
+and the actual window back buffer immediately before EGL swap. It deliberately
+sets the window draw target to `GL_NONE` before presentation to cover the NVIDIA
+invisible-window regression, including output replacement and fractional scale.
+It also verifies logical input masks,
 empty-input restoration, synthetic Qt mouse/key dispatch, keyboard focus loss,
 output switching and ordered teardown. The runner additionally checks actual
 Wayland input-region requests and runs a real SDK model through motion,

@@ -6,7 +6,9 @@
 #include <QOpenGLExtraFunctions>
 #include <QProcess>
 #include <QWindow>
+#include <EGL/egl.h>
 #include <cstdlib>
+#include <dlfcn.h>
 #include <iostream>
 
 namespace {
@@ -14,6 +16,9 @@ void Require(bool condition, const char* message)
 {
     if (!condition) { std::cerr << message << '\n'; std::abort(); }
 }
+QWindow* pixelWindow = nullptr;
+bool checkWindowPixels = false;
+int presentedFrames = 0;
 struct Events : IDesktopWindowEvents
 {
     int presses = 0, releases = 0, resets = 0;
@@ -30,6 +35,35 @@ struct Events : IDesktopWindowEvents
 };
 }
 
+// Inspect the actual window back buffer immediately before presentation, not
+// the model FBO (which can contain pixels even when nothing reaches the screen).
+extern "C" EGLBoolean eglSwapBuffers(EGLDisplay display, EGLSurface surface)
+{
+    if (checkWindowPixels) {
+        auto* context = QOpenGLContext::currentContext();
+        auto* gl = context->extraFunctions();
+        GLint previous;
+        gl->glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &previous);
+        gl->glBindFramebuffer(GL_READ_FRAMEBUFFER, context->defaultFramebufferObject());
+        gl->glReadBuffer(GL_BACK);
+        unsigned char pixel[4] = {};
+        const qreal dpr = pixelWindow->devicePixelRatio();
+        gl->glReadPixels(qRound(40 * dpr), qRound(40 * dpr), 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
+        Require(pixel[0] >= 49 && pixel[0] <= 53 && pixel[1] >= 100 && pixel[1] <= 104
+            && pixel[2] >= 202 && pixel[2] <= 206 && pixel[3] == 255,
+            "Model pixels did not reach the window back buffer before swap");
+        gl->glReadPixels(qRound(5 * dpr), qRound(5 * dpr), 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
+        Require(pixel[3] == 0, "Window background must remain transparent after presentation blit");
+        gl->glBindFramebuffer(GL_READ_FRAMEBUFFER, previous);
+        Require(gl->glGetError() == GL_NO_ERROR, "OpenGL error while checking window pixels");
+        checkWindowPixels = false;
+        ++presentedFrames;
+    }
+    static const auto swap = reinterpret_cast<decltype(&eglSwapBuffers)>(dlsym(RTLD_NEXT, "eglSwapBuffers"));
+    Require(swap, "Missing real EGL swap function");
+    return swap(display, surface);
+}
+
 int main(int argc, char** argv)
 {
     QGuiApplication app(argc, argv);
@@ -44,6 +78,7 @@ int main(int argc, char** argv)
     Require(!rejectPlatform, "Non-Wayland platform must be rejected rather than fall back to a regular window");
     auto* qt = dynamic_cast<QWindow*>(window.get());
     Require(qt, "Expected a Qt window");
+    pixelWindow = qt;
     const auto original = window->CurrentOutput();
     const auto outputs = window->Outputs();
     int frame = 0;
@@ -143,10 +178,18 @@ int main(int argc, char** argv)
             hotplugPassed = true;
             return false;
         }
+        // Reproduce NVIDIA/EGL's GL_NONE window draw target on every presented
+        // frame, including after output replacement. Present must select it.
+        gl->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, QOpenGLContext::currentContext()->defaultFramebufferObject());
+        const GLenum none = GL_NONE;
+        gl->glDrawBuffers(1, &none);
+        gl->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, window->Framebuffer());
+        checkWindowPixels = true;
         Require(gl->glGetError() == GL_NO_ERROR, "Unexpected OpenGL error");
         return true;
     });
     Require(ran && (frame == 6 || (frame == 8 && hotplugPassed)), "Qt event loop did not finish normally");
+    Require(presentedFrames >= 5, "Window pixel checks did not run across output replacement");
     const qreal dpr = qt->devicePixelRatio();
     if (qEnvironmentVariableIsSet("DESKWAIFU_EXPECT_DPR"))
         Require(qAbs(dpr - qEnvironmentVariable("DESKWAIFU_EXPECT_DPR").toDouble()) < .01,
@@ -155,5 +198,5 @@ int main(int argc, char** argv)
     window->Shutdown();
     Require(!window->Available(), "Shutdown must release the Qt surface/context");
     std::cout << "Qt window rendering/input/output/teardown passed; outputs=" << outputs.size()
-        << "; dpr=" << dpr << "; hotplug=" << hotplugPassed << '\n';
+        << "; dpr=" << dpr << "; hotplug=" << hotplugPassed << "; presented=" << presentedFrames << '\n';
 }
