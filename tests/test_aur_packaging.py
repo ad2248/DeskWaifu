@@ -6,6 +6,13 @@ import unittest
 
 
 class AurPackagingTest(unittest.TestCase):
+    def test_cli_python_runtime_dependency(self):
+        root = Path(__file__).resolve().parents[1]
+        recipe = root / "packaging/aur"
+        self.assertTrue((root / "deskwaifu-ctl").read_text().startswith("#!/usr/bin/env python3\n"))
+        self.assertIn("'python'", (recipe / "PKGBUILD").read_text())
+        self.assertIn("\tdepends = python\n", (recipe / ".SRCINFO").read_text())
+
     def test_aur_build_disables_automated_tests(self):
         recipe = Path(__file__).resolve().parents[1] / "packaging/aur"
         pkgbuild = (recipe / "PKGBUILD").read_text()
