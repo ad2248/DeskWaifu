@@ -119,7 +119,7 @@ public:
         QEventLoop loop;
         QTimer timer;
         QObject::connect(&timer, &QTimer::timeout, &loop, [&] {
-            if (drawing) return; // Output replacement runs a bounded nested event loop.
+            if (drawing || _switching) return; // Output replacement runs a bounded nested event loop.
             drawing = true;
             if (_needsRebind) ReconcileOutputs();
             if (!MakeCurrent() || !BindFrame()) {
