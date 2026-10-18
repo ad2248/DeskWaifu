@@ -27,13 +27,27 @@ int main()
     symlink(firstJson.c_str(), aliasJson.c_str());
     std::ofstream(ignored) << "skip";
 
+    const std::string firstAlias = first + "/Aalias";
+    const std::string crossAlias = second + "/Zalias";
+    if (symlink((first + "/Twin").c_str(), firstAlias.c_str()) != 0 ||
+        symlink((first + "/Twin").c_str(), crossAlias.c_str()) != 0) return 1;
+
     const auto models = ModelCatalog::Scan({second, root + "/missing", first, second});
-    const bool correct = models.size() == 3 && models[0].name == "Twin" &&
+    // The lexically first display name wins even when aliases are discovered
+    // through different roots, with unrelated models between them in name order.
+    const auto reordered = ModelCatalog::Scan({first, second, first});
+    bool correct = models.size() == 3 && models[0].name == "Aalias" &&
         models[1].name == "Twin" && models[2].name == "Twin" &&
         models[0].id == firstJson && models[1].id == aliasJson &&
         models[2].id == secondJson && models[0].id != models[1].id &&
         models[0].directory == first + "/Twin/";
+    correct = correct && reordered.size() == models.size();
+    for (std::size_t i = 0; correct && i < models.size(); ++i)
+        correct = models[i].id == reordered[i].id && models[i].name == reordered[i].name &&
+            models[i].directory == reordered[i].directory && models[i].jsonName == reordered[i].jsonName;
 
+    unlink(firstAlias.c_str());
+    unlink(crossAlias.c_str());
     unlink(firstJson.c_str());
     unlink(secondJson.c_str());
     unlink(aliasJson.c_str());

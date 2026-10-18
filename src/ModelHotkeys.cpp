@@ -9,6 +9,7 @@
 #include <set>
 #include <Utils/CubismJson.hpp>
 #include <Id/CubismIdManager.hpp>
+#include <Model/CubismModel.hpp>
 
 using namespace Live2D::Cubism::Framework;
 namespace
@@ -134,9 +135,12 @@ void ModelHotkeys::Load(const std::string& directory, const std::string& modelFi
     }
 }
 
-bool ModelHotkeys::IsActive(const Binding& binding) const
+bool ModelHotkeys::IsActive(const std::string& id) const
 {
-    return binding.expression >= 0 && _expressions[binding.expression].active;
+    for (const auto& binding : _bindings)
+        if (binding.id == id)
+            return binding.expression >= 0 && _expressions[binding.expression].active;
+    return false;
 }
 
 void ModelHotkeys::Reset()

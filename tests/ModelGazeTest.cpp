@@ -82,6 +82,27 @@ int main()
         frames(-0.8f, -0.6f, {});
         CHECK(model.GetModel()->GetParameterValue(eyeX) < -0.4f);
         CHECK(model.GetModel()->GetParameterValue(eyeY) < -0.3f);
+
+        // Exercise the real flags independently, including nonzero ignored
+        // fields and explicit zero overrides. No mirror input dispatcher.
+        model.GetModel()->SetParameterValue(mouth, .25f);
+        model.GetModel()->SetParameterValue(eyeX, 0);
+        model.GetModel()->SetParameterValue(eyeY, 0);
+        model.GetModel()->SaveParameters();
+        frames(-.8f, -.6f, {false, .9f, false, .8f, .6f});
+        CHECK(model.GetModel()->GetParameterValue(eyeX) < -.4f);
+        CHECK(std::abs(model.GetModel()->GetParameterValue(mouth) - .25f) < .001f);
+        frames(.8f, .6f, {true, .65f, false, -.8f, -.6f});
+        CHECK(model.GetModel()->GetParameterValue(eyeX) > .4f);
+        CHECK(std::abs(model.GetModel()->GetParameterValue(mouth) - .65f) < .001f);
+        frames(.8f, .6f, {false, .9f, true, -.8f, -.6f});
+        CHECK(model.GetModel()->GetParameterValue(eyeX) < -.4f);
+        CHECK(model.GetModel()->GetParameterValue(eyeY) < -.3f);
+        CHECK(std::abs(model.GetModel()->GetParameterValue(mouth) - .25f) < .001f);
+        frames(-.8f, -.6f, {true, 0, true, 0, 0});
+        CHECK(std::abs(model.GetModel()->GetParameterValue(eyeX)) < .01f);
+        CHECK(std::abs(model.GetModel()->GetParameterValue(eyeY)) < .01f);
+        CHECK(std::abs(model.GetModel()->GetParameterValue(mouth)) < .001f);
         frames(0.8f, 0.6f, {});
         CHECK(model.GetModel()->GetParameterValue(eyeX) > 0.4f);
         CHECK(model.GetModel()->GetParameterValue(eyeY) > 0.3f);
