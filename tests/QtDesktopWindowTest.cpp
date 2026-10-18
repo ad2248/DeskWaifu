@@ -6,6 +6,8 @@
 #include <QOpenGLExtraFunctions>
 #include <QProcess>
 #include <QWindow>
+#include <QEventLoop>
+#include <QTimer>
 #include <EGL/egl.h>
 #include <cstdlib>
 #include <dlfcn.h>
@@ -32,6 +34,24 @@ struct Events : IDesktopWindowEvents
     void KeyboardChanged() override { ++resets; }
     void KeyboardKey(uint32_t code, bool) override { key = code; }
     void SurfaceClosed() override {}
+};
+
+// A pointer-triggered output rebind runs outside the frame callback. Delay an
+// expose event so the frame timer definitely becomes ready in its nested loop.
+struct SlowExpose : QObject
+{
+    bool switching = false;
+    bool delayed = false;
+    bool eventFilter(QObject*, QEvent* event) override
+    {
+        if (switching && event->type() == QEvent::Expose) {
+            delayed = true;
+            QEventLoop wait;
+            QTimer::singleShot(80, &wait, &QEventLoop::quit);
+            wait.exec();
+        }
+        return false;
+    }
 };
 }
 
@@ -84,8 +104,21 @@ int main(int argc, char** argv)
     int frame = 0;
     int hotplugWait = 0;
     bool hotplugPassed = false;
+    SlowExpose expose;
+    qt->installEventFilter(&expose);
+    bool eventSwitchPassed = outputs.size() < 2;
+    if (outputs.size() > 1) QTimer::singleShot(0, [&] {
+        expose.switching = true;
+        Require(window->SwitchOutput(outputs[1].id), "Event-triggered output switch failed");
+        Require(window->SwitchOutput(original), "Event-triggered switch back failed");
+        expose.switching = false;
+        Require(expose.delayed, "Missing expose delay for nested-frame regression");
+        eventSwitchPassed = true;
+    });
     const bool hotplug = qEnvironmentVariableIsSet("DESKWAIFU_QT_TEST_HOTPLUG") && outputs.size() > 1;
     const bool ran = window->Run([&] {
+        Require(!expose.switching, "Frame callback ran during an event-triggered output rebind");
+        Require(eventSwitchPassed, "Event-triggered output switch did not complete");
         Require(QOpenGLContext::currentContext()->format().profile() != QSurfaceFormat::CoreProfile,
             "Cubism client-side vertex arrays require an OpenGL compatibility context");
         auto* gl = QOpenGLContext::currentContext()->extraFunctions();

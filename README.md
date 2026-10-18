@@ -326,6 +326,10 @@ clipping; a disabled crop uses the entire current surface without a fixed rectan
   is crossed. Releasing keeps the crop frame visible. Dragging the model moves
   only the model; the top-center handle moves both model and crop. With no crop
   configured, editing starts with a full-surface crop.
+- On Hyprland, releasing a locally dragged model on another monitor moves it to
+  that monitor and keeps screen editing active. The crop starts at the destination's
+  full extent; save it explicitly when ready. Frame handles and control-panel-owned
+  edits do not switch monitors. Without global cursor support, dragging stays local.
 - Double-click a crop frame edge or its top-center handle to apply and save, then
   hide the frame (the crop remains active). This also works for **Drag edit**
   started from the control panel. Failed saves keep the frame and preview; details
