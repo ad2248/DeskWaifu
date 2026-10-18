@@ -21,6 +21,7 @@
 #include <thread>
 #include <chrono>
 #include <unistd.h>
+#include <QCoreApplication>
 
 #define CHECK(condition) do { if (!(condition)) { \
     std::cerr << "Line " << __LINE__ << ": " << #condition << '\n'; return 1; \
@@ -38,6 +39,8 @@ public:
         {2, "right", 800, 0, 1000, 800}};
     OutputId current = 1;
     bool failSwitch = false, grabbed = false;
+    bool needsRebind = false;
+    std::function<void()> duringSwitch;
     int switches = 0;
     std::function<bool(const std::function<bool()>&)> script;
     EGLDisplay display = EGL_NO_DISPLAY;
@@ -72,12 +75,19 @@ public:
     bool KeyboardGrabbed() const override { return grabbed; }
     ModelKeyboardGrabState::GrabResult SetKeyboardGrab(bool value) override
     { grabbed = value; return ModelKeyboardGrabState::GrabResult::Changed; }
-    bool OutputNeedsRebind() const override { return false; }
-    void ReconcileOutputs() override {}
+    bool OutputNeedsRebind() const override { return needsRebind; }
+    void ReconcileOutputs() override { if (needsRebind) SwitchOutput(current); }
     std::vector<OutputSnapshot> Outputs() const override { return outputs; }
     OutputId CurrentOutput() const override { return current; }
     bool SwitchOutput(OutputId id) override
-    { if (failSwitch) return false; current = id; ++switches; return true; }
+    {
+        events->OutputSwitchStarted();
+        if (duringSwitch) duringSwitch();
+        if (!failSwitch) { current = id; ++switches; }
+        needsRebind = false;
+        events->OutputSwitchFinished();
+        return !failSwitch;
+    }
 };
 Window* window = nullptr;
 bool near(float a, float b) { return std::abs(a - b) < .0001f; }
@@ -292,6 +302,105 @@ int dragTest(LAppDelegate& app)
     CHECK(window->switches == initialSwitches + 1);
     return 0;
 }
+
+int stateTest(LAppDelegate& app)
+{
+    using State = ModelWindowState::State;
+    CHECK(app.WindowState() == State::NormalIdle);
+    click(300, 200); // Pending model tap must be discarded when editing begins.
+    CHECK(app.Settings().Begin("panel", false, 800, 600).ok);
+    CHECK(app.WindowState() == State::PanelEditing);
+    const auto transform = app.Service().Snapshot().transform;
+    click(400, 300);
+    window->events->PointerScroll(1);
+    CHECK(app.Service().Snapshot().transform.scale == transform.scale);
+    CHECK(app.Settings().Cancel("panel").ok);
+    CHECK(app.WindowState() == State::NormalIdle);
+    // A same-position click is not the second half of the old double click.
+    click(300, 200);
+    CHECK(!window->grabbed && hits.empty());
+    CHECK(app.Settings().Begin("panel", true, 800, 600).ok);
+    CHECK(app.WindowState() == State::EditIdle);
+    CHECK(!app.Settings().Apply("wrong-owner").ok);
+    CHECK(app.WindowState() == State::EditIdle);
+    window->events->PointerMoved(400, 300);
+    window->events->PointerButton(0, true);
+    CHECK(app.WindowState() == State::DraggingModel);
+    window->events->PointerMoved(420, 320);
+    CHECK(app.Settings().Display().transform.x != transform.x);
+    window->events->PointerButton(0, false);
+    CHECK(app.WindowState() == State::EditIdle);
+    const auto beforeMove = app.Settings().Display();
+    window->events->PointerMoved(400, 4);
+    window->events->PointerButton(0, true);
+    CHECK(app.WindowState() == State::MovingCrop);
+    window->events->PointerMoved(410, 14);
+    CHECK(app.Settings().Display().region.x == beforeMove.region.x + 10);
+    CHECK(app.Settings().Display().transform.x != beforeMove.transform.x);
+    window->events->PointerButton(0, false);
+    CHECK(app.WindowState() == State::EditIdle);
+    window->events->PointerMoved(10, 300);
+    window->events->PointerButton(0, true);
+    CHECK(app.WindowState() == State::ResizingCrop);
+    const auto beforeResize = app.Settings().Display().transform;
+    window->events->PointerMoved(60, 300);
+    CHECK(app.Settings().Display().region.width == 750);
+    CHECK(app.Settings().Display().transform.x == beforeResize.x);
+    // A panel cancellation immediately terminates the old captured gesture.
+    CHECK(app.Settings().Cancel("panel").ok);
+    CHECK(app.WindowState() == State::NormalIdle);
+    CHECK(app.Settings().Begin("next-panel", true, 800, 600).ok);
+    const auto fresh = app.Settings().Display();
+    window->events->PointerMoved(100, 300);
+    window->events->PointerButton(0, false);
+    CHECK(app.Settings().Display().region.width == fresh.region.width);
+    CHECK(app.WindowState() == State::EditIdle);
+    CHECK(app.Settings().Apply("next-panel").ok);
+    CHECK(app.WindowState() == State::NormalIdle);
+    // Hide/show must not leave a captured press or pending double click behind.
+    window->events->PointerMoved(400, 300);
+    window->events->PointerButton(0, true);
+    CHECK(app.Service().SetVisibility(false).ok);
+    CHECK(app.WindowState() == State::NormalIdle);
+    CHECK(app.Service().SetVisibility(true).ok);
+    window->events->PointerButton(0, false);
+    CHECK(!window->grabbed && hits.empty());
+    // A switch cancels the hand gesture but retains an intentional edit draft.
+    window->events->PointerMoved(400, 300);
+    window->events->PointerButton(0, true);
+    CHECK(app.WindowState() == State::Pressed);
+    window->events->PointerMoved(450, 350);
+    CHECK(app.WindowState() == State::DraggingModel);
+    const auto draft = app.Settings().Display();
+    bool blocked = false;
+    window->duringSwitch = [&] {
+        blocked = app.WindowState() == State::SwitchingOutput;
+        window->events->PointerMoved(700, 500);
+        window->events->PointerButton(0, true);
+        window->events->PointerScroll(1);
+    };
+    CHECK(window->SwitchOutput(1));
+    CHECK(blocked && app.WindowState() == State::EditIdle);
+    CHECK(app.Settings().Display().transform.x == draft.transform.x);
+    CHECK(app.Settings().Display().transform.scale == draft.transform.scale);
+    window->events->PointerButton(0, false);
+    CHECK(app.Settings().LocalScreenEditing());
+    // Hotplug cancels the transaction too, unlike an intentional switch.
+    window->needsRebind = true;
+    window->ReconcileOutputs();
+    CHECK(!app.Settings().Editing() && app.WindowState() == State::NormalIdle);
+    window->duringSwitch = {};
+    // Closing in a nested output wait must not be undone by OutputReady.
+    window->duringSwitch = [&] { app.AppEnd(); };
+    CHECK(window->SwitchOutput(1));
+    CHECK(app.GetIsEnd() && app.WindowState() == State::Closing);
+    const auto closing = app.Service().Snapshot().transform;
+    click(400, 300);
+    window->events->PointerScroll(1);
+    CHECK(app.Service().Snapshot().transform.scale == closing.scale);
+    CHECK(hits.empty());
+    return 0;
+}
 }
 
 // Observe diagnostics emitted by the real Manager and HitTest path. Do not
@@ -318,6 +427,7 @@ std::unique_ptr<DesktopWindow> CreateDesktopWindow()
 
 int main(int argc, char** argv)
 {
+    QCoreApplication application(argc, argv);
     CHECK(argc == 2);
     const auto directory = MakeTestTemporaryDirectory("deskwaifu-pointer");
     CHECK(!directory.empty());
@@ -356,8 +466,8 @@ int main(int argc, char** argv)
     if (!app->Initialize()) return window->context == EGL_NO_CONTEXT ? 77 : 1;
     const std::string scenario = argv[1];
     const int result = scenario == "release" ? releaseTest(*app) :
-        scenario == "transform" ? transformTest(*app) : dragTest(*app);
-    if (result == 0 && scenario != "transform") {
+        scenario == "transform" ? transformTest(*app) : scenario == "state" ? stateTest(*app) : dragTest(*app);
+    if (result == 0 && scenario != "transform" && scenario != "state") {
         window->script = [&](const std::function<bool()>& frame) {
             if (!frame()) return false;
             // The first real frame after an intentional cross-output rebind
@@ -370,6 +480,7 @@ int main(int argc, char** argv)
         CHECK(app->Run()); // Also executes the real frame and GPU teardown paths.
     } else {
         CHECK(app->Release());
+        CHECK(app->WindowState() == ModelWindowState::State::Closed);
         LAppDelegate::ReleaseInstance();
     }
     CHECK(unlink(model.c_str()) == 0 && unlink(moc.c_str()) == 0 && unlink(configured.c_str()) == 0 &&

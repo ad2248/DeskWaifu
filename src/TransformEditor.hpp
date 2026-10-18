@@ -6,6 +6,7 @@
 #include "LAppConfig.hpp"
 #include "ModelRegion.hpp"
 #include <limits>
+#include <functional>
 
 struct TransformSettings
 {
@@ -18,6 +19,7 @@ struct TransformSettings
 class TransformEditor
 {
 public:
+    void SetEditChanged(std::function<void()> changed) { _editChanged = std::move(changed); }
     TransformEditor(ApplicationService& service, LAppConfig& config)
         : _service(service), _config(config), _store(config.sourcePath.empty() ? LAppConfig::GetDefaultConfigPath() : config.sourcePath) {}
 
@@ -98,6 +100,7 @@ public:
         }
         _screen = _screen || screen;
         if (screen && !_draft.cropped) { _draft.region = {0, 0, width, height}; _draft.cropped = true; }
+        if (_editChanged) _editChanged();
         return AppResult::Success();
     }
 
@@ -114,7 +117,7 @@ public:
     {
         if (!OwnedBy(owner)) return AppResult::Failure("No edit transaction owned by this connection");
         auto result = Save(_draft, _expected, overwrite);
-        if (result.ok) { _owner.clear(); _screen = false; }
+        if (result.ok) { _owner.clear(); _screen = false; if (_editChanged) _editChanged(); }
         return result;
     }
 
@@ -123,6 +126,7 @@ public:
         if (!OwnedBy(owner)) return AppResult::Failure("No edit transaction owned by this connection");
         _owner.clear(); _screen = false; _conflict = false;
         _service.SetTransform(_runtime.transform);
+        if (_editChanged) _editChanged();
         return AppResult::Success();
     }
     void Disconnected(const std::string& owner) { if (OwnedBy(owner)) Cancel(owner); }
@@ -135,7 +139,7 @@ public:
     {
         if (Editing() && !OwnedBy(owner)) return AppResult::Failure("Another client is editing transforms");
         auto result = Save({}, Editing() ? _expected : _snapshot, overwrite);
-        if (result.ok) { _owner.clear(); _screen = false; }
+        if (result.ok) { _owner.clear(); _screen = false; if (_editChanged) _editChanged(); }
         return result;
     }
 
@@ -169,6 +173,7 @@ public:
         _snapshot = latest; _runtime = settings; _owner.clear();
         _dirty = _conflict = _screen = false; _saveAt = 0; ++_revision; _error.clear();
         _service.SetTransform(settings.transform);
+        if (_editChanged) _editChanged();
         return AppResult::Success();
     }
     void Tick(double now)
@@ -248,4 +253,5 @@ private:
     bool _screen = false, _dirty = false, _conflict = false, _loadFailed = false;
     double _saveAt = 0, _reloadAt = 0;
     unsigned _revision = 0;
+    std::function<void()> _editChanged;
 };

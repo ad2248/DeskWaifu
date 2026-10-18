@@ -18,6 +18,7 @@
 #include "ApplicationService.hpp"
 #include "TransformEditor.hpp"
 #include "ScreenCropInteraction.hpp"
+#include "ModelWindowState.hpp"
 #include "OutputSettings.hpp"
 #include <memory>
 #include "CompositorAdapter.hpp"
@@ -102,12 +103,14 @@ public:
     /**
     * @brief   アプリケーションを終了するかどうか。
     */
-    bool GetIsEnd() { return _isEnd; }
+    bool GetIsEnd() { return _windowState.Current() == ModelWindowState::State::Closing ||
+        _windowState.Current() == ModelWindowState::State::Closed; }
+    ModelWindowState::State WindowState() const { return _windowState.Current(); }
 
     /**
     * @brief   アプリケーションを終了する。
     */
-    void AppEnd() { _isEnd = true; }
+    void AppEnd() { _windowState.Send(ModelWindowState::Event::Close); }
 
     /**
      * @brief   アプリケーションの実行パスを設定する。
@@ -147,6 +150,8 @@ private:
     void KeyboardChanged() override { ResetKeyboardState(); }
     void KeyboardKey(std::uint32_t code, bool pressed) override { OnModelKey(code, pressed); }
     void SurfaceClosed() override { AppEnd(); }
+    void OutputSwitchStarted() override;
+    void OutputSwitchFinished() override;
     bool SelectModel(int index) override;
     int ModelIndex() const override;
     int ModelCount() const override;
@@ -169,6 +174,10 @@ private:
      * @brief   Cubism3の初期化
      */
     void InitializeCubism();
+    bool InitializeRuntime();
+    void SyncInteractionMode();
+    void CancelInteraction();
+    void StartCropGesture();
 
     LAppAllocator_Common _cubismAllocator;              ///< Cubism3 Allocator
     Csm::CubismFramework::Option _cubismOption;         ///< Cubism3 Option
@@ -197,7 +206,7 @@ private:
     KWinCursorTracker _kwinCursor;
     HoverOpacity _hoverOpacity;
     std::vector<unsigned char> _inputPixels;
-    bool _isEnd;                                 ///< APP終了しているか
+    ModelWindowState _windowState;
     bool _cubismStarted = false;
     LAppTextureManager* _textureManager;         ///< テクスチャマネージャー
     std::string _executeAbsolutePath;            ///< アプリケーションの実行パス

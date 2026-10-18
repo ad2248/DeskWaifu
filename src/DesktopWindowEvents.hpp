@@ -15,4 +15,7 @@ public:
     virtual void KeyboardChanged() = 0;
     virtual void KeyboardKey(std::uint32_t code, bool pressed) = 0;
     virtual void SurfaceClosed() = 0;
+    // Output replacement may pump Qt events while the surface is unavailable.
+    virtual void OutputSwitchStarted() {}
+    virtual void OutputSwitchFinished() {}
 };

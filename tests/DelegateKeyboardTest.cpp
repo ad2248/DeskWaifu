@@ -5,6 +5,7 @@
 #include "ModelHotkeys.hpp"
 
 #include <QDir>
+#include <QCoreApplication>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -105,8 +106,9 @@ extern "C" bool __wrap__ZN12ModelHotkeys7TriggerERKNSt7__cxx1112basic_stringIcSt
     return __real__ZN12ModelHotkeys7TriggerERKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEERS5_(hotkeys, id, error);
 }
 
-int main()
+int main(int argc, char** argv)
 {
+    QCoreApplication application(argc, argv);
     QTemporaryDir directory;
     CHECK(directory.isValid());
     CHECK(QDir(directory.path()).mkdir("model"));
