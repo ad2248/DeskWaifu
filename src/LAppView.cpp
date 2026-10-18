@@ -179,20 +179,22 @@ void LAppView::OnTouchesMoved(float px, float py) const
     _manager.OnDrag(viewX, viewY);
 }
 
-void LAppView::OnTouchesEnded(float px, float py) const
+void LAppView::OnTouchesEnded(float px, float py, ModelTransform transform) const
 {
     // タッチ終了
     _manager.OnDrag(0.0f, 0.0f);
     {
 
         // シングルタップ
-        float x = _deviceToScreen->TransformX(_touchManager->GetX()); // 論理座標変換した座標を取得。
-        float y = _deviceToScreen->TransformY(_touchManager->GetY()); // 論理座標変換した座標を取得。
+        if (_width <= 0 || _height <= 0) return;
+        const float x = 2.0f * px / _width - 1.0f;
+        const float y = 1.0f - 2.0f * py / _height;
         if (DebugTouchLogEnable)
         {
             LAppPal::PrintLogLn("[APP]touchesEnded x:%.2f y:%.2f", x, y);
         }
-        _manager.OnTap(x, y);
+        _manager.SetViewMatrix(_viewMatrix);
+        _manager.OnTap(x, y, _width, _height, transform);
     }
 }
 

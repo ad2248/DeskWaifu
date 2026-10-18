@@ -66,25 +66,6 @@ public:
     */
     bool Run();
 
-    /**
-    * @brief   OpenGL用 glfwSetMouseButtonCallback用関数。
-    *
-    * @param[in]       window            コールバックを呼んだWindow情報
-    * @param[in]       button            ボタン種類
-    * @param[in]       action            実行結果
-    * @param[in]       modify
-    */
-    void OnMouseCallBack(void* window, int button, int action, int modify);
-
-    /**
-    * @brief   OpenGL用 glfwSetCursorPosCallback用関数。
-    *
-    * @param[in]       window            コールバックを呼んだWindow情報
-    * @param[in]       x                 x座標
-    * @param[in]       y                 x座標
-    */
-    void OnMouseCallBack(void* window, double x, double y);
-
     void SetMousePosition(double x, double y);
     void OnModelKey(uint32_t code, bool pressed);
     /** @brief Reset pressed keys on keyboard enter/leave, seat capability loss,
@@ -160,9 +141,9 @@ public:
 private:
     void PointerEntered(double x, double y) override { _hoverOpacity.Enter(x, y); SetMousePosition(x, y); }
     void PointerLeft() override { _hoverOpacity.Leave(); }
-    void PointerMoved(double x, double y) override { OnMouseCallBack(nullptr, x, y); }
-    void PointerButton(int button, bool pressed) override { OnMouseCallBack(nullptr, button, pressed ? 1 : 0, 0); }
-    void PointerScroll(double vertical) override { OnScrollCallBack(nullptr, 0, vertical); }
+    void PointerMoved(double x, double y) override;
+    void PointerButton(int button, bool pressed) override;
+    void PointerScroll(double vertical) override;
     void KeyboardChanged() override { ResetKeyboardState(); }
     void KeyboardKey(std::uint32_t code, bool pressed) override { OnModelKey(code, pressed); }
     void SurfaceClosed() override { AppEnd(); }
@@ -208,6 +189,8 @@ private:
     float _mouseY;                               ///< マウスY座標
     InputController _input;
     void FlushPendingTap();
+    void ResizeView(int width, int height);
+    void MoveScreenDrag();
     void TrackGlobalCursor();
     void UpdateCursorLook(ModelTransform transform);
     CursorLook _cursorLook;
@@ -233,34 +216,4 @@ public:
     }
     float GetLookCenterX() const { return _lookCenterX; }
     float GetLookCenterY() const { return _lookCenterY; }
-    void OnScrollCallBack(void* window, double xoffset, double yoffset);
-
-};
-
-class EventHandler
-{
-public:
-    /**
-    * @brief   glfwSetMouseButtonCallback用コールバック関数。
-    */
-    static void OnMouseCallBack(void* window, int button, int action, int modify)
-    {
-        LAppDelegate::GetInstance()->OnMouseCallBack(window, button, action, modify);
-    }
-
-    /**
-    * @brief   glfwSetCursorPosCallback用コールバック関数。
-    */
-    static void OnMouseCallBack(void* window, double x, double y)
-    {
-         LAppDelegate::GetInstance()->OnMouseCallBack(window, x, y);
-    }
-    
-    /**
-    * @brief   glfwSetScrollCallback用コールバック関数。
-    */
-    static void OnScrollCallBack(void* window, double xoffset, double yoffset)
-    {
-         LAppDelegate::GetInstance()->OnScrollCallBack(window, xoffset, yoffset);
-    }
 };

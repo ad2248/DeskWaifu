@@ -95,10 +95,10 @@ public:
     /**
     * @brief   画面をタップしたときの処理
     *
-    * @param[in]   x   画面のX座標
-    * @param[in]   y   画面のY座標
+    * @param[in]   x   Clip-space X coordinate (-1..1).
+    * @param[in]   y   Clip-space Y coordinate (-1..1).
     */
-    void OnTap(Csm::csmFloat32 x, Csm::csmFloat32 y);
+    void OnTap(Csm::csmFloat32 x, Csm::csmFloat32 y, int width, int height, ModelTransform transform);
 
     /**
     * @brief   画面を更新するときの処理

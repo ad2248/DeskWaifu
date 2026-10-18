@@ -57,6 +57,8 @@ public:
         return AppResult::Success();
     }
 
+    bool DraggingModel() const { return _moved && _handle == CropInteraction::Model; }
+
 private:
     static bool OutsideCrop(const TransformSettings& settings, int x, int y)
     {
