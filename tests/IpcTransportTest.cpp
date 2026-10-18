@@ -1,4 +1,5 @@
 #include "LAppIPC.hpp"
+#include "IpcSocketPath.hpp"
 #include "ExternalControlState.hpp"
 #include "RuntimeLifecycle.hpp"
 
@@ -41,6 +42,8 @@ int main()
 {
     static_assert(!std::is_copy_constructible<LAppIPC>::value, "IPC owns file descriptors");
     static_assert(!std::is_copy_assignable<LAppIPC>::value, "IPC owns file descriptors");
+    if (IpcSocketPathForUid(nullptr, 1000) == IpcSocketPathForUid(nullptr, 1001) ||
+        IpcSocketPathForUid("/run/user/1000", 1000) != "/run/user/1000/deskwaifu.sock") return 1;
     char path[] = "/tmp/deskwaifu-ipc-test-XXXXXX";
     if (!mkdtemp(path)) return 1;
     const char* previous = getenv("XDG_RUNTIME_DIR");

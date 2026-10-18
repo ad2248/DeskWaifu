@@ -10,6 +10,7 @@
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QtTest>
+#include <unistd.h>
 
 class DeskWaifuClientTest : public QObject
 {
@@ -23,7 +24,17 @@ private slots:
     void retriesUnacknowledgedQuery_data();
     void reconnectsAfterFailedAttempts();
     void reconnectsAfterFailedAttempts_data();
+    void usesPrivateFallbackSocketPath();
 };
+
+void DeskWaifuClientTest::usesPrivateFallbackSocketPath()
+{
+    const auto oldRuntime = qgetenv("XDG_RUNTIME_DIR");
+    const auto restoreRuntime = qScopeGuard([&] { qputenv("XDG_RUNTIME_DIR", oldRuntime); });
+    qunsetenv("XDG_RUNTIME_DIR");
+    DeskWaifuClient client;
+    QCOMPARE(client.socketPath(), QStringLiteral("/tmp/deskwaifu-%1/deskwaifu.sock").arg(getuid()));
+}
 
 void DeskWaifuClientTest::reconnectsAfterFailedAttempts_data()
 {

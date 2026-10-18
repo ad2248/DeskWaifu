@@ -1,4 +1,5 @@
 #include "LAppIPC.hpp"
+#include "IpcSocketPath.hpp"
 
 #include <sys/socket.h>
 #include <sys/file.h>
@@ -71,6 +72,14 @@ bool RemoveStaleSocket(const std::string& path, const sockaddr_un& address)
         current.st_ino != before.st_ino || !S_ISSOCK(current.st_mode)) return false;
     return unlink(path.c_str()) == 0;
 }
+
+bool EnsurePrivateSocketDirectory(const std::string& path)
+{
+    if (mkdir(path.c_str(), 0700) != 0 && errno != EEXIST) return false;
+    struct stat directory{};
+    return lstat(path.c_str(), &directory) == 0 && S_ISDIR(directory.st_mode) &&
+        directory.st_uid == getuid() && (directory.st_mode & 077) == 0;
+}
 }
 
 LAppIPC::LAppIPC()
@@ -87,15 +96,14 @@ LAppIPC::~LAppIPC()
 bool LAppIPC::Initialize()
 {
     if (!_commands) return false;
-    // Determine socket path
     const char* runtimeDir = getenv("XDG_RUNTIME_DIR");
-    if (runtimeDir && strlen(runtimeDir) > 0)
-    {
-        _socketPath = std::string(runtimeDir) + "/deskwaifu.sock";
-    }
-    else
-    {
-        _socketPath = "/tmp/deskwaifu.sock";
+    _socketPath = IpcSocketPathForUid(runtimeDir, getuid());
+    if (!runtimeDir || !*runtimeDir) {
+        if (!EnsurePrivateSocketDirectory(IpcSocketDirectoryForUid(getuid()))) {
+            fprintf(stderr, "[IPC] Failed to prepare private fallback runtime directory: %s\n", strerror(errno));
+            _socketPath.clear();
+            return false;
+        }
     }
     if (!AcquireSocketLock()) {
         fprintf(stderr, "[IPC] Socket endpoint is being initialized by another instance\n");
