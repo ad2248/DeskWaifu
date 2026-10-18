@@ -1,6 +1,7 @@
 #include "LAppIPC.hpp"
 
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/un.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -35,9 +36,6 @@ bool LAppIPC::Initialize()
         _socketPath = "/tmp/deskwaifu.sock";
     }
 
-    // Remove stale socket
-    unlink(_socketPath.c_str());
-
     _serverFd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (_serverFd < 0)
     {
@@ -54,20 +52,53 @@ bool LAppIPC::Initialize()
     addr.sun_family = AF_UNIX;
     strncpy(addr.sun_path, _socketPath.c_str(), sizeof(addr.sun_path) - 1);
 
-    if (bind(_serverFd, (struct sockaddr*)&addr, sizeof(addr)) < 0)
+    bool bound = bind(_serverFd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0;
+    if (!bound)
+    {
+        if (errno == EADDRINUSE)
+        {
+            const int probe = socket(AF_UNIX, SOCK_STREAM, 0);
+            bool active = false;
+            int probeError = 0;
+            if (probe >= 0) {
+                active = connect(probe, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0;
+                if (!active) probeError = errno;
+                close(probe);
+            }
+            if (!active && probeError == ECONNREFUSED && unlink(_socketPath.c_str()) == 0 &&
+                bind(_serverFd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0) bound = true;
+        }
+    }
+    if (!bound)
     {
         fprintf(stderr, "[IPC] Failed to bind socket: %s\n", strerror(errno));
         close(_serverFd);
         _serverFd = -1;
+        _socketPath.clear();
         return false;
     }
+    struct stat socketStat{};
+    if (lstat(_socketPath.c_str(), &socketStat) != 0)
+    {
+        fprintf(stderr, "[IPC] Failed to inspect socket: %s\n", strerror(errno));
+        close(_serverFd);
+        _serverFd = -1;
+        unlink(_socketPath.c_str());
+        _socketPath.clear();
+        return false;
+    }
+    _socketDevice = socketStat.st_dev;
+    _socketInode = socketStat.st_ino;
+    _ownsSocketPath = true;
 
     if (listen(_serverFd, 4) < 0)
     {
         fprintf(stderr, "[IPC] Failed to listen: %s\n", strerror(errno));
         close(_serverFd);
         _serverFd = -1;
-        unlink(_socketPath.c_str());
+        if (_ownsSocketPath) unlink(_socketPath.c_str());
+        _ownsSocketPath = false;
+        _socketPath.clear();
         return false;
     }
 
@@ -92,11 +123,14 @@ void LAppIPC::Release()
         _serverFd = -1;
     }
 
-    if (!_socketPath.empty())
+    struct stat socketStat{};
+    if (_ownsSocketPath && !_socketPath.empty() && lstat(_socketPath.c_str(), &socketStat) == 0 &&
+        socketStat.st_dev == _socketDevice && socketStat.st_ino == _socketInode)
     {
         unlink(_socketPath.c_str());
-        _socketPath.clear();
     }
+    _ownsSocketPath = false;
+    _socketPath.clear();
 }
 
 LAppIPC::ClientBuffer& LAppIPC::GetClientBuffer(int fd)

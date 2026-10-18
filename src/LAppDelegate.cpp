@@ -162,7 +162,14 @@ bool LAppDelegate::Initialize()
     _ipc = new LAppIPC();
     _commands = new AppCommandHandler(*this, *_manager);
     _ipc->SetCommandService(*_commands);
-    _ipc->Initialize();
+    if (!_ipc->Initialize()) {
+        LAppPal::PrintLogLn("[IPC] Initialization failed; refusing to start without command endpoint");
+        delete _ipc;
+        _ipc = nullptr;
+        delete _commands;
+        _commands = nullptr;
+        return false;
+    }
 
     return true;
 }

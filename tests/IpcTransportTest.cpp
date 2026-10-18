@@ -8,6 +8,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/time.h>
+#include <type_traits>
 #include <unistd.h>
 
 struct FakeCommands : ICommandService
@@ -33,6 +34,8 @@ struct FakeCommands : ICommandService
 
 int main()
 {
+    static_assert(!std::is_copy_constructible<LAppIPC>::value, "IPC owns file descriptors");
+    static_assert(!std::is_copy_assignable<LAppIPC>::value, "IPC owns file descriptors");
     char path[] = "/tmp/deskwaifu-ipc-test-XXXXXX";
     if (!mkdtemp(path)) return 1;
     const char* previous = getenv("XDG_RUNTIME_DIR");
@@ -40,9 +43,43 @@ int main()
     setenv("XDG_RUNTIME_DIR", path, 1);
 
     FakeCommands commands;
+    LAppIPC first;
+    first.SetCommandService(commands);
+    bool ok = first.Initialize();
+    LAppIPC second;
+    second.SetCommandService(commands);
+    if (second.Initialize()) ok = false;
+    int ownershipClient = socket(AF_UNIX, SOCK_STREAM, 0);
+    sockaddr_un ownershipAddr{};
+    ownershipAddr.sun_family = AF_UNIX;
+    std::strncpy(ownershipAddr.sun_path, first.GetSocketPath().c_str(), sizeof(ownershipAddr.sun_path) - 1);
+    if (ok) ok = connect(ownershipClient, reinterpret_cast<sockaddr*>(&ownershipAddr), sizeof(ownershipAddr)) == 0;
+    close(ownershipClient);
+    second.Release();
+    ownershipClient = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (ok) ok = connect(ownershipClient, reinterpret_cast<sockaddr*>(&ownershipAddr), sizeof(ownershipAddr)) == 0;
+    close(ownershipClient);
+
+    if (unlink(first.GetSocketPath().c_str()) != 0) ok = false;
+    const int replacement = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (replacement < 0 || bind(replacement, reinterpret_cast<sockaddr*>(&ownershipAddr), sizeof(ownershipAddr)) != 0 ||
+        listen(replacement, 1) != 0) ok = false;
+    first.Release();
+    if (access(ownershipAddr.sun_path, F_OK) != 0) ok = false;
+    if (replacement >= 0) close(replacement);
+    unlink(ownershipAddr.sun_path);
+
+    const std::string stalePath = std::string(path) + "/deskwaifu.sock";
+    int stale = socket(AF_UNIX, SOCK_STREAM, 0);
+    sockaddr_un staleAddr{};
+    staleAddr.sun_family = AF_UNIX;
+    std::strncpy(staleAddr.sun_path, stalePath.c_str(), sizeof(staleAddr.sun_path) - 1);
+    if (stale < 0 || bind(stale, reinterpret_cast<sockaddr*>(&staleAddr), sizeof(staleAddr)) != 0) ok = false;
+    if (stale >= 0) close(stale);
+
     LAppIPC transport;
     transport.SetCommandService(commands);
-    bool ok = transport.Initialize();
+    if (ok) ok = transport.Initialize();
     int client = socket(AF_UNIX, SOCK_STREAM, 0);
     timeval limit{2, 0};
     setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &limit, sizeof(limit));

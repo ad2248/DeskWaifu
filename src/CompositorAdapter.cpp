@@ -21,6 +21,19 @@
 namespace {
 constexpr int TimeoutMs = 250;
 
+bool WaitForExitBefore(pid_t pid, std::chrono::steady_clock::time_point deadline, int& status)
+{
+    while (true) {
+        const pid_t result = waitpid(pid, &status, WNOHANG);
+        if (result == pid) return true;
+        if (result < 0 && errno != EINTR) return false;
+        const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+            deadline - std::chrono::steady_clock::now()).count();
+        if (remaining <= 0) return false;
+        poll(nullptr, 0, static_cast<int>(remaining));
+    }
+}
+
 // Enumerate in the parent: readdir and sysconf are not async-signal-safe in a
 // forked multithreaded process. The command pipe already exists at this point.
 bool OpenDescriptors(std::vector<int>& descriptors)
@@ -149,10 +162,14 @@ Capability<std::string> BoundedCompositorTransport::Command(const std::vector<st
     }
     setpgid(pid, pid);
     close(pipes[1]);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(TimeoutMs);
     auto output = ReadBounded(pipes[0]);
     close(pipes[0]);
-    if (!output) kill(-pid, SIGKILL);
     int status = 0;
+    if (!output || !WaitForExitBefore(pid, deadline, status)) {
+        output.status = CapabilityStatus::Unavailable;
+        kill(-pid, SIGKILL);
+    }
     while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {}
     if (output && (!WIFEXITED(status) || WEXITSTATUS(status))) output.status = CapabilityStatus::Failed;
     return output;
