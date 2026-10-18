@@ -6,6 +6,8 @@ A Linux desktop Live2D model viewer that renders Live2D characters as transparen
 
 Live2D models float on your desktop with click-through transparency — only the model itself receives input. Built with the Live2D Cubism SDK for Native, OpenGL, Qt 6 and LayerShellQt. Qt manages the Wayland window and its graphics context; there is no separate native window backend.
 
+The legacy GLFW minimum demo has been retired; the Qt application is the only supported entry point.
+
 <!-- Screenshot or GIF placeholder: place a demo image/gif here -->
 <!-- ![DeskWaifu Demo](docs/demo.gif) -->
 

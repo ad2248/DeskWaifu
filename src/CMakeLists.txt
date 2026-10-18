@@ -21,22 +21,6 @@ add_library(deskwaifu_renderer STATIC ModelRenderer.cpp)
 target_include_directories(deskwaifu_renderer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${COMMON_SRC_PATH})
 target_link_libraries(deskwaifu_renderer PUBLIC Framework)
 
-if (CSM_MINIMUM_DEMO)
-  target_sources(${APP_NAME}
-  PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/LAppDefine.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/LAppDefine.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/LAppPal.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/LAppPal.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/LAppTextureManager.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/LAppTextureManager.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/mainMinimum.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/CubismUserModelExtend.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/CubismUserModelExtend.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/MouseActionManager.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/MouseActionManager.hpp
-  )
-else ()
   target_sources(${APP_NAME}
     PRIVATE
       ${CMAKE_CURRENT_SOURCE_DIR}/LAppConfig.cpp
@@ -67,13 +51,10 @@ else ()
       ${CMAKE_CURRENT_SOURCE_DIR}/LAppView.hpp
       ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp
   )
-endif ()
 
 target_include_directories(${APP_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-if (NOT CSM_MINIMUM_DEMO)
-  target_link_libraries(${APP_NAME} deskwaifu_loader deskwaifu_renderer deskwaifu_ipc deskwaifu_input deskwaifu_output deskwaifu_compositor deskwaifu_kwin_cursor)
-  find_package(Qt6 6.5 REQUIRED COMPONENTS Gui OpenGL WaylandClient)
-  find_package(LayerShellQt 6.6 REQUIRED)
-  target_sources(${APP_NAME} PRIVATE QtDesktopWindow.cpp)
-  target_link_libraries(${APP_NAME} Qt6::Gui Qt6::OpenGL Qt6::WaylandClient LayerShellQt::Interface)
-endif ()
+target_link_libraries(${APP_NAME} deskwaifu_loader deskwaifu_renderer deskwaifu_ipc deskwaifu_input deskwaifu_output deskwaifu_compositor deskwaifu_kwin_cursor)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Gui OpenGL WaylandClient)
+find_package(LayerShellQt 6.6 REQUIRED)
+target_sources(${APP_NAME} PRIVATE QtDesktopWindow.cpp)
+target_link_libraries(${APP_NAME} Qt6::Gui Qt6::OpenGL Qt6::WaylandClient LayerShellQt::Interface)
