@@ -2,6 +2,7 @@
 #include "TransformEditor.hpp"
 #include "ScreenCropInteraction.hpp"
 #include "HoverOpacitySettings.hpp"
+#include "MouseLookSettings.hpp"
 #include <QLabel>
 #include <QCheckBox>
 #include <QComboBox>
@@ -42,6 +43,119 @@ class MainWindowTransformTest : public QObject
 {
     Q_OBJECT
 private slots:
+    void mouseLookRangeSavesOnRelease()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const int fd = open(QFile::encodeName(directory.path()).constData(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+        QVERIFY(fd >= 0);
+        const auto closeRuntime = qScopeGuard([fd] { close(fd); });
+        const auto previousRuntime = qgetenv("XDG_RUNTIME_DIR");
+        const auto restoreRuntime = qScopeGuard([previousRuntime] { qputenv("XDG_RUNTIME_DIR", previousRuntime); });
+        const QString runtimePath = QStringLiteral("/proc/self/fd/%1").arg(fd);
+        qputenv("XDG_RUNTIME_DIR", runtimePath.toLocal8Bit());
+        const auto path = directory.path() + "/custom.json";
+        LAppConfig config; config.sourcePath = path.toStdString();
+        MouseLookSettings settings(config);
+        QLocalServer server;
+        QVERIFY(server.listen(runtimePath + "/deskwaifu.sock"));
+        int mutations = 0;
+        bool supported = true, disconnectAfterSave = false, delayQuery = false;
+        QByteArray delayedResponse;
+        QLocalSocket* connection = nullptr;
+        connect(&server, &QLocalServer::newConnection, this, [&] {
+            auto* socket = server.nextPendingConnection();
+            connection = socket;
+            connect(socket, &QLocalSocket::readyRead, this, [&, socket] {
+                while (socket->canReadLine()) {
+                    const auto json = socket->readLine();
+                    const auto input = QJsonDocument::fromJson(json).object();
+                    const auto command = input.value("command").toString();
+                    QJsonObject response{{"ok", true}};
+                    if (command == "get_mouse_look" || command == "set_mouse_look") {
+                        const bool mutation = command == "set_mouse_look";
+                        if (mutation) ++mutations;
+                        const auto result = !supported ? AppResult::Failure("unknown command")
+                            : mutation ? settings.Set(json.toStdString()) : settings.Refresh();
+                        response.insert("ok", result.ok);
+                        response.insert("error", QString::fromStdString(result.error));
+                        if (supported) response.insert("radius", settings.Radius());
+                        if (!mutation && delayQuery) {
+                            delayQuery = false;
+                            delayedResponse = QJsonDocument(response).toJson(QJsonDocument::Compact) + '\n';
+                            return;
+                        }
+                        if (mutation && disconnectAfterSave) {
+                            disconnectAfterSave = false;
+                            socket->abort();
+                            return;
+                        }
+                    }
+                    socket->write(QJsonDocument(response).toJson(QJsonDocument::Compact) + '\n');
+                    socket->flush();
+                }
+            });
+        });
+        MainWindow window;
+        window.show(); window.activateWindow();
+        window.findChild<QTabWidget*>("tabWidget")->setCurrentWidget(window.findChild<QWidget*>("transformTab"));
+        auto* group = window.findChild<QWidget*>("mouseLookGroup");
+        auto* slider = window.findChild<QSlider*>("mouseLookRadiusSlider");
+        auto* spin = window.findChild<QDoubleSpinBox*>("mouseLookRadiusSpin");
+        auto* status = window.findChild<QLabel*>("operationStatusLabel");
+        QVERIFY(group && slider && spin && status);
+        QTRY_VERIFY(group->isEnabled());
+        QCOMPARE(slider->value(), 50);
+        QCOMPARE(spin->value(), .5);
+        QCOMPARE(mutations, 0);
+        QVERIFY(!slider->hasTracking() && !spin->keyboardTracking());
+        delayQuery = true;
+        QTRY_VERIFY_WITH_TIMEOUT(!delayedResponse.isEmpty(), 3000);
+        slider->setSliderDown(true);
+        slider->setSliderPosition(25);
+        QTest::qWait(100);
+        QCOMPARE(spin->value(), .25);
+        QCOMPARE(settings.Radius(), .5f);
+        QCOMPARE(mutations, 0);
+        slider->setSliderDown(false);
+        QCOMPARE(slider->value(), 25);
+        connection->write(delayedResponse);
+        connection->flush();
+        QTRY_VERIFY(settings.Radius() == .25f && group->isEnabled());
+        QCOMPARE(mutations, 1);
+        QCOMPARE(slider->value(), 25); // An older query cannot overwrite the user's release.
+        QCOMPARE(spin->value(), .25);
+        spin->setValue(.7);
+        QTRY_VERIFY(settings.Radius() == .7f && group->isEnabled());
+        QCOMPARE(slider->value(), 70);
+        QTest::keyClick(slider, Qt::Key_Home);
+        QTRY_VERIFY(settings.Radius() == 0 && group->isEnabled());
+        LAppConfig restarted; QVERIFY(restarted.LoadFromFile(path.toStdString()));
+        QCOMPARE(restarted.values.mouseLookRadius, 0.f);
+        ConfigStore store(path.toStdString());
+        ConfigStore::Snapshot disk; std::string error;
+        QVERIFY(store.Read(disk, error));
+        { QFile file(path); QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate)); file.write("{invalid"); }
+        slider->setValue(80);
+        QTRY_VERIFY(group->isEnabled() && status->text().contains("Invalid JSON"));
+        QCOMPARE(slider->value(), 0);
+        QCOMPARE(spin->value(), 0.);
+        { QFile file(path); QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate)); file.write(QByteArray::fromStdString(disk.document)); }
+        disconnectAfterSave = true;
+        const int beforeDisconnect = mutations;
+        slider->setValue(35);
+        QTRY_VERIFY(settings.Radius() == .35f && group->isEnabled());
+        QCOMPARE(mutations, beforeDisconnect + 1);
+        QCOMPARE(slider->value(), 35);
+        const auto screenshot = qEnvironmentVariable("DESKWAIFU_GAZE_SCREENSHOT");
+        if (!screenshot.isEmpty()) QVERIFY(window.grab().save(screenshot));
+        supported = false;
+        connection->abort();
+        QTRY_VERIFY(!group->isEnabled());
+        QTRY_VERIFY_WITH_TIMEOUT(group->toolTip() == "unknown command", 5000);
+        QCOMPARE(mutations, beforeDisconnect + 1); // Reconnects never replay mutations.
+    }
+
     void displaySelection()
     {
         QTemporaryDir directory;
@@ -287,7 +401,7 @@ private slots:
         QVERIFY(store.Read(disk, error));
         QCOMPARE(disk.values.at("model_x"), std::string("2.5"));
         QVERIFY(!disk.values.count("extra"));
-        QCOMPARE(disk.values.size(), size_t(11));
+        QCOMPARE(disk.values.size(), size_t(12));
         QTest::keyClick(slider, Qt::Key_Home);
         QTRY_VERIFY_WITH_TIMEOUT(settings.Opacity() == 0 && group->isEnabled(), 2000);
         QTest::keyClick(slider, Qt::Key_End);
@@ -481,7 +595,7 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(service.Snapshot().transform.x, 0.f, 2000);
         QTRY_VERIFY_WITH_TIMEOUT(!enabled->isChecked(), 2000);
         QCOMPARE(service.Snapshot().transform.scale, 1.f);
-        QVERIFY(store.Read(disk, error)); QCOMPARE(disk.values.size(), size_t(11));
+        QVERIFY(store.Read(disk, error)); QCOMPARE(disk.values.size(), size_t(12));
         QVERIFY(!disk.values.count("model_region"));
         QCOMPARE(disk.values.at("model_x"), std::string("0"));
         QCOMPARE(disk.values.at("model_y"), std::string("0"));

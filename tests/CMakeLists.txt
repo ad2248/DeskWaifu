@@ -94,6 +94,10 @@ add_executable(hover-opacity-settings-test HoverOpacitySettingsTest.cpp ../src/C
 target_include_directories(hover-opacity-settings-test PRIVATE ../src)
 add_test(NAME hover-opacity-settings COMMAND hover-opacity-settings-test)
 
+add_executable(mouse-look-settings-test MouseLookSettingsTest.cpp ../src/ConfigStore.cpp ../src/LAppConfig.cpp)
+target_include_directories(mouse-look-settings-test PRIVATE ../src)
+add_test(NAME mouse-look-settings COMMAND mouse-look-settings-test)
+
 add_executable(model-region-render-test ModelRegionRenderTest.cpp ../src/ModelFrameRegion.cpp)
 target_include_directories(model-region-render-test PRIVATE ../src ${GLEW_PATH}/include)
 target_link_libraries(model-region-render-test PRIVATE Framework glew_s OpenGL::EGL)
@@ -166,7 +170,7 @@ add_executable(model-gaze-test ModelGazeTest.cpp
   ${COMMON_SRC_PATH}/LAppWavFileHandler_Common.cpp)
 target_include_directories(model-gaze-test PRIVATE ../src ${COMMON_SRC_PATH}
   ${STB_PATH} ${CMAKE_BINARY_DIR}/generated)
-target_link_libraries(model-gaze-test PRIVATE Framework OpenGL::EGL)
+target_link_libraries(model-gaze-test PRIVATE Framework OpenGL::EGL deskwaifu_input)
 target_compile_definitions(model-gaze-test PRIVATE SDK_RESOURCES="${SDK_ROOT_PATH}/Samples/Resources")
 add_test(NAME model-gaze COMMAND model-gaze-test)
 set_tests_properties(model-gaze PROPERTIES

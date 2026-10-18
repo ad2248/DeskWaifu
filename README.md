@@ -244,6 +244,7 @@ Example `config.json`:
 | `hover_opacity_enabled` | bool | `false` | Reduce model opacity while the pointer is over its input silhouette |
 | `hover_opacity` | float | `0.5` | Hover opacity, from `0` (invisible) to `1` (unchanged); must be finite |
 | `idle_opacity` | float | `1.0` | Normal model opacity when not hovered, or when hover opacity is disabled; finite number within `0..1` |
+| `mouse_look_radius` | float | `0.5` | Maximum normalized mouse gaze amplitude; finite non-negative float. `0` keeps mouse gaze centered; external look controls are unaffected |
 | `model_region` | object | Entire current output | Optional clipping rectangle: integer `x`, `y` (default `0`), and required positive integer `width`, `height` |
 | `model_output` | string | First enumerated output | Display connector name, e.g. `DP-1`; an unavailable or unset name is replaced with the first enumerated output and saved at startup |
 
@@ -487,6 +488,28 @@ A convenience CLI client `deskwaifu-ctl` is included in the project root:
 ```
 
 ### Available Commands
+
+#### `get_mouse_look` / `set_mouse_look` — Mouse gaze range
+
+```json
+{"command":"get_mouse_look"}
+{"command":"set_mouse_look","radius":0.5}
+```
+
+The radius limits the length of the normalized mouse gaze vector, preserving its
+direction. Targets inside the circle are unchanged; targets outside it are clamped
+to the circle, including global cursor samples on other displays. Smaller values
+reduce eye and head movement. `0` centers mouse gaze; external `set_look` and stream
+overrides are unaffected. Missing configuration values default to `0.5`.
+
+The control window's **鼠标注视范围 / 最大半径** slider covers `0..2`, with a numeric
+input for larger values (up to `10`). Changes save on release or numeric confirmation.
+Both commands return `radius`; failed saves return `ok: false`, `error`, and the
+unchanged effective value. Set requests require a finite non-negative float and
+update runtime state only after an atomic save to the actual configuration path.
+Known unrelated fields are preserved; comments and unknown fields are not.
+Queries refresh from disk. After a lost acknowledgement, query instead of replaying
+the set request.
 
 #### `get_hover_opacity` / `set_hover_opacity` — Model opacity
 

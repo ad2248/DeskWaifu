@@ -1,6 +1,7 @@
 #pragma once
 
 #include "InputController.hpp"
+#include <cmath>
 
 // Retain the latest cursor sample independently of pointer capture and taps.
 // Global samples stay global so output changes do not leave stale local offsets.
@@ -12,12 +13,18 @@ public:
     bool HasPosition() const { return _available; }
 
     std::pair<float, float> LookAt(int outputX, int outputY, int width, int height,
-        float centerX, float centerY, ModelTransform model) const
+        float centerX, float centerY, ModelTransform model, float radius = 0.5f) const
     {
         if (!_available) return {0.0f, 0.0f};
-        return InputController::LookAt(static_cast<float>(_x - (_global ? outputX : 0)),
+        const auto look = InputController::LookAt(static_cast<float>(_x - (_global ? outputX : 0)),
             static_cast<float>(_y - (_global ? outputY : 0)), width, height,
             centerX, centerY, model);
+        const double length = std::hypot(double(look.first), double(look.second));
+        if (length > radius) {
+            const double scale = radius / length;
+            return {static_cast<float>(look.first * scale), static_cast<float>(look.second * scale)};
+        }
+        return look;
     }
 
 private:

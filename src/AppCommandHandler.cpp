@@ -4,6 +4,7 @@
 #include "LAppLive2DManager.hpp"
 #include "LAppModel.hpp"
 #include "LAppDefine.hpp"
+#include "MouseLookSettings.hpp"
 #include <algorithm>
 #include <cerrno>
 #include <cstdlib>
@@ -91,6 +92,18 @@ std::string AppCommandHandler::Execute(const std::string& json, const std::strin
     const auto lifetime = streaming ? ExternalControlState::Lifetime::Stream
         : ExternalControlState::Lifetime::Persistent;
     if (streaming && connection.empty()) return "{\"ok\":false,\"error\":\"stream requires a connection\"}";
+
+    if (command == "get_mouse_look" || command == "set_mouse_look") {
+        MouseLookSettings settings(LAppConfig::GetInstance());
+        const auto result = command == "get_mouse_look" ? settings.Refresh() : settings.Set(json);
+        std::ostringstream out;
+        out.imbue(std::locale::classic());
+        out << std::setprecision(std::numeric_limits<float>::max_digits10)
+            << "{\"ok\":" << (result.ok ? "true" : "false")
+            << ",\"radius\":" << settings.Radius()
+            << ",\"error\":\"" << JsonEscape(result.error) << "\"}";
+        return out.str();
+    }
 
     if (command == "get_hover_opacity" || command == "set_hover_opacity") {
         auto& settings = app->HoverSettings();

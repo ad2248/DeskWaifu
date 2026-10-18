@@ -23,6 +23,7 @@ struct LAppConfig
         bool hoverOpacityEnabled = false;
         float hoverOpacity = 0.5f;
         float idleOpacity = 1.0f;
+        float mouseLookRadius = 0.5f;
         std::experimental::optional<ModelRegion> modelRegion;
     };
     Values values;

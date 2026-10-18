@@ -4,6 +4,7 @@
 #include "LAppAllocator_Common.hpp"
 #include "LAppPal.hpp"
 #include "ExternalControlState.hpp"
+#include "CursorLook.hpp"
 #include "TestTemporaryDirectory.hpp"
 #include <Id/CubismIdManager.hpp>
 #include <cmath>
@@ -66,9 +67,12 @@ int main()
 
         // Mirror the runtime: cached mouse gaze is reapplied before EVERY update.
         // Test the real scheduler and eye parameters, not only a mock target.
-        const auto frames = [&](float mouseX, float mouseY, const ModelFrameInput& input) {
+        const auto frames = [&](float mouseX, float mouseY, const ModelFrameInput& input, float radius = 2.f) {
+            CursorLook cursor;
+            cursor.LocalPosition(100 + mouseX * 100, 100 - mouseY * 100);
             for (int i = 0; i < 90; ++i) {
-                model.SetDragging(mouseX, mouseY);
+                const auto look = cursor.LookAt(0, 0, 200, 200, .5f, .5f, {1, 0, 0}, radius);
+                model.SetDragging(look.first, look.second);
                 std::this_thread::sleep_for(std::chrono::milliseconds(16));
                 LAppPal::UpdateTime();
                 model.Update(input);
@@ -82,10 +86,17 @@ int main()
         CHECK(model.GetModel()->GetParameterValue(eyeX) > 0.4f);
         CHECK(model.GetModel()->GetParameterValue(eyeY) > 0.3f);
 
+        frames(8.f, 6.f, {}, .25f);
+        CHECK(std::abs(model.GetModel()->GetParameterValue(eyeX) - .2f) < .01f);
+        CHECK(std::abs(model.GetModel()->GetParameterValue(eyeY) - .15f) < .01f);
+        frames(8.f, 6.f, {}, 0);
+        CHECK(std::abs(model.GetModel()->GetParameterValue(eyeX)) < .01f);
+        CHECK(std::abs(model.GetModel()->GetParameterValue(eyeY)) < .01f);
+
         ExternalControlState controls;
         CHECK(controls.SetLook("control", ExternalControlState::Lifetime::Persistent, 0.8f, 0.6f));
         CHECK(controls.SetMouth("control", ExternalControlState::Lifetime::Persistent, 0.7f));
-        frames(-0.8f, -0.6f, controls.Frame());
+        frames(-0.8f, -0.6f, controls.Frame(), .1f);
         CHECK(model.GetModel()->GetParameterValue(eyeX) > 0.4f);
         CHECK(model.GetModel()->GetParameterValue(eyeY) > 0.3f);
         CHECK(std::abs(model.GetModel()->GetParameterValue(mouth) - 0.7f) < 0.001f);

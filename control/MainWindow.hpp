@@ -54,6 +54,13 @@ private:
     bool _hoverSetPending = false;
     bool _hoverSupported = false;
     QJsonObject _lastHoverResponse;
+    void requestMouseLook();
+    void setMouseLook(double radius);
+    void showMouseLook(double radius);
+    bool _mouseLookQueryPending = false;
+    bool _mouseLookSetPending = false;
+    bool _mouseLookSupported = false;
+    double _lastMouseLookRadius = 0.5;
     void queueTransformPreview();
     QJsonObject transformParameters() const;
     void showTransform(const QJsonObject& response);

@@ -625,7 +625,37 @@
           </widget>
          </item>
          <item>
-          <spacer name="transformSpacer">
+           <widget class="QGroupBox" name="mouseLookGroup">
+            <property name="enabled"><bool>false</bool></property>
+            <property name="title"><string>鼠标注视范围</string></property>
+            <layout class="QGridLayout" name="mouseLookLayout">
+             <item row="0" column="0"><widget class="QLabel" name="mouseLookRadiusLabel">
+              <property name="text"><string>最大半径</string></property>
+              <property name="buddy"><cstring>mouseLookRadiusSpin</cstring></property>
+             </widget></item>
+             <item row="0" column="1"><widget class="QSlider" name="mouseLookRadiusSlider">
+              <property name="maximum"><number>200</number></property>
+              <property name="value"><number>50</number></property>
+              <property name="tracking"><bool>false</bool></property>
+              <property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property>
+              <property name="accessibleName"><string>鼠标注视最大半径</string></property>
+             </widget></item>
+             <item row="0" column="2"><widget class="QDoubleSpinBox" name="mouseLookRadiusSpin">
+              <property name="decimals"><number>2</number></property>
+              <property name="maximum"><double>10.000000</double></property>
+              <property name="singleStep"><double>0.050000</double></property>
+              <property name="value"><double>0.500000</double></property>
+              <property name="accessibleName"><string>鼠标注视最大半径数值</string></property>
+             </widget></item>
+             <item row="1" column="0" colspan="3"><widget class="QLabel" name="mouseLookHintLabel">
+              <property name="text"><string>限制眼球和头部随鼠标转动的最大幅度，数值越小动作越轻。默认 0.5，0 表示居中；滑块范围 0–2，也可输入更大值。松手或确认数值后立即保存，不影响外部注视控制。</string></property>
+              <property name="wordWrap"><bool>true</bool></property>
+             </widget></item>
+            </layout>
+           </widget>
+          </item>
+          <item>
+           <spacer name="transformSpacer">
           <property name="orientation">
            <enum>Qt::Orientation::Vertical</enum>
           </property>

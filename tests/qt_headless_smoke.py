@@ -152,6 +152,12 @@ def main():
 
                     request("get_status")
                     request("get_current_model")
+                    assert request("get_mouse_look")["radius"] == .5
+                    assert request("set_mouse_look", radius=.25)["radius"] == .25
+                    assert json.loads((config / "config.json").read_text())["mouse_look_radius"] == .25
+                    assert request("get_mouse_look")["radius"] == .25
+                    assert request("set_mouse_look", radius=0)["radius"] == 0
+                    assert request("set_mouse_look", radius=.5)["radius"] == .5
                     request("set_expression", id="F01")
                     request("do_motion", group="Idle", index=0, priority=2)
                     request("set_mouth_y", value=.5)
