@@ -5,8 +5,8 @@
 
 struct ModelDescriptor
 {
-    std::string id;       // canonical path to .model3.json
-    std::string name;     // user-visible directory name (not necessarily unique)
+    std::string id;       // canonical directory + JSON filename; file symlinks retain overlay identity
+    std::string name;     // first directory alias in lexical order (not necessarily unique)
     std::string directory;
     std::string jsonName;
 };

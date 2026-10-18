@@ -19,8 +19,8 @@ struct Runtime : IApplicationRuntime
     bool SwitchSkin() override { return true; }
 };
 
-// OnDrag and the model's external-input dispatch share the same target, just
-// as LAppLive2DManager::OnDrag and LAppModel::Update do in the runtime.
+// A recording render boundary tests frame scheduling and forwarded values only.
+// Actual input consumption belongs to ModelGazeTest's real LAppModel.
 struct Model
 {
     std::pair<float, float> target{0, 0};
@@ -34,8 +34,6 @@ struct Model
     {
         transform = value;
         inputs.push_back(input);
-        DispatchModelFrameInput(input, [](float) {},
-            [this](float x, float y) { target = {x, y}; });
         rendered.push_back(target);
     }
 };
@@ -94,14 +92,14 @@ int main()
     cursor.GlobalPosition(-50, 150);
 
     // These are the same service entry points used by IPC command handling
-    // and connection cleanup. External look wins after mouse OnDrag.
+    // and connection cleanup. Verify forwarding, not model input consumption.
     CHECK(service.SetLook("ipc:tracker", ExternalControlState::Lifetime::Stream, -.8f, .3f).ok);
     frame();
     CHECK(updates == 6 && model.drags.size() == 6 && model.drags.back() == mouse);
     CHECK(model.inputs.back().hasLook && model.inputs.back().lookX == -.8f && model.inputs.back().lookY == .3f);
-    CHECK(model.rendered.back() == std::make_pair(-.8f, .3f));
+    CHECK(model.rendered.back() == mouse);
     frame();
-    CHECK(updates == 7 && model.drags.size() == 7 && model.rendered.back() == std::make_pair(-.8f, .3f));
+    CHECK(updates == 7 && model.drags.size() == 7 && model.rendered.back() == mouse);
     service.ReleaseControls("ipc:tracker");
     frame();
     CHECK(updates == 8 && model.drags.size() == 8 && !model.inputs.back().hasLook);

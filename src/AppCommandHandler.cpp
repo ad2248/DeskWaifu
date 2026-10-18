@@ -306,7 +306,7 @@ try
             out << "{\"id\":\"" << JsonEscape(binding.id) << "\",\"name\":\"" << JsonEscape(binding.name)
                 << "\",\"action\":\"" << JsonEscape(binding.action) << "\",\"file\":\"" << JsonEscape(binding.file)
                 << "\",\"reason\":\"" << JsonEscape(binding.reason) << "\",\"enabled\":" << (binding.enabled ? "true" : "false")
-                << ",\"active\":" << (hotkeys.IsActive(binding) ? "true" : "false") << ",\"keys\":[";
+                << ",\"active\":" << (binding.reason.empty() && hotkeys.IsActive(binding.id) ? "true" : "false") << ",\"keys\":[";
             for (size_t i = 0; i < binding.keys.size(); ++i)
             {
                 if (i) out << ',';

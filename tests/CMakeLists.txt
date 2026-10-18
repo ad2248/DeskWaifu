@@ -144,6 +144,11 @@ add_test(NAME model-cache COMMAND model-cache-test)
 add_executable(model-session-test ModelSessionTest.cpp)
 target_include_directories(model-session-test PRIVATE ../src)
 add_test(NAME model-session COMMAND model-session-test)
+add_test(NAME model-hotkeys-header
+  COMMAND ${CMAKE_COMMAND} -DAPP_SOURCE=${CMAKE_SOURCE_DIR}/src
+    -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+    -DFIXTURE_SOURCE=${CMAKE_CURRENT_BINARY_DIR}/hotkeys-header
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckModelHotkeysHeader.cmake)
 
 add_executable(ipc-transport-test IpcTransportTest.cpp)
 target_include_directories(ipc-transport-test PRIVATE ../src)
@@ -187,6 +192,20 @@ target_compile_definitions(model-gaze-test PRIVATE SDK_RESOURCES="${SDK_ROOT_PAT
 add_test(NAME model-gaze COMMAND model-gaze-test)
 set_tests_properties(model-gaze PROPERTIES
   ENVIRONMENT "EGL_PLATFORM=surfaceless" SKIP_RETURN_CODE 77)
+
+# Exercise the actual composition root with an isolated headless platform.
+get_target_property(DELEGATE_TEST_SOURCES ${APP_NAME} SOURCES)
+list(FILTER DELEGATE_TEST_SOURCES EXCLUDE REGEX "/(main|QtDesktopWindow)\\.cpp$")
+get_target_property(DELEGATE_TEST_INCLUDES ${APP_NAME} INCLUDE_DIRECTORIES)
+get_target_property(DELEGATE_TEST_LIBRARIES ${APP_NAME} LINK_LIBRARIES)
+add_executable(delegate-keyboard-test DelegateKeyboardTest.cpp ${DELEGATE_TEST_SOURCES})
+target_include_directories(delegate-keyboard-test PRIVATE ${DELEGATE_TEST_INCLUDES})
+target_link_libraries(delegate-keyboard-test PRIVATE ${DELEGATE_TEST_LIBRARIES} OpenGL::EGL)
+target_compile_definitions(delegate-keyboard-test PRIVATE SDK_RESOURCES="${SDK_ROOT_PATH}/Samples/Resources")
+target_link_options(delegate-keyboard-test PRIVATE
+  -Wl,--wrap=_ZN12ModelHotkeys7TriggerERKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEERS5_)
+add_test(NAME delegate-keyboard COMMAND delegate-keyboard-test)
+set_tests_properties(delegate-keyboard PROPERTIES ENVIRONMENT "EGL_PLATFORM=surfaceless" TIMEOUT 30)
 
 add_executable(application-service-test ApplicationServiceTest.cpp)
 target_include_directories(application-service-test PRIVATE ../src)
@@ -360,7 +379,7 @@ add_test(NAME main-window-long-temp-directory
     -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckPortableTemporaryDirectory.cmake)
 
 qt_add_executable(model-keyboard-test ModelKeyboardTest.cpp)
-target_include_directories(model-keyboard-test PRIVATE ../src ${FRAMEWORK_PATH}/src ${CORE_PATH}/include)
+target_include_directories(model-keyboard-test PRIVATE ../src)
 target_link_libraries(model-keyboard-test PRIVATE Qt6::Test)
 set_target_properties(model-keyboard-test PROPERTIES AUTOMOC ON)
 add_test(NAME model-keyboard COMMAND model-keyboard-test)

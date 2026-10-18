@@ -2,7 +2,8 @@
 
 #include <string>
 #include <vector>
-#include <Model/CubismModel.hpp>
+
+namespace Live2D { namespace Cubism { namespace Framework { class CubismModel; } } }
 
 // Independent of the renderer: model configuration and persistent expression state.
 class ModelHotkeys
@@ -29,8 +30,9 @@ public:
     void Reset();
     bool Trigger(const std::string& id, std::string& error);
     void Update(float seconds);
-    void Apply(Csm::CubismModel* model) const;
-    bool IsActive(const Binding& binding) const;
+    void Apply(Live2D::Cubism::Framework::CubismModel* model) const;
+    // Resolve IDs against this model's current bindings, never a caller's index.
+    bool IsActive(const std::string& id) const;
     const std::vector<Binding>& Bindings() const { return _bindings; }
     const std::vector<Expression>& Expressions() const { return _expressions; }
     const std::string& Error() const { return _error; }
