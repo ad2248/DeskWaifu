@@ -4,6 +4,7 @@
 #include <cerrno>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <cstdlib>
 
@@ -22,6 +23,12 @@ struct FakeTransport : ICompositorTransport
 
 int main(int argc, char** argv)
 {
+    if (argc == 2 && std::string(argv[1]) == "--escape-group") {
+        if (setpgid(0, getpgid(getppid())) != 0) return 125;
+        close(STDOUT_FILENO);
+        sleep(1);
+        return 0;
+    }
     if (argc == 3 && std::string(argv[1]) == "--check-fd")
         return fcntl(std::atoi(argv[2]), F_GETFD) == -1 && errno == EBADF ? 0 : 1;
     const auto start = std::chrono::steady_clock::now();
@@ -73,6 +80,13 @@ int main(int argc, char** argv)
     const auto shortEofElapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - shortEofBegin).count();
     if (!shortEof || shortEofElapsed > 150) return 1;
+    const auto escapedBegin = std::chrono::steady_clock::now();
+    const auto escaped = actual.Command({argv[0], "--escape-group"});
+    const auto escapedElapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - escapedBegin).count();
+    int childStatus = 0;
+    if (escaped.status != CapabilityStatus::Unavailable || escapedElapsed > 750 ||
+        waitpid(-1, &childStatus, WNOHANG) != -1 || errno != ECHILD) return 1;
     if (actual.Command({"/definitely/missing/compositor"}).status != CapabilityStatus::Failed) return 1;
     struct stat procFd{};
     if (stat("/proc/self/fd/1", &procFd) != 0) return 1;

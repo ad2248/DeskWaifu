@@ -4,6 +4,7 @@
 #include <cerrno>
 #include <chrono>
 #include <climits>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <dirent.h>
@@ -170,8 +171,16 @@ Capability<std::string> BoundedCompositorTransport::Command(const std::vector<st
     if (!output || !WaitForExitBefore(pid, deadline, status)) {
         output.status = CapabilityStatus::Unavailable;
         kill(-pid, SIGKILL);
+        // The direct child can leave its original process group. Always signal
+        // its PID as well, and never follow a failed signal with an unbounded wait.
+        int killed;
+        do { killed = kill(pid, SIGKILL); } while (killed < 0 && errno == EINTR);
+        if (killed < 0 && errno != ESRCH)
+            std::fprintf(stderr, "[Compositor] Failed to terminate child: %s\n", std::strerror(errno));
+        const auto cleanupDeadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(TimeoutMs);
+        if (!WaitForExitBefore(pid, cleanupDeadline, status))
+            std::fprintf(stderr, "[Compositor] Child could not be reaped within cleanup deadline\n");
     }
-    while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {}
     if (output && (!WIFEXITED(status) || WEXITSTATUS(status))) output.status = CapabilityStatus::Failed;
     return output;
 }
