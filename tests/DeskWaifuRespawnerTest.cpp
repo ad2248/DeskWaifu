@@ -97,6 +97,7 @@ private slots:
         QTest::qWait(350);
         QVERIFY(respawner.isRunning());
         QCOMPARE(finished.size(), 0); // IPC closed, but process still alive.
+        server.close(); // The replacement's IPC endpoint is not ready immediately.
         oldBackend.terminate();
         QVERIFY(oldBackend.waitForFinished());
         QTRY_COMPARE_WITH_TIMEOUT(finished.size(), 1, 3000);
@@ -108,6 +109,9 @@ private slots:
         QVERIFY2(finished[0][0].toBool(), qPrintable(message));
         QVERIFY(newPid > 0);
         QVERIFY(kill(newPid, 0) == 0);
+        QTest::qWait(3400); // Failed connection attempts must not stop automatic retries.
+        QVERIFY(!client.isConnected());
+        QVERIFY(server.listen(client.socketPath()));
         QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections() && client.isConnected(), 3000);
         auto* replacement = server.nextPendingConnection();
         QTest::qWait(150);
