@@ -21,7 +21,11 @@ add_test(NAME cursor-look-wiring
 find_package(Threads REQUIRED)
 if (DESKWAIFU_WINDOW_BACKEND STREQUAL "qt")
   find_package(Qt6 6.5 REQUIRED COMPONENTS Gui OpenGL WaylandClient)
-  find_package(LayerShellQt REQUIRED)
+  find_package(LayerShellQt 6.6 REQUIRED)
+  add_test(NAME qt-layer-shell-version
+    COMMAND ${CMAKE_COMMAND} -DAPP_SOURCE=${CMAKE_SOURCE_DIR}/src
+      -DFIXTURE_DIR=${CMAKE_CURRENT_BINARY_DIR}/layer-shell-version
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckLayerShellQtVersion.cmake)
   add_executable(qt-window-input-test QtWindowInputTest.cpp)
   target_include_directories(qt-window-input-test PRIVATE ../src)
   target_link_libraries(qt-window-input-test PRIVATE Qt6::Gui)

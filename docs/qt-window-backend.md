@@ -7,7 +7,7 @@ configuration and JSON IPC code. The control panel remains a separate process.
 ## Build and run
 
 Requires Qt **6.5+** (`Gui`, `OpenGL`, `WaylandClient`), the Qt Wayland platform
-plugin, LayerShellQt **6**, desktop OpenGL **3.3 compatibility profile**, and the
+plugin, LayerShellQt **6.6+**, desktop OpenGL **3.3 compatibility profile**, and the
 existing Cubism/GLEW dependencies. On Arch the extra package is `layer-shell-qt`;
 other distributions may split its library and development headers into packages.
 
