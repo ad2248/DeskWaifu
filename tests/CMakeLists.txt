@@ -148,6 +148,11 @@ add_executable(ipc-transport-test IpcTransportTest.cpp)
 target_include_directories(ipc-transport-test PRIVATE ../src)
 target_link_libraries(ipc-transport-test PRIVATE deskwaifu_ipc)
 add_test(NAME ipc-transport COMMAND ipc-transport-test)
+add_test(NAME ipc-transport-header
+  COMMAND ${CMAKE_COMMAND} -DAPP_SOURCE=${CMAKE_SOURCE_DIR}/src
+    -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+    -DFIXTURE_SOURCE=${CMAKE_CURRENT_BINARY_DIR}/transport-header
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckIpcTransportHeader.cmake)
 
 add_executable(input-controller-test InputControllerTest.cpp)
 target_link_libraries(input-controller-test PRIVATE deskwaifu_input)

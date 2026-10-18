@@ -10,7 +10,7 @@
 #include <string>
 #include <sys/types.h>
 #include <vector>
-#include "AppCommandHandler.hpp"
+#include "ICommandService.hpp"
 
 class LAppIPC
 {
