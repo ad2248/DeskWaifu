@@ -44,7 +44,7 @@ public:
 
     int CurrentIndex() const { return _current; }
     Model* Current() const { return _current < 0 ? nullptr : _cache.Get(_current); }
-    ModelCache<Model>& Cache() { return _cache; }
+    const ModelCache<Model>& Cache() const { return _cache; }
 
     void Clear()
     {
