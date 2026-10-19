@@ -19,6 +19,7 @@ pkgbase = deskwaifu-git
 	depends = systemd-libs
 	depends = qt6-base>=6.5
 	depends = qt6-wayland>=6.5
+	depends = qt6-scxml>=6.5
 	depends = layer-shell-qt>=6.6
 	depends = bash
 	depends = python

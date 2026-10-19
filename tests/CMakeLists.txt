@@ -21,6 +21,9 @@ add_test(NAME cursor-look-wiring
 find_package(Threads REQUIRED)
 find_package(Qt6 6.5 REQUIRED COMPONENTS Gui OpenGL WaylandClient)
 find_package(LayerShellQt 6.6 REQUIRED)
+add_executable(model-window-state-test ModelWindowStateTest.cpp)
+target_link_libraries(model-window-state-test PRIVATE deskwaifu_window_state)
+add_test(NAME model-window-state COMMAND model-window-state-test)
 add_test(NAME qt-layer-shell-version
   COMMAND ${CMAKE_COMMAND} -DAPP_SOURCE=${CMAKE_SOURCE_DIR}/src
     -DFIXTURE_DIR=${CMAKE_CURRENT_BINARY_DIR}/layer-shell-version
@@ -235,7 +238,7 @@ target_link_libraries(model-pointer-test PRIVATE ${INPUT_APP_LIBRARIES} OpenGL::
 target_compile_definitions(model-pointer-test PRIVATE SDK_RESOURCES="${SDK_ROOT_PATH}/Samples/Resources")
 target_link_options(model-pointer-test PRIVATE
   -Wl,--wrap=_ZN7LAppPal10PrintLogLnEPKcz)
-foreach(scenario release transform drag)
+foreach(scenario release transform drag state)
   add_test(NAME model-pointer-${scenario} COMMAND model-pointer-test ${scenario})
   set_tests_properties(model-pointer-${scenario} PROPERTIES
     ENVIRONMENT "EGL_PLATFORM=surfaceless" SKIP_RETURN_CODE 77 TIMEOUT 30)

@@ -216,11 +216,12 @@ public:
         QPointer<QScreen> chosen;
         for (const auto& entry : _screens) if (entry.id == id) chosen = entry.screen;
         if (!chosen || !_context) return false;
+        if (_switching) return false;
         QPointer<QScreen> previous = screen();
-        const bool grabbed = KeyboardGrabbed();
         SetKeyboardGrab(false);
         if (_events) _events->PointerLeft();
         _switching = true;
+        if (_events) _events->OutputSwitchStarted();
         _context->doneCurrent();
         hide();
         destroy();
@@ -228,22 +229,24 @@ public:
         LayerShellQt::Window::get(this)->setScreen(chosen);
         show();
         if (!WaitForExpose() || !MakeCurrent()) {
+            bool restored = false;
             if (previous) {
                 hide();
                 destroy();
                 setScreen(previous);
                 LayerShellQt::Window::get(this)->setScreen(previous);
                 show();
-                if (!WaitForExpose() || !MakeCurrent())
-                    if (_events) _events->SurfaceClosed();
+                restored = WaitForExpose() && MakeCurrent();
             }
+            if (!restored && _events) _events->SurfaceClosed();
             _switching = false;
+            if (_events) _events->OutputSwitchFinished();
             return false;
         }
         _current = id;
         _needsRebind = false;
         _switching = false;
-        SetKeyboardGrab(grabbed);
+        if (_events) _events->OutputSwitchFinished();
         std::cout << "[Qt] Output switch configured and committed: " << id << std::endl;
         return true;
     }
@@ -251,6 +254,11 @@ public:
 protected:
     bool event(QEvent* event) override
     {
+        if (_events && event->type() == QEvent::Close) {
+            _events->SurfaceClosed();
+            event->ignore(); // Keep the surface alive for ordered GPU teardown.
+            return true;
+        }
         if (_events && !_switching) {
             switch (event->type()) {
             case QEvent::Enter: {
@@ -293,10 +301,6 @@ protected:
                 if (SetKeyboardGrab(false) != ModelKeyboardGrabState::GrabResult::Changed)
                     _events->KeyboardChanged();
                 break;
-            case QEvent::Close:
-                _events->SurfaceClosed();
-                event->ignore(); // Keep the surface alive for ordered GPU teardown.
-                return true;
             default: break;
             }
         }

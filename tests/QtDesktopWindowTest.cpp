@@ -1,5 +1,6 @@
 #include "DesktopWindow.hpp"
 #include <QGuiApplication>
+#include <QCloseEvent>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QOpenGLContext>
@@ -24,6 +25,7 @@ int presentedFrames = 0;
 struct Events : IDesktopWindowEvents
 {
     int presses = 0, releases = 0, resets = 0;
+    int switchesStarted = 0, switchesFinished = 0, closes = 0;
     uint32_t key = 0;
     double x = 0, y = 0, scroll = 0;
     void PointerEntered(double px, double py) override { x = px; y = py; }
@@ -33,7 +35,22 @@ struct Events : IDesktopWindowEvents
     void PointerScroll(double delta) override { scroll += delta; }
     void KeyboardChanged() override { ++resets; }
     void KeyboardKey(uint32_t code, bool) override { key = code; }
-    void SurfaceClosed() override {}
+    void SurfaceClosed() override { ++closes; }
+    void OutputSwitchStarted() override
+    {
+        ++switchesStarted;
+        const int before = presses;
+        QMouseEvent press(QEvent::MouseButtonPress, QPointF(25, 35), QPointF(25, 35),
+            Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(pixelWindow, &press);
+        Require(presses == before, "Input must be blocked during output replacement");
+        const int previousCloses = closes;
+        QCloseEvent close;
+        QCoreApplication::sendEvent(pixelWindow, &close);
+        Require(closes == previousCloses + 1 && !close.isAccepted(),
+            "Close during output replacement must notify policy without destroying the surface");
+    }
+    void OutputSwitchFinished() override { ++switchesFinished; }
 };
 
 // A pointer-triggered output rebind runs outside the frame callback. Delay an
@@ -228,6 +245,8 @@ int main(int argc, char** argv)
         Require(qAbs(dpr - qEnvironmentVariable("DESKWAIFU_EXPECT_DPR").toDouble()) < .01,
             "The compositor did not apply the requested real output scale");
     Require(window->MakeCurrent(), "GPU context must be restorable before teardown");
+    Require(events.switchesStarted == events.switchesFinished,
+        "Every output replacement must report completion");
     window->Shutdown();
     Require(!window->Available(), "Shutdown must release the Qt surface/context");
     std::cout << "Qt window rendering/input/output/teardown passed; outputs=" << outputs.size()

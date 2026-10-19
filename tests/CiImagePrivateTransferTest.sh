@@ -39,6 +39,7 @@ PATH="$TEST_DIR/bin:$PATH" DESKWAIFU_RUNNER_HOST=ci-host \
 [[ $(cat "$CI_TRANSFER_DATA") == private-sdk-image ]]
 grep -q 'podman build .*localhost/deskwaifu-ci:arch-' "$CI_TRANSFER_LOG"
 grep -q 'podman save --format oci-archive localhost/deskwaifu-ci:arch-' "$CI_TRANSFER_LOG"
+grep -q 'pkgconf --modversion .*Qt6StateMachine' "$CI_TRANSFER_LOG"
 grep -q "deskwaifu-arch:docker://sha256:$(printf '%064d' 1)" "$TEST_DIR/result"
 if grep -Eq 'podman (push|login)|docker pull|git.kals.top/kals/deskwaifu-ci' "$CI_TRANSFER_LOG"; then
     echo 'CI image must not be published to a public registry namespace' >&2

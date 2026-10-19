@@ -53,7 +53,7 @@ https://github.com/user-attachments/assets/95dfdedc-4957-4bb7-b79f-f3addd97a6db
 | **Wayland development libraries** | Required by Qt Wayland; Qt owns protocol dispatch |
 | **libsystemd development library** | `sd-bus` for the transient KWin cursor bridge |
 | **EGL & OpenGL** | `libegl-dev`, `libgl-dev` or equivalent |
-| **Qt 6.5+** | `Gui`, `OpenGL`, `WaylandClient` and the Qt Wayland platform plugin; `Widgets` and `Network` for the optional control panel |
+| **Qt 6.5+** | `Gui`, `OpenGL`, `WaylandClient`, `StateMachine` and the Qt Wayland platform plugin; `Widgets` and `Network` for the optional control panel |
 | **LayerShellQt 6.6+** | Required for the model's desktop overlay window |
 | **curl, unzip** | For downloading third-party dependencies (GLEW) |
 
@@ -61,17 +61,17 @@ https://github.com/user-attachments/assets/95dfdedc-4957-4bb7-b79f-f3addd97a6db
 
 **Arch Linux:**
 ```bash
-sudo pacman -S --needed base-devel cmake pkgconf wayland wayland-protocols libglvnd egl-wayland qt6-base qt6-wayland layer-shell-qt systemd-libs curl unzip
+sudo pacman -S --needed base-devel cmake pkgconf wayland wayland-protocols libglvnd egl-wayland qt6-base qt6-wayland qt6-scxml layer-shell-qt systemd-libs curl unzip
 ```
 
 **Ubuntu / Debian:**
 ```bash
-sudo apt install build-essential cmake pkg-config libwayland-dev wayland-protocols libegl-dev libgl-dev libglu1-mesa-dev libsystemd-dev qt6-base-dev libqt6opengl6-dev qt6-wayland qt6-wayland-dev curl unzip
+sudo apt install build-essential cmake pkg-config libwayland-dev wayland-protocols libegl-dev libgl-dev libglu1-mesa-dev libsystemd-dev qt6-base-dev libqt6opengl6-dev qt6-wayland qt6-wayland-dev qt6-scxml-dev curl unzip
 ```
 
 **Fedora:**
 ```bash
-sudo dnf install gcc-c++ cmake pkgconf-pkg-config wayland-devel wayland-protocols-devel mesa-libEGL-devel mesa-libGL-devel systemd-devel qt6-qtbase-devel qt6-qtwayland-devel layer-shell-qt-devel curl unzip
+sudo dnf install gcc-c++ cmake pkgconf-pkg-config wayland-devel wayland-protocols-devel mesa-libEGL-devel mesa-libGL-devel systemd-devel qt6-qtbase-devel qt6-qtwayland-devel qt6-qtscxml-devel layer-shell-qt-devel curl unzip
 ```
 
 Install LayerShellQt **6.6+** development files as well. On distributions shipping
@@ -144,6 +144,8 @@ The Qt control window will be at `build/bin/deskwaifu-control`.
 The model window always uses Qt and LayerShellQt; no backend-selection flag is
 needed. Disabling `DESKWAIFU_BUILD_CONTROL` only omits the control panel, not the
 Qt model window. See [window behavior and validation](docs/qt-window-backend.md).
+Lifecycle, dragging, and crop editing are controlled by a
+[hierarchical Qt state machine](docs/model-window-state-machine.md).
 
 To install a source build system-wide (default prefix: `/usr/local`):
 

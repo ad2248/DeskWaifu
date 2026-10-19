@@ -82,6 +82,14 @@ void LAppDelegate::ReleaseInstance()
 
 bool LAppDelegate::Initialize()
 {
+    if (!_windowState.Send(ModelWindowState::Event::Initialize)) return false;
+    const bool initialized = InitializeRuntime();
+    _windowState.Send(initialized ? ModelWindowState::Event::Initialized : ModelWindowState::Event::Close);
+    return initialized && _windowState.Running();
+}
+
+bool LAppDelegate::InitializeRuntime()
+{
     if (DebugLogEnable)
     {
         LAppPal::PrintLogLn("START");
@@ -125,6 +133,7 @@ bool LAppDelegate::Initialize()
     _cubismStarted = true;
     auto& config = LAppConfig::GetInstance();
     _settings.reset(new TransformEditor(_service, config));
+    _settings->SetEditChanged([this] { SyncInteractionMode(); });
     const auto& values = config.values;
     if (!_settings->Initialize({{values.modelScale, values.modelX, values.modelY}, bool(values.modelRegion), values.modelRegion.value_or(ModelRegion{})})) {
         LAppPal::PrintLogLn("[Config] Invalid model transform; zoom must be finite and within 0.1..10");
@@ -151,7 +160,7 @@ bool LAppDelegate::Initialize()
     for (auto& dir : modelDirs) dir = LAppConfig::ExpandTilde(dir);
     _manager = new LAppLive2DManager(*_textureManager, _windowWidth, _windowHeight,
         {LAppDefine::ModelsDir, modelDirs, values.defaultModel, values.emotionTimeout});
-    if (!_manager->HasModels()) { _isEnd = true; return false; }
+    if (!_manager->HasModels()) return false;
     _view = new LAppView(*_manager, *_textureManager);
 
     _view->Initialize(_windowWidth, _windowHeight);
@@ -174,8 +183,9 @@ bool LAppDelegate::Initialize()
 }
 bool LAppDelegate::Release()
 {
+    AppEnd();
     _kwinCursor.Stop();
-    return ReleaseGpuResources(HasGpuResources(_view, _manager,
+    const bool released = ReleaseGpuResources(HasGpuResources(_view, _manager,
         _textureManager ? _textureManager->ResidentCount() : 0),
         [this] { return _window->MakeCurrent(); },
         [this] { ReleaseRuntimeInOrder(
@@ -189,11 +199,13 @@ bool LAppDelegate::Release()
         [this] { delete _textureManager; _textureManager = nullptr; },
         [this] { if (_cubismStarted) { CubismFramework::Dispose(); _cubismStarted = false; } },
         [this] { _window->Shutdown(); }); });
+    if (released) _windowState.Send(ModelWindowState::Event::Released);
+    return released;
 }
 bool LAppDelegate::Run()
 {
     const bool ran = _window->Run([this] {
-        if (_isEnd) return false;
+        if (!_windowState.Running()) return false;
         if (pendingToggle) {
             pendingToggle = 0;
             _service.SetVisibility(_service.Snapshot().hidden);
@@ -206,13 +218,16 @@ bool LAppDelegate::Run()
             _settings->PauseAutosave();
             _lastOutput = _window->CurrentOutput();
         }
-        if (_isEnd) return false;
+        if (!_windowState.Running()) return false;
         if (_input.TapExpired(ClickClock())) FlushPendingTap();
         int width = _window->Width();
         int height = _window->Height();
 
-        if (_settings->ScreenEditing() && (width != _windowWidth || height != _windowHeight))
-            _settings->AbortScreenEdit();
+        if (width != _windowWidth || height != _windowHeight) {
+            if (_settings->ScreenEditing()) _settings->AbortScreenEdit();
+            _windowState.Send(ModelWindowState::Event::CancelGesture);
+            CancelInteraction();
+        }
         ResizeView(width, height);
 
         glViewport(0, 0, _windowWidth, _windowHeight);
@@ -231,11 +246,6 @@ bool LAppDelegate::Run()
 
         if (_input.IsCaptured() && _settings->Dirty()) _settings->ScheduleSave(SettingsClock(), .5);
         _settings->Tick(SettingsClock());
-        if (_settings->Editing()) {
-            _input = InputController{};
-            if (_window->KeyboardGrabbed()) _window->SetKeyboardGrab(false);
-        }
-        if (!_settings->ScreenEditing()) _cropInteraction = ScreenCropInteraction{};
 
         LAppPal::UpdateTime();
 
@@ -272,7 +282,7 @@ bool LAppDelegate::Run()
                 _windowWidth, _windowHeight, modelRegions));
         }
         if (state.hidden && !_settings->ScreenEditing()) _window->SetInputRegion({});
-        return !_isEnd;
+        return _windowState.Running();
     });
     const bool released = Release();
     if (released) LAppPal::PrintLogLn("[APP]GPU resources released before window teardown");
@@ -293,7 +303,6 @@ LAppDelegate::LAppDelegate():
     
     _mouseX(0.0f),
     _mouseY(0.0f),
-    _isEnd(false),
     _windowWidth(0),
     _windowHeight(0),
     _lookCenterX(0.5f),
@@ -301,6 +310,8 @@ LAppDelegate::LAppDelegate():
 {
     _executeAbsolutePath = "";
     _textureManager = new LAppTextureManager();
+    QObject::connect(&_windowState, &ModelWindowState::InteractionCancelled,
+        &_windowState, [this] { CancelInteraction(); });
 }
 
 LAppDelegate::~LAppDelegate()
@@ -381,22 +392,59 @@ void LAppDelegate::MoveScreenDrag()
     SetMousePosition(cursor.value.first - next->x, cursor.value.second - next->y);
 }
 
+void LAppDelegate::CancelInteraction()
+{
+    _input = InputController{};
+    _cropInteraction = ScreenCropInteraction{};
+    if (_manager) _manager->OnDrag(0.0f, 0.0f);
+    if (_window->KeyboardGrabbed()) _window->SetKeyboardGrab(false);
+}
+
+void LAppDelegate::SyncInteractionMode()
+{
+    if (!_settings || !_windowState.Running()) return;
+    _windowState.Send(!_settings->Editing() ? ModelWindowState::Event::NormalMode :
+        _settings->ScreenEditing() ? ModelWindowState::Event::ScreenMode : ModelWindowState::Event::PanelMode);
+}
+
+void LAppDelegate::StartCropGesture()
+{
+    const auto handle = _cropInteraction.Handle();
+    _windowState.Send(handle == CropInteraction::Model ? ModelWindowState::Event::DragModel :
+        handle == CropInteraction::Move ? ModelWindowState::Event::MoveCrop : ModelWindowState::Event::ResizeCrop);
+}
+
+void LAppDelegate::OutputSwitchStarted()
+{
+    _windowState.Send(ModelWindowState::Event::SwitchOutput);
+    if (_settings && _window->OutputNeedsRebind()) _settings->AbortScreenEdit();
+}
+
+void LAppDelegate::OutputSwitchFinished()
+{
+    _windowState.Send(ModelWindowState::Event::OutputReady);
+    SyncInteractionMode();
+}
+
 void LAppDelegate::PointerButton(int button, bool pressed)
 {
-    if (_view == NULL)
+    if (_view == NULL || !_windowState.Running())
     {
         return;
     }
     
-    if (_settings && _settings->Editing())
+    if (!_windowState.Normal())
     {
-        _input = InputController{};
-        if (button == 0 && _settings->ScreenEditing()) {
+        if (button == 0 && _windowState.ScreenEditing()) {
             if (pressed) {
+                if (_windowState.GestureActive()) return;
                 _cropInteraction.Press(_settings->Display(), int(_mouseX), int(_mouseY));
+                StartCropGesture();
             } else {
+                if (!_windowState.GestureActive()) return;
                 const bool moveOutput = _settings->LocalScreenEditing() && _cropInteraction.DraggingModel();
                 const auto result = _cropInteraction.Release(*_settings, ClickClock(), int(_mouseX), int(_mouseY));
+                _windowState.Send(ModelWindowState::Event::Release);
                 if (!result.ok) LAppPal::PrintLogLn("[Crop] Save failed: %s", result.error.c_str());
                 if (moveOutput) MoveScreenDrag();
             }
@@ -407,18 +455,20 @@ void LAppDelegate::PointerButton(int button, bool pressed)
     {
         if (pressed)
         {
+            if (!_windowState.Send(ModelWindowState::Event::Press)) return;
             _input.Press(static_cast<int>(_mouseX), static_cast<int>(_mouseY));
             _view->OnTouchesBegan(_mouseX, _mouseY);
         }
         else
         {
-            if (_input.IsCaptured())
+            if (_windowState.Current() == ModelWindowState::State::Pressed)
             {
                 const auto result = _input.Release(ClickClock(), static_cast<int>(_mouseX),
                     static_cast<int>(_mouseY), [this](int x, int y)
                     {
                         _view->OnTouchesEnded(x, y, _service.Snapshot().transform);
                     });
+                _windowState.Send(ModelWindowState::Event::Release);
                 if (result == InputController::ReleaseResult::DoubleClick)
                 {
                     _manager->OnDrag(0.0f, 0.0f);
@@ -449,7 +499,7 @@ void LAppDelegate::PointerButton(int button, bool pressed)
 
 void LAppDelegate::FlushPendingTap()
 {
-    if (_settings && _settings->Editing()) return;
+    if (!_windowState.Normal()) return;
     _input.FlushTap([this](int x, int y)
     {
         _view->OnTouchesEnded(x, y, _service.Snapshot().transform);
@@ -463,7 +513,7 @@ void LAppDelegate::ResetKeyboardState()
 
 void LAppDelegate::OnModelKey(uint32_t code, bool pressed)
 {
-    if (_settings && _settings->Editing()) return;
+    if (!_windowState.Normal()) return;
     LAppModel* model = _window->KeyboardGrabbed()
         ? _manager->GetModel(0) : nullptr;
     const auto* bindings = model ? &model->Hotkeys().Bindings() : nullptr;
@@ -483,23 +533,22 @@ void LAppDelegate::PointerMoved(double x, double y)
 {
     SetMousePosition(x, y);
 
-    if (_view == NULL)
+    if (_view == NULL || !_windowState.Running())
     {
         return;
     }
 
-    if (_settings && _settings->Editing()) {
-        if (_settings->ScreenEditing()) _cropInteraction.Move(*_settings, int(x), int(y), _windowHeight);
+    if (!_windowState.Normal()) {
+        if (_windowState.ScreenEditing() && _windowState.GestureActive())
+            _cropInteraction.Move(*_settings, int(x), int(y), _windowHeight);
         return;
     }
-    if (_input.IsCaptured())
+    if (_windowState.Current() == ModelWindowState::State::Pressed)
     {
         if (_settings) {
             if (_cropInteraction.StartModelDrag(*_settings, _input.StartX(), _input.StartY(),
                     int(x), int(y), _windowWidth, _windowHeight)) {
-                _input = InputController{};
-                _manager->OnDrag(0.0f, 0.0f);
-                if (_window->KeyboardGrabbed()) _window->SetKeyboardGrab(false);
+                StartCropGesture();
             }
             return;
         }
@@ -516,11 +565,12 @@ void LAppDelegate::SetMousePosition(double x, double y)
 
 void LAppDelegate::PointerScroll(double vertical)
 {
+    if (!_view || !_windowState.Running()) return;
     const ModelTransform transform = ZoomModelFromScroll(
         _service.Snapshot().transform, _view, _mouseX, _mouseY,
         static_cast<float>(vertical));
-    if (_settings && _settings->Editing()) {
-        if (_settings->ScreenEditing()) { auto next = _settings->Display(); next.transform = transform; _settings->Update(_settings->Owner(), next); }
+    if (!_windowState.Normal()) {
+        if (_windowState.ScreenEditing()) { auto next = _settings->Display(); next.transform = transform; _settings->Update(_settings->Owner(), next); }
     } else {
         _service.SetTransform(transform);
         if (_settings) _settings->ScheduleSave(SettingsClock(), .5);
@@ -535,6 +585,8 @@ bool LAppDelegate::SetHidden(bool hidden)
 {
     if (hidden) {
         if (!_window->SetInputRegion({})) return false;
+        _windowState.Send(ModelWindowState::Event::CancelGesture);
+        CancelInteraction();
         _hoverOpacity.Leave();
         _window->SetKeyboardGrab(false);
         _input.ResetKeyboard();
