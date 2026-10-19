@@ -35,6 +35,13 @@ def assert_layer_shell(trace):
         "Model window fell back to an ordinary xdg-shell window"
 
 
+def assert_keyboard_capability(trace, expected):
+    capabilities = re.findall(r"wl_seat[@#]\d+\.capabilities\((\d+)\)", trace)
+    assert capabilities, "Missing Wayland seat capability evidence"
+    assert any(int(value) & 2 for value in capabilities) == expected, \
+        "Wayland keyboard capability does not match the focus test mode"
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("build", type=Path)
@@ -114,6 +121,7 @@ def main():
                                    stdout=log, stderr=subprocess.STDOUT, check=True, timeout=30)
                 window_log = (logs / "window.log").read_text()
                 assert_layer_shell(window_log)
+                assert_keyboard_capability(window_log, expected=True)
                 assert "outputs=2" in window_log, window_log[-3000:]
                 assert window_log.count("Output switch configured and committed") >= 2
                 if "DESKWAIFU_QT_TEST_HOTPLUG" in client_env:
