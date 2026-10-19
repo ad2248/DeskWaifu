@@ -176,21 +176,37 @@ int main(int argc, char** argv)
             QCoreApplication::sendEvent(qt, &release);
             Require(events.presses == 1 && events.releases == 1 && events.x == 25 && events.y == 35,
                 "Qt double-click must preserve the application's press/release policy and logical coordinates");
+            // QKeyEvent's default device creates Qt's fallback primary keyboard.
+            // Request focus before constructing one, just like a real double-click.
+            Require(!qt->isActive() && !window->KeyboardGrabbed(),
+                "The model must not take keyboard focus before a grab request");
+            const auto grab = window->SetKeyboardGrab(true);
+            Require(grab == ModelKeyboardGrabState::GrabResult::Changed && window->KeyboardGrabbed(),
+                "Keyboard focus request must not be rejected before the first keyboard enter");
             QKeyEvent key(QEvent::KeyPress, Qt::Key_Tab, Qt::NoModifier, 23, 0, 0);
             QCoreApplication::sendEvent(qt, &key);
             Require(events.key == 15, "Qt native keycode must map to evdev");
             QKeyEvent repeat(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier, 9, 0, 0, {}, true);
             QCoreApplication::sendEvent(qt, &repeat);
             Require(events.key == 15, "Auto-repeat should not trigger a model binding");
-            const auto grab = window->SetKeyboardGrab(true);
-            Require(window->KeyboardGrabbed() == (grab != ModelKeyboardGrabState::GrabResult::Rejected),
-                "Keyboard interactivity must match the compositor's keyboard capability");
+            break;
+        }
+        case 3: {
+            QEventLoop focusWait;
+            QTimer::singleShot(500, &focusWait, &QEventLoop::quit);
+            focusWait.exec();
+            Require(qt->isActive() && window->KeyboardGrabbed(),
+                "Keyboard interactivity must deliver actual compositor focus");
             QEvent focusOut(QEvent::FocusOut);
             QCoreApplication::sendEvent(qt, &focusOut);
             Require(!window->KeyboardGrabbed() && events.resets > 0, "Lost focus must release/reset keys");
+            Require(window->SetKeyboardGrab(true) == ModelKeyboardGrabState::GrabResult::Changed,
+                "Focus loss must allow a later double-click to request focus again");
+            Require(window->SetKeyboardGrab(false) == ModelKeyboardGrabState::GrabResult::Changed,
+                "Explicit keyboard release must disable interactivity");
             break;
         }
-        case 3:
+        case 4:
             Require(!window->SwitchOutput(0), "Invalid output must be rejected");
             Require(window->CurrentOutput() == original, "Invalid output changed selection");
             if (outputs.size() > 1) {
@@ -198,15 +214,15 @@ int main(int argc, char** argv)
                 Require(window->CurrentOutput() == outputs[1].id, "Output identity not updated");
             }
             break;
-        case 4:
+        case 5:
             Require(window->SwitchOutput(original), "Switch back failed");
             break;
-        case 5:
+        case 6:
             if (!hotplug) return false;
             Require(QProcess::execute("kscreen-doctor", {QString("output.%1.disable").arg(
                 QString::fromStdString(outputs[0].name))}) == 0, "Disable active output failed");
             break;
-        case 6:
+        case 7:
             if (window->Outputs().size() != 1 || window->CurrentOutput() == original) {
                 Require(++hotplugWait < 100, "Active-output removal did not rebind to the remaining output");
                 --frame;
@@ -216,7 +232,7 @@ int main(int argc, char** argv)
             Require(QProcess::execute("kscreen-doctor", {QString("output.%1.enable").arg(
                 QString::fromStdString(outputs[0].name))}) == 0, "Re-enable removed output failed");
             break;
-        case 7:
+        case 8:
             if (window->Outputs().size() != 2) {
                 Require(++hotplugWait < 200, "Output re-addition was not detected");
                 --frame;
@@ -238,7 +254,7 @@ int main(int argc, char** argv)
         Require(gl->glGetError() == GL_NO_ERROR, "Unexpected OpenGL error");
         return true;
     });
-    Require(ran && (frame == 6 || (frame == 8 && hotplugPassed)), "Qt event loop did not finish normally");
+    Require(ran && (frame == 7 || (frame == 9 && hotplugPassed)), "Qt event loop did not finish normally");
     Require(presentedFrames >= 5, "Window pixel checks did not run across output replacement");
     const qreal dpr = qt->devicePixelRatio();
     if (qEnvironmentVariableIsSet("DESKWAIFU_EXPECT_DPR"))

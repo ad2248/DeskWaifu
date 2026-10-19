@@ -59,6 +59,9 @@ no `get_xdg_surface` fallback, for both the window fixture and real model.
   remains authoritative. Native Wayland XKB scan codes are translated back to
   evdev codes. Auto-repeat is ignored; focus loss releases the layer keyboard
   interactivity and clears held keys. No global shortcuts are introduced.
+  Double-click requests layer-shell keyboard interactivity without consulting
+  `QInputDevice::devices()`: Qt may not list a keyboard until the first key event,
+  so that list cannot gate the focus request needed to receive keyboard input.
 - `QScreen` provides logical output geometry and stable IDs are assigned for the
   lifetime of each screen. A screen replacement reuses the original GL context;
   input callbacks are suppressed while the replacement is being configured.
