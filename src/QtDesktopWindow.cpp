@@ -2,7 +2,6 @@
 #include "QtWindowInput.hpp"
 #include <QEventLoop>
 #include <QGuiApplication>
-#include <QInputDevice>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QOpenGLContext>
@@ -17,7 +16,6 @@
 #include <wayland-util.h>
 #include <QWindow>
 #include <LayerShellQt/Window>
-#include <algorithm>
 #include <iostream>
 
 namespace {
@@ -179,11 +177,10 @@ public:
     bool KeyboardGrabbed() const override { return _keyboard.IsGrabbed(); }
     ModelKeyboardGrabState::GrabResult SetKeyboardGrab(bool grabbed) override
     {
-        const auto devices = QInputDevice::devices();
-        const bool hasKeyboard = std::any_of(devices.begin(), devices.end(), [](const QInputDevice* device) {
-            return device->type() == QInputDevice::DeviceType::Keyboard;
-        });
-        const auto result = _keyboard.SetGrabbed(grabbed, Available(), hasKeyboard);
+        // Qt's device list may contain no keyboard until the first key event.
+        // Let the compositor grant layer-shell focus instead of rejecting the
+        // very request needed to receive that first event.
+        const auto result = _keyboard.SetGrabbed(grabbed, Available(), true);
         if (result != ModelKeyboardGrabState::GrabResult::Changed) return result;
         LayerShellQt::Window::get(this)->setKeyboardInteractivity(grabbed
             ? LayerShellQt::Window::KeyboardInteractivityExclusive

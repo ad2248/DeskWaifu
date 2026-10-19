@@ -55,7 +55,7 @@ jobs:
             -DDESKWAIFU_BUILD_CONTROL=ON
 
       - name: Build
-        run: cmake --build build-ci --parallel "$(nproc)"
+        run: cmake --build build-ci --parallel 16
 
       - name: Compile render-target variants
         run: |
@@ -74,7 +74,7 @@ jobs:
           assert any(entry['file'].endswith('/src/LAppLive2DManager.cpp') and
                      expected in shlex.split(entry['command']) for entry in commands), expected
           PY
-            cmake --build "$build_dir" --parallel "$(nproc)"
+            cmake --build "$build_dir" --parallel 16
           done
 
       - name: Test Qt model window, rendering, and IPC client

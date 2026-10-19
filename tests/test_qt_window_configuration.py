@@ -2,11 +2,25 @@
 
 from pathlib import Path
 import unittest
+from qt_headless_smoke import assert_keyboard_capability
 
 SOURCE = Path(__file__).resolve().parents[1] / "src"
 
 
 class QtWindowConfigurationTest(unittest.TestCase):
+    def test_keyboard_focus_mode_requires_protocol_evidence(self):
+        for prefix in ("wl_seat@", "wl_seat#"):
+            empty = prefix + "16.capabilities(0)"
+            keyboard = prefix + "16.capabilities(3)"
+            assert_keyboard_capability(empty, expected=False)
+            assert_keyboard_capability(keyboard, expected=True)
+            with self.assertRaises(AssertionError):
+                assert_keyboard_capability(empty, expected=True)
+            with self.assertRaises(AssertionError):
+                assert_keyboard_capability(keyboard, expected=False)
+        with self.assertRaises(AssertionError):
+            assert_keyboard_capability("", expected=False)
+
     def test_screen_edit_uses_tested_frame_input_region(self):
         self.assertRegex(
             (SOURCE / "LAppDelegate.cpp").read_text(),

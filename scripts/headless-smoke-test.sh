@@ -281,13 +281,17 @@ kill -0 "$APP_PID"
     assert_ok get_status
 }
 python3 tests/output_smoke.py
-WAYLAND_DEBUG=client timeout 30 "$BUILD_DIR/bin/qt-desktop-window-test" \
+WAYLAND_DEBUG=client timeout 30 "$BUILD_DIR/bin/qt-desktop-window-test" --no-keyboard \
     >"$LOG_DIR/qt-window.log" 2>&1
 python3 - "$LOG_DIR/qt-window.log" <<'PY'
 import pathlib, sys
 sys.path.insert(0, "tests")
-from qt_headless_smoke import assert_layer_shell
-assert_layer_shell(pathlib.Path(sys.argv[1]).read_text())
+from qt_headless_smoke import assert_layer_shell, assert_keyboard_capability
+trace = pathlib.Path(sys.argv[1]).read_text()
+assert_layer_shell(trace)
+# WLR_LIBINPUT_NO_DEVICES=1 deliberately leaves this seat without a keyboard.
+# Do not let --no-keyboard hide a focus regression on a keyboard-capable seat.
+assert_keyboard_capability(trace, expected=False)
 PY
 assert_ok quit
 for _ in {1..200}; do

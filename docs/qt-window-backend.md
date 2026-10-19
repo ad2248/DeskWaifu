@@ -59,6 +59,9 @@ no `get_xdg_surface` fallback, for both the window fixture and real model.
   remains authoritative. Native Wayland XKB scan codes are translated back to
   evdev codes. Auto-repeat is ignored; focus loss releases the layer keyboard
   interactivity and clears held keys. No global shortcuts are introduced.
+  Double-click requests layer-shell keyboard interactivity without consulting
+  `QInputDevice::devices()`: Qt may not list a keyboard until the first key event,
+  so that list cannot gate the focus request needed to receive keyboard input.
 - `QScreen` provides logical output geometry and stable IDs are assigned for the
   lifetime of each screen. A screen replacement reuses the original GL context;
   input callbacks are suppressed while the replacement is being configured.
@@ -83,6 +86,11 @@ private D-Bus session, two virtual outputs, runtime socket and config directory,
 with software rendering. If `kscreen-doctor` is installed it also disables and
 re-enables an output to exercise hotplug. It does not send input to the user's
 desktop. Logs remain in `BUILD_DIR/qt-smoke-logs/SCALE/`.
+
+The CI Sway smoke runner deliberately has no input devices. It passes
+`--no-keyboard` to the window fixture and verifies the seat's missing keyboard
+capability in the protocol trace; focus requests must still succeed locally.
+The KWin smoke runner requires a keyboard-capable seat and actual window focus.
 
 The window integration executable verifies GL color/alpha in both the model FBO
 and the actual window back buffer immediately before EGL swap. It deliberately
