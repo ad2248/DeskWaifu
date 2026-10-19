@@ -108,6 +108,7 @@ int main(int argc, char** argv)
     Events events;
     auto window = CreateDesktopWindow();
     const bool rejectPlatform = app.arguments().contains("--reject-platform");
+    const bool noKeyboard = app.arguments().contains("--no-keyboard");
     if (!window->Initialize(640, 480, events)) {
         window->Shutdown();
         return rejectPlatform ? 0 : 77;
@@ -195,8 +196,9 @@ int main(int argc, char** argv)
             QEventLoop focusWait;
             QTimer::singleShot(500, &focusWait, &QEventLoop::quit);
             focusWait.exec();
-            Require(qt->isActive() && window->KeyboardGrabbed(),
-                "Keyboard interactivity must deliver actual compositor focus");
+            Require(window->KeyboardGrabbed(), "Keyboard focus request must remain enabled");
+            Require(qt->isActive() != noKeyboard,
+                "Compositor focus must match the test seat's keyboard capability");
             QEvent focusOut(QEvent::FocusOut);
             QCoreApplication::sendEvent(qt, &focusOut);
             Require(!window->KeyboardGrabbed() && events.resets > 0, "Lost focus must release/reset keys");

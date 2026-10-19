@@ -87,6 +87,11 @@ with software rendering. If `kscreen-doctor` is installed it also disables and
 re-enables an output to exercise hotplug. It does not send input to the user's
 desktop. Logs remain in `BUILD_DIR/qt-smoke-logs/SCALE/`.
 
+The CI Sway smoke runner deliberately has no input devices. It passes
+`--no-keyboard` to the window fixture and verifies the seat's missing keyboard
+capability in the protocol trace; focus requests must still succeed locally.
+The KWin smoke runner requires a keyboard-capable seat and actual window focus.
+
 The window integration executable verifies GL color/alpha in both the model FBO
 and the actual window back buffer immediately before EGL swap. It deliberately
 sets the window draw target to `GL_NONE` before presentation to cover the NVIDIA
