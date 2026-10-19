@@ -95,8 +95,12 @@ int main()
             CHECK(sprite.IsHit(centerX, height - centerY, width, height));
             CHECK(!sprite.IsHit(0, height - centerY, width, height));
             CHECK(!sprite.IsHit(centerX, 0, width, height));
-            for (const bool immediate : {false, true}) {
-                glClearColor(0, 0, 0, 0); glClear(GL_COLOR_BUFFER_BIT);
+            for (const bool nonzeroBackground : {false, true}) for (const bool immediate : {false, true}) {
+                const int background[] = {nonzeroBackground ? 32 : 0, nonzeroBackground ? 64 : 0,
+                    nonzeroBackground ? 96 : 0, nonzeroBackground ? 128 : 0};
+                glClearColor(background[0] / 255.f, background[1] / 255.f,
+                    background[2] / 255.f, background[3] / 255.f);
+                glClear(GL_COLOR_BUFFER_BIT);
                 if (immediate) {
                     // LAppView's opacity path scales both premultiplied RGB and alpha.
                     glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
@@ -108,11 +112,18 @@ int main()
                 }
                 std::vector<unsigned char> pixels(width * height * 4);
                 glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+                // Render multiplies all source channels (including alpha)
+                // by .5. Immediate receives premultiplied channels scaled by .5.
+                const double source[] = {immediate ? 64.0 : 127.5, immediate ? 32.0 : 64.0,
+                    immediate ? 16.0 : 32.0, immediate ? 64.0 : 63.75};
+                const double destinationFactor = immediate ? 1.0 - 64.0 / 255 : .5;
                 for (int y = 0; y < height; ++y) for (int x = 0; x < width; ++x) {
                     const bool inside = x >= centerX - 2 && x < centerX + 2 && y >= centerY - 2 && y < centerY + 2;
-                    const int expected[] = {immediate ? 64 : 128, immediate ? 32 : 64, immediate ? 16 : 32, 64};
-                    for (int channel = 0; channel < 4; ++channel)
-                        CHECK(std::abs(int(pixels[(y * width + x) * 4 + channel]) - (inside ? expected[channel] : 0)) <= 1);
+                    for (int channel = 0; channel < 4; ++channel) {
+                        const double expected = inside ? source[channel] + background[channel] * destinationFactor
+                            : background[channel];
+                        CHECK(std::abs(pixels[(y * width + x) * 4 + channel] - expected) <= 1);
+                    }
                 }
                 CHECK(glGetError() == GL_NO_ERROR);
             }
