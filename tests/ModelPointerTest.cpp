@@ -464,17 +464,45 @@ int main(int argc, char** argv)
     LAppDefine::ModelsDir = models;
     auto* app = LAppDelegate::GetInstance();
     if (!app->Initialize()) return window->context == EGL_NO_CONTEXT ? 77 : 1;
+    ConfigStore configStore(configPath);
+    ConfigStore::Snapshot beforeDrag;
+    std::string configError;
+    CHECK(configStore.Read(beforeDrag, configError));
     const std::string scenario = argv[1];
     const int result = scenario == "release" ? releaseTest(*app) :
         scenario == "transform" ? transformTest(*app) : scenario == "state" ? stateTest(*app) : dragTest(*app);
+    if (result == 0 && scenario == "drag") {
+        ConfigStore::Snapshot disk;
+        CHECK(configStore.Read(disk, configError) && disk.document == beforeDrag.document);
+    }
     if (result == 0 && scenario != "transform" && scenario != "state") {
         window->script = [&](const std::function<bool()>& frame) {
             if (!frame()) return false;
             // The first real frame after an intentional cross-output rebind
             // must not run the hotplug/resize cancellation path.
-            if (scenario == "drag")
-                return window->current == 2 && app->Settings().LocalScreenEditing() &&
-                    app->Settings().Display().region.width == 1000;
+            if (scenario == "drag") {
+                if (window->current != 2 || !app->Settings().LocalScreenEditing() ||
+                    app->Settings().Display().region.width != 1000) return false;
+                const auto draft = app->Settings().Display();
+                ConfigStore::Snapshot disk;
+                if (!configStore.Read(disk, configError) || disk.document != beforeDrag.document) return false;
+                // Advance the real editor beyond the .5s autosave debounce;
+                // do not add wall-clock sleeps to the pointer regression test.
+                const double now = std::chrono::duration<double>(
+                    std::chrono::steady_clock::now().time_since_epoch()).count();
+                app->Settings().Tick(now + 1);
+                if (!frame() || !app->Settings().LocalScreenEditing() ||
+                    !configStore.Read(disk, configError) || disk.document != beforeDrag.document) return false;
+                if (!app->Settings().Apply("local-screen").ok || app->Settings().Editing() ||
+                    !configStore.Read(disk, configError) || disk.document == beforeDrag.document) return false;
+                TransformSettings saved;
+                return TransformEditor::Decode(disk, saved, configError) && saved.cropped == draft.cropped &&
+                    saved.region.x == draft.region.x && saved.region.y == draft.region.y &&
+                    saved.region.width == draft.region.width && saved.region.height == draft.region.height &&
+                    near(saved.transform.scale, draft.transform.scale) &&
+                    near(saved.transform.x, draft.transform.x) && near(saved.transform.y, draft.transform.y) &&
+                    disk.values.at("model_output") == beforeDrag.values.at("model_output");
+            }
             return hits.size() == 1 && near(hits[0].x, -.1f) && near(hits[0].y, .2f);
         };
         CHECK(app->Run()); // Also executes the real frame and GPU teardown paths.
