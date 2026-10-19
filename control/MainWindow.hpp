@@ -18,7 +18,7 @@ class MainWindow : public QMainWindow
     Q_OBJECT
 
 public:
-    explicit MainWindow(QWidget* parent = nullptr);
+    explicit MainWindow(QWidget* parent = nullptr, const QString& procDirectory = QStringLiteral("/proc"));
     ~MainWindow() override;
 
     // Update operation feedback without replacing the connection status.
@@ -30,6 +30,7 @@ signals:
 
 private:
     void bindControls();
+    void updateSpawnButton();
     void refreshAll();
     void handleResponse(const QString& command, const QJsonObject& response);
     void logResponse(const QString& command, const QJsonObject& response);
@@ -37,6 +38,7 @@ private:
     Ui::MainWindow* ui;
     HotkeyPanel* _hotkeys;
     DeskWaifuClient _client;
+    QString _procDirectory;
     DeskWaifuRespawner _respawner;
     QLabel* _connectionStatusLabel;
     QLabel* _operationStatusLabel;
