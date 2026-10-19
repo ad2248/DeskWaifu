@@ -19,26 +19,11 @@ QString executablePath(const QString& applicationDirectory)
         ? executable : QStandardPaths::findExecutable(QStringLiteral("deskwaifu"));
 }
 
-Result spawn(bool connected, const QString& applicationDirectory, const QString& procDirectory,
-             const QString& lockDirectory)
+qint64 runningPid(const QString& procDirectory)
 {
-    if (connected)
-        return {State::Connected, QObject::tr("DeskWaifu is already connected.")};
-
-    const QString runtime = lockDirectory.isEmpty()
-        ? QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation) : lockDirectory;
-    if (runtime.isEmpty())
-        return {State::Failed, QObject::tr("Cannot find a runtime directory for the DeskWaifu startup lock.")};
-    QLockFile lock(QDir(runtime).filePath(QStringLiteral("deskwaifu-spawn.lock")));
-    lock.setStaleLockTime(0); // Never steal a live launcher's lock because startup is slow.
-    if (!lock.tryLock(2000))
-        return {State::Failed, QObject::tr("Cannot acquire the DeskWaifu startup lock; another launch may be in progress.")};
-
-    // Every GUI for this user shares the lock. Recheck only after acquiring it,
-    // and keep it held across startDetached's successful exec handshake.
     const QDir processes(procDirectory);
     if (!processes.exists() || !QFileInfo(procDirectory).isReadable())
-        return {State::Failed, QObject::tr("Cannot inspect running processes; DeskWaifu was not started.")};
+        return -1;
 
     for (const auto& entry : processes.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot))
     {
@@ -58,9 +43,34 @@ Result spawn(bool connected, const QString& applicationDirectory, const QString&
         }
         const QString executable = QFileInfo(entry.filePath() + QStringLiteral("/exe")).symLinkTarget();
         if (!zombie && (namedDeskWaifu || QFileInfo(executable).fileName() == QStringLiteral("deskwaifu")))
-            return {State::AlreadyRunning,
-                    QObject::tr("DeskWaifu is already running (PID %1); trying to connect.").arg(pid), pid};
+            return pid;
     }
+    return 0;
+}
+
+Result spawn(bool connected, const QString& applicationDirectory, const QString& procDirectory,
+             const QString& lockDirectory)
+{
+    if (connected)
+        return {State::Connected, QObject::tr("DeskWaifu is already connected.")};
+
+    const QString runtime = lockDirectory.isEmpty()
+        ? QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation) : lockDirectory;
+    if (runtime.isEmpty())
+        return {State::Failed, QObject::tr("Cannot find a runtime directory for the DeskWaifu startup lock.")};
+    QLockFile lock(QDir(runtime).filePath(QStringLiteral("deskwaifu-spawn.lock")));
+    lock.setStaleLockTime(0); // Never steal a live launcher's lock because startup is slow.
+    if (!lock.tryLock(2000))
+        return {State::Failed, QObject::tr("Cannot acquire the DeskWaifu startup lock; another launch may be in progress.")};
+
+    // Every GUI for this user shares the lock. Recheck only after acquiring it,
+    // and keep it held across startDetached's successful exec handshake.
+    const qint64 running = runningPid(procDirectory);
+    if (running < 0)
+        return {State::Failed, QObject::tr("Cannot inspect running processes; DeskWaifu was not started.")};
+    if (running > 0)
+        return {State::AlreadyRunning,
+                QObject::tr("DeskWaifu is already running (PID %1); trying to connect.").arg(running), running};
 
     const QString executable = executablePath(applicationDirectory);
     if (executable.isEmpty())

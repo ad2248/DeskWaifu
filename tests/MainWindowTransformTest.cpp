@@ -43,6 +43,69 @@ class MainWindowTransformTest : public QObject
 {
     Q_OBJECT
 private slots:
+    void runningBackendWithoutConnectionShowsDisabledShutdown()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const auto previousRuntime = qgetenv("XDG_RUNTIME_DIR");
+        const auto restoreRuntime = qScopeGuard([previousRuntime] { qputenv("XDG_RUNTIME_DIR", previousRuntime); });
+        qputenv("XDG_RUNTIME_DIR", directory.path().toLocal8Bit());
+        QVERIFY(QDir().mkpath(directory.path() + "/123"));
+        QFile status(directory.path() + "/123/status");
+        QVERIFY(status.open(QIODevice::WriteOnly));
+        status.write("Name:\tdeskwaifu\nState:\tS (sleeping)\n");
+        status.close();
+        MainWindow window(nullptr, directory.path());
+        auto* button = window.findChild<QPushButton*>("spawnButton");
+        QVERIFY(button);
+        QCOMPARE(button->text(), QStringLiteral("Shutdown"));
+        QVERIFY(!button->isEnabled());
+        QVERIFY(status.remove());
+        QTRY_COMPARE(button->text(), QStringLiteral("Spawn"));
+        QVERIFY(button->isEnabled());
+    }
+
+    void shutdownButtonSendsQuitAndTracksConnection()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const int fd = open(QFile::encodeName(directory.path()).constData(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+        QVERIFY(fd >= 0);
+        const auto closeRuntime = qScopeGuard([fd] { close(fd); });
+        const auto previousRuntime = qgetenv("XDG_RUNTIME_DIR");
+        const auto restoreRuntime = qScopeGuard([previousRuntime] { qputenv("XDG_RUNTIME_DIR", previousRuntime); });
+        const QString runtimePath = QStringLiteral("/proc/self/fd/%1").arg(fd);
+        qputenv("XDG_RUNTIME_DIR", runtimePath.toLocal8Bit());
+        QLocalServer server;
+        QVERIFY(server.listen(runtimePath + "/deskwaifu.sock"));
+        int quitRequests = 0;
+        connect(&server, &QLocalServer::newConnection, this, [&] {
+            auto* socket = server.nextPendingConnection();
+            connect(socket, &QLocalSocket::readyRead, this, [&, socket] {
+                while (socket->canReadLine()) {
+                    const auto command = QJsonDocument::fromJson(socket->readLine()).object().value("command").toString();
+                    if (command == "quit") {
+                        ++quitRequests;
+                        server.close();
+                        socket->disconnectFromServer();
+                        return;
+                    }
+                    socket->write("{\"ok\":true}\n");
+                    socket->flush();
+                }
+            });
+        });
+        MainWindow window(nullptr, directory.path());
+        auto* button = window.findChild<QPushButton*>("spawnButton");
+        QVERIFY(button);
+        QTRY_COMPARE(button->text(), QStringLiteral("Shutdown"));
+        QVERIFY(button->isEnabled());
+        button->click();
+        QTRY_COMPARE(quitRequests, 1);
+        QTRY_COMPARE(button->text(), QStringLiteral("Spawn"));
+        QVERIFY(button->isEnabled());
+    }
+
     void recoversFromInvalidReply_data()
     {
         QTest::addColumn<QString>("failedCommand");
@@ -719,15 +782,14 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(x->isEnabled(), 2000);
         auto* spawn = window.findChild<QPushButton*>("spawnButton");
         QVERIFY(spawn);
-        QCOMPARE(spawn->text(), QString("Spawn"));
+        QCOMPARE(spawn->text(), QString("Shutdown"));
         QVERIFY(!window.findChild<QPushButton*>("refreshButton"));
         auto* connectionStatus = window.findChild<QLabel*>("connectionStatusLabel");
         auto* operationStatus = window.findChild<QLabel*>("operationStatusLabel");
         QVERIFY(connectionStatus && operationStatus);
         const auto connectedText = connectionStatus->text();
-        spawn->click(); // A connected GUI must not start another backend.
-        QVERIFY(window.findChild<QPlainTextEdit*>("responseLog")->toPlainText().contains("already connected"));
-        QVERIFY(operationStatus->text().contains("already connected"));
+        spawn->click(); // A connected GUI shuts down instead of starting another backend.
+        QVERIFY(operationStatus->text().contains("shutdown"));
         QCOMPARE(connectionStatus->text(), connectedText);
         QTRY_VERIFY_WITH_TIMEOUT(!width->isEnabled(), 2000);
         QTest::qWait(100); // initial query has finished before the first user edit

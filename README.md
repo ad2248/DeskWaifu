@@ -204,6 +204,9 @@ closing the control window does not stop it. Startup errors appear in the status
 bar and response log; the control window retries connections every 1.5 seconds.
 Concurrent Spawn requests share a per-user runtime lock around process inspection
 and startup, so two control windows cannot both start a backend at the same time.
+When connected or a running backend is detected, the button becomes **Shutdown**.
+It sends `quit` once connected; while waiting for a connection it is disabled.
+After the backend exits, the button returns to **Spawn**.
 
 **Respawn** is available while connected. It sends `quit`, waits for the old
 process to exit, then uses the same detached startup and automatic reconnection

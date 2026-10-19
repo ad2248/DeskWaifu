@@ -79,6 +79,15 @@ private slots:
         QCOMPARE(result.state, State::AlreadyRunning);
         QCOMPARE(result.pid, 123);
     }
+    void runningPidTracksProcessLifecycle()
+    {
+        QCOMPARE(DeskWaifuLauncher::runningPid(proc()), 0);
+        process("123", "deskwaifu");
+        QCOMPARE(DeskWaifuLauncher::runningPid(proc()), 123);
+        process("123", "deskwaifu", "Z (zombie)");
+        QCOMPARE(DeskWaifuLauncher::runningPid(proc()), 0);
+        QCOMPARE(DeskWaifuLauncher::runningPid(proc() + "/missing"), -1);
+    }
     void executableMatchSurvivesRenamedProcess()
     {
         process("124", "renamed");

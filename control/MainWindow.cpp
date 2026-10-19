@@ -15,9 +15,10 @@
 #include <QMessageBox>
 #include <QVariantMap>
 
-MainWindow::MainWindow(QWidget* parent)
+MainWindow::MainWindow(QWidget* parent, const QString& procDirectory)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
+    , _procDirectory(procDirectory)
     , _respawner(_client, QCoreApplication::applicationDirPath())
 {
     ui->setupUi(this);
@@ -66,6 +67,7 @@ MainWindow::MainWindow(QWidget* parent)
         [this](bool connected, const QString& message) {
             _hotkeys->setConnected(connected);
             ui->respawnButton->setEnabled(connected && !_respawner.isRunning());
+            updateSpawnButton();
             if (!connected)
             {
                 if (_hoverSetPending || _mouseLookSetPending) setStatusMessage(tr("连接断开：设置结果未确认，重新连接后将查询实际保存结果。"));
@@ -138,6 +140,16 @@ void MainWindow::setStatusMessage(const QString& message, int timeoutMs)
     if (!message.isEmpty() && timeoutMs > 0) _statusMessageTimer.start(timeoutMs);
 }
 
+void MainWindow::updateSpawnButton()
+{
+    const bool connected = _client.isConnected();
+    const bool running = connected || DeskWaifuLauncher::runningPid(_procDirectory) > 0;
+    ui->spawnButton->setText(running ? tr("Shutdown") : tr("Spawn"));
+    ui->spawnButton->setEnabled(!_respawner.isRunning() && (!running || connected));
+    ui->spawnButton->setToolTip(running && !connected
+        ? tr("Waiting for a connection to shut down DeskWaifu safely.") : QString());
+}
+
 void MainWindow::bindControls()
 {
     connect(ui->outputCombo, &QComboBox::activated, this, [this](int index) {
@@ -153,8 +165,13 @@ void MainWindow::bindControls()
     ui->horizontalLayout_2->setColumnStretch(1, 1);
     ui->horizontalLayout_2->setColumnStretch(3, 1);
     ui->respawnButton->setEnabled(false);
+    auto* processTimer = new QTimer(this);
+    processTimer->setInterval(1000);
+    connect(processTimer, &QTimer::timeout, this, &MainWindow::updateSpawnButton);
+    processTimer->start();
+    updateSpawnButton();
     connect(&_respawner, &DeskWaifuRespawner::runningChanged, this, [this](bool running) {
-        ui->spawnButton->setEnabled(!running);
+        updateSpawnButton();
         ui->respawnButton->setEnabled(!running && _client.isConnected());
         if (running) setStatusMessage(tr("Respawning DeskWaifu; waiting for the old process to exit…"));
     });
@@ -164,7 +181,13 @@ void MainWindow::bindControls()
     });
     connect(ui->respawnButton, &QPushButton::clicked, this, [this] { _respawner.start(); });
     connect(ui->spawnButton, &QPushButton::clicked, this, [this] {
-        const auto result = DeskWaifuLauncher::spawn(_client.isConnected(), QCoreApplication::applicationDirPath());
+        if (_client.isConnected()) {
+            _client.sendCommand(QStringLiteral("quit"));
+            setStatusMessage(tr("Requested DeskWaifu shutdown."), 8000);
+            return;
+        }
+        const auto result = DeskWaifuLauncher::spawn(_client.isConnected(), QCoreApplication::applicationDirPath(), _procDirectory);
+        updateSpawnButton();
         setStatusMessage(result.message, 8000);
         ui->responseLog->appendPlainText(result.message);
         if (result.state != DeskWaifuLauncher::State::Failed && !_client.isConnected())
