@@ -69,8 +69,15 @@ private slots:
         QTest::qWait(100);
         QVERIFY(!socket->canReadLine());
     }
+    void waitsForProcessExitAndReconnects_data()
+    {
+        QTest::addColumn<bool>("acknowledged");
+        QTest::newRow("acknowledged") << true;
+        QTest::newRow("lost-reply-with-queued-mutations") << false;
+    }
     void waitsForProcessExitAndReconnects()
     {
+        QFETCH(bool, acknowledged);
         installBackend();
         QProcess oldBackend;
         oldBackend.start(QStringLiteral(SPAWN_BACKEND_FIXTURE), QStringList{});
@@ -92,8 +99,15 @@ private slots:
         respawner.start(proc(), directory.path()); // A repeated click must not queue another quit.
         QTRY_VERIFY(socket->canReadLine());
         QCOMPARE(QJsonDocument::fromJson(socket->readLine()).object().value("command").toString(), "quit");
-        socket->write("{\"ok\":true}\n");
+        QSignalSpy cancelled(&client, &DeskWaifuClient::commandCancelled);
+        if (acknowledged) socket->write("{\"ok\":true}\n");
+        else {
+            // The old backend exits without acknowledging quit or consuming its queue.
+            for (const auto& command : {"toggle_hidden", "next_model", "do_motion", "set_output"})
+                client.sendCommand(QString::fromLatin1(command));
+        }
         socket->disconnectFromServer();
+        QTRY_COMPARE(cancelled.size(), acknowledged ? 0 : 4);
         QTest::qWait(350);
         QVERIFY(respawner.isRunning());
         QCOMPARE(finished.size(), 0); // IPC closed, but process still alive.

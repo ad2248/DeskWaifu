@@ -111,6 +111,16 @@ MainWindow::MainWindow(QWidget* parent)
             ui->responseLog->appendPlainText(message);
             setStatusMessage(message, 8000);
         });
+    connect(&_client, &DeskWaifuClient::commandCancelled, this,
+        [this](const QString& command) {
+            if (command == QStringLiteral("apply_transform_edit") ||
+                command == QStringLiteral("reset_transform_settings") ||
+                command == QStringLiteral("retry_transform_save")) _transformSaveRequest.clear();
+            const QString message = tr("Connection lost: queued command '%1' was cancelled before sending.")
+                .arg(command);
+            ui->responseLog->appendPlainText(message);
+            setStatusMessage(message, 8000);
+        });
 
     _client.connectToServer();
 }

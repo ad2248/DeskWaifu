@@ -43,6 +43,160 @@ class MainWindowTransformTest : public QObject
 {
     Q_OBJECT
 private slots:
+    void recoversFromInvalidReply_data()
+    {
+        QTest::addColumn<QString>("failedCommand");
+        for (const auto& command : {"get_hover_opacity", "set_hover_opacity", "get_mouse_look",
+                "set_mouse_look", "get_transform_settings", "begin_transform_edit",
+                "update_transform_edit", "apply_transform_edit", "get_transform_save_result"})
+            QTest::newRow(command) << QString(command);
+        QTest::newRow("queued-save-cancelled") << QString("queued_apply_transform_edit");
+    }
+
+    void recoversFromInvalidReply()
+    {
+        QFETCH(QString, failedCommand);
+        const bool queuedSave = failedCommand == "queued_apply_transform_edit";
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const int fd = open(QFile::encodeName(directory.path()).constData(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+        QVERIFY(fd >= 0);
+        const auto closeRuntime = qScopeGuard([fd] { close(fd); });
+        const auto oldRuntime = qgetenv("XDG_RUNTIME_DIR");
+        const auto restoreRuntime = qScopeGuard([&] { qputenv("XDG_RUNTIME_DIR", oldRuntime); });
+        const QString runtimePath = QStringLiteral("/proc/self/fd/%1").arg(fd);
+        qputenv("XDG_RUNTIME_DIR", runtimePath.toLocal8Bit());
+        LAppConfig config;
+        config.sourcePath = (directory.path() + "/config.json").toStdString();
+        WindowRuntime runtime;
+        ApplicationService service(runtime);
+        TransformEditor editor(service, config);
+        QVERIFY(editor.Initialize({}));
+        HoverOpacitySettings hover(config);
+        const bool initialHoverEnabled = hover.Enabled();
+        MouseLookSettings look(config);
+        QLocalServer server;
+        QVERIFY(server.listen(runtimePath + "/deskwaifu.sock"));
+        QStringList commands;
+        int connections = 0, invalidReplies = 0;
+        bool lostSaveReply = false;
+        bool holdQuery = false;
+        QLocalSocket* blocked = nullptr;
+        connect(&server, &QLocalServer::newConnection, this, [&] {
+            ++connections;
+            auto* socket = server.nextPendingConnection();
+            connect(socket, &QLocalSocket::disconnected, this, [&] { editor.Disconnected("gui"); });
+            connect(socket, &QLocalSocket::readyRead, this, [&, socket] {
+                while (socket->canReadLine()) {
+                    const auto json = socket->readLine();
+                    const auto input = QJsonDocument::fromJson(json).object();
+                    const auto command = input.value("command").toString();
+                    commands << command;
+                    if (holdQuery && command == "get_transform_settings") {
+                        holdQuery = false;
+                        blocked = socket;
+                        return;
+                    }
+                    AppResult result = AppResult::Success();
+                    if (command == "begin_transform_edit") result = editor.Begin("gui", false, 1920, 1080);
+                    if (command == "update_transform_edit") {
+                        auto draft = editor.Display();
+                        draft.transform.x = float(input.value("x").toDouble());
+                        result = editor.Update("gui", draft);
+                    }
+                    if (command == "apply_transform_edit") result = editor.Apply("gui");
+                    if (command == "set_hover_opacity") result = hover.Set(json.toStdString());
+                    if (command == "set_mouse_look") result = look.Set(json.toStdString());
+                    QJsonObject response{{"ok", result.ok}, {"error", QString::fromStdString(result.error)}};
+                    if (command == "get_hover_opacity" || command == "set_hover_opacity") {
+                        response.insert("enabled", hover.Enabled());
+                        response.insert("opacity", hover.Opacity());
+                        response.insert("idle_opacity", hover.IdleOpacity());
+                    }
+                    if (command == "get_mouse_look" || command == "set_mouse_look") response.insert("radius", look.Radius());
+                    if (command == "get_transform_settings" || command.endsWith("transform_edit")) {
+                        response.insert("x", editor.Display().transform.x);
+                        response.insert("y", editor.Display().transform.y);
+                        response.insert("zoom", editor.Display().transform.scale);
+                        response.insert("editing", editor.Editing());
+                        response.insert("owned", editor.OwnedBy("gui"));
+                        response.insert("revision", int(editor.Revision()));
+                        response.insert("surface_width", 1920);
+                        response.insert("surface_height", 1080);
+                    }
+                    if (command == "get_transform_save_result") response.insert("known", true);
+                    // Lose the apply acknowledgement first to exercise receipt-query recovery.
+                    const bool loseSave = failedCommand == "get_transform_save_result" &&
+                        command == "apply_transform_edit" && !lostSaveReply;
+                    if (loseSave) lostSaveReply = true;
+                    if (loseSave || (command == failedCommand && invalidReplies == 0)) {
+                        if (!loseSave) ++invalidReplies;
+                        socket->write("broken-json\n");
+                    } else socket->write(QJsonDocument(response).toJson(QJsonDocument::Compact) + '\n');
+                    socket->flush();
+                }
+            });
+        });
+        MainWindow window;
+        window.show();
+        window.activateWindow();
+        auto* hoverGroup = window.findChild<QWidget*>("hoverOpacityGroup");
+        auto* lookGroup = window.findChild<QWidget*>("mouseLookGroup");
+        auto* x = window.findChild<QDoubleSpinBox*>("positionXSpin");
+        auto* apply = window.findChild<QPushButton*>("transformButton");
+        auto* log = window.findChild<QPlainTextEdit*>("responseLog");
+        QVERIFY(hoverGroup && lookGroup && x && apply && log);
+        if (!failedCommand.startsWith("get_") || failedCommand == "get_transform_save_result") {
+            QTRY_VERIFY(hoverGroup->isEnabled() && lookGroup->isEnabled() && x->isEnabled());
+            if (failedCommand == "set_hover_opacity") window.findChild<QCheckBox*>("hoverOpacityEnabledCheck")->click();
+            else if (failedCommand == "set_mouse_look") window.findChild<QDoubleSpinBox*>("mouseLookRadiusSpin")->setValue(.7);
+            else {
+                x->setValue(2.5);
+                if (failedCommand == "apply_transform_edit" || failedCommand == "get_transform_save_result") {
+                    QTRY_VERIFY(apply->isEnabled());
+                    apply->click();
+                } else if (queuedSave) {
+                    QTRY_VERIFY(apply->isEnabled());
+                    holdQuery = true;
+                    QTRY_VERIFY(blocked);
+                    apply->click(); // This save has not left the queue when the query reply fails.
+                    ++invalidReplies;
+                    blocked->write("broken-json\n");
+                    blocked->flush();
+                }
+            }
+        }
+        QTRY_COMPARE_WITH_TIMEOUT(invalidReplies, 1, 6000);
+        QTRY_VERIFY_WITH_TIMEOUT(connections >= 2 && hoverGroup->isEnabled() && lookGroup->isEnabled() && x->isEnabled(), 6000);
+        QVERIFY(log->toPlainText().contains(queuedSave ? QString("apply_transform_edit") : failedCommand));
+        QVERIFY(log->toPlainText().contains("Invalid JSON"));
+        if (queuedSave) {
+            QCOMPARE(commands.count("apply_transform_edit"), 0);
+            QCOMPARE(commands.count("get_transform_save_result"), 0);
+            QVERIFY(log->toPlainText().contains("cancelled before sending"));
+            QVERIFY(window.findChild<QPushButton*>("xformResetButton")->isEnabled());
+        } else if (!failedCommand.startsWith("get_")) QCOMPARE(commands.count(failedCommand), 1);
+        if (failedCommand == "set_hover_opacity") {
+            QCOMPARE(hover.Enabled(), !initialHoverEnabled);
+            QCOMPARE(window.findChild<QCheckBox*>("hoverOpacityEnabledCheck")->isChecked(), hover.Enabled());
+        }
+        if (failedCommand == "set_mouse_look") {
+            QCOMPARE(look.Radius(), .7f);
+            QCOMPARE(window.findChild<QDoubleSpinBox*>("mouseLookRadiusSpin")->value(), .7);
+        }
+        if (failedCommand == "apply_transform_edit" || failedCommand == "get_transform_save_result") {
+            QTRY_VERIFY(commands.contains("get_transform_save_result"));
+            QTRY_VERIFY(window.findChild<QPushButton*>("xformResetButton")->isEnabled());
+            QCOMPARE(commands.count("apply_transform_edit"), 1);
+            QCOMPARE(x->value(), 2.5);
+        } else if (failedCommand.endsWith("transform_edit")) {
+            QCOMPARE(x->value(), 0.); // A lost preview acknowledgement does not preserve a ghost draft.
+        }
+        const auto before = commands.count("set_hover_opacity");
+        window.findChild<QCheckBox*>("hoverOpacityEnabledCheck")->click();
+        QTRY_VERIFY(commands.count("set_hover_opacity") == before + 1 && hoverGroup->isEnabled());
+    }
+
     void mouseLookRangeSavesOnRelease()
     {
         QTemporaryDir directory;

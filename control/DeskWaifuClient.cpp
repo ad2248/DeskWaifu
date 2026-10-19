@@ -2,6 +2,7 @@
 #include "IpcSocketPath.hpp"
 
 #include <QJsonDocument>
+#include <QStringList>
 
 DeskWaifuClient::DeskWaifuClient(QObject* parent)
     : QObject(parent)
@@ -79,11 +80,13 @@ void DeskWaifuClient::readResponses()
         const QJsonDocument document = QJsonDocument::fromJson(line, &error);
         if (error.error != QJsonParseError::NoError || !document.isObject())
         {
-            emit protocolError(tr("Invalid JSON response: %1").arg(error.errorString()));
-            _inFlight = {};
-            _waitingForResponse = false;
-            sendNext();
-            continue;
+            emit protocolError(tr("Invalid JSON response for '%1': %2")
+                .arg(_inFlight.command, error.error == QJsonParseError::NoError
+                    ? tr("Expected a JSON object") : error.errorString()));
+            // Correlation is no longer trustworthy. Disconnection retries only
+            // safe queries and reports in-flight mutations as outcome unknown.
+            _socket.abort();
+            return;
         }
 
         const QString command = _inFlight.command;
@@ -103,6 +106,7 @@ void DeskWaifuClient::handleConnected()
 
 void DeskWaifuClient::handleDisconnected()
 {
+    QString unknownCommand;
     if (_waitingForResponse)
     {
         if (isRetryableQuery(_inFlight.command))
@@ -111,23 +115,20 @@ void DeskWaifuClient::handleDisconnected()
         }
         else
         {
-            emit commandOutcomeUnknown(_inFlight.command);
+            unknownCommand = _inFlight.command;
         }
     }
     _inFlight = {};
     _waitingForResponse = false;
     _readBuffer.clear();
-    // A queued toggle is meaningful only for the current connection/model state.
-    for (qsizetype i = _requests.size(); i-- > 0;)
-        if (_requests[i].command == QStringLiteral("quit") ||
-            _requests[i].command == QStringLiteral("trigger_hotkey") ||
-            _requests[i].command == QStringLiteral("set_hover_opacity") ||
-            _requests[i].command == QStringLiteral("set_mouse_look") ||
-            _requests[i].command.endsWith(QStringLiteral("transform_edit")) ||
-            _requests[i].command == QStringLiteral("reset_transform_settings") ||
-            _requests[i].command == QStringLiteral("retry_transform_save") ||
-            _requests[i].command == QStringLiteral("reload_transform_settings") ||
-            _requests[i].command == QStringLiteral("relocate_crop")) _requests.removeAt(i);
+    QStringList cancelled;
+    // Only explicitly retryable queries may cross a connection boundary.
+    for (qsizetype i = 0; i < _requests.size();) {
+        if (isRetryableQuery(_requests[i].command)) ++i;
+        else cancelled.append(_requests.takeAt(i).command);
+    }
+    if (!unknownCommand.isEmpty()) emit commandOutcomeUnknown(unknownCommand);
+    for (const auto& command : cancelled) emit commandCancelled(command);
     emit connectionChanged(false, tr("Disconnected"));
     _reconnectTimer.start();
 }
