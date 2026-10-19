@@ -3,6 +3,8 @@
 #include "ScreenCropInteraction.hpp"
 #include "HoverOpacitySettings.hpp"
 #include "MouseLookSettings.hpp"
+#include "SpeechSettings.hpp"
+#include <QLineEdit>
 #include <QLabel>
 #include <QCheckBox>
 #include <QComboBox>
@@ -43,6 +45,69 @@ class MainWindowTransformTest : public QObject
 {
     Q_OBJECT
 private slots:
+    void speechKeyIsWriteOnlyAndSavedThroughBackend()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const int fd = open(QFile::encodeName(directory.path()).constData(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+        QVERIFY(fd >= 0);
+        const auto closeRuntime = qScopeGuard([fd] { close(fd); });
+        const auto previousRuntime = qgetenv("XDG_RUNTIME_DIR");
+        const auto restoreRuntime = qScopeGuard([previousRuntime] { qputenv("XDG_RUNTIME_DIR", previousRuntime); });
+        const QString runtimePath = QStringLiteral("/proc/self/fd/%1").arg(fd);
+        qputenv("XDG_RUNTIME_DIR", runtimePath.toLocal8Bit());
+        LAppConfig config;
+        config.sourcePath = (directory.path() + "/config.json").toStdString();
+        SpeechSettings settings(config);
+        QLocalServer server;
+        QVERIFY(server.listen(runtimePath + "/deskwaifu.sock"));
+        int saves = 0;
+        connect(&server, &QLocalServer::newConnection, this, [&] {
+            auto* socket = server.nextPendingConnection();
+            connect(socket, &QLocalSocket::readyRead, this, [&, socket] {
+                while (socket->canReadLine()) {
+                    const auto line = socket->readLine();
+                    const auto request = QJsonDocument::fromJson(line).object();
+                    const auto command = request.value("command").toString();
+                    QJsonObject reply{{"ok", true}};
+                    if (command == "set_speech_settings" || command == "get_speech_settings") {
+                        ConfigStore::Snapshot parsed;
+                        std::string error;
+                        QVERIFY(ConfigStore::Parse(line.toStdString(), parsed, error));
+                        const auto result = command == "set_speech_settings" ? settings.Set(parsed) : settings.Refresh();
+                        if (command == "set_speech_settings") ++saves;
+                        reply = {{"ok", result.ok}, {"configured", settings.Configured()}};
+                    }
+                    socket->write(QJsonDocument(reply).toJson(QJsonDocument::Compact) + '\n');
+                    socket->flush();
+                }
+            });
+        });
+        MainWindow window(nullptr, directory.path());
+        auto* key = window.findChild<QLineEdit*>("minimaxApiKey");
+        auto* save = window.findChild<QPushButton*>("saveSpeechKey");
+        auto* clear = window.findChild<QPushButton*>("clearSpeechKey");
+        auto* status = window.findChild<QLabel*>("speechSettingsStatus");
+        QVERIFY(key && save && clear && status);
+        QCOMPARE(key->echoMode(), QLineEdit::Password);
+        QTRY_VERIFY(save->isEnabled());
+        key->setText("test-gui-secret");
+        save->click();
+        QTRY_COMPARE(saves, 1);
+        QTRY_VERIFY(clear->isEnabled());
+        QVERIFY(key->text().isEmpty());
+        LAppConfig loaded;
+        QVERIFY(loaded.LoadFromFile(config.sourcePath));
+        QCOMPARE(loaded.values.minimaxApiKey, std::string("test-gui-secret"));
+        QVERIFY(!status->text().contains("test-gui-secret"));
+        QVERIFY(!window.findChild<QPlainTextEdit*>("responseLog")->toPlainText().contains("test-gui-secret"));
+        clear->click();
+        QTRY_COMPARE(saves, 2);
+        QTRY_VERIFY(!clear->isEnabled());
+        QVERIFY(loaded.LoadFromFile(config.sourcePath));
+        QVERIFY(loaded.values.minimaxApiKey.empty());
+    }
+
     void runningBackendWithoutConnectionShowsDisabledShutdown()
     {
         QTemporaryDir directory;

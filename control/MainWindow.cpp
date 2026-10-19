@@ -14,6 +14,8 @@
 #include <QJsonObject>
 #include <QMessageBox>
 #include <QVariantMap>
+#include <QFormLayout>
+#include <QLineEdit>
 
 MainWindow::MainWindow(QWidget* parent, const QString& procDirectory)
     : QMainWindow(parent)
@@ -22,6 +24,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& procDirectory)
     , _respawner(_client, QCoreApplication::applicationDirPath())
 {
     ui->setupUi(this);
+    setupSpeechSettings();
     _connectionStatusLabel = new QLabel(tr("尚未连接"), this);
     _connectionStatusLabel->setObjectName(QStringLiteral("connectionStatusLabel"));
     _connectionStatusLabel->setTextFormat(Qt::PlainText);
@@ -66,6 +69,12 @@ MainWindow::MainWindow(QWidget* parent, const QString& procDirectory)
     connect(&_client, &DeskWaifuClient::connectionChanged, this,
         [this](bool connected, const QString& message) {
             _hotkeys->setConnected(connected);
+            _speechSave->setEnabled(connected);
+            _speechClear->setEnabled(connected);
+            if (!connected) {
+                _speechSetPending = false;
+                _speechStatus->setText(tr("未连接；未确认的保存结果将在重连后查询"));
+            }
             ui->respawnButton->setEnabled(connected && !_respawner.isRunning());
             updateSpawnButton();
             if (!connected)
@@ -130,6 +139,48 @@ MainWindow::MainWindow(QWidget* parent, const QString& procDirectory)
 MainWindow::~MainWindow()
 {
     delete ui;
+}
+
+void MainWindow::setupSpeechSettings()
+{
+    auto* tab = new QWidget(this);
+    auto* layout = new QFormLayout(tab);
+    _speechKey = new QLineEdit(tab);
+    _speechKey->setObjectName(QStringLiteral("minimaxApiKey"));
+    _speechKey->setEchoMode(QLineEdit::Password);
+    _speechKey->setMaxLength(4096);
+    _speechKey->setPlaceholderText(tr("输入新的 MiniMax API Key"));
+    _speechStatus = new QLabel(tr("尚未查询"), tab);
+    _speechStatus->setObjectName(QStringLiteral("speechSettingsStatus"));
+    _speechSave = new QPushButton(tr("保存 API Key"), tab);
+    _speechSave->setObjectName(QStringLiteral("saveSpeechKey"));
+    _speechClear = new QPushButton(tr("删除已保存的 API Key"), tab);
+    _speechClear->setObjectName(QStringLiteral("clearSpeechKey"));
+    _speechSave->setEnabled(false);
+    _speechClear->setEnabled(false);
+    layout->addRow(tr("MiniMax API Key"), _speechKey);
+    layout->addRow(_speechStatus);
+    layout->addRow(_speechSave);
+    layout->addRow(_speechClear);
+    auto* notice = new QLabel(tr("密钥以明文保存到桌宠配置文件（权限 0600），不会回显。\n"
+        "双击模型播报“姐姐，你好喵”；再次双击会打断重播。\n"
+        "播报文本将发送到 MiniMax，可能产生 API 费用。"), tab);
+    notice->setWordWrap(true);
+    layout->addRow(notice);
+    auto save = [this](const QString& key) {
+        if (!_client.isConnected() || _speechSetPending) return;
+        _speechSetPending = true;
+        _speechSave->setEnabled(false);
+        _speechClear->setEnabled(false);
+        _client.sendCommand(QStringLiteral("set_speech_settings"), {{QStringLiteral("api_key"), key}});
+        _speechKey->clear();
+        _speechStatus->setText(tr("正在保存…"));
+    };
+    connect(_speechSave, &QPushButton::clicked, this, [this, save] {
+        if (!_speechKey->text().trimmed().isEmpty()) save(_speechKey->text().trimmed());
+    });
+    connect(_speechClear, &QPushButton::clicked, this, [save] { save({}); });
+    ui->tabWidget->addTab(tab, tr("语音"));
 }
 
 void MainWindow::setStatusMessage(const QString& message, int timeoutMs)
@@ -348,10 +399,24 @@ void MainWindow::refreshAll()
     requestTransform();
     requestHoverOpacity();
     requestMouseLook();
+    _client.sendCommand(QStringLiteral("get_speech_settings"));
 }
 
 void MainWindow::handleResponse(const QString& command, const QJsonObject& response)
 {
+    if (command == QStringLiteral("get_speech_settings") || command == QStringLiteral("set_speech_settings")) {
+        const bool mutation = command == QStringLiteral("set_speech_settings");
+        if (!mutation && _speechSetPending) return;
+        if (mutation) _speechSetPending = false;
+        const bool ok = response.value(QStringLiteral("ok")).toBool() && response.value(QStringLiteral("configured")).isBool();
+        _speechStatus->setText(ok ? (response.value(QStringLiteral("configured")).toBool()
+            ? tr("API Key 已保存；为安全起见不回显") : tr("未配置 API Key，语音功能不可用"))
+            : tr("语音设置失败，请检查配置文件或后端版本"));
+        _speechSave->setEnabled(_client.isConnected());
+        _speechClear->setEnabled(_client.isConnected() && ok && response.value(QStringLiteral("configured")).toBool());
+        if (mutation) setStatusMessage(_speechStatus->text(), 5000);
+        return; // Never put credential-related payloads into the response log.
+    }
     if (command == QStringLiteral("get_mouse_look") || command == QStringLiteral("set_mouse_look")) {
         const bool mutation = command == QStringLiteral("set_mouse_look");
         if (mutation) _mouseLookSetPending = false;

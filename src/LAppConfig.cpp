@@ -1,4 +1,5 @@
 #include "LAppConfig.hpp"
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -86,6 +87,11 @@ bool LAppConfig::Decode(const ConfigStore::Snapshot& snapshot, Values& values, s
     if (!string("model_output", next.modelOutput)) {
         error = "Invalid model_output: expected a display name string"; return false;
     }
+    if (!string("minimax_api_key", next.minimaxApiKey) || next.minimaxApiKey.size() > 4096 ||
+        std::any_of(next.minimaxApiKey.begin(), next.minimaxApiKey.end(),
+            [](unsigned char c) { return c < 0x20 || c == 0x7f; })) {
+        error = "Invalid minimax_api_key"; return false;
+    }
     // Missing or unconvertible legacy numeric fields keep construction defaults.
     const auto number = [&](const char* key, auto& destination) {
         const auto it = snapshot.values.find(key);
@@ -172,6 +178,7 @@ bool LAppConfig::Serialize(const Values& values, std::string& document, std::str
         << ",\n  \"idle_opacity\": " << values.idleOpacity
         << ",\n  \"mouse_look_radius\": " << values.mouseLookRadius;
     if (!values.modelOutput.empty()) out << ",\n  \"model_output\": " << Quote(values.modelOutput);
+    if (!values.minimaxApiKey.empty()) out << ",\n  \"minimax_api_key\": " << Quote(values.minimaxApiKey);
     if (values.modelRegion) {
         const auto& r = *values.modelRegion;
         out << ",\n  \"model_region\": {\"x\": " << r.x << ", \"y\": " << r.y

@@ -5,6 +5,7 @@
 #include "LAppModel.hpp"
 #include "LAppDefine.hpp"
 #include "MouseLookSettings.hpp"
+#include "SpeechSettings.hpp"
 #include <algorithm>
 #include <iomanip>
 #include <sstream>
@@ -75,6 +76,14 @@ try
     const auto lifetime = streaming ? ExternalControlState::Lifetime::Stream
         : ExternalControlState::Lifetime::Persistent;
     if (streaming && connection.empty()) return "{\"ok\":false,\"error\":\"stream requires a connection\"}";
+
+    if (command == "get_speech_settings" || command == "set_speech_settings") {
+        SpeechSettings settings(LAppConfig::GetInstance());
+        const auto result = command == "get_speech_settings" ? settings.Refresh() : settings.Set(request);
+        return std::string("{\"ok\":") + (result.ok ? "true" : "false") +
+            ",\"configured\":" + (settings.Configured() ? "true" : "false") +
+            ",\"error\":\"" + JsonEscape(result.error) + "\"}";
+    }
 
     if (command == "get_mouse_look" || command == "set_mouse_look") {
         MouseLookSettings settings(LAppConfig::GetInstance());

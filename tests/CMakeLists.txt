@@ -19,7 +19,7 @@ add_test(NAME cursor-look-wiring
     -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckCursorLookWiring.cmake)
 
 find_package(Threads REQUIRED)
-find_package(Qt6 6.5 REQUIRED COMPONENTS Gui OpenGL WaylandClient)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Gui OpenGL WaylandClient StateMachine WebSockets Multimedia)
 find_package(LayerShellQt 6.6 REQUIRED)
 add_executable(model-window-state-test ModelWindowStateTest.cpp)
 target_link_libraries(model-window-state-test PRIVATE deskwaifu_window_state)
@@ -375,6 +375,12 @@ target_link_libraries(main-window-transform-test PRIVATE Qt6::Test Qt6::Widgets 
 set_target_properties(main-window-transform-test PROPERTIES AUTOMOC ON AUTOUIC ON
   AUTOUIC_SEARCH_PATHS "${CMAKE_CURRENT_SOURCE_DIR}/../control")
 add_test(NAME main-window-transform COMMAND main-window-transform-test)
+foreach(speech_test SpeechPlayer MiniMaxSpeechSource SpeechSettings AudioPlayer)
+  qt_add_executable(${speech_test}-test ${speech_test}Test.cpp ../src/ConfigStore.cpp ../src/LAppConfig.cpp)
+  set_target_properties(${speech_test}-test PROPERTIES AUTOMOC ON)
+  target_link_libraries(${speech_test}-test PRIVATE deskwaifu_speech Qt6::Test)
+  add_test(NAME ${speech_test} COMMAND ${speech_test}-test)
+endforeach()
 set_tests_properties(main-window-transform PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 add_test(NAME main-window-temp-directory
   COMMAND ${CMAKE_COMMAND}

@@ -134,6 +134,24 @@ int main(int argc, char** argv)
     CHECK(app->Initialize());
     CHECK(events);
 
+    // Exercise the production double-click route without credentials or network.
+    std::ostringstream speechLogs;
+    auto* speechPrevious = std::cout.rdbuf(speechLogs.rdbuf());
+    events->PointerMoved(8, 8);
+    events->PointerButton(0, true);
+    events->PointerButton(0, false);
+    QCoreApplication::processEvents();
+    const bool singleClickSilent = speechLogs.str().find("[Speech]") == std::string::npos;
+    events->PointerButton(0, true);
+    events->PointerButton(0, false);
+    for (int i = 0; i < 4; ++i) QCoreApplication::processEvents();
+    std::cout.rdbuf(speechPrevious);
+    CHECK(singleClickSilent);
+    CHECK(speechLogs.str().find("[Speech]") != std::string::npos);
+    CHECK(speechLogs.str().find("MiniMax API Key") != std::string::npos);
+    CHECK(app->GetWindow()->KeyboardGrabbed());
+    app->GetWindow()->SetKeyboardGrab(false);
+
     events->KeyboardKey(KEY_A, true);
     CHECK(triggerCalls == 0); // no grab
     app->GetWindow()->SetKeyboardGrab(true);
