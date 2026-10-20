@@ -36,6 +36,7 @@ https://github.com/user-attachments/assets/95dfdedc-4957-4bb7-b79f-f3addd97a6db
 - **Multi-compositor support** — works on any Wayland compositor supporting `wlr-layer-shell` (Hyprland, Sway, river, etc.)
 - **Multi-output support** — choose and remember a monitor from the control panel
 - **Interactive** — responds to mouse drag, tap, and scroll input
+- **Streaming speech** — double-click the model to say “姐姐，你好喵” through MiniMax's bidirectional WebSocket API; another double-click interrupts and restarts speech
 - **Motion & expression** — supports idle animations, lip-sync, eye-blink, physics, and expressions
 - **Configurable model directory** — load models from any path via CLI flag or XDG config
 - **JSON configuration** — customize behavior via `config.json` (default model, emotion timeout, additional model dirs, scale/position, window size)
@@ -53,7 +54,7 @@ https://github.com/user-attachments/assets/95dfdedc-4957-4bb7-b79f-f3addd97a6db
 | **Wayland development libraries** | Required by Qt Wayland; Qt owns protocol dispatch |
 | **libsystemd development library** | `sd-bus` for the transient KWin cursor bridge |
 | **EGL & OpenGL** | `libegl-dev`, `libgl-dev` or equivalent |
-| **Qt 6.5+** | `Gui`, `OpenGL`, `WaylandClient`, `StateMachine` and the Qt Wayland platform plugin; `Widgets` and `Network` for the optional control panel |
+| **Qt 6.5+** | `Gui`, `OpenGL`, `WaylandClient`, `StateMachine`, `WebSockets`, `Multimedia` and the Qt Wayland platform plugin; `Widgets` and `Network` for the optional control panel |
 | **LayerShellQt 6.6+** | Required for the model's desktop overlay window |
 | **curl, unzip** | For downloading third-party dependencies (GLEW) |
 
@@ -61,17 +62,17 @@ https://github.com/user-attachments/assets/95dfdedc-4957-4bb7-b79f-f3addd97a6db
 
 **Arch Linux:**
 ```bash
-sudo pacman -S --needed base-devel cmake pkgconf wayland wayland-protocols libglvnd egl-wayland qt6-base qt6-wayland qt6-scxml layer-shell-qt systemd-libs curl unzip
+sudo pacman -S --needed base-devel cmake pkgconf wayland wayland-protocols libglvnd egl-wayland qt6-base qt6-wayland qt6-scxml qt6-websockets qt6-multimedia layer-shell-qt systemd-libs curl unzip
 ```
 
 **Ubuntu / Debian:**
 ```bash
-sudo apt install build-essential cmake pkg-config libwayland-dev wayland-protocols libegl-dev libgl-dev libglu1-mesa-dev libsystemd-dev qt6-base-dev libqt6opengl6-dev qt6-wayland qt6-wayland-dev qt6-scxml-dev curl unzip
+sudo apt install build-essential cmake pkg-config libwayland-dev wayland-protocols libegl-dev libgl-dev libglu1-mesa-dev libsystemd-dev qt6-base-dev libqt6opengl6-dev qt6-wayland qt6-wayland-dev qt6-scxml-dev qt6-websockets-dev qt6-multimedia-dev curl unzip
 ```
 
 **Fedora:**
 ```bash
-sudo dnf install gcc-c++ cmake pkgconf-pkg-config wayland-devel wayland-protocols-devel mesa-libEGL-devel mesa-libGL-devel systemd-devel qt6-qtbase-devel qt6-qtwayland-devel qt6-qtscxml-devel layer-shell-qt-devel curl unzip
+sudo dnf install gcc-c++ cmake pkgconf-pkg-config wayland-devel wayland-protocols-devel mesa-libEGL-devel mesa-libGL-devel systemd-devel qt6-qtbase-devel qt6-qtwayland-devel qt6-qtscxml-devel qt6-qtwebsockets-devel qt6-qtmultimedia-devel layer-shell-qt-devel curl unzip
 ```
 
 Install LayerShellQt **6.6+** development files as well. On distributions shipping
@@ -176,6 +177,36 @@ not migrated automatically:
   configuration directory.
 
 ## Usage
+
+### Streaming speech
+
+In the control panel's **语音** tab, enter and save a MiniMax API Key. The backend
+stores it as `minimax_api_key` in its active JSON configuration file and restricts
+that file to owner read/write (`0600`). The key is stored in plaintext, not encrypted;
+do not share or commit this configuration. The GUI only queries whether a key is
+configured, never its value. Use the delete button to remove it.
+
+Double-click the model to stream “姐姐，你好喵”. This retains the existing keyboard
+focus behavior; another double-click cancels the previous speech and starts again.
+Speech uses `speech-2.8-turbo`, `female-tianmei`, and 24 kHz mono PCM through the
+MiniMax bidirectional WebSocket API. Text leaves your device and API usage may be
+charged. Missing credentials or unavailable audio devices do not prevent normal
+model interaction. Crop/edit-mode double-clicks do not trigger speech.
+
+Speech tests normally use a local fake server and require no credentials. Opt-in
+real API and audio-device tests can be run separately:
+
+```bash
+DESKWAIFU_TTS_LIVE_KEY_FILE=/private/MINIMAX.env build/bin/MiniMaxSpeechSource-test liveSynthesis
+DESKWAIFU_AUDIO_TEST=1 build/bin/AudioPlayer-test
+```
+
+The test-only env file contains `API_KEY=...`; the application itself uses the GUI
+configuration, not this file. Audio-device tests play silence unless both variables
+are set, which enables `liveSpeechPipeline` to synthesize and play the greeting.
+Rebuild and privately
+transfer the CI image after adding the new Qt dependencies, using
+`scripts/rebuild-ci-image.sh`, then update the runner's image-ID pin as it instructs.
 
 ```bash
 # Run with default model directory (~/.config/deskwaifu/models/)

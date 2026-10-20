@@ -30,6 +30,9 @@ class LAppTextureManager;
 class LAppLive2DManager;
 class LAppIPC;
 class AppCommandHandler;
+class MiniMaxSpeechSource;
+class AudioPlayer;
+class SpeechPlayer;
 
 /**
 * @brief   アプリケーションクラス。
@@ -207,6 +210,9 @@ private:
     HoverOpacity _hoverOpacity;
     std::vector<unsigned char> _inputPixels;
     ModelWindowState _windowState;
+    std::unique_ptr<MiniMaxSpeechSource> _speechSource;
+    std::unique_ptr<AudioPlayer> _audioPlayer;
+    std::unique_ptr<SpeechPlayer> _speechPlayer;
     bool _cubismStarted = false;
     LAppTextureManager* _textureManager;         ///< テクスチャマネージャー
     std::string _executeAbsolutePath;            ///< アプリケーションの実行パス

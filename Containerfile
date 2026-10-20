@@ -27,8 +27,10 @@ RUN { printf 'Server = %s/$repo/os/$arch\n' "${PACMAN_MIRROR}"; \
         noto-fonts \
         pkgconf \
         qt6-base \
+        qt6-multimedia \
         qt6-scxml \
         qt6-wayland \
+        qt6-websockets \
         socat \
         systemd-libs \
         sway \

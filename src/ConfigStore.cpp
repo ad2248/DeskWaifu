@@ -255,7 +255,9 @@ bool ConfigStore::Commit(const std::string& document, const Snapshot& expected, 
     std::vector<char> name(temporary.begin(), temporary.end()); name.push_back(0);
     int fd = mkstemp(name.data());
     if (fd < 0) { error = std::strerror(errno); return false; }
-    bool ok = fchmod(fd, exists ? original.st_mode & 0777 : 0600) == 0;
+    // A persisted API key must not inherit world/group-readable permissions.
+    const bool secret = next.values.count("minimax_api_key") && next.values.at("minimax_api_key") != "\"\"";
+    bool ok = fchmod(fd, secret ? 0600 : exists ? original.st_mode & 0777 : 0600) == 0;
     if (ok && exists) { struct stat created; ok = fstat(fd, &created) == 0;
         if (ok && (created.st_uid != original.st_uid || created.st_gid != original.st_gid)) ok = fchown(fd, original.st_uid, original.st_gid) == 0; }
     size_t offset = 0;

@@ -12,6 +12,8 @@ namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
 class HotkeyPanel;
 class QLabel;
+class QLineEdit;
+class QPushButton;
 
 class MainWindow : public QMainWindow
 {
@@ -30,6 +32,12 @@ signals:
 
 private:
     void bindControls();
+    void setupSpeechSettings();
+    QLineEdit* _speechKey;
+    QLabel* _speechStatus;
+    QPushButton* _speechSave;
+    QPushButton* _speechClear;
+    bool _speechSetPending = false;
     void updateSpawnButton();
     void refreshAll();
     void handleResponse(const QString& command, const QJsonObject& response);

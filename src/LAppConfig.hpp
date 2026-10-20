@@ -14,6 +14,7 @@ struct LAppConfig
         std::vector<std::string> additionalModelDirs;
         std::string defaultModel;
         std::string modelOutput;
+        std::string minimaxApiKey;
         float emotionTimeout = 5.0f;
         float modelScale = 1.0f;
         float modelX = 0.0f;

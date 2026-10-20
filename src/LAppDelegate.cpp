@@ -7,6 +7,9 @@
  */
 
 #include "LAppDelegate.hpp"
+#include "MiniMaxSpeechSource.hpp"
+#include "AudioPlayer.hpp"
+#include "SpeechPlayer.hpp"
 #include <cmath>
 #include <chrono>
 #include <iostream>
@@ -140,6 +143,13 @@ bool LAppDelegate::InitializeRuntime()
         return false;
     }
     _hoverSettings.reset(new HoverOpacitySettings(config));
+    _speechSource.reset(new MiniMaxSpeechSource(QString::fromStdString(config.values.minimaxApiKey)));
+    _audioPlayer.reset(new AudioPlayer);
+    _speechPlayer.reset(new SpeechPlayer(*_speechSource, *_audioPlayer));
+    QObject::connect(_speechPlayer.get(), &SpeechPlayer::ErrorOccurred, _speechPlayer.get(),
+        [](SpeechId, const SpeechError& error) {
+            LAppPal::PrintLogLn("[Speech] %s", error.message.toUtf8().constData());
+        });
     const auto hoverResult = _hoverSettings->Refresh();
     if (!hoverResult.ok) LAppPal::PrintLogLn("[Config] %s", hoverResult.error.c_str());
     OutputSettings outputSettings(*_window, *_settings, config);
@@ -184,6 +194,9 @@ bool LAppDelegate::InitializeRuntime()
 bool LAppDelegate::Release()
 {
     AppEnd();
+    _speechPlayer.reset();
+    _audioPlayer.reset();
+    _speechSource.reset();
     _kwinCursor.Stop();
     const bool released = ReleaseGpuResources(HasGpuResources(_view, _manager,
         _textureManager ? _textureManager->ResidentCount() : 0),
@@ -473,6 +486,10 @@ void LAppDelegate::PointerButton(int button, bool pressed)
                 {
                     _manager->OnDrag(0.0f, 0.0f);
                     _window->SetKeyboardGrab(true);
+                    if (_speechPlayer) {
+                        _speechSource->SetApiKey(QString::fromStdString(LAppConfig::GetInstance().values.minimaxApiKey));
+                        _speechPlayer->Speak({QStringLiteral("姐姐，你好喵"), {}});
+                    }
                 }
                 else if (result == InputController::ReleaseResult::Drag)
                 {
