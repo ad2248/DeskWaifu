@@ -169,5 +169,6 @@ bool DeskWaifuClient::isRetryableQuery(const QString& command)
         || command == QStringLiteral("get_transform_settings")
         || command == QStringLiteral("get_hover_opacity")
         || command == QStringLiteral("get_mouse_look")
+        || command == QStringLiteral("get_render_device")
         || command == QStringLiteral("get_transform_save_result");
 }

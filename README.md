@@ -222,6 +222,59 @@ transfer the CI image after adding the new Qt dependencies, using
 ./build/bin/deskwaifu-control
 ```
 
+### Render on a different GPU (Linux)
+
+To keep model textures, masks and render targets off the display GPU, select the
+render GPU by its lowercase PCI address (`lspci -D`). For example, render on an
+Intel iGPU while leaving the Qt Wayland window on the compositor-selected GPU:
+
+```bash
+./build/bin/deskwaifu --render-device 0000:00:02.0
+```
+
+Alternatively, persist `"render_device": "0000:00:02.0"` in the JSON config, or
+set `DESKWAIFU_RENDER_DEVICE=0000:00:02.0`. Precedence is CLI, environment, config.
+`auto` (the default) preserves the original single-context path. Restart the app
+after changing the selection.
+
+The control window's **Overview → 渲染设备 → 模型渲染 GPU** dropdown defaults to
+**自动** and lists the backend's EGL hardware devices by name and PCI address.
+Connect to a backend to change it: selection saves to that backend's actual
+config file (including a custom `--config` path), then **Respawn** applies it.
+The running renderer is not changed in place. Save errors restore the confirmed
+selection; missing saved devices are shown as unavailable rather than silently
+replaced with automatic selection. CLI/environment overrides still take priority.
+
+IPC `get_render_device` returns the saved `device`, the `active_device` startup
+selection, `restart_required`, and a `devices` array of `{id, name}` objects.
+`set_render_device` accepts `{"device":"auto"}` or an available device's PCI
+address and persists the next-start preference without switching the live context.
+
+The selected GPU uses a separate device-platform EGL/OpenGL 3.3 compatibility
+context and needs no connected monitor. Only the final premultiplied RGBA frame
+is read into CPU memory and uploaded to the Qt window's GPU. This reduces model
+VRAM residency on the display GPU, but does not eliminate presentation VRAM and
+adds CPU transfer/bandwidth cost, especially at high resolutions. This is not a
+DMA-BUF/zero-copy path.
+
+Remove the earlier experimental `DRI_PRIME`, `__EGL_VENDOR_LIBRARY_FILENAMES`
+and `__EGL_VENDOR_LIBRARY_DIRS` overrides before using explicit device selection;
+they can redirect the window GPU or hide devices from EGL enumeration. The app
+reports the window renderer and selected model renderer separately. An invalid
+or unavailable requested device fails startup rather than silently falling back.
+
+Hardware checks (the window test requires an isolated layer-shell compositor):
+
+```bash
+DESKWAIFU_TEST_RENDER_DEVICE=0000:00:02.0 ./build/bin/offscreen-renderer-test
+DESKWAIFU_TEST_RENDER_DEVICE=0000:00:02.0 ./build/bin/gpu-transfer-test
+```
+
+The transfer test checks premultiplied color, transparency and orientation in the
+actual window back buffer before swapping, and switches outputs when available.
+
+### Control window
+
 The control window exposes the same model, expression, motion, lip-sync,
 transform, visibility, skin, and look-at commands as `deskwaifu-ctl`. Its page
 layout is stored in `control/MainWindow.ui` and can be edited with Qt Designer.
@@ -273,6 +326,7 @@ Example `config.json`:
 |---|---|---|---|
 | `additional_model_dirs` | string[] | `[]` | Extra directories to scan for models (in addition to the default models dir) |
 | `default_model` | string | `""` | Name of the model subfolder to load first on startup |
+| `render_device` | string | `"auto"` | Model rendering GPU PCI address, e.g. `0000:00:02.0`; restart required. `auto` keeps the original window GPU. |
 | `emotion_timeout` | float | `5` | Seconds before expression reverts to default. Set to `-1` to never revert |
 | `model_scale` | float | `1.0` | Initial model scale |
 | `model_x` | float | `0.0` | Initial model X offset |

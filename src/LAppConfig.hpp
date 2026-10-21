@@ -14,6 +14,7 @@ struct LAppConfig
         std::vector<std::string> additionalModelDirs;
         std::string defaultModel;
         std::string modelOutput;
+        std::string renderDevice;
         std::string minimaxApiKey;
         float emotionTimeout = 5.0f;
         float modelScale = 1.0f;
@@ -32,7 +33,7 @@ struct LAppConfig
 
     static LAppConfig& GetInstance();
 
-    bool LoadFromFile(const std::string& path);
+    bool LoadFromFile(const std::string& path, std::string* diagnostic = nullptr);
     static bool Decode(const ConfigStore::Snapshot& snapshot, Values& values, std::string& error);
     static bool Serialize(const Values& values, std::string& document, std::string& error);
 

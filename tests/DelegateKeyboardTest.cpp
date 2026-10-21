@@ -49,7 +49,12 @@ public:
         context = eglCreateContext(display, config, EGL_NO_CONTEXT, nullptr);
         return surface != EGL_NO_SURFACE && context != EGL_NO_CONTEXT && MakeCurrent();
     }
-    bool Run(const std::function<bool()>& frame) override { return !frame(); }
+    bool Run(const std::function<bool()>& frame) override
+    {
+        // IPC work is bounded per frame; the expanded command batch spans frames.
+        for (int i = 0; i < 8; ++i) if (!frame()) return true;
+        return false;
+    }
     bool MakeCurrent() override { return eglMakeCurrent(display, surface, surface, context); }
     void Shutdown() override
     {
@@ -125,6 +130,7 @@ int main(int argc, char** argv)
     CHECK(Write(directory.path() + "/config.json", "{}"));
     // Never connect to the user's IPC endpoint or modify their KWin scripts.
     qputenv("XDG_RUNTIME_DIR", directory.path().toUtf8());
+    qputenv("DESKWAIFU_RENDER_DEVICE", "auto");
     qputenv("DBUS_SESSION_BUS_ADDRESS", "unix:path=/nonexistent/deskwaifu-test-bus");
     LAppDefine::ModelsDir = directory.path().toStdString();
     auto& config = LAppConfig::GetInstance();
@@ -191,9 +197,13 @@ int main(int argc, char** argv)
     CHECK(connect(fd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == 0);
     const std::string requests = "{\"command\":\"trigger_hotkey\",\"id\":\"binding-42\",\"model_token\":\"" + oldToken + "\"}\n" +
         "{\"command\":\"trigger_hotkey\",\"id\":\"binding-42\",\"model_token\":\"" + token + "\"}\n" +
-        "{\"command\":\"get_hotkeys\"}\n{\"command\":\"quit\"}\n";
+        "{\"command\":\"get_hotkeys\"}\n" +
+        "{\"command\":\"get_render_device\"}\n" +
+        "{\"command\":\"set_render_device\",\"device\":\"ffff:ff:1f.7\"}\n" +
+        "{\"command\":\"set_render_device\",\"device\":\"auto\"}\n" +
+        "{\"command\":\"quit\"}\n";
     CHECK(send(fd, requests.data(), requests.size(), MSG_NOSIGNAL) == static_cast<ssize_t>(requests.size()));
-    CHECK(app->Run()); // Poll handles all four requests; quit skips rendering and tears down.
+    CHECK(app->Run()); // Poll handles the requests; quit skips rendering and tears down.
     CHECK(triggerCalls == 3);
     QByteArray response;
     char buffer[4096];
@@ -202,7 +212,7 @@ int main(int argc, char** argv)
     close(fd);
     CHECK(count == 0);
     const auto lines = response.split('\n');
-    CHECK(lines.size() == 5 && lines.back().isEmpty());
+    CHECK(lines.size() == 8 && lines.back().isEmpty());
     const auto stale = QJsonDocument::fromJson(lines[0]).object();
     CHECK(!stale["ok"].toBool(true) && stale["error"].toString().contains("Model changed"));
     CHECK(QJsonDocument::fromJson(lines[1]).object()["ok"].toBool());
@@ -212,6 +222,14 @@ int main(int argc, char** argv)
     CHECK(bindings.size() == 2 && bindings[0].toObject()["active"].toBool());
     CHECK(!bindings[1].toObject()["active"].toBool(true));
     CHECK(!bindings[1].toObject()["reason"].toString().isEmpty());
-    CHECK(QJsonDocument::fromJson(lines[3]).object()["ok"].toBool());
+    const auto render = QJsonDocument::fromJson(lines[3]).object();
+    CHECK(render["ok"].toBool() && render["device"] == "auto" && render["active_device"] == "auto");
+    CHECK(render["devices"].isArray() && !render["restart_required"].toBool(true));
+    const auto unavailable = QJsonDocument::fromJson(lines[4]).object();
+    CHECK(!unavailable["ok"].toBool(true) && unavailable["error"].toString().contains("unavailable"));
+    CHECK(unavailable["device"] == "auto");
+    CHECK(QJsonDocument::fromJson(lines[5]).object()["ok"].toBool());
+    CHECK(config.values.renderDevice == "auto");
+    CHECK(QJsonDocument::fromJson(lines[6]).object()["ok"].toBool());
     return 0;
 }

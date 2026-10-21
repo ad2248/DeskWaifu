@@ -1,4 +1,5 @@
 #include "LAppConfig.hpp"
+#include "RenderDevice.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -60,8 +61,9 @@ std::string LAppConfig::ExpandTilde(const std::string& path)
     return std::string(homeDir) + path.substr(1);
 }
 
-bool LAppConfig::LoadFromFile(const std::string& path)
+bool LAppConfig::LoadFromFile(const std::string& path, std::string* diagnostic)
 {
+    if (diagnostic) diagnostic->clear();
     sourcePath = path;
     // Unlike ConfigStore::Read, startup distinguishes a missing file from {}.
     std::ifstream file(path);
@@ -69,7 +71,9 @@ bool LAppConfig::LoadFromFile(const std::string& path)
     std::stringstream text; text << file.rdbuf();
     ConfigStore::Snapshot snapshot;
     std::string error;
-    return ConfigStore::Parse(text.str(), snapshot, error) && Decode(snapshot, values, error);
+    const bool loaded = ConfigStore::Parse(text.str(), snapshot, error) && Decode(snapshot, values, error);
+    if (diagnostic) *diagnostic = error;
+    return loaded;
 }
 
 bool LAppConfig::Decode(const ConfigStore::Snapshot& snapshot, Values& values, std::string& error)
@@ -86,6 +90,9 @@ bool LAppConfig::Decode(const ConfigStore::Snapshot& snapshot, Values& values, s
     }
     if (!string("model_output", next.modelOutput)) {
         error = "Invalid model_output: expected a display name string"; return false;
+    }
+    if (!string("render_device", next.renderDevice) || !ValidRenderDevice(next.renderDevice)) {
+        error = "Invalid render_device: expected a PCI address string or auto"; return false;
     }
     if (!string("minimax_api_key", next.minimaxApiKey) || next.minimaxApiKey.size() > 4096 ||
         std::any_of(next.minimaxApiKey.begin(), next.minimaxApiKey.end(),
@@ -178,6 +185,7 @@ bool LAppConfig::Serialize(const Values& values, std::string& document, std::str
         << ",\n  \"idle_opacity\": " << values.idleOpacity
         << ",\n  \"mouse_look_radius\": " << values.mouseLookRadius;
     if (!values.modelOutput.empty()) out << ",\n  \"model_output\": " << Quote(values.modelOutput);
+    if (!values.renderDevice.empty()) out << ",\n  \"render_device\": " << Quote(values.renderDevice);
     if (!values.minimaxApiKey.empty()) out << ",\n  \"minimax_api_key\": " << Quote(values.minimaxApiKey);
     if (values.modelRegion) {
         const auto& r = *values.modelRegion;
