@@ -33,6 +33,14 @@ set_tests_properties(offscreen-renderer PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 3
 add_executable(gpu-transfer-test GpuTransferTest.cpp ../src/QtDesktopWindow.cpp)
 target_link_libraries(gpu-transfer-test PRIVATE deskwaifu_offscreen Qt6::Gui Qt6::OpenGL Qt6::WaylandClient LayerShellQt::Interface ${CMAKE_DL_LIBS})
 target_link_options(gpu-transfer-test PRIVATE -Wl,--export-dynamic-symbol=eglSwapBuffers)
+foreach(target deskwaifu_offscreen offscreen-renderer-test gpu-transfer-test)
+  file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${target}-includes.txt"
+    CONTENT "$<JOIN:$<TARGET_PROPERTY:${target},INCLUDE_DIRECTORIES>,\n>\n")
+endforeach()
+add_test(NAME offscreen-bundled-glew
+  COMMAND ${CMAKE_COMMAND} -DINCLUDE_DIR=${CMAKE_CURRENT_BINARY_DIR}
+    -DGLEW_INCLUDE=${GLEW_PATH}/include
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckOffscreenGlewInclude.cmake)
 add_executable(model-window-state-test ModelWindowStateTest.cpp)
 target_link_libraries(model-window-state-test PRIVATE deskwaifu_window_state)
 add_test(NAME model-window-state COMMAND model-window-state-test)

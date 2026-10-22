@@ -69,7 +69,7 @@ target_include_directories(deskwaifu_window_state PUBLIC ${CMAKE_CURRENT_SOURCE_
 target_link_libraries(deskwaifu_window_state PUBLIC Qt6::StateMachine)
 find_package(LayerShellQt 6.6 REQUIRED)
 add_library(deskwaifu_offscreen STATIC OffscreenRenderer.cpp)
-target_include_directories(deskwaifu_offscreen PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(deskwaifu_offscreen PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${GLEW_PATH}/include)
 target_link_libraries(deskwaifu_offscreen PUBLIC glew_s OpenGL::OpenGL OpenGL::EGL)
 target_sources(${APP_NAME} PRIVATE QtDesktopWindow.cpp)
 target_link_libraries(${APP_NAME} deskwaifu_offscreen)
