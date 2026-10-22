@@ -65,6 +65,11 @@ private:
     bool _hoverSupported = false;
     QJsonObject _lastHoverResponse;
     void requestMouseLook();
+    void requestRenderDevice();
+    void showRenderDevice(const QJsonObject& response);
+    bool _renderDeviceQueryPending = false;
+    bool _renderDeviceSetPending = false;
+    QJsonObject _lastRenderDeviceResponse;
     void setMouseLook(double radius);
     void showMouseLook(double radius);
     bool _mouseLookQueryPending = false;

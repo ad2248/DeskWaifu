@@ -2,6 +2,7 @@
 #include "ui_MainWindow.h"
 #include "HotkeyPanel.hpp"
 #include "DeskWaifuLauncher.hpp"
+#include "RenderDevice.hpp"
 #include <QCoreApplication>
 #include <QTimer>
 #include <QUuid>
@@ -24,6 +25,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& procDirectory)
     , _respawner(_client, QCoreApplication::applicationDirPath())
 {
     ui->setupUi(this);
+    ui->renderDeviceCombo->setItemData(0, QStringLiteral("auto"));
     setupSpeechSettings();
     _connectionStatusLabel = new QLabel(tr("尚未连接"), this);
     _connectionStatusLabel->setObjectName(QStringLiteral("connectionStatusLabel"));
@@ -72,6 +74,9 @@ MainWindow::MainWindow(QWidget* parent, const QString& procDirectory)
             _speechSave->setEnabled(connected);
             _speechClear->setEnabled(connected);
             if (!connected) {
+                _renderDeviceQueryPending = _renderDeviceSetPending = false;
+                ui->renderDeviceCombo->setEnabled(false);
+                ui->renderDeviceStatus->setText(tr("连接断开；重新连接后将查询实际保存结果。"));
                 _speechSetPending = false;
                 _speechStatus->setText(tr("未连接；未确认的保存结果将在重连后查询"));
             }
@@ -203,6 +208,14 @@ void MainWindow::updateSpawnButton()
 
 void MainWindow::bindControls()
 {
+    connect(ui->renderDeviceCombo, &QComboBox::activated, this, [this](int index) {
+        if (!_client.isConnected() || _renderDeviceSetPending || index < 0) return;
+        _renderDeviceSetPending = true;
+        ui->renderDeviceCombo->setEnabled(false);
+        ui->renderDeviceStatus->setText(tr("正在保存渲染设备…"));
+        _client.sendCommand(QStringLiteral("set_render_device"), {
+            {QStringLiteral("device"), ui->renderDeviceCombo->itemData(index).toString()}});
+    });
     connect(ui->outputCombo, &QComboBox::activated, this, [this](int index) {
         if (_outputSwitchPending || index < 0) return;
         _outputSwitchPending = true;
@@ -399,11 +412,33 @@ void MainWindow::refreshAll()
     requestTransform();
     requestHoverOpacity();
     requestMouseLook();
+    requestRenderDevice();
     _client.sendCommand(QStringLiteral("get_speech_settings"));
 }
 
 void MainWindow::handleResponse(const QString& command, const QJsonObject& response)
 {
+    if (command == QStringLiteral("get_render_device") || command == QStringLiteral("set_render_device")) {
+        const bool mutation = command == QStringLiteral("set_render_device");
+        if (mutation) _renderDeviceSetPending = false;
+        else _renderDeviceQueryPending = false;
+        if (!mutation && _renderDeviceSetPending) return;
+        const auto device = response.value(QStringLiteral("device"));
+        const bool valid = device.isString() && ValidRenderDevice(device.toString().toStdString()) &&
+            response.value(QStringLiteral("devices")).isArray() && response.value(QStringLiteral("active_device")).isString() &&
+            ValidRenderDevice(response.value(QStringLiteral("active_device")).toString().toStdString()) &&
+            response.value(QStringLiteral("restart_required")).isBool();
+        if (valid) {
+            _lastRenderDeviceResponse = response;
+            showRenderDevice(response);
+        } else if (mutation && !_lastRenderDeviceResponse.isEmpty()) showRenderDevice(_lastRenderDeviceResponse);
+        ui->renderDeviceCombo->setEnabled(_client.isConnected() && (valid || (mutation && !_lastRenderDeviceResponse.isEmpty())));
+        const bool ok = response.value(QStringLiteral("ok")).toBool() && valid;
+        if (!ok) ui->renderDeviceStatus->setText(response.value(QStringLiteral("error")).toString(tr("后端不支持渲染设备设置")));
+        if (mutation) setStatusMessage(ok ? tr("渲染设备已保存；点击 Respawn 重启生效。") : ui->renderDeviceStatus->text(), 8000);
+        if (mutation || !ok) logResponse(command, response);
+        return;
+    }
     if (command == QStringLiteral("get_speech_settings") || command == QStringLiteral("set_speech_settings")) {
         const bool mutation = command == QStringLiteral("set_speech_settings");
         if (!mutation && _speechSetPending) return;
@@ -612,6 +647,35 @@ void MainWindow::requestHotkeys()
     if (_hotkeyQueryPending) return;
     _hotkeyQueryPending = true;
     _client.sendCommand(QStringLiteral("get_hotkeys"));
+}
+
+void MainWindow::requestRenderDevice()
+{
+    if (_renderDeviceQueryPending || _renderDeviceSetPending) return;
+    _renderDeviceQueryPending = true;
+    _client.sendCommand(QStringLiteral("get_render_device"));
+}
+
+void MainWindow::showRenderDevice(const QJsonObject& response)
+{
+    const QSignalBlocker blocker(ui->renderDeviceCombo);
+    ui->renderDeviceCombo->clear();
+    ui->renderDeviceCombo->addItem(tr("自动"), QStringLiteral("auto"));
+    for (const auto& value : response.value(QStringLiteral("devices")).toArray()) {
+        const auto device = value.toObject();
+        const auto id = device.value(QStringLiteral("id")).toString();
+        if (id.isEmpty() || id == QStringLiteral("auto") || !ValidRenderDevice(id.toStdString()) ||
+            ui->renderDeviceCombo->findData(id) >= 0) continue;
+        ui->renderDeviceCombo->addItem(QStringLiteral("%1 (%2)").arg(device.value(QStringLiteral("name")).toString(), id), id);
+    }
+    auto saved = response.value(QStringLiteral("device")).toString();
+    if (saved.isEmpty()) saved = QStringLiteral("auto");
+    if (ui->renderDeviceCombo->findData(saved) < 0) ui->renderDeviceCombo->addItem(tr("%1（不可用）").arg(saved), saved);
+    ui->renderDeviceCombo->setCurrentIndex(ui->renderDeviceCombo->findData(saved));
+    const auto active = response.value(QStringLiteral("active_device")).toString();
+    ui->renderDeviceStatus->setText(response.value(QStringLiteral("restart_required")).toBool()
+        ? tr("已保存，需点击 Respawn 重启生效。当前启动选择：%1").arg(active == QStringLiteral("auto") ? tr("自动") : active)
+        : tr("已保存；更改渲染设备后需重启生效。"));
 }
 
 void MainWindow::requestTransform()

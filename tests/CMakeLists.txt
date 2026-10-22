@@ -21,6 +21,26 @@ add_test(NAME cursor-look-wiring
 find_package(Threads REQUIRED)
 find_package(Qt6 6.5 REQUIRED COMPONENTS Gui OpenGL WaylandClient StateMachine WebSockets Multimedia)
 find_package(LayerShellQt 6.6 REQUIRED)
+add_executable(offscreen-renderer-test OffscreenRendererTest.cpp)
+target_link_libraries(offscreen-renderer-test PRIVATE deskwaifu_offscreen)
+add_test(NAME render-device-validation COMMAND offscreen-renderer-test --validation)
+add_test(NAME render-device-startup
+  COMMAND ${CMAKE_COMMAND} -DAPP=$<TARGET_FILE:${APP_NAME}>
+    -DFIXTURE_DIR=${CMAKE_CURRENT_BINARY_DIR}/render-device-startup
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckRenderDeviceStartup.cmake)
+add_test(NAME offscreen-renderer COMMAND offscreen-renderer-test)
+set_tests_properties(offscreen-renderer PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 30)
+add_executable(gpu-transfer-test GpuTransferTest.cpp ../src/QtDesktopWindow.cpp)
+target_link_libraries(gpu-transfer-test PRIVATE deskwaifu_offscreen Qt6::Gui Qt6::OpenGL Qt6::WaylandClient LayerShellQt::Interface ${CMAKE_DL_LIBS})
+target_link_options(gpu-transfer-test PRIVATE -Wl,--export-dynamic-symbol=eglSwapBuffers)
+foreach(target deskwaifu_offscreen offscreen-renderer-test gpu-transfer-test)
+  file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${target}-includes.txt"
+    CONTENT "$<JOIN:$<TARGET_PROPERTY:${target},INCLUDE_DIRECTORIES>,\n>\n")
+endforeach()
+add_test(NAME offscreen-bundled-glew
+  COMMAND ${CMAKE_COMMAND} -DINCLUDE_DIR=${CMAKE_CURRENT_BINARY_DIR}
+    -DGLEW_INCLUDE=${GLEW_PATH}/include
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckOffscreenGlewInclude.cmake)
 add_executable(model-window-state-test ModelWindowStateTest.cpp)
 target_link_libraries(model-window-state-test PRIVATE deskwaifu_window_state)
 add_test(NAME model-window-state COMMAND model-window-state-test)
@@ -36,12 +56,15 @@ add_test(NAME qt-window-input COMMAND qt-window-input-test)
 add_executable(qt-desktop-window-test QtDesktopWindowTest.cpp ../src/QtDesktopWindow.cpp)
 target_include_directories(qt-desktop-window-test PRIVATE ../src)
 target_link_libraries(qt-desktop-window-test PRIVATE Qt6::Gui Qt6::OpenGL Qt6::WaylandClient LayerShellQt::Interface OpenGL::EGL ${CMAKE_DL_LIBS})
+target_link_libraries(qt-desktop-window-test PRIVATE deskwaifu_offscreen)
 target_link_options(qt-desktop-window-test PRIVATE -Wl,--export-dynamic-symbol=eglSwapBuffers)
 add_test(NAME qt-window-reject-platform COMMAND qt-desktop-window-test --reject-platform)
 set_tests_properties(qt-window-reject-platform PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # Opt-in only: use an isolated compositor, never inject input into the user's session.
 option(DESKWAIFU_QT_LIVE_TEST "Run Qt window integration test on the selected Wayland display" OFF)
 if (DESKWAIFU_QT_LIVE_TEST)
+  add_test(NAME gpu-transfer COMMAND gpu-transfer-test)
+  set_tests_properties(gpu-transfer PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 30)
   add_test(NAME qt-desktop-window COMMAND qt-desktop-window-test)
   set_tests_properties(qt-desktop-window PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 30)
 endif ()
@@ -100,6 +123,9 @@ add_test(NAME hover-opacity-settings COMMAND hover-opacity-settings-test)
 add_executable(mouse-look-settings-test MouseLookSettingsTest.cpp ../src/ConfigStore.cpp ../src/LAppConfig.cpp)
 target_include_directories(mouse-look-settings-test PRIVATE ../src)
 add_test(NAME mouse-look-settings COMMAND mouse-look-settings-test)
+add_executable(render-device-settings-test RenderDeviceSettingsTest.cpp ../src/ConfigStore.cpp ../src/LAppConfig.cpp)
+target_include_directories(render-device-settings-test PRIVATE ../src)
+add_test(NAME render-device-settings COMMAND render-device-settings-test)
 
 add_executable(model-region-render-test ModelRegionRenderTest.cpp ../src/ModelFrameRegion.cpp)
 target_include_directories(model-region-render-test PRIVATE ../src ${GLEW_PATH}/include)

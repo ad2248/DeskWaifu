@@ -13,6 +13,7 @@ bool SameSettings(const LAppConfig::Values& a, const LAppConfig::Values& b)
     return a.additionalModelDirs == b.additionalModelDirs && a.defaultModel == b.defaultModel
         && a.emotionTimeout == b.emotionTimeout && a.modelScale == b.modelScale
         && a.modelX == b.modelX && a.modelY == b.modelY
+        && a.renderDevice == b.renderDevice
         && a.windowWidth == b.windowWidth && a.windowHeight == b.windowHeight
         && a.hoverOpacityEnabled == b.hoverOpacityEnabled && a.hoverOpacity == b.hoverOpacity
         && a.idleOpacity == b.idleOpacity && a.mouseLookRadius == b.mouseLookRadius
@@ -94,4 +95,16 @@ int main()
     CHECK(ConfigStore::Parse(document, snapshot, error));
     CHECK(snapshot.values.size() == 12 && !snapshot.values.count("model_region"));
     CHECK(load(document) && SameSettings(config, defaults));
+    CHECK(load(R"({"render_device":"0000:00:02.0"})"));
+    CHECK(config.renderDevice == "0000:00:02.0");
+    CHECK(LAppConfig::Serialize(config, document, error));
+    CHECK(load(document) && config.renderDevice == "0000:00:02.0");
+    CHECK(!load(R"({"render_device":42})"));
+    CHECK(!load(R"({"render_device":"intel"})"));
+    CHECK(config.renderDevice == "0000:00:02.0");
+    CHECK(load(R"({"render_device":"auto"})") && config.renderDevice == "auto");
+    CHECK(load("{}") && config.renderDevice.empty());
+    { std::ofstream file(path); file << R"({"render_device":false})"; }
+    CHECK(!application.LoadFromFile(path, &error));
+    CHECK(error.find("render_device") != std::string::npos);
 }

@@ -178,6 +178,7 @@ void DeskWaifuClientTest::doesNotReplayUnacknowledgedMutation_data()
     QTest::newRow("transform-reset") << QStringLiteral("reset_transform_settings");
     QTest::newRow("hover-opacity") << QStringLiteral("set_hover_opacity");
     QTest::newRow("mouse-look") << QStringLiteral("set_mouse_look");
+    QTest::newRow("render-device") << QStringLiteral("set_render_device");
     QTest::newRow("quit") << QStringLiteral("quit");
 }
 
@@ -222,6 +223,7 @@ void DeskWaifuClientTest::retriesUnacknowledgedQuery_data()
     QTest::newRow("status") << QStringLiteral("get_status");
     QTest::newRow("hover-opacity") << QStringLiteral("get_hover_opacity");
     QTest::newRow("mouse-look") << QStringLiteral("get_mouse_look");
+    QTest::newRow("render-device") << QStringLiteral("get_render_device");
 }
 
 void DeskWaifuClientTest::discardsQueuedMutations()

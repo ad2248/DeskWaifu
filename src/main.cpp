@@ -8,6 +8,7 @@
 #include "LAppDelegate.hpp"
 #include "LAppDefine.hpp"
 #include "LAppConfig.hpp"
+#include "RenderDevice.hpp"
 #include <cstdlib>
 #include <unistd.h>
 #include <sys/types.h>
@@ -37,7 +38,18 @@ int main(int argc, char* argv[])
     // Parse CLI args
     std::string modelsDir = "";
     std::string configPath = "";
+    std::string renderDevice;
+    bool renderDeviceOverride = false;
     for (int i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "--render-device") == 0) {
+            if (i + 1 == argc) {
+                fprintf(stderr, "[GPU] --render-device requires auto or a PCI address (0000:00:02.0)\n");
+                return 1;
+            }
+            renderDevice = argv[++i];
+            renderDeviceOverride = true;
+            continue;
+        }
         if (strcmp(argv[i], "--models_dir") == 0 && i + 1 < argc) {
             modelsDir = argv[i + 1];
             i++;
@@ -55,11 +67,31 @@ int main(int argc, char* argv[])
     } else {
         configPath = LAppConfig::ExpandTilde(configPath);
     }
-    if (config.LoadFromFile(configPath)) {
+    std::string configError;
+    if (config.LoadFromFile(configPath, &configError)) {
         printf("[APP]Loaded config from: %s\n", configPath.c_str());
+    } else if (!configError.empty()) {
+        fprintf(stderr, "[Config] Invalid configuration at %s: %s\n", configPath.c_str(), configError.c_str());
+        return 1;
     } else {
         printf("[APP]Config unavailable or invalid at: %s (using defaults)\n", configPath.c_str());
     }
+
+    // Select only the offscreen renderer; leave Qt's Wayland GPU untouched.
+    if (!renderDeviceOverride) {
+        const char* environment = getenv("DESKWAIFU_RENDER_DEVICE");
+        renderDevice = environment ? environment : config.values.renderDevice;
+    }
+    if (!ValidRenderDevice(renderDevice)) {
+        fprintf(stderr, "[GPU] Invalid render device '%s': expected auto or lowercase PCI address 0000:00:02.0\n", renderDevice.c_str());
+        return 1;
+    }
+    if (!renderDevice.empty() && renderDevice != "auto" &&
+        (getenv("__EGL_VENDOR_LIBRARY_FILENAMES") || getenv("__EGL_VENDOR_LIBRARY_DIRS") || getenv("DRI_PRIME"))) {
+        fprintf(stderr, "[GPU] Unset __EGL_VENDOR_LIBRARY_FILENAMES, __EGL_VENDOR_LIBRARY_DIRS and DRI_PRIME; --render-device selects only the offscreen GPU\n");
+        return 1;
+    }
+    qputenv("DESKWAIFU_RENDER_DEVICE", QByteArray::fromStdString(renderDevice));
 
     // Models dir: CLI flag > default XDG path
     if (modelsDir.empty()) {

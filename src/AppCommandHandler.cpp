@@ -6,6 +6,9 @@
 #include "LAppDefine.hpp"
 #include "MouseLookSettings.hpp"
 #include "SpeechSettings.hpp"
+#include "RenderDeviceSettings.hpp"
+#include "OffscreenRenderer.hpp"
+#include <cstdlib>
 #include <algorithm>
 #include <iomanip>
 #include <sstream>
@@ -76,6 +79,33 @@ try
     const auto lifetime = streaming ? ExternalControlState::Lifetime::Stream
         : ExternalControlState::Lifetime::Persistent;
     if (streaming && connection.empty()) return "{\"ok\":false,\"error\":\"stream requires a connection\"}";
+
+    if (command == "get_render_device" || command == "set_render_device") {
+        RenderDeviceSettings settings(LAppConfig::GetInstance());
+        const auto devices = ListRenderDevices();
+        AppResult result = AppResult::Success();
+        if (command == "set_render_device") {
+            std::string requested;
+            auto value = request.values.find("device");
+            if (value == request.values.end() || !ConfigStore::ParseString(value->second, requested))
+                result = AppResult::Failure("Specify device as a string");
+            else if (!requested.empty() && requested != "auto" && std::none_of(devices.begin(), devices.end(),
+                [&](const RenderDeviceInfo& device) { return device.pciAddress == requested; }))
+                result = AppResult::Failure("Requested render device is unavailable");
+            else result = settings.Set(request);
+        } else result = settings.Refresh();
+        const char* startup = std::getenv("DESKWAIFU_RENDER_DEVICE");
+        const std::string active = startup && *startup ? startup : "auto";
+        std::string reply = std::string("{\"ok\":") + (result.ok ? "true" : "false") +
+            ",\"device\":\"" + JsonEscape(settings.Device()) + "\",\"active_device\":\"" + JsonEscape(active) +
+            "\",\"restart_required\":" + (settings.Device() != active ? "true" : "false") +
+            ",\"error\":\"" + JsonEscape(result.error) + "\",\"devices\":[";
+        for (size_t i = 0; i < devices.size(); ++i) {
+            if (i) reply += ',';
+            reply += "{\"id\":\"" + JsonEscape(devices[i].pciAddress) + "\",\"name\":\"" + JsonEscape(devices[i].name) + "\"}";
+        }
+        return reply + "]}";
+    }
 
     if (command == "get_speech_settings" || command == "set_speech_settings") {
         SpeechSettings settings(LAppConfig::GetInstance());

@@ -4,6 +4,7 @@
 #include "HoverOpacitySettings.hpp"
 #include "MouseLookSettings.hpp"
 #include "SpeechSettings.hpp"
+#include "RenderDeviceSettings.hpp"
 #include <QLineEdit>
 #include <QLabel>
 #include <QCheckBox>
@@ -45,6 +46,119 @@ class MainWindowTransformTest : public QObject
 {
     Q_OBJECT
 private slots:
+    void renderDeviceSelectionPersistsAndRequiresRestart()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const int fd = open(QFile::encodeName(directory.path()).constData(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+        QVERIFY(fd >= 0);
+        const auto closeRuntime = qScopeGuard([fd] { close(fd); });
+        const auto previousRuntime = qgetenv("XDG_RUNTIME_DIR");
+        const auto restoreRuntime = qScopeGuard([previousRuntime] { qputenv("XDG_RUNTIME_DIR", previousRuntime); });
+        const QString runtimePath = QStringLiteral("/proc/self/fd/%1").arg(fd);
+        qputenv("XDG_RUNTIME_DIR", runtimePath.toLocal8Bit());
+        LAppConfig config;
+        config.sourcePath = (directory.path() + "/custom.json").toStdString();
+        RenderDeviceSettings settings(config);
+        QLocalServer server;
+        QVERIFY(server.listen(runtimePath + "/deskwaifu.sock"));
+        int mutations = 0;
+        bool failSave = false, loseAcknowledgement = false, supported = true;
+        QLocalSocket* connection = nullptr;
+        connect(&server, &QLocalServer::newConnection, this, [&] {
+            auto* socket = server.nextPendingConnection();
+            connection = socket;
+            connect(socket, &QLocalSocket::readyRead, this, [&, socket] {
+                while (socket->canReadLine()) {
+                    const auto line = socket->readLine();
+                    const auto request = QJsonDocument::fromJson(line).object();
+                    const auto command = request.value("command").toString();
+                    QJsonObject reply{{"ok", true}};
+                    if (command == "get_render_device" || command == "set_render_device") {
+                        const bool mutation = command == "set_render_device";
+                        if (mutation) ++mutations;
+                        ConfigStore::Snapshot parsed;
+                        std::string error;
+                        QVERIFY(ConfigStore::Parse(line.toStdString(), parsed, error));
+                        const auto result = !supported ? AppResult::Failure("unknown command")
+                            : mutation && failSave ? AppResult::Failure("read-only config")
+                            : mutation ? settings.Set(parsed) : settings.Refresh();
+                        reply = {{"ok", result.ok}, {"error", QString::fromStdString(result.error)}};
+                        if (supported) {
+                            reply.insert("device", QString::fromStdString(settings.Device()));
+                            reply.insert("active_device", "auto");
+                            reply.insert("restart_required", settings.Device() != "auto");
+                            reply.insert("devices", QJsonArray{
+                                QJsonObject{{"id", "0000:00:02.0"}, {"name", "Intel Graphics"}},
+                                QJsonObject{{"id", "0000:02:00.0"}, {"name", "NVIDIA Graphics"}}});
+                        }
+                        if (mutation && loseAcknowledgement) {
+                            loseAcknowledgement = false;
+                            socket->abort();
+                            return;
+                        }
+                    }
+                    socket->write(QJsonDocument(reply).toJson(QJsonDocument::Compact) + '\n');
+                    socket->flush();
+                }
+            });
+        });
+        MainWindow window(nullptr, directory.path());
+        auto* combo = window.findChild<QComboBox*>("renderDeviceCombo");
+        auto* status = window.findChild<QLabel*>("renderDeviceStatus");
+        auto* overview = window.findChild<QWidget*>("overviewTab");
+        QVERIFY(combo && status && overview && overview->isAncestorOf(combo));
+        QCOMPARE(combo->currentText(), QStringLiteral("自动"));
+        QVERIFY(!combo->isEnabled());
+        QTRY_VERIFY(combo->isEnabled());
+        QCOMPARE(combo->count(), 3);
+        QCOMPARE(combo->currentData().toString(), QStringLiteral("auto"));
+        QCOMPARE(mutations, 0); // Loading the preference must never save it.
+        const auto select = [&](const QString& device) {
+            const int index = combo->findData(device);
+            QVERIFY(index >= 0);
+            combo->setCurrentIndex(index);
+            QVERIFY(QMetaObject::invokeMethod(combo, "activated", Qt::DirectConnection, Q_ARG(int, index)));
+        };
+        select("0000:00:02.0");
+        QTRY_COMPARE(mutations, 1);
+        QTRY_VERIFY(combo->isEnabled());
+        QCOMPARE(combo->currentData().toString(), QStringLiteral("0000:00:02.0"));
+        QVERIFY(status->text().contains("Respawn"));
+        const auto screenshot = qEnvironmentVariable("DESKWAIFU_RENDER_DEVICE_SCREENSHOT");
+        if (!screenshot.isEmpty()) QVERIFY(window.grab().save(screenshot));
+        LAppConfig saved;
+        QVERIFY(saved.LoadFromFile(config.sourcePath));
+        QCOMPARE(saved.values.renderDevice, std::string("0000:00:02.0"));
+        failSave = true;
+        select("0000:02:00.0");
+        QTRY_COMPARE(mutations, 2);
+        QTRY_VERIFY(combo->isEnabled());
+        QCOMPARE(combo->currentData().toString(), QStringLiteral("0000:00:02.0"));
+        QVERIFY(status->text().contains("read-only"));
+        failSave = false;
+        loseAcknowledgement = true;
+        select("auto");
+        QTRY_COMPARE(mutations, 3);
+        QTRY_VERIFY_WITH_TIMEOUT(combo->isEnabled(), 6000);
+        QCOMPARE(combo->currentData().toString(), QStringLiteral("auto"));
+        QCOMPARE(mutations, 3); // Reconnect queries; it must not retry a save.
+        QVERIFY(saved.LoadFromFile(config.sourcePath));
+        QCOMPARE(saved.values.renderDevice, std::string("auto"));
+        ConfigStore::Snapshot request;
+        std::string error;
+        QVERIFY(ConfigStore::Parse(R"({"device":"ffff:ff:1f.7"})", request, error));
+        QVERIFY(settings.Set(request).ok);
+        connection->abort();
+        QTRY_COMPARE_WITH_TIMEOUT(combo->currentData().toString(), QStringLiteral("ffff:ff:1f.7"), 6000);
+        QVERIFY(combo->currentText().contains("不可用"));
+        supported = false;
+        connection->abort();
+        QTRY_VERIFY_WITH_TIMEOUT(status->text().contains("unknown command"), 6000);
+        QVERIFY(!combo->isEnabled());
+        QCOMPARE(mutations, 3);
+    }
+
     void speechKeyIsWriteOnlyAndSavedThroughBackend()
     {
         QTemporaryDir directory;
