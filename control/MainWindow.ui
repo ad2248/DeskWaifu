@@ -141,6 +141,9 @@
             <string>渲染设备</string>
            </property>
            <layout class="QFormLayout" name="renderDeviceLayout">
+            <property name="fieldGrowthPolicy">
+             <enum>QFormLayout::FieldGrowthPolicy::AllNonFixedFieldsGrow</enum>
+            </property>
             <item row="0" column="0">
              <widget class="QLabel" name="renderDeviceCaption">
               <property name="text"><string>模型渲染 GPU</string></property>
