@@ -4,7 +4,24 @@
 #include <QApplication>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QAbstractItemView>
+#include <QProxyStyle>
+#include <QStyleFactory>
+#include <QStyleOptionComboBox>
 #include <QtTest>
+
+// Some desktop themes keep form fields at their initial size hint ("自动").
+class CompactFormStyle : public QProxyStyle
+{
+public:
+    CompactFormStyle() : QProxyStyle(QStyleFactory::create("Fusion")) {}
+    int styleHint(StyleHint hint, const QStyleOption* option = nullptr,
+        const QWidget* widget = nullptr, QStyleHintReturn* data = nullptr) const override
+    {
+        if (hint == SH_FormLayoutFieldGrowthPolicy) return QFormLayout::FieldsStayAtSizeHint;
+        return QProxyStyle::styleHint(hint, option, widget, data);
+    }
+};
 
 class ControlThemeTest : public QObject
 {
@@ -62,6 +79,57 @@ private slots:
             dimension->setValue(0);
             QCOMPARE(dimension->value(), 1);
         }
+    }
+
+    void renderDeviceComboUsesAvailableWidth_data()
+    {
+        QTest::addColumn<int>("fontSize");
+        QTest::newRow("normal") << 10;
+        QTest::newRow("larger-text") << 13;
+    }
+
+    void renderDeviceComboUsesAvailableWidth()
+    {
+        QFETCH(int, fontSize);
+        QFont font = _originalFont;
+        font.setPointSize(fontSize);
+        QApplication::setFont(font);
+        CompactFormStyle style;
+        QMainWindow window;
+        Ui::MainWindow ui;
+        ui.setupUi(&window);
+        ui.renderDeviceGroup->setStyle(&style);
+        ui.renderDeviceCombo->setStyle(&style);
+        window.resize(720, 560);
+        window.show();
+        QCoreApplication::processEvents(); // The initial hint contains only "自动".
+        ui.renderDeviceCombo->addItems({
+            "Mesa Intel(R) Graphics (ARL) (0000:00:02.0)",
+            "NVIDIA GeForce RTX 2070 SUPER (0000:02:00.0)"});
+        ui.renderDeviceCombo->setEnabled(true);
+        ui.renderDeviceCombo->setCurrentIndex(1);
+        QCoreApplication::processEvents();
+        QStyleOptionComboBox option;
+        option.initFrom(ui.renderDeviceCombo);
+        const auto textRect = ui.renderDeviceCombo->style()->subControlRect(
+            QStyle::CC_ComboBox, &option, QStyle::SC_ComboBoxEditField, ui.renderDeviceCombo);
+        for (int i = 0; i < ui.renderDeviceCombo->count(); ++i) {
+            const auto text = ui.renderDeviceCombo->itemText(i);
+            QVERIFY2(textRect.width() >= ui.renderDeviceCombo->fontMetrics().horizontalAdvance(text), qPrintable(text));
+        }
+        ui.renderDeviceCombo->showPopup();
+        QCoreApplication::processEvents();
+        for (int i = 0; i < ui.renderDeviceCombo->count(); ++i)
+            QVERIFY(ui.renderDeviceCombo->view()->viewport()->width() >=
+                ui.renderDeviceCombo->view()->fontMetrics().horizontalAdvance(ui.renderDeviceCombo->itemText(i)));
+        ui.renderDeviceCombo->hidePopup();
+        const auto screenshot = qEnvironmentVariable("DESKWAIFU_DROPDOWN_SCREENSHOT");
+        if (!screenshot.isEmpty() && fontSize == 13) QVERIFY(window.grab().save(screenshot));
+        // An exceptionally long device name may elide, but must not widen the window.
+        ui.renderDeviceCombo->addItem(QString(600, 'W'));
+        ui.renderDeviceCombo->setCurrentIndex(ui.renderDeviceCombo->count() - 1);
+        QCoreApplication::processEvents();
+        QCOMPARE(window.width(), 720);
     }
 
     void followsApplicationTheme_data()
