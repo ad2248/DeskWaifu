@@ -1,0 +1,85 @@
+# 有状态事件处理器：第一阶段
+
+所有具体处理器在 `src/processor/` 的不同子目录中；Qt 负责等待与唤醒，`src/event/ProcessorEventLoop` 负责处理器注册、注销和派发，不再实现另一套 `exec()`。
+
+```text
+processor/
+  image/          GUI 线程读取剪贴板图片，后台编码私有临时 PNG
+  ocr/            OCR 进程代理 OcrClient 与事件处理器
+  screenshot/     系统截图服务的事件适配
+  speech/         语音播放服务的事件适配
+  reading_clip/   剪贴板朗读状态机
+  ipc/            Unix socket 就绪事件，不依赖渲染帧
+  Processor.hpp   注册/注销生命周期基类
+  Events.hpp      本阶段业务事件类型名称
+  ProcessorRuntime.hpp  组装与依赖注入，不编写业务流程
+```
+
+## 统一事件模型
+
+```cpp
+struct ProcessorEvent {
+    QString type;
+    IProcessor* sender = nullptr;
+    IProcessor* receiver = nullptr;
+    QVariantMap data;
+};
+
+bool IProcessor::HandleEvent(const ProcessorEvent& event);
+```
+
+没有事件 ID、流程 ID 或请求/响应/通知的不同派发通道。
+
+- `receiver == nullptr`：按注册顺序调用，返回 true 即停止；需要继续传播的观察者返回 false。
+- 指定接收者：只调用该处理器，即使返回 false 也不会转交给其他接收者。
+- 回复时把原 sender 指针作为 receiver；不传对象所有权，不调用未注册对象。
+- 新事件始终入队，不递归派发。每次唤醒处理一条；处理器内部即使运行嵌套 Qt 消息泵，也不会重入业务派发。
+- 在派发中注销后面的处理器，后者不会再收到当前事件；新注册（包括同地址重新注册）的处理器从下一条事件起参与。
+- 注册/注销和业务回调限主线程；Post 可由后台线程调用，但后台生产者必须遵守对象生命周期约定。
+- 注销会清除队列中包含该发送者/接收者的事件。指针不会延长对象寿命；动态销毁前必须取消并收尾关联任务，停止后台投递，然后注销。**不能依靠地址比较区分销毁后同地址的新对象。**
+- 回调不得抛异常或同步等待耗时子系统。排队数据使用值或共享资源引用，不持有事件自身的引用。
+
+`OcrClient` 的既有 helper wire 协议/外部 CLI 仍保留兼容用 job_id；截图 Portal 句柄和音频流标识也仍在对应后端内部。它们不进入 ProcessorEvent，不参与内部路由或朗读流程关联。后端技术标识不等于新增一套业务事件 ID。
+
+## 剪贴板图片朗读
+
+`ReadingClipProcessor` 自己持有状态：
+
+```text
+Idle → WaitingImage → WaitingOcr → WaitingSpeech → Idle
+                  出错 → Idle
+      重复触发 → Cancelling → 等待当前服务终结事件 → Idle
+```
+
+图像、OCR 和语音请求明确指定接收者，服务完成后直接回复原 sender。协调器依据当前状态与服务指针识别结果，一次只允许一个流程，不在取消完成前开始下一次。
+
+ImageProcessor 在 GUI 线程取得剪贴板 QImage 快照，再用 QtConcurrent 编码 PNG。ImageFile 使用独占临时目录和共享所有权，保证排队事件与 OCR 使用期间文件有效，最后一个引用释放后自动清理。取消图片编码会等待任务收尾；取消 OCR 会终止 worker，并在必要时保留文件直到 worker 回收。
+
+OcrClient 通过异步完成信号通知 OcrProcessor，后者投递事件，无状态查询轮询。语音处理器也通过服务回调投递完成/失败事件。模型双击问候已经改为语音事件；显式替换会先停止当前播报，再启动最近一次替换请求。
+
+入口暂时复用已有 Unix socket，不增加另一条 FIFO：
+
+```bash
+# 可绑定为 KDE 自定义快捷键；必须使用本轮构建的桌宠。
+./deskwaifu-ctl reading_clip
+./deskwaifu-ctl get_reading_clip_status
+```
+
+第一次触发开始读取；忙时再次触发取消，取消收尾期间继续触发不会积压新任务。`queued:true` 只表示事件入队，状态及失败原因通过 `get_reading_clip_status` 查询。没有截图/剪贴板数据时明确失败；不会改为读取文字剪贴板或擅自抓取屏幕。Wayland 是否允许当前窗口读取剪贴板仍由桌面协议和焦点权限决定，不强夺焦点。
+
+IpcProcessor 使用 QSocketNotifier 将 socket 可读/可写转换成事件；超过单次预算的已缓冲命令主动继续排队。输出窗口重建期间暂停，避免嵌套窗口事件循环重入旧模型命令。
+
+## 验证与迁移边界
+
+`processor-event-loop` 验证顺序消费、定向派发、异步/非递归队列、跨线程投递、注销清理及同指针重新注册。
+
+`processor-pipeline` 用合成图片、模拟 OCR 子进程和模拟播报端验证完整流程、取消、故障恢复、临时文件释放；实际语音代理只测试缺少凭据的错误路径，不连接云端或播放声音。另验证无任何渲染帧时 IPC 的读取、缓冲命令继续处理、写回压和断开清理。截图服务继续使用私有 D-Bus 模拟测试。
+
+**这是分阶段迁移，不代表整个程序已经完成新架构：**
+
+- 模型仍使用旧 GUI 线程渲染路径，尚未迁到独立渲染线程；没有引入主队列帧事件来替代该目标。
+- 模型操作、部分配置/窗口输入和旧 OCR 外部命令仍通过现有适配层调用，需要后续迁移。
+- 尚未增加独立 FIFO 监听或全局热键注册；KDE 可调用现有 CLI 入口。
+- 未在用户真实剪贴板、真实 Portal 或真实云端播报上做自动测试；这些需要用户主动授权验证。
+
+后续应独立迁移渲染线程及模型操作代理，明确 GL、模型资源和窗口呈现的线程归属，再收拢剩余旧式入口，不要把这些工作重新塞进 ProcessorRuntime。

@@ -6,11 +6,13 @@
 
 #include <QDir>
 #include <QCoreApplication>
+#include <QEventLoop>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QTemporaryDir>
+#include <QTimer>
 #include <cstring>
 #include <iostream>
 #include <sstream>
@@ -51,9 +53,18 @@ public:
     }
     bool Run(const std::function<bool()>& frame) override
     {
-        // IPC work is bounded per frame; the expanded command batch spans frames.
-        for (int i = 0; i < 8; ++i) if (!frame()) return true;
-        return false;
+        // Match the platform contract: socket readiness and frames share Qt's
+        // dispatcher, but processing IPC no longer requires drawing a frame.
+        bool quitRequested = false;
+        QEventLoop loop;
+        QTimer frames;
+        QObject::connect(&frames, &QTimer::timeout, &loop, [&] {
+            if (!frame()) { quitRequested = true; loop.quit(); }
+        });
+        frames.start(1);
+        QTimer::singleShot(2000, &loop, &QEventLoop::quit);
+        loop.exec();
+        return quitRequested;
     }
     bool MakeCurrent() override { return eglMakeCurrent(display, surface, surface, context); }
     void Shutdown() override
@@ -203,7 +214,7 @@ int main(int argc, char** argv)
         "{\"command\":\"set_render_device\",\"device\":\"auto\"}\n" +
         "{\"command\":\"quit\"}\n";
     CHECK(send(fd, requests.data(), requests.size(), MSG_NOSIGNAL) == static_cast<ssize_t>(requests.size()));
-    CHECK(app->Run()); // Poll handles the requests; quit skips rendering and tears down.
+    CHECK(app->Run()); // Socket events handle the commands; quit closes the window loop.
     CHECK(triggerCalls == 3);
     QByteArray response;
     char buffer[4096];

@@ -10,6 +10,11 @@
 #include "MiniMaxSpeechSource.hpp"
 #include "AudioPlayer.hpp"
 #include "SpeechPlayer.hpp"
+#include "OcrClient.hpp"
+#include "processor/ProcessorRuntime.hpp"
+#include "processor/ipc/IpcProcessor.hpp"
+#include <QClipboard>
+#include <QGuiApplication>
 #include <cmath>
 #include <chrono>
 #include <iostream>
@@ -150,6 +155,9 @@ bool LAppDelegate::InitializeRuntime()
         [](SpeechId, const SpeechError& error) {
             LAppPal::PrintLogLn("[Speech] %s", error.message.toUtf8().constData());
         });
+    _processors.reset(new ProcessorRuntime(*_speechPlayer,
+        [this] { _speechSource->SetApiKey(QString::fromStdString(LAppConfig::GetInstance().values.minimaxApiKey)); },
+        [] { return QGuiApplication::clipboard()->image(); }));
     const auto hoverResult = _hoverSettings->Refresh();
     if (!hoverResult.ok) LAppPal::PrintLogLn("[Config] %s", hoverResult.error.c_str());
     OutputSettings outputSettings(*_window, *_settings, config);
@@ -189,11 +197,17 @@ bool LAppDelegate::InitializeRuntime()
         return false;
     }
 
+    _ipcProcessor.reset(new IpcProcessor(_processors->Loop(), *_ipc));
     return true;
 }
+
+OcrClient& LAppDelegate::Ocr() { return _processors->Ocr(); }
+
 bool LAppDelegate::Release()
 {
     AppEnd();
+    _ipcProcessor.reset();
+    _processors.reset();
     _speechPlayer.reset();
     _audioPlayer.reset();
     _speechSource.reset();
@@ -223,7 +237,6 @@ bool LAppDelegate::Run()
             pendingToggle = 0;
             _service.SetVisibility(_service.Snapshot().hidden);
         }
-        _ipc->Poll();
         if (_window->OutputNeedsRebind()) _settings->AbortScreenEdit();
         _window->ReconcileOutputs();
         if (_lastOutput != _window->CurrentOutput()) {
@@ -429,6 +442,7 @@ void LAppDelegate::StartCropGesture()
 
 void LAppDelegate::OutputSwitchStarted()
 {
+    if (_ipcProcessor) _ipcProcessor->SetPaused(true);
     _windowState.Send(ModelWindowState::Event::SwitchOutput);
     if (_settings && _window->OutputNeedsRebind()) _settings->AbortScreenEdit();
 }
@@ -437,6 +451,7 @@ void LAppDelegate::OutputSwitchFinished()
 {
     _windowState.Send(ModelWindowState::Event::OutputReady);
     SyncInteractionMode();
+    if (_ipcProcessor) _ipcProcessor->SetPaused(false);
 }
 
 void LAppDelegate::PointerButton(int button, bool pressed)
@@ -486,10 +501,7 @@ void LAppDelegate::PointerButton(int button, bool pressed)
                 {
                     _manager->OnDrag(0.0f, 0.0f);
                     _window->SetKeyboardGrab(true);
-                    if (_speechPlayer) {
-                        _speechSource->SetApiKey(QString::fromStdString(LAppConfig::GetInstance().values.minimaxApiKey));
-                        _speechPlayer->Speak({QStringLiteral("姐姐，你好喵"), {}});
-                    }
+                    if (_processors) _processors->SpeakGreeting(QStringLiteral("姐姐，你好喵"));
                 }
                 else if (result == InputController::ReleaseResult::Drag)
                 {

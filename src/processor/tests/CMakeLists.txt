@@ -1,0 +1,10 @@
+add_executable(processor-event-loop-test ProcessorEventLoopTest.cpp)
+target_link_libraries(processor-event-loop-test PRIVATE deskwaifu_events)
+add_test(NAME processor-event-loop COMMAND processor-event-loop-test)
+
+add_executable(processor-pipeline-test ProcessorPipelineTest.cpp)
+target_link_libraries(processor-pipeline-test PRIVATE deskwaifu_processors Qt6::Network)
+add_executable(processor-ocr-fixture ../../../../features/ocr/tests/OcrTestHelper.cpp)
+target_link_libraries(processor-ocr-fixture PRIVATE Qt6::Core)
+add_test(NAME processor-pipeline COMMAND processor-pipeline-test $<TARGET_FILE:processor-ocr-fixture>)
+set_tests_properties(processor-event-loop processor-pipeline PROPERTIES TIMEOUT 30)

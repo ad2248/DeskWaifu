@@ -33,6 +33,9 @@ class AppCommandHandler;
 class MiniMaxSpeechSource;
 class AudioPlayer;
 class SpeechPlayer;
+class OcrClient;
+class ProcessorRuntime;
+class IpcProcessor;
 
 /**
 * @brief   アプリケーションクラス。
@@ -95,6 +98,8 @@ public:
     const ApplicationService& Service() const { return _service; }
     TransformEditor& Settings() { return *_settings; }
     HoverOpacitySettings& HoverSettings() { return *_hoverSettings; }
+    OcrClient& Ocr();
+    ProcessorRuntime& Processors() { return *_processors; }
     std::vector<OutputSnapshot> Outputs() const { return _window->Outputs(); }
     OutputId CurrentOutput() const { return _window->CurrentOutput(); }
     AppResult SelectOutput(const std::string& name)
@@ -213,6 +218,8 @@ private:
     std::unique_ptr<MiniMaxSpeechSource> _speechSource;
     std::unique_ptr<AudioPlayer> _audioPlayer;
     std::unique_ptr<SpeechPlayer> _speechPlayer;
+    std::unique_ptr<ProcessorRuntime> _processors;
+    std::unique_ptr<IpcProcessor> _ipcProcessor;
     bool _cubismStarted = false;
     LAppTextureManager* _textureManager;         ///< テクスチャマネージャー
     std::string _executeAbsolutePath;            ///< アプリケーションの実行パス

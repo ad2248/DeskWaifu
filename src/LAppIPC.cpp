@@ -175,6 +175,30 @@ bool LAppIPC::Initialize()
     return true;
 }
 
+std::vector<int> LAppIPC::ReadDescriptors() const
+{
+    std::vector<int> descriptors;
+    if (_serverFd >= 0) descriptors.push_back(_serverFd);
+    for (const auto& client : _clients)
+        if (client.response.empty() && !client.eof) descriptors.push_back(client.fd);
+    return descriptors;
+}
+
+std::vector<int> LAppIPC::WriteDescriptors() const
+{
+    std::vector<int> descriptors;
+    for (const auto& client : _clients)
+        if (!client.response.empty()) descriptors.push_back(client.fd);
+    return descriptors;
+}
+
+bool LAppIPC::HasBufferedWork() const
+{
+    for (const auto& client : _clients)
+        if (client.response.empty() && (client.eof || client.buf.find('\n') != std::string::npos)) return true;
+    return false;
+}
+
 void LAppIPC::Release()
 {
     for (const auto& client : _clients) CloseClient(client);

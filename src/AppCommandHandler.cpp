@@ -8,6 +8,9 @@
 #include "SpeechSettings.hpp"
 #include "RenderDeviceSettings.hpp"
 #include "OffscreenRenderer.hpp"
+#include "OcrClient.hpp"
+#include "processor/ProcessorRuntime.hpp"
+#include <QJsonDocument>
 #include <cstdlib>
 #include <algorithm>
 #include <iomanip>
@@ -70,6 +73,23 @@ try
     if (command.empty())
     {
         return "{\"ok\":false,\"error\":\"missing 'command' field\"}";
+    }
+
+    if (command == "reading_clip") {
+        return _app.Processors().ReadClipboard() ? "{\"ok\":true,\"queued\":true}" : "{\"ok\":false,\"error\":\"event was not queued\"}";
+    }
+    if (command == "get_reading_clip_status")
+        return QJsonDocument(QJsonObject::fromVariantMap(_app.Processors().Reading().Status())).toJson(QJsonDocument::Compact).toStdString();
+
+    if (command == "get_ocr_status" || command == "ocr_recognize" ||
+        command == "get_ocr_result" || command == "cancel_ocr") {
+        auto& ocr = _app.Ocr();
+        QJsonObject reply;
+        if (command == "get_ocr_status") reply = ocr.Status();
+        else if (command == "ocr_recognize") reply = ocr.Submit(QString::fromStdString(JsonGetString(request, "image")));
+        else if (command == "get_ocr_result") reply = ocr.Result(QString::fromStdString(JsonGetString(request, "job_id")));
+        else reply = ocr.Cancel(QString::fromStdString(JsonGetString(request, "job_id")));
+        return QJsonDocument(reply).toJson(QJsonDocument::Compact).toStdString();
     }
 
     LAppDelegate* app = &_app;

@@ -30,9 +30,12 @@ public:
 
     /**
      * @brief Poll for incoming connections and process commands.
-     *        Call this once per frame from the main loop.
+     *        Called on socket readiness (or buffered work), independently of rendering.
      */
     void Poll();
+    std::vector<int> ReadDescriptors() const;
+    std::vector<int> WriteDescriptors() const;
+    bool HasBufferedWork() const;
 
     /**
      * @brief Clean up the socket.

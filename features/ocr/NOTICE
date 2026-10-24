@@ -1,0 +1,15 @@
+This optional bundle uses PP-OCRv6_small_det and PP-OCRv6_medium_rec by
+PaddlePaddle/PaddleOCR, distributed under Apache-2.0 according to the model cards.
+Copyright (c) 2016 PaddlePaddle Authors. All Rights Reserved.
+Upstream: https://github.com/PaddlePaddle/PaddleOCR
+
+The original inference models are converted to ONNX with paddle2onnx and their
+character dictionary is extracted to JSON. No model training or quantization is
+performed. Source and output hashes and conversion versions are recorded in the
+installed manifest.json. The C++ pipeline implements the PaddleOCR BGR
+normalization, DB quad postprocessing and CTC decoding; its floating-point
+rectangle expansion differs from the reference's integer pyclipper offset.
+
+ONNX Runtime is distributed with its upstream LICENSE and ThirdPartyNotices.txt
+in the sibling onnxruntime license directory. Qt and OpenCV are system libraries,
+not bundled here. No Live2D SDK or Python environment is included in this package.
