@@ -1,6 +1,6 @@
 #include "DesktopWindow.hpp"
 #include "QtWindowInput.hpp"
-#include "OffscreenRenderer.hpp"
+#include "processor/model/RenderFrame.hpp"
 #include <QEventLoop>
 #include <QGuiApplication>
 #include <QKeyEvent>
@@ -42,7 +42,6 @@ public:
         // Failed application teardown intentionally leaves GPU objects to process exit.
         (void)_frame.release();
         (void)_context.release();
-        (void)_offscreen.release();
     }
     bool Initialize(int width, int height, IDesktopWindowEvents& events) override
     {
@@ -111,15 +110,6 @@ public:
         auto* gl = _context->extraFunctions();
         std::cout << "[GPU] Window presentation: " << gl->glGetString(GL_VENDOR) << " / "
             << gl->glGetString(GL_RENDERER) << " / " << gl->glGetString(GL_VERSION) << std::endl;
-        const auto device = qEnvironmentVariable("DESKWAIFU_RENDER_DEVICE");
-        if (!device.isEmpty() && device != "auto") {
-            _context->doneCurrent();
-            _offscreen.reset(new OffscreenRenderer);
-            if (!_offscreen->Initialize(device.toStdString())) {
-                std::cerr << "[GPU] Offscreen initialization failed for " << device.toStdString() << '\n';
-                return false;
-            }
-        }
         std::cout << "[Qt] Layer-shell model window configured: " << Width() << 'x' << Height() << std::endl;
         return true;
     }
@@ -156,23 +146,12 @@ public:
 
     bool MakeCurrent() override
     {
-        if (_offscreen) {
-            if (QOpenGLContext::currentContext()) QOpenGLContext::currentContext()->doneCurrent();
-            return _offscreen->MakeCurrent();
-        }
         return _context && handle() && _context->makeCurrent(this)
             && QOpenGLContext::currentContext() == _context.get();
     }
     void Shutdown() override
     {
         _events = nullptr;
-        if (_offscreen) {
-            if (!_offscreen->Shutdown()) {
-                std::cerr << "[GPU] Failed to bind offscreen context for teardown\n";
-                return;
-            }
-            _offscreen.reset();
-        }
         if (_context) {
             if (MakeCurrent()) _frame.reset();
             else (void)_frame.release(); // Never call a GL destructor on a missing context.
@@ -188,7 +167,22 @@ public:
     int Height() const override { return height(); }
     unsigned int Framebuffer() const override
     {
-        return _offscreen ? _offscreen->Framebuffer() : (_frame ? _frame->handle() : 0);
+        return _frame ? _frame->handle() : 0;
+    }
+    bool UploadFrame(const RenderFrame& frame) override
+    {
+        if (frame.width <= 0 || frame.height <= 0 || frame.rgba.size() != size_t(frame.width) * frame.height * 4) return false;
+        if (!_frame || _frame->width() != frame.width || _frame->height() != frame.height)
+            _frame.reset(new QOpenGLFramebufferObject(frame.width, frame.height));
+        if (!_frame->isValid()) return false;
+        auto* gl = _context->extraFunctions();
+        gl->glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+        gl->glPixelStorei(GL_UNPACK_ALIGNMENT, 1); gl->glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+        gl->glPixelStorei(GL_UNPACK_SKIP_ROWS, 0); gl->glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
+        gl->glActiveTexture(GL_TEXTURE0); gl->glBindTexture(GL_TEXTURE_2D, _frame->texture());
+        gl->glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, frame.width, frame.height, GL_RGBA, GL_UNSIGNED_BYTE, frame.rgba.data());
+        gl->glBindTexture(GL_TEXTURE_2D, 0);
+        return gl->glGetError() == GL_NO_ERROR;
     }
     bool SetInputRegion(const std::vector<ModelRegion>& regions) override
     {
@@ -252,7 +246,6 @@ public:
         _switching = true;
         if (_events) _events->OutputSwitchStarted();
         _context->doneCurrent();
-        if (_offscreen) _offscreen->DoneCurrent();
         hide();
         destroy();
         setScreen(chosen);
@@ -353,7 +346,6 @@ private:
     void AddScreen(QScreen* screen) { _screens.push_back({_nextId++, screen}); }
     bool BindFrame()
     {
-        if (_offscreen) return _offscreen->BindFrame(width(), height());
         // Retain existing logical-pixel crop/config semantics at any output scale.
         // Only final presentation scales to the physical backing buffer.
         if (!_frame || _frame->size() != size()) {
@@ -363,29 +355,6 @@ private:
     }
     bool Present()
     {
-        if (_offscreen) {
-            if (!_offscreen->ReadFrame(_pixels)) return false;
-            // A frame callback can switch to a differently sized output. Upload
-            // the dimensions actually read, then scale to the new window size.
-            const QSize rendered(_offscreen->Width(), _offscreen->Height());
-            _offscreen->DoneCurrent();
-            if (!_context->makeCurrent(this)) return false;
-            if (!_frame || _frame->size() != rendered)
-                _frame.reset(new QOpenGLFramebufferObject(rendered));
-            if (!_frame->isValid()) return false;
-            auto* gl = _context->extraFunctions();
-            gl->glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-            gl->glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-            gl->glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-            gl->glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
-            gl->glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
-            gl->glActiveTexture(GL_TEXTURE0);
-            gl->glBindTexture(GL_TEXTURE_2D, _frame->texture());
-            // Both ends use bottom-up OpenGL coordinates and premultiplied RGBA.
-            // Copy bytes without QImage conversion, flipping, or alpha blending.
-            gl->glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, rendered.width(), rendered.height(), GL_RGBA, GL_UNSIGNED_BYTE, _pixels.data());
-            gl->glBindTexture(GL_TEXTURE_2D, 0);
-        }
         const int physicalWidth = qRound(width() * devicePixelRatio());
         const int physicalHeight = qRound(height() * devicePixelRatio());
         auto* gl = _context->extraFunctions();
@@ -403,8 +372,7 @@ private:
         const bool presented = gl->glGetError() == GL_NO_ERROR;
         if (scissor) gl->glEnable(GL_SCISSOR_TEST);
         _context->swapBuffers(this);
-        if (_offscreen) return MakeCurrent() && BindFrame() && presented;
-        _frame->bind(); // Input/IPC callbacks may use model GPU resources between frames.
+        _frame->bind();
         return presented;
     }
     struct ScreenEntry { OutputId id; QPointer<QScreen> screen; };
@@ -417,8 +385,6 @@ private:
     ModelKeyboardGrabState _keyboard;
     std::unique_ptr<QOpenGLContext> _context;
     std::unique_ptr<QOpenGLFramebufferObject> _frame;
-    std::unique_ptr<OffscreenRenderer> _offscreen;
-    std::vector<unsigned char> _pixels;
 };
 }
 

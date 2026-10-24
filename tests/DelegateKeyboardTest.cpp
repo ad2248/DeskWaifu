@@ -3,6 +3,7 @@
 #include "LAppDelegate.hpp"
 #include "LAppDefine.hpp"
 #include "ModelHotkeys.hpp"
+#include "ModelProcessorTestHelpers.hpp"
 
 #include <QDir>
 #include <QCoreApplication>
@@ -35,6 +36,8 @@ ModelHotkeys* triggered = nullptr;
 class HeadlessWindow : public DesktopWindow
 {
 public:
+    std::unique_ptr<ModelRenderTarget> RenderTarget(const std::string&) override { return CreateEglModelRenderTarget("auto"); }
+    bool UploadFrame(const RenderFrame&) override { return true; }
     bool Initialize(int, int, IDesktopWindowEvents& receiver) override
     {
         events = &receiver;
@@ -132,6 +135,7 @@ int main(int argc, char** argv)
     CHECK(QFile::link(QStringLiteral(SDK_RESOURCES "/Haru/Haru.moc3"), modelDir + "Haru.moc3"));
     CHECK(Write(modelDir + "test.model3.json",
         R"({"Version":3,"FileReferences":{"Moc":"Haru.moc3"}})"));
+    CHECK(Write(modelDir + "z-other.model3.json", R"({"Version":3,"FileReferences":{"Moc":"Haru.moc3"}})"));
     CHECK(Write(modelDir + "test.vtube.json", R"({"Hotkeys":[{
         "HotkeyID":"binding-42","Action":"ToggleExpression","File":"test.exp3.json",
         "Triggers":{"Trigger1":"A"}},
@@ -175,10 +179,11 @@ int main(int argc, char** argv)
     std::ostringstream logs;
     auto* previous = std::cout.rdbuf(logs.rdbuf());
     events->KeyboardKey(KEY_A, true);
+    AwaitModel(app->Models());
     std::cout.rdbuf(previous);
     CHECK(triggerCalls == 1);
-    CHECK(logs.str().find("[Hotkeys] Trigger failed for binding binding-42: injected action failure") != std::string::npos);
-    CHECK(triggered && !triggered->IsActive("binding-42"));
+    CHECK(logs.str().find("injected action failure") != std::string::npos);
+    CHECK(triggered && !app->Models().Metadata().hotkeys["hotkeys"].toArray()[0].toObject()["active"].toBool());
     events->KeyboardKey(KEY_A, true);
     CHECK(triggerCalls == 1); // repeat suppressed on the actual Delegate path
     events->KeyboardKey(KEY_A, false);
@@ -186,18 +191,20 @@ int main(int argc, char** argv)
     logs.str("");
     previous = std::cout.rdbuf(logs.rdbuf());
     events->KeyboardKey(KEY_A, true);
+    AwaitModel(app->Models());
     std::cout.rdbuf(previous);
-    CHECK(triggerCalls == 2 && triggered->IsActive("binding-42"));
+    CHECK(triggerCalls == 2 && app->Models().Metadata().hotkeys["hotkeys"].toArray()[0].toObject()["active"].toBool());
     CHECK(logs.str().find("Trigger failed") == std::string::npos);
     events->KeyboardKey(KEY_ESC, true);
     CHECK(!app->GetWindow()->KeyboardGrabbed());
 
     // Real IPC -> command adapter -> service: a changed model token must stop
     // stale actions, and unavailable duplicate IDs must not report active.
-    const auto oldToken = triggered->Token();
-    triggered->Reset();
-    const auto token = triggered->Token();
-    CHECK(token != oldToken && !triggered->IsActive("binding-42"));
+    const auto oldToken = app->Models().Metadata().hotkeys["model_token"].toString().toStdString();
+    CHECK(AwaitModel(app->Models(), {{"command", "set_model"}, {"index", 1}})["ok"].toBool());
+    CHECK(AwaitModel(app->Models(), {{"command", "set_model"}, {"index", 0}})["ok"].toBool());
+    const auto token = app->Models().Metadata().hotkeys["model_token"].toString().toStdString();
+    CHECK(token != oldToken && !app->Models().Metadata().hotkeys["hotkeys"].toArray()[0].toObject()["active"].toBool());
     const int fd = socket(AF_UNIX, SOCK_STREAM, 0);
     CHECK(fd >= 0);
     sockaddr_un address{};

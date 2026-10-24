@@ -1,7 +1,13 @@
 #include "IpcProcessor.hpp"
 #include "processor/Events.hpp"
+#include <QPointer>
 
-IpcProcessor::IpcProcessor(ProcessorEventLoop& loop, LAppIPC& ipc) : Processor(loop), _ipc(ipc) { Refresh(); }
+IpcProcessor::IpcProcessor(ProcessorEventLoop& loop, LAppIPC& ipc) : Processor(loop), _ipc(ipc)
+{
+    QPointer<IpcProcessor> self(this);
+    _ipc.SetReadyCallback([self] { if (self) self->Schedule(); });
+    Refresh();
+}
 
 void IpcProcessor::Schedule()
 {

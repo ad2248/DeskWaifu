@@ -1,6 +1,12 @@
 add_executable(processor-event-loop-test ProcessorEventLoopTest.cpp)
 target_link_libraries(processor-event-loop-test PRIVATE deskwaifu_events)
 add_test(NAME processor-event-loop COMMAND processor-event-loop-test)
+add_executable(command-processor-test CommandProcessorTest.cpp)
+target_link_libraries(command-processor-test PRIVATE deskwaifu_events)
+add_test(NAME command-processor COMMAND command-processor-test)
+add_executable(signal-processor-test SignalProcessorTest.cpp)
+target_link_libraries(signal-processor-test PRIVATE deskwaifu_processors)
+add_test(NAME signal-processor COMMAND signal-processor-test)
 
 add_executable(processor-pipeline-test ProcessorPipelineTest.cpp)
 target_link_libraries(processor-pipeline-test PRIVATE deskwaifu_processors Qt6::Network)

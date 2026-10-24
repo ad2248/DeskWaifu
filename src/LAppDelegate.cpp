@@ -1,4 +1,3 @@
-#include <signal.h>
 /**
  * Copyright(c) Live2D Inc. All rights reserved.
  *
@@ -13,6 +12,10 @@
 #include "OcrClient.hpp"
 #include "processor/ProcessorRuntime.hpp"
 #include "processor/ipc/IpcProcessor.hpp"
+#include "processor/model/ModelProcessor.hpp"
+#include "processor/command/CommandProcessor.hpp"
+#include "processor/signal/SignalProcessor.hpp"
+#include <QJsonDocument>
 #include <QClipboard>
 #include <QGuiApplication>
 #include <cmath>
@@ -24,31 +27,19 @@
 #include <libgen.h>
 #include <GL/glew.h>
 
-#include "LAppView.hpp"
 #include "LAppPal.hpp"
-#include "ModelFrameRegion.hpp"
 #include "ModelInputRegion.hpp"
 #include "LAppDefine.hpp"
 #include "LAppConfig.hpp"
-#include "LAppLive2DManager.hpp"
-#include "LAppModel.hpp"
-#include "LAppTextureManager.hpp"
 #include "LAppIPC.hpp"
 #include "AppCommandHandler.hpp"
-#include "ModelScroll.hpp"
-#include "RuntimeLifecycle.hpp"
-#include "GpuTeardown.hpp"
 #include "InputController.hpp"
-#include "ModelFrame.hpp"
 
-using namespace Csm;
 using namespace std;
 using namespace LAppDefine;
 
 namespace {
     LAppDelegate* s_instance = NULL;
-    volatile sig_atomic_t pendingToggle = 0;
-    volatile sig_atomic_t pendingFocusMove = 0;
     uint32_t ClickClock()
     {
         using namespace std::chrono;
@@ -58,14 +49,6 @@ namespace {
     {
         return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
     }
-}
-
-static void HandleToggleSignal(int) {
-    pendingToggle = 1;
-}
-
-static void HandleFocusSignal(int) {
-    pendingFocusMove = 1;
 }
 
 LAppDelegate* LAppDelegate::GetInstance()
@@ -103,10 +86,6 @@ bool LAppDelegate::InitializeRuntime()
         LAppPal::PrintLogLn("START");
     }
 
-    signal(SIGUSR1, HandleToggleSignal);
-    signal(SIGUSR2, HandleFocusSignal);
-
-
     _windowWidth = RenderTargetWidth;
     _windowHeight = RenderTargetHeight;
 
@@ -114,31 +93,7 @@ bool LAppDelegate::InitializeRuntime()
         return false;
     }
 
-    glewExperimental = GL_TRUE;
-    GLenum err = glewInit();
-    if (err != GLEW_OK) {
-        if (DebugLogEnable)
-        {
-            LAppPal::PrintLogLn("Can't initilize glew. Error: %s", glewGetErrorString(err));
-        }
-        return false;
-    }
-
-    //テクスチャサンプリング設定
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-
-    //透過設定
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-
-    glViewport(0, 0, _windowWidth, _windowHeight);
-
-    // Cubism3の初期化
     SetExecuteAbsolutePath();
-    LAppPal::SetResourceBasePath(_executeAbsolutePath);
-    InitializeCubism();
-    _cubismStarted = true;
     auto& config = LAppConfig::GetInstance();
     _settings.reset(new TransformEditor(_service, config));
     _settings->SetEditChanged([this] { SyncInteractionMode(); });
@@ -176,22 +131,35 @@ bool LAppDelegate::InitializeRuntime()
     else LAppPal::PrintLogLn("[KWin] Transient global cursor script loaded");
     auto modelDirs = values.additionalModelDirs;
     for (auto& dir : modelDirs) dir = LAppConfig::ExpandTilde(dir);
-    _manager = new LAppLive2DManager(*_textureManager, _windowWidth, _windowHeight,
-        {LAppDefine::ModelsDir, modelDirs, values.defaultModel, values.emotionTimeout});
-    if (!_manager->HasModels()) return false;
-    _view = new LAppView(*_manager, *_textureManager);
+    _models.reset(new ModelProcessor(_processors->Loop()));
+    _models->SetModelChanged([this] { _service.ClearControls(); CancelInteraction(); });
+    const auto device = qEnvironmentVariable("DESKWAIFU_RENDER_DEVICE");
+    auto target = _window->RenderTarget(device.toStdString());
+    if (!_models->Start(std::move(target), {_executeAbsolutePath, LAppDefine::ModelsDir,
+            values.defaultModel, modelDirs, values.emotionTimeout}, _windowWidth, _windowHeight)) return false;
 
-    _view->Initialize(_windowWidth, _windowHeight);
-    _view->InitializeSprite();
+    _signals.reset(new SignalProcessor(_processors->Loop(),
+        [this] { _service.SetVisibility(_service.Snapshot().hidden); },
+        [this] {
+            const auto focused = _compositor.FocusedOutput();
+            if (focused && !_settings->Editing()) {
+                if (!_outputController.Focus(focused.value))
+                    LAppPal::PrintLogLn("[Wayland] Focused output not available: %s", focused.value.c_str());
+                else _settings->PauseAutosave();
+            } else LAppPal::PrintLogLn("[Wayland] Focus capability unavailable (%d)", static_cast<int>(focused.status));
+        }));
+    if (!_signals->Available()) return false;
 
     // Initialize IPC socket server
     _ipc = new LAppIPC();
-    _commands = new AppCommandHandler(*this, *_manager);
-    _ipc->SetCommandService(*_commands);
+    _commands = new AppCommandHandler(*this);
+    _commandProcessor.reset(new CommandProcessor(_processors->Loop(), *_commands));
+    _ipc->SetCommandService(*_commandProcessor);
     if (!_ipc->Initialize()) {
         LAppPal::PrintLogLn("[IPC] Initialization failed; refusing to start without command endpoint");
         delete _ipc;
         _ipc = nullptr;
+        _commandProcessor.reset();
         delete _commands;
         _commands = nullptr;
         return false;
@@ -206,37 +174,27 @@ OcrClient& LAppDelegate::Ocr() { return _processors->Ocr(); }
 bool LAppDelegate::Release()
 {
     AppEnd();
+    _signals.reset();
     _ipcProcessor.reset();
+    const bool released = !_models || _models->Stop();
+    _models.reset(); // Purge operation completions before destroying their command service.
+    delete _ipc; _ipc = nullptr;
+    _commandProcessor.reset();
+    delete _commands; _commands = nullptr;
     _processors.reset();
     _speechPlayer.reset();
     _audioPlayer.reset();
     _speechSource.reset();
     _kwinCursor.Stop();
-    const bool released = ReleaseGpuResources(HasGpuResources(_view, _manager,
-        _textureManager ? _textureManager->ResidentCount() : 0),
-        [this] { return _window->MakeCurrent(); },
-        [this] { ReleaseRuntimeInOrder(
-        [this] {
-            ReleaseCommandTransport(
-                [this] { delete _ipc; _ipc = nullptr; },
-                [this] { delete _commands; _commands = nullptr; });
-        },
-        [this] { delete _view; _view = nullptr; },
-        [this] { delete _manager; _manager = nullptr; },
-        [this] { delete _textureManager; _textureManager = nullptr; },
-        [this] { if (_cubismStarted) { CubismFramework::Dispose(); _cubismStarted = false; } },
-        [this] { _window->Shutdown(); }); });
+    _window->Shutdown();
     if (released) _windowState.Send(ModelWindowState::Event::Released);
     return released;
 }
 bool LAppDelegate::Run()
 {
-    const bool ran = _window->Run([this] {
+    bool renderingOk = true;
+    const bool ran = _window->Run([this, &renderingOk] {
         if (!_windowState.Running()) return false;
-        if (pendingToggle) {
-            pendingToggle = 0;
-            _service.SetVisibility(_service.Snapshot().hidden);
-        }
         if (_window->OutputNeedsRebind()) _settings->AbortScreenEdit();
         _window->ReconcileOutputs();
         if (_lastOutput != _window->CurrentOutput()) {
@@ -258,71 +216,57 @@ bool LAppDelegate::Run()
 
         glViewport(0, 0, _windowWidth, _windowHeight);
 
-        if (pendingFocusMove) {
-            pendingFocusMove = 0;
-            const auto focused = _compositor.FocusedOutput();
-            if (focused && !_settings->Editing()) {
-                if (!_outputController.Focus(focused.value))
-                    LAppPal::PrintLogLn("[Wayland] Focused output not available: %s", focused.value.c_str());
-                else _settings->PauseAutosave();
-            } else LAppPal::PrintLogLn("[Wayland] Focus capability unavailable (%d)", static_cast<int>(focused.status));
-        }
         TrackGlobalCursor();
         _lastOutput = _window->CurrentOutput();
 
         if (_input.IsCaptured() && _settings->Dirty()) _settings->ScheduleSave(SettingsClock(), .5);
         _settings->Tick(SettingsClock());
 
-        LAppPal::UpdateTime();
-
-        // 画面の初期化 -> Transparent!
-        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        glClearDepth(1.0);
-
-        const auto state = _service.Snapshot();
-        const bool opacityFrame = (_hoverSettings->Enabled() || _hoverSettings->IdleOpacity() != 1.0f)
-            && !state.hidden && _view->BeginOpacityFrame();
-        RenderModelFrame(_service, _settings->Editing(),
-            [this](ModelTransform transform) { UpdateCursorLook(transform); },
-            [this](ModelTransform transform, const ModelFrameInput& input) {
-                _view->Render(transform, input);
-            });
-
-        if (!state.hidden || _settings->ScreenEditing()) {
-            const auto& settings = _settings->Display();
-            const auto region = ResolveModelRegion(settings.cropped, settings.region,
-                _windowWidth, _windowHeight);
-            // Sample only the model, before display opacity or editor handles.
-            const auto modelRegions = ReadModelInputRegion(opacityFrame ? _view->OpacityFramebuffer() : _window->Framebuffer(),
-                _windowWidth, _windowHeight, region, _inputPixels);
-            const auto handles = _settings->ScreenEditing() && settings.cropped
-                ? CropInteraction::Handles(settings.region) : std::vector<ModelRegion>{};
-            if (opacityFrame)
-                _view->PresentOpacityFrame(_hoverOpacity.Resolve(_hoverSettings->Enabled(), _hoverSettings->Opacity(),
-                    modelRegions, handles, _hoverSettings->IdleOpacity()));
-            ClipModelRegion(region, _windowWidth, _windowHeight);
-            if (_settings->ScreenEditing())
-                DrawModelEditFrame(handles, _windowWidth, _windowHeight);
-            _window->SetInputRegion(ModelFrameInputRegions(_settings->ScreenEditing(),
-                _windowWidth, _windowHeight, modelRegions));
+        if (!_models->Error().isEmpty()) {
+            renderingOk = false;
+            LAppPal::PrintLogLn("[Render] %s", _models->Error().toUtf8().constData());
+            AppEnd(); return false;
         }
-        if (state.hidden && !_settings->ScreenEditing()) _window->SetInputRegion({});
+        ModelRenderState state;
+        state.app = _service.Snapshot(); state.controls = _service.FrameInput();
+        state.modelToken = _models->Metadata().hotkeys.value("model_token").toString().toStdString();
+        state.width = _windowWidth; state.height = _windowHeight;
+        state.editing = _settings->Editing();
+        const auto& settings = _settings->Display();
+        state.clip = ResolveModelRegion(settings.cropped, settings.region, _windowWidth, _windowHeight);
+        if (_settings->ScreenEditing() && settings.cropped) state.handles = CropInteraction::Handles(settings.region);
+        const auto outputs = _window->Outputs();
+        const auto* current = _outputController.Current(outputs);
+        if (current && _cursorLook.HasPosition() && !state.editing) {
+            const auto look = _cursorLook.LookAt(current->x, current->y, _windowWidth, _windowHeight,
+                _lookCenterX, _lookCenterY, state.app.transform, LAppConfig::GetInstance().values.mouseLookRadius);
+            state.hasLook = true; state.lookX = look.first; state.lookY = look.second;
+        }
+        auto frame = _models->Frame();
+        const bool usable = frame && frame->width == _windowWidth && frame->height == _windowHeight
+            && frame->hidden == state.app.hidden && frame->modelIndex == state.app.modelIndex;
+        const auto regions = usable ? frame->regions : std::vector<ModelRegion>{};
+        state.opacity = _hoverOpacity.Resolve(_hoverSettings->Enabled(), _hoverSettings->Opacity(),
+            regions, state.handles, _hoverSettings->IdleOpacity());
+        _models->SetState(state);
+        glClearColor(0, 0, 0, 0); glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        if (usable && (!state.app.hidden || _settings->ScreenEditing()) && !_window->UploadFrame(*frame)) {
+            renderingOk = false; AppEnd(); return false;
+        }
+        _window->SetInputRegion(state.app.hidden && !_settings->ScreenEditing() ? std::vector<ModelRegion>{}
+            : ModelFrameInputRegions(_settings->ScreenEditing(), _windowWidth, _windowHeight, regions));
         return _windowState.Running();
     });
     const bool released = Release();
     if (released) LAppPal::PrintLogLn("[APP]GPU resources released before window teardown");
     else LAppPal::PrintLogLn("[APP]Could not restore GPU context for teardown; resources left to process cleanup");
     LAppDelegate::ReleaseInstance();
-    return ran && released;
+    return ran && released && renderingOk;
 }
 LAppDelegate::LAppDelegate():
-    _cubismOption(),
     _window(CreateDesktopWindow()),
     _outputController(*_window),
     _compositor(CompositorAdapter::Detect(), _compositorTransport),
-    _view(nullptr),
-    _manager(nullptr),
     _ipc(nullptr),
     _commands(nullptr),
     _service(*this),
@@ -335,7 +279,6 @@ LAppDelegate::LAppDelegate():
     _lookCenterY(0.5f)
 {
     _executeAbsolutePath = "";
-    _textureManager = new LAppTextureManager();
     QObject::connect(&_windowState, &ModelWindowState::InteractionCancelled,
         &_windowState, [this] { CancelInteraction(); });
 }
@@ -343,21 +286,6 @@ LAppDelegate::LAppDelegate():
 LAppDelegate::~LAppDelegate()
 {
 
-}
-
-void LAppDelegate::InitializeCubism()
-{
-    //setup cubism
-    _cubismOption.LogFunction = LAppPal::PrintMessage;
-    _cubismOption.LoggingLevel = LAppDefine::CubismLoggingLevel;
-    _cubismOption.LoadFileFunction = LAppPal::LoadFileAsBytes;
-    _cubismOption.ReleaseBytesFunction = LAppPal::ReleaseBytes;
-    Csm::CubismFramework::StartUp(&_cubismAllocator, &_cubismOption);
-
-    //Initialize cubism
-    CubismFramework::Initialize();
-
-    LAppPal::UpdateTime();
 }
 
 void LAppDelegate::TrackGlobalCursor()
@@ -370,24 +298,9 @@ void LAppDelegate::TrackGlobalCursor()
         _cursorLook.LocalPosition(x, y);
 }
 
-void LAppDelegate::UpdateCursorLook(ModelTransform transform)
-{
-    if (!_manager || !_cursorLook.HasPosition()) return;
-    const auto outputs = _window->Outputs();
-    const auto* current = _outputController.Current(outputs);
-    if (!current) return;
-    const auto look = _cursorLook.LookAt(current->x, current->y, _windowWidth,
-        _windowHeight, _lookCenterX, _lookCenterY, transform, LAppConfig::GetInstance().values.mouseLookRadius);
-    _manager->OnDrag(look.first, look.second);
-}
-
 void LAppDelegate::ResizeView(int width, int height)
 {
     if ((_windowWidth == width && _windowHeight == height) || width <= 0 || height <= 0) return;
-    _view->Initialize(width, height);
-    _view->ResizeSprite();
-    _view->DestroySpriteRenderTarget();
-    _manager->SetRenderTargetSize(width, height);
     _windowWidth = width;
     _windowHeight = height;
 }
@@ -422,7 +335,7 @@ void LAppDelegate::CancelInteraction()
 {
     _input = InputController{};
     _cropInteraction = ScreenCropInteraction{};
-    if (_manager) _manager->OnDrag(0.0f, 0.0f);
+    QueueModel({{"command", "reset_drag"}});
     if (_window->KeyboardGrabbed()) _window->SetKeyboardGrab(false);
 }
 
@@ -456,7 +369,7 @@ void LAppDelegate::OutputSwitchFinished()
 
 void LAppDelegate::PointerButton(int button, bool pressed)
 {
-    if (_view == NULL || !_windowState.Running())
+    if (!_models || !_windowState.Running())
     {
         return;
     }
@@ -485,7 +398,6 @@ void LAppDelegate::PointerButton(int button, bool pressed)
         {
             if (!_windowState.Send(ModelWindowState::Event::Press)) return;
             _input.Press(static_cast<int>(_mouseX), static_cast<int>(_mouseY));
-            _view->OnTouchesBegan(_mouseX, _mouseY);
         }
         else
         {
@@ -494,18 +406,18 @@ void LAppDelegate::PointerButton(int button, bool pressed)
                 const auto result = _input.Release(ClickClock(), static_cast<int>(_mouseX),
                     static_cast<int>(_mouseY), [this](int x, int y)
                     {
-                        _view->OnTouchesEnded(x, y, _service.Snapshot().transform);
+                        TapModel(x, y);
                     });
                 _windowState.Send(ModelWindowState::Event::Release);
                 if (result == InputController::ReleaseResult::DoubleClick)
                 {
-                    _manager->OnDrag(0.0f, 0.0f);
+                    QueueModel({{"command", "reset_drag"}});
                     _window->SetKeyboardGrab(true);
                     if (_processors) _processors->SpeakGreeting(QStringLiteral("姐姐，你好喵"));
                 }
                 else if (result == InputController::ReleaseResult::Drag)
                 {
-                    _manager->OnDrag(0.0f, 0.0f); // End look
+                    QueueModel({{"command", "reset_drag"}});
                 }
             }
         }
@@ -515,14 +427,13 @@ void LAppDelegate::PointerButton(int button, bool pressed)
         // Switch Models
         LAppPal::PrintLogLn("[Event] Switch Model Triggered");
           LAppPal::PrintLogLn("[Event] Switch Model Triggered");
-          const auto state = _service.Snapshot();
-          if (state.modelCount) _service.SelectModel((state.modelIndex + 1) % state.modelCount);
+          QueueModel({{"command", "next_model"}});
     }
     else if (button == 2 && pressed)
     {
         // Switch Skin
         LAppPal::PrintLogLn("[Event] Switch Skin Triggered");
-        _service.SwitchSkin();
+        QueueModel({{"command", "switch_skin"}});
     }
 }
 
@@ -531,7 +442,7 @@ void LAppDelegate::FlushPendingTap()
     if (!_windowState.Normal()) return;
     _input.FlushTap([this](int x, int y)
     {
-        _view->OnTouchesEnded(x, y, _service.Snapshot().transform);
+        TapModel(x, y);
     });
 }
 
@@ -543,18 +454,15 @@ void LAppDelegate::ResetKeyboardState()
 void LAppDelegate::OnModelKey(uint32_t code, bool pressed)
 {
     if (!_windowState.Normal()) return;
-    LAppModel* model = _window->KeyboardGrabbed()
-        ? _manager->GetModel(0) : nullptr;
-    const auto* bindings = model ? &model->Hotkeys().Bindings() : nullptr;
+    const auto* bindings = _models && _window->KeyboardGrabbed() ? &_models->Metadata().bindings : nullptr;
     const ModelKeyDecision decision = _input.Key(
         _window->KeyboardGrabbed(), code, pressed, bindings);
     if (decision.action == ModelKeyDecision::ReleaseGrab)
         _window->SetKeyboardGrab(false);
     else if (decision.action == ModelKeyDecision::Trigger)
     {
-        const auto result = _service.TriggerHotkey(decision.bindingId);
-        if (!result.ok) LAppPal::PrintLogLn("[Hotkeys] Trigger failed for binding %s: %s",
-            decision.bindingId.c_str(), result.error.c_str());
+        QueueModel({{"command", "trigger_hotkey"}, {"id", QString::fromStdString(decision.bindingId)},
+            {"model_token", _models->Metadata().hotkeys.value("model_token")}});
     }
 }
 
@@ -562,7 +470,7 @@ void LAppDelegate::PointerMoved(double x, double y)
 {
     SetMousePosition(x, y);
 
-    if (_view == NULL || !_windowState.Running())
+    if (!_models || !_windowState.Running())
     {
         return;
     }
@@ -594,10 +502,12 @@ void LAppDelegate::SetMousePosition(double x, double y)
 
 void LAppDelegate::PointerScroll(double vertical)
 {
-    if (!_view || !_windowState.Running()) return;
-    const ModelTransform transform = ZoomModelFromScroll(
-        _service.Snapshot().transform, _view, _mouseX, _mouseY,
-        static_cast<float>(vertical));
+    if (!_models || !_windowState.Running()) return;
+    // Same logical projection as LAppView_Common; no worker-owned view access.
+    const float anchorX = (_mouseX - _windowWidth * .5f) * 2 / _windowHeight;
+    const float anchorY = -(_mouseY - _windowHeight * .5f) * 2 / _windowHeight;
+    const auto current = _service.Snapshot().transform;
+    const ModelTransform transform = ZoomModelAroundPoint(current, anchorX, anchorY, current.scale * (1 + float(vertical) * .1f));
     if (!_windowState.Normal()) {
         if (_windowState.ScreenEditing()) { auto next = _settings->Display(); next.transform = transform; _settings->Update(_settings->Owner(), next); }
     } else {
@@ -606,9 +516,8 @@ void LAppDelegate::PointerScroll(double vertical)
     }
 }
 
-bool LAppDelegate::SelectModel(int index) { return _manager && _manager->ChangeScene(index); }
-int LAppDelegate::ModelIndex() const { return _manager ? _manager->GetSceneIndex() : -1; }
-int LAppDelegate::ModelCount() const { return _manager ? _manager->GetModelDirSize() : 0; }
+int LAppDelegate::ModelIndex() const { return _models ? _models->Metadata().index : -1; }
+int LAppDelegate::ModelCount() const { return _models ? _models->Metadata().names.size() : 0; }
 
 bool LAppDelegate::SetHidden(bool hidden)
 {
@@ -624,40 +533,20 @@ bool LAppDelegate::SetHidden(bool hidden)
     return _window->Available();
 }
 
-bool LAppDelegate::PlayMotion(const std::string& group, int index, int priority)
+bool LAppDelegate::QueueModel(QJsonObject operation)
 {
-    LAppModel* model = _manager ? _manager->GetModel(0) : nullptr;
-    if (!model) return false;
-    if (group.empty())
-        return model->StartRandomMotion(MotionGroupTapBody, priority) != InvalidMotionQueueEntryHandleValue;
-    for (const auto& motion : model->GetMotionList())
-        if (motion.group == group && motion.index == index)
-            return model->StartMotion(group.c_str(), index, priority) != InvalidMotionQueueEntryHandleValue;
-    return false;
+    if (!_models) return false;
+    return _models->Submit(QJsonDocument(operation).toJson(QJsonDocument::Compact).toStdString(), [](QJsonObject reply) {
+        if (!reply.value("ok").toBool()) LAppPal::PrintLogLn("[Model] %s", reply.value("error").toString().toUtf8().constData());
+    });
 }
 
-bool LAppDelegate::SetExpression(const std::string& id)
+void LAppDelegate::TapModel(int x, int y)
 {
-    LAppModel* model = _manager ? _manager->GetModel(0) : nullptr;
-    if (!model) return false;
-    const auto expressions = model->GetExpressionIds();
-    if (std::find(expressions.begin(), expressions.end(), id) == expressions.end()) return false;
-    model->SetExpression(id.c_str());
-    return true;
-}
-
-bool LAppDelegate::TriggerHotkey(const std::string& id, std::string& error)
-{
-    LAppModel* model = _manager ? _manager->GetModel(0) : nullptr;
-    if (!model) { error = "no model loaded"; return false; }
-    return model->Hotkeys().Trigger(id, error);
-}
-
-bool LAppDelegate::SwitchSkin()
-{
-    if (!_manager || !_manager->GetModel(0)) return false;
-    _manager->SwitchSkin();
-    return true;
+    const auto transform = _service.Snapshot().transform;
+    QueueModel({{"command", "tap_model"}, {"mouse_x", x}, {"mouse_y", y}, {"width", _windowWidth}, {"height", _windowHeight},
+        {"zoom", transform.scale}, {"x", transform.x}, {"y", transform.y},
+        {"model_token", _models->Metadata().hotkeys.value("model_token")}});
 }
 
 void LAppDelegate::GetClientSize(int& rWidth, int& rHeight)

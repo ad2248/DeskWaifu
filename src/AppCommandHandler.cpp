@@ -1,8 +1,7 @@
 #include "AppCommandHandler.hpp"
 #include "JsonHelpers.hpp"
 #include "LAppDelegate.hpp"
-#include "LAppLive2DManager.hpp"
-#include "LAppModel.hpp"
+#include "processor/model/ModelProcessor.hpp"
 #include "LAppDefine.hpp"
 #include "MouseLookSettings.hpp"
 #include "SpeechSettings.hpp"
@@ -17,8 +16,6 @@
 #include <sstream>
 #include <limits>
 #include <stdexcept>
-
-using namespace Csm;
 
 // ─── JSON replies ────────────────────────────────────────────────────────────
 
@@ -93,7 +90,7 @@ try
     }
 
     LAppDelegate* app = &_app;
-    LAppLive2DManager* mgr = &_models;
+    const auto& metadata = app->Models().Metadata();
     const bool streaming = JsonGetBool(request, "stream_source");
     const std::string source = streaming ? connection : "cli";
     const auto lifetime = streaming ? ExternalControlState::Lifetime::Stream
@@ -283,13 +280,13 @@ try
     // ── get_available_models ──
     if (command == "get_available_models")
     {
-        csmVector<csmString> dirs = mgr->GetModelDir();
+        const auto& dirs = metadata.names;
         std::ostringstream oss;
         oss << "{\"ok\":true,\"models\":[";
-        for (csmInt32 i = 0; i < (csmInt32)dirs.GetSize(); i++)
+        for (int i = 0; i < dirs.size(); i++)
         {
             if (i > 0) oss << ",";
-            oss << "\"" << JsonEscape(dirs[i].GetRawString()) << "\"";
+            oss << "\"" << JsonEscape(dirs[i].toStdString()) << "\"";
         }
         oss << "]}";
         return oss.str();
@@ -298,162 +295,24 @@ try
     // ── get_current_model ──
     if (command == "get_current_model")
     {
-        csmVector<csmString> dirs = mgr->GetModelDir();
-        csmInt32 idx = mgr->GetSceneIndex();
+        const auto& dirs = metadata.names;
+        int idx = metadata.index;
         std::string name = "";
-        if (idx >= 0 && idx < (csmInt32)dirs.GetSize())
+        if (idx >= 0 && idx < dirs.size())
         {
-            name = dirs[idx].GetRawString();
+            name = dirs[idx].toStdString();
         }
         std::ostringstream oss;
         oss << "{\"ok\":true,\"model\":\"" << JsonEscape(name) << "\",\"index\":" << idx << "}";
         return oss.str();
     }
 
-    // ── set_model ──
-    if (command == "set_model")
-    {
-        std::string name = JsonGetString(request, "name");
-        int index = JsonGetInt(request, "index", -1);
-
-        if (!name.empty())
-        {
-            index = -1;
-            csmVector<csmString> dirs = mgr->GetModelDir();
-            for (csmInt32 i = 0; i < (csmInt32)dirs.GetSize(); i++)
-            {
-                if (name == dirs[i].GetRawString())
-                {
-                    index = i;
-                    break;
-                }
-            }
-            if (index < 0)
-            {
-                return "{\"ok\":false,\"error\":\"model not found\"}";
-            }
-        }
-
-        if (index < 0 || index >= mgr->GetModelDirSize())
-        {
-            return "{\"ok\":false,\"error\":\"invalid index\"}";
-        }
-
-        return Reply(app->Service().SelectModel(index));
-    }
-
-    if (command == "get_hotkeys" || command == "trigger_hotkey")
-    {
-        LAppModel* model = mgr->GetModel(0);
-        if (!model) return "{\"ok\":false,\"error\":\"no model loaded\"}";
-        auto& hotkeys = model->Hotkeys();
-        if (command == "trigger_hotkey")
-        {
-            if (JsonGetString(request, "model_token") != hotkeys.Token())
-                return "{\"ok\":false,\"error\":\"Model changed; refresh hotkeys before triggering\"}";
-            const auto result = app->Service().TriggerHotkey(JsonGetString(request, "id"));
-            if (!result.ok) return Reply(result);
-        }
-        std::ostringstream out;
-        out << "{\"ok\":true,\"model_token\":\"" << hotkeys.Token()
-            << "\",\"warning\":\"" << JsonEscape(hotkeys.Error()) << "\",\"hotkeys\":[";
-        bool first = true;
-        for (const auto& binding : hotkeys.Bindings())
-        {
-            if (!first) out << ',';
-            first = false;
-            out << "{\"id\":\"" << JsonEscape(binding.id) << "\",\"name\":\"" << JsonEscape(binding.name)
-                << "\",\"action\":\"" << JsonEscape(binding.action) << "\",\"file\":\"" << JsonEscape(binding.file)
-                << "\",\"reason\":\"" << JsonEscape(binding.reason) << "\",\"enabled\":" << (binding.enabled ? "true" : "false")
-                << ",\"active\":" << (binding.reason.empty() && hotkeys.IsActive(binding.id) ? "true" : "false") << ",\"keys\":[";
-            for (size_t i = 0; i < binding.keys.size(); ++i)
-            {
-                if (i) out << ',';
-                out << '"' << JsonEscape(binding.keys[i]) << '"';
-            }
-            out << "]}";
-        }
-        out << "]}";
-        return out.str();
-    }
-
-    // ── get_expressions ──
+    if (command == "get_hotkeys")
+        return QJsonDocument(metadata.hotkeys).toJson(QJsonDocument::Compact).toStdString();
     if (command == "get_expressions")
-    {
-        LAppModel* model = mgr->GetModel(0);
-        if (!model)
-        {
-            return "{\"ok\":false,\"error\":\"no model loaded\"}";
-        }
-
-        std::vector<std::string> exprs = model->GetExpressionIds();
-        std::ostringstream oss;
-        oss << "{\"ok\":true,\"expressions\":[";
-        for (size_t i = 0; i < exprs.size(); i++)
-        {
-            if (i > 0) oss << ",";
-            oss << "\"" << JsonEscape(exprs[i]) << "\"";
-        }
-        oss << "]}";
-        return oss.str();
-    }
-
-    // ── set_expression ──
-    if (command == "set_expression")
-    {
-        LAppModel* model = mgr->GetModel(0);
-        if (!model)
-        {
-            return "{\"ok\":false,\"error\":\"no model loaded\"}";
-        }
-
-        std::string id = JsonGetString(request, "id");
-        if (id.empty())
-        {
-            return "{\"ok\":false,\"error\":\"missing 'id'\"}";
-        }
-
-        return Reply(app->Service().SetExpression(id));
-    }
-
-    // ── get_motions ──
+        return QJsonDocument(QJsonObject{{"ok", true}, {"expressions", metadata.expressions}}).toJson(QJsonDocument::Compact).toStdString();
     if (command == "get_motions")
-    {
-        LAppModel* model = mgr->GetModel(0);
-        if (!model)
-        {
-            return "{\"ok\":false,\"error\":\"no model loaded\"}";
-        }
-
-        std::vector<LAppModel::MotionInfo> motions = model->GetMotionList();
-        std::ostringstream oss;
-        oss << "{\"ok\":true,\"motions\":[";
-        for (size_t i = 0; i < motions.size(); i++)
-        {
-            if (i > 0) oss << ",";
-            oss << "{\"group\":\"" << JsonEscape(motions[i].group) << "\""
-                << ",\"index\":" << motions[i].index
-                << ",\"file\":\"" << JsonEscape(motions[i].file) << "\"}";
-        }
-        oss << "]}";
-        return oss.str();
-    }
-
-    // ── do_motion ──
-    if (command == "do_motion")
-    {
-        LAppModel* model = mgr->GetModel(0);
-        if (!model)
-        {
-            return "{\"ok\":false,\"error\":\"no model loaded\"}";
-        }
-
-        std::string group = JsonGetString(request, "group");
-        int index = JsonGetInt(request, "index", 0);
-        int priority = JsonGetInt(request, "priority", LAppDefine::PriorityNormal);
-
-        return Reply(app->Service().PlayMotion(group, index, priority));
-    }
+        return QJsonDocument(QJsonObject{{"ok", true}, {"motions", metadata.motions}}).toJson(QJsonDocument::Compact).toStdString();
 
     // ── set_mouth_y ──
     if (command == "set_mouth_y")
@@ -556,13 +415,13 @@ try
     // ── get_status ──
     if (command == "get_status")
     {
-        csmVector<csmString> dirs = mgr->GetModelDir();
+        const auto& dirs = metadata.names;
         const auto state = app->Service().Snapshot();
-        csmInt32 idx = state.modelIndex;
+        int idx = state.modelIndex;
         std::string modelName = "";
-        if (idx >= 0 && idx < (csmInt32)dirs.GetSize())
+        if (idx >= 0 && idx < dirs.size())
         {
-            modelName = dirs[idx].GetRawString();
+            modelName = dirs[idx].toStdString();
         }
 
         std::ostringstream oss;
@@ -578,36 +437,32 @@ try
         return oss.str();
     }
 
-    // ── next_model ──
-    if (command == "next_model")
-    {
-        auto state = app->Service().Snapshot();
-        return state.modelCount ? Reply(app->Service().SelectModel((state.modelIndex + 1) % state.modelCount))
-            : "{\"ok\":false,\"error\":\"no models available\"}";
-    }
-
-    // ── prev_model ──
-    if (command == "prev_model")
-    {
-        csmInt32 size = mgr->GetModelDirSize();
-        if (size > 0)
-        {
-            csmInt32 idx = mgr->GetSceneIndex();
-            csmInt32 prev = (idx - 1 + size) % size;
-            return Reply(app->Service().SelectModel(prev));
-        }
-        return "{\"ok\":false,\"error\":\"no models available\"}";
-    }
-
-    // ── switch_skin ──
-    if (command == "switch_skin")
-    {
-        return Reply(app->Service().SwitchSkin());
-    }
-
     return "{\"ok\":false,\"error\":\"unknown command\"}";
 }
 catch (const std::invalid_argument& error)
 {
     return Reply(AppResult::Failure(error.what()));
+}
+
+void AppCommandHandler::ExecuteAsync(const std::string& json, const std::string& connection,
+    std::function<void(std::string)> complete)
+{
+    ConfigStore::Snapshot request; std::string error;
+    if (!ConfigStore::Parse(json, request, error, false)) { complete(Execute(json, connection)); return; }
+    std::string command;
+    try { command = JsonGetString(request, "command"); }
+    catch (const std::invalid_argument&) { complete(Execute(json, connection)); return; }
+    if (command == "set_model" || command == "next_model" || command == "prev_model" ||
+        command == "get_hotkeys" || command == "trigger_hotkey" || command == "set_expression" || command == "do_motion" || command == "switch_skin") {
+        try {
+            if (JsonGetBool(request, "stream_source") && connection.empty()) {
+                complete("{\"ok\":false,\"error\":\"stream requires a connection\"}"); return;
+            }
+        } catch (const std::invalid_argument& error) { complete(Reply(AppResult::Failure(error.what()))); return; }
+        if (!_app.Models().Submit(json, [complete](QJsonObject reply) {
+            complete(QJsonDocument(reply).toJson(QJsonDocument::Compact).toStdString());
+        })) complete("{\"ok\":false,\"error\":\"model renderer stopped\"}");
+        return;
+    }
+    complete(Execute(json, connection));
 }

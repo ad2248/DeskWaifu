@@ -27,14 +27,9 @@ class IApplicationRuntime
 {
 public:
     virtual ~IApplicationRuntime() = default;
-    virtual bool SelectModel(int index) = 0;
     virtual int ModelIndex() const = 0;
     virtual int ModelCount() const = 0;
     virtual bool SetHidden(bool hidden) = 0;
-    virtual bool PlayMotion(const std::string& group, int index, int priority) = 0;
-    virtual bool SetExpression(const std::string& id) = 0;
-    virtual bool TriggerHotkey(const std::string& id, std::string& error) = 0;
-    virtual bool SwitchSkin() = 0;
 };
 
 class ApplicationService
@@ -56,15 +51,6 @@ public:
         return AppResult::Success();
     }
 
-    AppResult SelectModel(int index)
-    {
-        if (index < 0 || index >= _runtime.ModelCount()) return AppResult::Failure("invalid index");
-        const int previous = _runtime.ModelIndex();
-        if (!_runtime.SelectModel(index)) return AppResult::Failure("model load failed");
-        if (previous != index) _controls.Clear();
-        return AppResult::Success();
-    }
-
     AppResult SetMouth(const std::string& source, ExternalControlState::Lifetime lifetime, float value)
     {
         return _controls.SetMouth(source, lifetime, value) ? AppResult::Success()
@@ -78,6 +64,7 @@ public:
     void ResetMouth(const std::string& source) { _controls.ResetMouth(source); }
     void ResetLook(const std::string& source) { _controls.ResetLook(source); }
     void ReleaseControls(const std::string& source) { _controls.Release(source); }
+    void ClearControls() { _controls.Clear(); }
     ModelFrameInput FrameInput() const { return _controls.Frame(); }
 
     AppResult SetVisibility(bool visible)
@@ -86,30 +73,6 @@ public:
         if (!_runtime.SetHidden(!visible)) return AppResult::Failure("visibility update failed");
         _hidden = !visible;
         return AppResult::Success();
-    }
-
-    AppResult PlayMotion(const std::string& group, int index, int priority)
-    {
-        return _runtime.PlayMotion(group, index, priority)
-            ? AppResult::Success() : AppResult::Failure("motion unavailable");
-    }
-
-    AppResult SetExpression(const std::string& id)
-    {
-        return _runtime.SetExpression(id)
-            ? AppResult::Success() : AppResult::Failure("expression unavailable");
-    }
-
-    AppResult TriggerHotkey(const std::string& id)
-    {
-        std::string error;
-        return _runtime.TriggerHotkey(id, error) ? AppResult::Success()
-            : AppResult::Failure(error.empty() ? "hotkey unavailable" : error);
-    }
-
-    AppResult SwitchSkin()
-    {
-        return _runtime.SwitchSkin() ? AppResult::Success() : AppResult::Failure("no model loaded");
     }
 
 private:

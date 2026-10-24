@@ -5,6 +5,9 @@
 #include "LAppModel.hpp"
 #include "LAppLive2DManager.hpp"
 #include "LAppDefine.hpp"
+#include "LAppTextureManager.hpp"
+#include "LAppAllocator_Common.hpp"
+#include "ModelProcessorTestHelpers.hpp"
 #include <Rendering/OpenGL/CubismRenderer_OpenGLES2.hpp>
 #include <Id/CubismIdManager.hpp>
 #include "TestTemporaryDirectory.hpp"
@@ -34,6 +37,8 @@ std::vector<Hit> hits;
 class Window : public DesktopWindow
 {
 public:
+    std::unique_ptr<ModelRenderTarget> RenderTarget(const std::string&) override { return CreateEglModelRenderTarget("auto"); }
+    bool UploadFrame(const RenderFrame&) override { return true; }
     IDesktopWindowEvents* events = nullptr;
     std::vector<OutputSnapshot> outputs{{1, "left", 0, 0, 800, 600},
         {2, "right", 800, 0, 1000, 800}};
@@ -101,13 +106,11 @@ void click(int x, int y)
 
 int releaseTest(LAppDelegate& app)
 {
-    app.GetView()->OnTouchesBegan(100, 100);
-    app.GetView()->OnTouchesEnded(150, 120, app.Service().Snapshot().transform);
+    CHECK(AwaitModel(app.Models(), {{"command", "tap_model"}, {"mouse_x", 150}, {"mouse_y", 120}})["ok"].toBool());
     CHECK(!hits.empty());
     CHECK(near(hits[0].x, -250.f / 300) && near(hits[0].y, 180.f / 300));
     hits.clear();
-    app.GetView()->OnTouchesBegan(100, 100);
-    app.GetView()->OnTouchesEnded(700, 500, app.Service().Snapshot().transform);
+    CHECK(AwaitModel(app.Models(), {{"command", "tap_model"}, {"mouse_x", 700}, {"mouse_y", 500}})["ok"].toBool());
     CHECK(!hits.empty());
     CHECK(near(hits[0].x, 1) && near(hits[0].y, -200.f / 300));
     hits.clear();
@@ -116,6 +119,7 @@ int releaseTest(LAppDelegate& app)
     click(300, 200);
     CHECK(hits.empty());
     click(500, 400);
+    AwaitModel(app.Models());
     CHECK(!hits.empty() && near(hits[0].x, -100.f / 300));
     // Finish the second click as a double click: its pending tap must disappear.
     hits.clear();
@@ -141,14 +145,13 @@ int transformTest(LAppDelegate& app)
     // Derive its pixel position independently from the render convention.
     for (const auto size : {std::pair<int, int>{800, 600}, {600, 800}}) {
         window->outputs[0].width = size.first; window->outputs[0].height = size.second;
-        app.GetView()->Initialize(size.first, size.second);
         for (const auto t : {ModelTransform{1, 0, 0}, {1, .2f, -.1f}, {2, 0, 0}, {2, .1f, -.2f}}) {
             CHECK(app.Service().SetTransform(t).ok);
             const float x = size.first * .5f + (.2f + t.x) * t.scale * size.second * .5f;
             const float y = size.second * .5f - (.3f + t.y) * t.scale * size.second * .5f;
             hits.clear();
-            app.GetView()->OnTouchesBegan(x, y);
-            app.GetView()->OnTouchesEnded(x, y, app.Service().Snapshot().transform);
+            CHECK(AwaitModel(app.Models(), {{"command", "tap_model"}, {"mouse_x", x}, {"mouse_y", y},
+                {"width", size.first}, {"height", size.second}, {"zoom", t.scale}, {"x", t.x}, {"y", t.y}})["ok"].toBool());
             CHECK(!hits.empty() && near(hits[0].x, .2f) && near(hits[0].y, .3f));
             CHECK(hits[0].area == "Head" && hits[0].result); // Actual fallback HitTest.
         }
@@ -156,13 +159,24 @@ int transformTest(LAppDelegate& app)
 
     // Use the actual renderer's final MVP, rather than reproducing a projection
     // formula in the test. Cover configured HitAreas, fallback and portrait fit.
-    LAppLive2DManager manager(*app.GetTextureManager(), 800, 600,
+    CHECK(app.Models().Stop());
+    // Low-level geometry checks own a separate, sequential Cubism lifecycle.
+    // Application-level checks above only use operational events.
+    CHECK(eglInitialize(window->display, nullptr, nullptr));
+    CHECK(window->MakeCurrent());
+    LAppAllocator_Common allocator;
+    Csm::CubismFramework::Option option{};
+    CHECK(Csm::CubismFramework::StartUp(&allocator, &option));
+    Csm::CubismFramework::Initialize();
+    struct Cleanup { ~Cleanup() { Csm::CubismFramework::Dispose(); Csm::CubismFramework::CleanUp(); } } cleanup;
+    LAppTextureManager textures;
+    LAppLive2DManager manager(textures, 800, 600,
         {LAppDefine::ModelsDir, {}, "", -1});
     class View : public LAppView {
     public:
         using LAppView::LAppView;
         void ChangeView() { _viewMatrix->Scale(1.3f, 1.3f); _viewMatrix->Translate(.1f, -.2f); }
-    } view(manager, *app.GetTextureManager());
+    } view(manager, textures);
     for (int index = 0; index < manager.GetModelDirSize(); ++index) {
         CHECK(manager.ChangeScene(index));
         auto* model = manager.GetModel(0);
@@ -503,6 +517,7 @@ int main(int argc, char** argv)
                     near(saved.transform.x, draft.transform.x) && near(saved.transform.y, draft.transform.y) &&
                     disk.values.at("model_output") == beforeDrag.values.at("model_output");
             }
+            AwaitModel(app->Models());
             return hits.size() == 1 && near(hits[0].x, -.1f) && near(hits[0].y, .2f);
         };
         CHECK(app->Run()); // Also executes the real frame and GPU teardown paths.

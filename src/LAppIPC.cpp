@@ -180,7 +180,7 @@ std::vector<int> LAppIPC::ReadDescriptors() const
     std::vector<int> descriptors;
     if (_serverFd >= 0) descriptors.push_back(_serverFd);
     for (const auto& client : _clients)
-        if (client.response.empty() && !client.eof) descriptors.push_back(client.fd);
+        if (!client.pending && client.response.empty() && !client.eof) descriptors.push_back(client.fd);
     return descriptors;
 }
 
@@ -195,12 +195,14 @@ std::vector<int> LAppIPC::WriteDescriptors() const
 bool LAppIPC::HasBufferedWork() const
 {
     for (const auto& client : _clients)
-        if (client.response.empty() && (client.eof || client.buf.find('\n') != std::string::npos)) return true;
+        if ((client.pending && client.pending->ready) || (!client.pending && client.response.empty() &&
+            (client.eof || client.buf.find('\n') != std::string::npos))) return true;
     return false;
 }
 
 void LAppIPC::Release()
 {
+    *_ready = {};
     for (const auto& client : _clients) CloseClient(client);
     _clients.clear();
 
@@ -291,11 +293,19 @@ void LAppIPC::Poll()
     for (auto it = _clients.begin(); it != _clients.end();)
     {
         auto& client = *it;
+        if (client.pending && client.pending->ready) {
+            client.response = std::move(client.pending->response);
+            client.pending.reset();
+            if (client.response.size() > MaxResponseBytes) {
+                CloseClient(client); it = _clients.erase(it); continue;
+            }
+            client.response += '\n';
+        }
         std::size_t bytes = WriteBytesPerClient, attempts = WriteAttemptsPerClient;
         bool alive = FlushClient(client, bytes, attempts);
         // Backpressure: do not execute another command or keep reading while
         // this client's reply is still pending. Other clients keep progressing.
-        if (alive && client.response.empty()) {
+        if (alive && !client.pending && client.response.empty()) {
             char buffer[4096];
             const auto capacity = std::min(sizeof(buffer), MaxRequestBytes + 1 - client.buf.size());
             if (!client.eof && capacity) {
@@ -305,7 +315,7 @@ void LAppIPC::Poll()
                 else if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) alive = false;
             }
 
-            for (std::size_t lines = 0; alive && client.response.empty() &&
+            for (std::size_t lines = 0; alive && !client.pending && client.response.empty() &&
                 lines < CommandsPerClient && commands < CommandsPerPoll; ++lines) {
                 const auto pos = client.buf.find('\n');
                 if (pos == std::string::npos) break;
@@ -314,7 +324,20 @@ void LAppIPC::Poll()
                 client.buf.erase(0, pos + 1);
                 ++commands; // Empty lines also consume work budget.
                 if (line.empty()) continue;
-                client.response = _commands->Execute(line, client.source);
+                client.pending = std::make_shared<PendingReply>();
+                std::weak_ptr<PendingReply> pending = client.pending;
+                std::weak_ptr<std::function<void()>> ready = _ready;
+                _commands->ExecuteAsync(line, client.source, [pending, ready](std::string response) {
+                    if (auto reply = pending.lock()) {
+                        if (reply->ready) return;
+                        reply->response = std::move(response); reply->ready = true;
+                        auto notify = ready.lock();
+                        if (notify && *notify) (*notify)();
+                    }
+                });
+                if (!client.pending->ready) break;
+                client.response = std::move(client.pending->response);
+                client.pending.reset();
                 if (client.response.size() > MaxResponseBytes) { alive = false; break; }
                 client.response += '\n';
                 alive = FlushClient(client, bytes, attempts);
@@ -322,7 +345,7 @@ void LAppIPC::Poll()
             const auto newline = client.buf.find('\n');
             if (newline > MaxRequestBytes && client.buf.size() > MaxRequestBytes) alive = false;
             // A peer may half-close its write end and still read our replies.
-            if (client.eof && client.response.empty() && newline == std::string::npos) alive = false;
+            if (client.eof && !client.pending && client.response.empty() && newline == std::string::npos) alive = false;
         }
         if (!alive) {
             CloseClient(client);

@@ -75,7 +75,12 @@ def main():
         aliases.mkdir()
         unusual_names = ['夕颜"\\\n001', '001']
         for name in unusual_names:
-            (aliases / name).symlink_to(resources / "Haru", target_is_directory=True)
+            # Catalog identity resolves the directory: two directory symlinks
+            # to Haru collapse to one model. Distinct overlays preserve aliases.
+            overlay = aliases / name
+            overlay.mkdir()
+            for item in (resources / "Haru").iterdir():
+                (overlay / item.name).symlink_to(item, target_is_directory=item.is_dir())
         (config / "config.json").write_text(json.dumps({"default_model": "Haru", "additional_model_dirs": [str(aliases)]}))
         env = dict(os.environ, XDG_RUNTIME_DIR=str(runtime), XDG_CONFIG_HOME=str(root / "config"),
                    XDG_CACHE_HOME=str(root / "cache"), XDG_DATA_HOME=str(root / "data"),
@@ -120,6 +125,10 @@ def main():
                     subprocess.run([str(build / "bin/qt-desktop-window-test")], env=client_env,
                                    stdout=log, stderr=subprocess.STDOUT, check=True, timeout=30)
                 window_log = (logs / "window.log").read_text()
+                with (logs / "thread-transfer.log").open("w") as log:
+                    subprocess.run([str(build / "bin/gpu-transfer-test")],
+                                   env=dict(client_env, DESKWAIFU_TEST_RENDER_DEVICE="auto"),
+                                   stdout=log, stderr=subprocess.STDOUT, check=True, timeout=30)
                 assert_layer_shell(window_log)
                 assert_keyboard_capability(window_log, expected=True)
                 assert "outputs=2" in window_log, window_log[-3000:]
@@ -176,6 +185,8 @@ def main():
                     ]:
                         assert raw_request(payload)["ok"], payload
                     cli = Path(__file__).resolve().parents[1] / "deskwaifu-ctl"
+                    available = request("get_available_models")["models"]
+                    assert all(name in available for name in unusual_names), available
                     for name in unusual_names:
                         request("set_model", name=name)
                         assert request("get_current_model")["model"] == name
@@ -187,6 +198,16 @@ def main():
                                             capture_output=True, text=True, timeout=10)
                     assert result.returncode != 0 and json.loads(result.stdout)["ok"] is False
                     request("set_model", name="Haru")
+                    request("set_mouth_y", value=.4)
+                    request("set_look", x=.2, y=.1)
+                    request("set_model", name="Haru")
+                    assert request("get_control_status")["mouth"] == .4
+                    assert raw_request('{"command":"set_model","index":-1}')["ok"] is False
+                    assert request("get_control_status")["has_mouth"] is True
+                    request("next_model")
+                    controls = request("get_control_status")
+                    assert not controls["has_mouth"] and not controls["has_look"], controls
+                    request("set_model", name="Haru")
                     before = request("get_status")
                     for index in ['"banana"', '0.9', '2147483648', '-2147483649',
                                   '1e100', 'null', 'true', '"0"', '"0junk"', '[]', '{}']:
@@ -194,6 +215,7 @@ def main():
                         assert reply["ok"] is False, (index, reply)
                         assert request("get_status")["model_index"] == before["model_index"]
                     for payload in ['{"command":"set_model","name":"missing","index":0}',
+                                    '{"command":"set_model","index":0,"stream_source":"invalid"}',
                                     '{"command":true}', '{"command":"quit","command":"get_status"}',
                                     '{"command":"get_status"} trailing',
                                     '{"command":"get_status"}//comment',
@@ -255,9 +277,18 @@ def main():
                         pressure.sendall(b'{"command":"get_status"}\n' * 256)
                         for _ in range(16):
                             request("get_status")
-                        commits_after = len(re.findall(r"wl_surface[@#]\d+\.commit\(",
-                                                       (logs / "model.log").read_text()))
-                        assert commits_after > commits_before, "IPC pressure stopped frame commits"
+                        # Readiness-based IPC can finish 16 replies before the
+                        # next presentation tick. Observe a commit with a real
+                        # deadline, not a request count tied to the old frame poll.
+                        deadline = time.monotonic() + 3
+                        while True:
+                            commits_after = len(re.findall(r"wl_surface[@#]\d+\.commit\(",
+                                                           (logs / "model.log").read_text()))
+                            if commits_after > commits_before:
+                                break
+                            assert time.monotonic() < deadline, "IPC pressure stopped frame commits"
+                            request("get_status")
+                            time.sleep(.01)
                     subprocess.run([sys.executable, str(Path(__file__).with_name("output_smoke.py"))],
                                    env=client_env, check=True, timeout=30)
                     model_log.flush()

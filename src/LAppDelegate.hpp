@@ -22,12 +22,8 @@
 #include "OutputSettings.hpp"
 #include <memory>
 #include "CompositorAdapter.hpp"
-#include "Type/csmVector.hpp"
-#include "LAppAllocator_Common.hpp"
+#include <QJsonObject>
 
-class LAppView;
-class LAppTextureManager;
-class LAppLive2DManager;
 class LAppIPC;
 class AppCommandHandler;
 class MiniMaxSpeechSource;
@@ -36,6 +32,9 @@ class SpeechPlayer;
 class OcrClient;
 class ProcessorRuntime;
 class IpcProcessor;
+class ModelProcessor;
+class CommandProcessor;
+class SignalProcessor;
 
 /**
 * @brief   アプリケーションクラス。
@@ -90,10 +89,8 @@ public:
     */
     DesktopWindow* GetWindow() { return _window.get(); }
 
-    /**
-    * @brief   View情報を取得する。
-    */
-    LAppView* GetView() { return _view; }
+    // GUI-side operational proxy; model and GL objects are worker-only.
+    ModelProcessor& Models() { return *_models; }
     ApplicationService& Service() { return _service; }
     const ApplicationService& Service() const { return _service; }
     TransformEditor& Settings() { return *_settings; }
@@ -131,11 +128,6 @@ public:
     std::string GetExecuteAbsolutePath(){ return _executeAbsolutePath;}
 
     /**
-     * @brief   テクスチャマネージャーを取得する。
-     */
-    LAppTextureManager* GetTextureManager() { return _textureManager; }
-
-    /**
      * @brief ウインドウ幅の取得
      *
      * @return ウインドウ幅を返す
@@ -160,14 +152,9 @@ private:
     void SurfaceClosed() override { AppEnd(); }
     void OutputSwitchStarted() override;
     void OutputSwitchFinished() override;
-    bool SelectModel(int index) override;
     int ModelIndex() const override;
     int ModelCount() const override;
     bool SetHidden(bool hidden) override;
-    bool PlayMotion(const std::string& group, int index, int priority) override;
-    bool SetExpression(const std::string& id) override;
-    bool TriggerHotkey(const std::string& id, std::string& error) override;
-    bool SwitchSkin() override;
     /**
      * @brief   コンストラクタ
      */
@@ -178,25 +165,19 @@ private:
      */
     ~LAppDelegate();
 
-    /**
-     * @brief   Cubism3の初期化
-     */
-    void InitializeCubism();
     bool InitializeRuntime();
     void SyncInteractionMode();
     void CancelInteraction();
     void StartCropGesture();
 
-    LAppAllocator_Common _cubismAllocator;              ///< Cubism3 Allocator
-    Csm::CubismFramework::Option _cubismOption;         ///< Cubism3 Option
     std::unique_ptr<DesktopWindow> _window;
     OutputController _outputController;
     BoundedCompositorTransport _compositorTransport;
     CompositorAdapter _compositor;
-    LAppView* _view;                                    ///< View情報
-    LAppLive2DManager* _manager;
+    std::unique_ptr<ModelProcessor> _models;
     LAppIPC* _ipc;
     AppCommandHandler* _commands;
+    std::unique_ptr<CommandProcessor> _commandProcessor;
     ApplicationService _service;
     std::unique_ptr<TransformEditor> _settings;
     std::unique_ptr<HoverOpacitySettings> _hoverSettings;
@@ -209,19 +190,18 @@ private:
     void ResizeView(int width, int height);
     void MoveScreenDrag();
     void TrackGlobalCursor();
-    void UpdateCursorLook(ModelTransform transform);
+    void TapModel(int x, int y);
+    bool QueueModel(QJsonObject operation);
     CursorLook _cursorLook;
     KWinCursorTracker _kwinCursor;
     HoverOpacity _hoverOpacity;
-    std::vector<unsigned char> _inputPixels;
     ModelWindowState _windowState;
     std::unique_ptr<MiniMaxSpeechSource> _speechSource;
     std::unique_ptr<AudioPlayer> _audioPlayer;
     std::unique_ptr<SpeechPlayer> _speechPlayer;
     std::unique_ptr<ProcessorRuntime> _processors;
     std::unique_ptr<IpcProcessor> _ipcProcessor;
-    bool _cubismStarted = false;
-    LAppTextureManager* _textureManager;         ///< テクスチャマネージャー
+    std::unique_ptr<SignalProcessor> _signals;
     std::string _executeAbsolutePath;            ///< アプリケーションの実行パス
 
     int _windowWidth;                            ///< Initialize関数で設定したウィンドウ幅

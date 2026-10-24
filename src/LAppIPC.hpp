@@ -11,6 +11,7 @@
 #include <string>
 #include <sys/types.h>
 #include <vector>
+#include <memory>
 #include "ICommandService.hpp"
 
 class LAppIPC
@@ -36,6 +37,7 @@ public:
     std::vector<int> ReadDescriptors() const;
     std::vector<int> WriteDescriptors() const;
     bool HasBufferedWork() const;
+    void SetReadyCallback(std::function<void()> ready) { *_ready = std::move(ready); }
 
     /**
      * @brief Clean up the socket.
@@ -68,6 +70,8 @@ private:
     ino_t _socketInode = 0;
     bool _ownsSocketPath = false;
     // One pending reply per connection; no unbounded response queue.
+    struct PendingReply { bool ready = false; std::string response; };
+    std::shared_ptr<std::function<void()>> _ready = std::make_shared<std::function<void()>>();
     struct ClientBuffer {
         int fd;
         std::string buf;
@@ -75,6 +79,7 @@ private:
         std::string response;
         std::size_t sent = 0;
         bool eof = false;
+        std::shared_ptr<PendingReply> pending;
     };
     std::vector<ClientBuffer> _clients;
 

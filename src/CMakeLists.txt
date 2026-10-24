@@ -49,6 +49,8 @@ target_link_libraries(deskwaifu_renderer PUBLIC Framework)
       ${CMAKE_CURRENT_SOURCE_DIR}/LAppTextureManager.hpp
       ${CMAKE_CURRENT_SOURCE_DIR}/LAppView.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/LAppView.hpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/processor/model/ModelRuntime.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/processor/model/ModelProcessor.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp
   )
 
@@ -78,9 +80,9 @@ set_target_properties(deskwaifu_window_state PROPERTIES AUTOMOC ON)
 target_include_directories(deskwaifu_window_state PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(deskwaifu_window_state PUBLIC Qt6::StateMachine)
 find_package(LayerShellQt 6.6 REQUIRED)
-add_library(deskwaifu_offscreen STATIC OffscreenRenderer.cpp)
+add_library(deskwaifu_offscreen STATIC OffscreenRenderer.cpp ModelRenderTarget.cpp ReadRgbaFrame.cpp)
 target_include_directories(deskwaifu_offscreen PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${GLEW_PATH}/include)
-target_link_libraries(deskwaifu_offscreen PUBLIC glew_s OpenGL::OpenGL OpenGL::EGL)
+target_link_libraries(deskwaifu_offscreen PUBLIC glew_s OpenGL::OpenGL OpenGL::EGL Qt6::Gui Qt6::OpenGL)
 target_sources(${APP_NAME} PRIVATE QtDesktopWindow.cpp)
 target_link_libraries(${APP_NAME} deskwaifu_offscreen)
 target_link_libraries(${APP_NAME} Qt6::Gui Qt6::OpenGL Qt6::WaylandClient LayerShellQt::Interface deskwaifu_window_state)

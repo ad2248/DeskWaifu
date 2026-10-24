@@ -9,14 +9,9 @@
 
 struct Runtime : IApplicationRuntime
 {
-    bool SelectModel(int) override { return true; }
     int ModelIndex() const override { return 0; }
     int ModelCount() const override { return 1; }
     bool SetHidden(bool) override { return true; }
-    bool PlayMotion(const std::string&, int, int) override { return true; }
-    bool SetExpression(const std::string&) override { return true; }
-    bool TriggerHotkey(const std::string&, std::string&) override { return true; }
-    bool SwitchSkin() override { return true; }
 };
 
 // A recording render boundary tests frame scheduling and forwarded values only.

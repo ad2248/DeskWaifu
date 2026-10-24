@@ -4,15 +4,9 @@
 struct Runtime : IApplicationRuntime
 {
     int index = 0;
-    bool fail = false;
-    bool SelectModel(int value) override { if (fail) return false; index = value; return true; }
     int ModelIndex() const override { return index; }
     int ModelCount() const override { return 2; }
     bool SetHidden(bool) override { return true; }
-    bool PlayMotion(const std::string&, int, int) override { return true; }
-    bool SetExpression(const std::string&) override { return true; }
-    bool TriggerHotkey(const std::string&, std::string&) override { return true; }
-    bool SwitchSkin() override { return true; }
 };
 
 int main()
@@ -40,12 +34,9 @@ int main()
     if (app.SetLook("bad", Lifetime::Stream, std::numeric_limits<float>::infinity(), 0.0f).ok ||
         app.SetMouth("bad", Lifetime::Stream, 2.0f).ok) return 1;
     app.SetMouth("cli", Lifetime::Persistent, 0.4f);
-    runtime.fail = true;
-    if (app.SelectModel(1).ok || app.FrameInput().mouth != 0.4f) return 1;
-    runtime.fail = false;
-    if (!app.SelectModel(1).ok || app.FrameInput().hasMouth || app.FrameInput().hasLook) return 1;
+    app.ClearControls(); // Called only after an actual model change completes.
+    if (app.FrameInput().hasMouth || app.FrameInput().hasLook) return 1;
     app.SetMouth("cli", Lifetime::Persistent, 0.5f);
-    if (!app.SelectModel(1).ok || app.FrameInput().mouth != 0.5f) return 1;
     app.ReleaseControls("cli");
     return app.FrameInput().hasMouth ? 1 : 0;
 }

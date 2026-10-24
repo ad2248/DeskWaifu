@@ -13,7 +13,7 @@ struct RenderDeviceInfo
 // Enumerates EGL hardware devices without creating or switching any context.
 std::vector<RenderDeviceInfo> ListRenderDevices();
 
-// Owns a device-platform EGL display, separate from Qt's Wayland EGL display.
+// Owns a device-platform EGL display (surfaceless for auto), separate from Qt's Wayland display.
 // No GL object names cross this boundary: only bottom-up RGBA8 pixels do.
 class OffscreenRenderer
 {
