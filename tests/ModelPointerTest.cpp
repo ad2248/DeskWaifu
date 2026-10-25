@@ -25,6 +25,8 @@
 #include <chrono>
 #include <unistd.h>
 #include <QCoreApplication>
+#include <QEventLoop>
+#include <QTimer>
 
 #define CHECK(condition) do { if (!(condition)) { \
     std::cerr << "Line " << __LINE__ << ": " << #condition << '\n'; return 1; \
@@ -135,7 +137,12 @@ int releaseTest(LAppDelegate& app)
     hits.clear();
     click(400, 300);
     CHECK(hits.empty());
-    std::this_thread::sleep_for(std::chrono::milliseconds(ModelDoubleClick::Delay + 20));
+    // 不绘制任何帧，Qt 定时器仍须派发延迟单击。
+    QEventLoop wait;
+    QTimer::singleShot(ModelDoubleClick::Delay + 20, &wait, &QEventLoop::quit);
+    wait.exec();
+    AwaitModel(app.Models());
+    CHECK(hits.size() == 1 && near(hits[0].x, -.1f) && near(hits[0].y, .2f));
     return 0;
 }
 

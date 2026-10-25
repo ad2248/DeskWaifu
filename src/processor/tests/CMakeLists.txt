@@ -15,3 +15,7 @@ add_executable(processor-ocr-fixture ../../../../features/ocr/tests/OcrTestHelpe
 target_link_libraries(processor-ocr-fixture PRIVATE Qt6::Core)
 add_test(NAME processor-pipeline COMMAND processor-pipeline-test $<TARGET_FILE:processor-ocr-fixture>)
 set_tests_properties(processor-event-loop processor-pipeline PROPERTIES TIMEOUT 30)
+add_executable(interaction-processor-test InteractionProcessorTest.cpp ../../ConfigStore.cpp ../../LAppConfig.cpp)
+target_link_libraries(interaction-processor-test PRIVATE deskwaifu_processors)
+add_test(NAME interaction-processor COMMAND interaction-processor-test)
+set_tests_properties(interaction-processor PROPERTIES TIMEOUT 30)

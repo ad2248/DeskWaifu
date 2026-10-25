@@ -12,6 +12,7 @@ processor/
   ipc/            Unix socket 就绪事件，不依赖渲染帧
   command/        配置、窗口控制及兼容 CLI 命令的有序事件入口
   model/          模型操作代理、worker-only Cubism 生命周期与帧状态
+  interaction/    GUI 侧视线、点击/双击、拖拽、滚轮与模型热键策略
   signal/         SIGUSR1/SIGUSR2 自管道就绪事件，不依赖渲染帧
   Processor.hpp   注册/注销生命周期基类
   Events.hpp      本阶段业务事件类型名称
@@ -78,10 +79,12 @@ IpcProcessor 使用 QSocketNotifier 将 socket 可读/可写转换成事件；�
 
 `ModelProcessor` 是 GUI 线程上的有状态操作代理；`ModelRuntime` 的创建、模型加载、动作/表情/热键/皮肤、命中测试、模型更新、GL 绘制与销毁都在同一个 `model-render` QThread 中。模型线程自己的 Qt 定时器驱动更新和绘制，不依赖主线程逐帧请求，也不向业务事件队列投递帧事件。
 
-- 原生入口是 `model.operation`（`data.json` 为操作 JSON），完成后投递 `model.result`（`data.reply` 为结果），接收者为原 sender。`ModelProcessor::Submit` 是现有 CLI/输入回调的兼容适配；worker 完成后投递 `model.completed`，在主线程更新元数据快照并回复。事件仍是同一个 `ProcessorEvent`，不新增关联 ID；共享操作数据持有兼容适配所需的完成回调。
+- 原生入口是 `model.operation`（`data.json` 为操作 JSON），完成后投递 `model.result`（`data.reply` 为结果），接收者为原 sender。`ModelProcessor::Submit` 是现有 CLI 回调的兼容适配；worker 完成后投递 `model.completed`，在主线程更新元数据快照并回复。事件仍是同一个 `ProcessorEvent`，不新增关联 ID；共享操作数据持有兼容适配所需的完成回调。
 - `CommandProcessor` 将所有 Unix socket 命令/断开通知排入统一事件队列；配置、窗口和外部控制状态留在 GUI 线程，模型操作再交给 `ModelProcessor`。外部命令只在操作完成后返回真实结果，不以“已入队”假装执行成功。
 - 每个 IPC 连接最多等待一个异步回复，保留命令/回复顺序、写回压和半关闭语义；等待的连接不阻塞其他连接。完成回调只持有弱引用的回复槽，断线或 transport 销毁后不会访问旧连接或复用的 fd。
 - 点击、延迟单击、滚轮、模型热键及皮肤/模型切换不再访问主线程的模型对象。滚轮只在 GUI 线程计算逻辑投影；实际命中测试在 worker 上执行。模型切换成功且索引实际改变后才清空控制来源、待处理手势和旧键盘状态；失败或选中原模型不会误清空。
+- `InteractionProcessor` 持有 CursorLook、InputController 和 ScreenCropInteraction；窗口输入回调在 GUI 线程同步交给它识别，语义模型操作通过指针定向的 `model.operation` 排队，`model.result` 返回该处理器。单击等待由独立 Qt 单次定时器唤醒，不依赖呈现帧。模式退出、输出切换、模型切换、隐藏和关闭会取消手势及待处理单击；编辑事务仍由 TransformEditor 持有，跨屏窗口重绑定仍由组装入口协调。
+- 高频光标与拖动只更新当前交互状态/编辑草稿，不为每次移动排入模型操作。呈现采样时用当前模型变换、视口、视线中心和半径重新计算缓存光标，沿用 ModelProcessor 的有界最新状态槽；全局视线采样不合成拖动事件。
 - GUI 线程只持有窗口/Wayland surface、呈现 GL context、状态及只读模型元数据。自动设备使用在 GUI 线程创建 surface、再将独立 Qt context 移至 worker 的路径；指定 PCI 设备使用独立 device-platform EGL context。GL 对象名不跨线程/设备共享。
 - 帧经最多一个“最新状态”和一个“最新不可变 RGBA 帧”槽传递；慢呈现不会积压帧。主线程上传 CPU 像素后呈现，输入区域来自 worker 在应用透明度前采样的轮廓。尺寸、隐藏状态或模型索引不匹配的旧帧不会上传。现有 backend model token 仅用于拒绝旧模型的输入状态/热键，不用于事件路由。
 - 销毁顺序是停止信号/IPC 入口、停止并 join worker、清除其排队完成事件、销毁命令/业务处理器，最后销毁主线程窗口。Qt 的 offscreen surface 创建/销毁限 GUI 线程；模型与 GL 析构限 worker 当前 context。
@@ -94,6 +97,8 @@ IpcProcessor 使用 QSocketNotifier 将 socket 可读/可写转换成事件；�
 `processor-pipeline` 用合成图片、模拟 OCR 子进程和模拟播报端验证完整流程、取消、故障恢复、临时文件释放；实际语音代理只测试缺少凭据的错误路径，不连接云端或播放声音。另验证无任何渲染帧时 IPC 的读取、缓冲命令继续处理、写回压和断开清理。截图服务继续使用私有 D-Bus 模拟测试。
 
 `model-render-thread` 使用真实 Cubism 与隔离 EGL，验证线程归属、GUI 不派发时仍持续绘制、最新帧覆盖/不可变性、操作结果、模型切换、失败初始化及有序销毁。`command-processor`/`signal-processor` 验证没有呈现帧时的命令和信号派发；`ipc-bounded-transport` 补充延迟回复、半关闭、其他连接进展及晚到完成测试。原有实际模型点击、热键和跨屏拖动测试保留并改为通过操作事件访问模型。
+
+`interaction-processor` 不创建 GL 上下文、不读取真实桌面输入、不访问语音服务，验证无渲染帧时延迟单击、双击/拖拽互斥、模式取消、静止光标重算和处理器销毁；`model-pointer-release` 另外使用真实模型验证无呈现帧时的定时单击。
 
 **仍保留的边界：**
 

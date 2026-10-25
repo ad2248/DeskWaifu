@@ -10,19 +10,15 @@
 #include <string>
 #include <GL/glew.h>
 #include "DesktopWindow.hpp"
-#include "InputController.hpp"
-#include "CursorLook.hpp"
 #include "KWinCursorTracker.hpp"
 #include "HoverOpacity.hpp"
 #include "HoverOpacitySettings.hpp"
 #include "ApplicationService.hpp"
 #include "TransformEditor.hpp"
-#include "ScreenCropInteraction.hpp"
 #include "ModelWindowState.hpp"
 #include "OutputSettings.hpp"
 #include <memory>
 #include "CompositorAdapter.hpp"
-#include <QJsonObject>
 
 class LAppIPC;
 class AppCommandHandler;
@@ -35,6 +31,7 @@ class IpcProcessor;
 class ModelProcessor;
 class CommandProcessor;
 class SignalProcessor;
+class InteractionProcessor;
 
 /**
 * @brief 应用类。
@@ -115,7 +112,7 @@ public:
     /**
     * @brief 结束应用。
     */
-    void AppEnd() { _windowState.Send(ModelWindowState::Event::Close); }
+    void AppEnd();
 
     /**
      * @brief 设置应用运行路径。
@@ -168,7 +165,6 @@ private:
     bool InitializeRuntime();
     void SyncInteractionMode();
     void CancelInteraction();
-    void StartCropGesture();
 
     std::unique_ptr<DesktopWindow> _window;
     OutputController _outputController;
@@ -181,18 +177,11 @@ private:
     ApplicationService _service;
     std::unique_ptr<TransformEditor> _settings;
     std::unique_ptr<HoverOpacitySettings> _hoverSettings;
-    ScreenCropInteraction _cropInteraction;
     OutputId _lastOutput = 0;
-    float _mouseX;                               ///< 鼠标 X 坐标。
-    float _mouseY;                               ///< 鼠标 Y 坐标。
-    InputController _input;
-    void FlushPendingTap();
     void ResizeView(int width, int height);
     void MoveScreenDrag();
     void TrackGlobalCursor();
-    void TapModel(int x, int y);
-    bool QueueModel(QJsonObject operation);
-    CursorLook _cursorLook;
+    std::unique_ptr<InteractionProcessor> _interaction;
     KWinCursorTracker _kwinCursor;
     HoverOpacity _hoverOpacity;
     ModelWindowState _windowState;

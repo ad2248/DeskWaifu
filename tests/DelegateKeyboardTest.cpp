@@ -180,6 +180,11 @@ int main(int argc, char** argv)
     auto* previous = std::cout.rdbuf(logs.rdbuf());
     events->KeyboardKey(KEY_A, true);
     AwaitModel(app->Models());
+    // 模型操作完成不代表其结果事件已由交互处理器消费。
+    QElapsedTimer resultWait; resultWait.start();
+    while (logs.str().find("injected action failure") == std::string::npos && resultWait.elapsed() < 5000) {
+        QCoreApplication::processEvents(); QThread::msleep(1);
+    }
     std::cout.rdbuf(previous);
     CHECK(triggerCalls == 1);
     CHECK(logs.str().find("injected action failure") != std::string::npos);
@@ -230,6 +235,7 @@ int main(int argc, char** argv)
     close(fd);
     CHECK(count == 0);
     const auto lines = response.split('\n');
+    if (lines.size() != 8) std::cerr << "Unexpected IPC response: " << response.toStdString() << '\n';
     CHECK(lines.size() == 8 && lines.back().isEmpty());
     const auto stale = QJsonDocument::fromJson(lines[0]).object();
     CHECK(!stale["ok"].toBool(true) && stale["error"].toString().contains("Model changed"));

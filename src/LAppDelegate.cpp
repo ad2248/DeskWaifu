@@ -15,7 +15,7 @@
 #include "processor/model/ModelProcessor.hpp"
 #include "processor/command/CommandProcessor.hpp"
 #include "processor/signal/SignalProcessor.hpp"
-#include <QJsonDocument>
+#include "processor/interaction/InteractionProcessor.hpp"
 #include <QClipboard>
 #include <QGuiApplication>
 #include <cmath>
@@ -33,18 +33,12 @@
 #include "LAppConfig.hpp"
 #include "LAppIPC.hpp"
 #include "AppCommandHandler.hpp"
-#include "InputController.hpp"
 
 using namespace std;
 using namespace LAppDefine;
 
 namespace {
     LAppDelegate* s_instance = NULL;
-    uint32_t ClickClock()
-    {
-        using namespace std::chrono;
-        return static_cast<uint32_t>(duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count());
-    }
     double SettingsClock()
     {
         return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -137,6 +131,10 @@ bool LAppDelegate::InitializeRuntime()
     auto target = _window->RenderTarget(device.toStdString());
     if (!_models->Start(std::move(target), {_executeAbsolutePath, LAppDefine::ModelsDir,
             values.defaultModel, modelDirs, values.emotionTimeout}, _windowWidth, _windowHeight)) return false;
+    _interaction.reset(new InteractionProcessor(_processors->Loop(), *_window, _windowState,
+        _service, *_settings, *_models, [this] { return _models->Metadata(); },
+        [this] { MoveScreenDrag(); },
+        [this] { _processors->SpeakGreeting(QStringLiteral("姐姐，你好喵")); }));
 
     _signals.reset(new SignalProcessor(_processors->Loop(),
         [this] { _service.SetVisibility(_service.Snapshot().hidden); },
@@ -171,12 +169,20 @@ bool LAppDelegate::InitializeRuntime()
 
 OcrClient& LAppDelegate::Ocr() { return _processors->Ocr(); }
 
+void LAppDelegate::AppEnd()
+{
+    // 关闭前停止交互生产者，不在退出命令的回复前继续排入模型操作。
+    if (_interaction) _interaction->Stop();
+    _windowState.Send(ModelWindowState::Event::Close);
+}
+
 bool LAppDelegate::Release()
 {
     AppEnd();
     _signals.reset();
     _ipcProcessor.reset();
     const bool released = !_models || _models->Stop();
+    _interaction.reset(); // AppEnd 已停止交互生产；模型线程收尾后再注销请求者。
     _models.reset(); // 销毁命令服务前，清除待派发的操作完成事件。
     delete _ipc; _ipc = nullptr;
     _commandProcessor.reset();
@@ -203,7 +209,6 @@ bool LAppDelegate::Run()
             _lastOutput = _window->CurrentOutput();
         }
         if (!_windowState.Running()) return false;
-        if (_input.TapExpired(ClickClock())) FlushPendingTap();
         int width = _window->Width();
         int height = _window->Height();
 
@@ -219,7 +224,7 @@ bool LAppDelegate::Run()
         TrackGlobalCursor();
         _lastOutput = _window->CurrentOutput();
 
-        if (_input.IsCaptured() && _settings->Dirty()) _settings->ScheduleSave(SettingsClock(), .5);
+        if (_interaction->Captured() && _settings->Dirty()) _settings->ScheduleSave(SettingsClock(), .5);
         _settings->Tick(SettingsClock());
 
         if (!_models->Error().isEmpty()) {
@@ -237,11 +242,8 @@ bool LAppDelegate::Run()
         if (_settings->ScreenEditing() && settings.cropped) state.handles = CropInteraction::Handles(settings.region);
         const auto outputs = _window->Outputs();
         const auto* current = _outputController.Current(outputs);
-        if (current && _cursorLook.HasPosition() && !state.editing) {
-            const auto look = _cursorLook.LookAt(current->x, current->y, _windowWidth, _windowHeight,
-                _lookCenterX, _lookCenterY, state.app.transform, LAppConfig::GetInstance().values.mouseLookRadius);
-            state.hasLook = true; state.lookX = look.first; state.lookY = look.second;
-        }
+        _interaction->ApplyLook(state, current, _lookCenterX, _lookCenterY,
+            LAppConfig::GetInstance().values.mouseLookRadius);
         auto frame = _models->Frame();
         const bool usable = frame && frame->width == _windowWidth && frame->height == _windowHeight
             && frame->hidden == state.app.hidden && frame->modelIndex == state.app.modelIndex;
@@ -271,16 +273,12 @@ LAppDelegate::LAppDelegate():
     _commands(nullptr),
     _service(*this),
     
-    _mouseX(0.0f),
-    _mouseY(0.0f),
     _windowWidth(0),
     _windowHeight(0),
     _lookCenterX(0.5f),
     _lookCenterY(0.5f)
 {
     _executeAbsolutePath = "";
-    QObject::connect(&_windowState, &ModelWindowState::InteractionCancelled,
-        &_windowState, [this] { CancelInteraction(); });
 }
 
 LAppDelegate::~LAppDelegate()
@@ -294,8 +292,8 @@ void LAppDelegate::TrackGlobalCursor()
     const auto* current = _outputController.Current(outputs);
     _kwinCursor.Poll(current ? current->name : "");
     double x = 0, y = 0;
-    if (_kwinCursor.LocalPosition(_windowWidth, _windowHeight, x, y))
-        _cursorLook.LocalPosition(x, y);
+    if (_interaction && _kwinCursor.LocalPosition(_windowWidth, _windowHeight, x, y))
+        _interaction->CursorPosition(x, y);
 }
 
 void LAppDelegate::ResizeView(int width, int height)
@@ -333,10 +331,8 @@ void LAppDelegate::MoveScreenDrag()
 
 void LAppDelegate::CancelInteraction()
 {
-    _input = InputController{};
-    _cropInteraction = ScreenCropInteraction{};
-    QueueModel({{"command", "reset_drag"}});
-    if (_window->KeyboardGrabbed()) _window->SetKeyboardGrab(false);
+    if (_interaction) _interaction->Cancel();
+    else if (_window->KeyboardGrabbed()) _window->SetKeyboardGrab(false);
 }
 
 void LAppDelegate::SyncInteractionMode()
@@ -344,13 +340,6 @@ void LAppDelegate::SyncInteractionMode()
     if (!_settings || !_windowState.Running()) return;
     _windowState.Send(!_settings->Editing() ? ModelWindowState::Event::NormalMode :
         _settings->ScreenEditing() ? ModelWindowState::Event::ScreenMode : ModelWindowState::Event::PanelMode);
-}
-
-void LAppDelegate::StartCropGesture()
-{
-    const auto handle = _cropInteraction.Handle();
-    _windowState.Send(handle == CropInteraction::Model ? ModelWindowState::Event::DragModel :
-        handle == CropInteraction::Move ? ModelWindowState::Event::MoveCrop : ModelWindowState::Event::ResizeCrop);
 }
 
 void LAppDelegate::OutputSwitchStarted()
@@ -369,151 +358,35 @@ void LAppDelegate::OutputSwitchFinished()
 
 void LAppDelegate::PointerButton(int button, bool pressed)
 {
-    if (!_models || !_windowState.Running())
-    {
-        return;
-    }
-    
-    if (!_windowState.Normal())
-    {
-        if (button == 0 && _windowState.ScreenEditing()) {
-            if (pressed) {
-                if (_windowState.GestureActive()) return;
-                _cropInteraction.Press(_settings->Display(), int(_mouseX), int(_mouseY));
-                StartCropGesture();
-            } else {
-                if (!_windowState.GestureActive()) return;
-                const bool moveOutput = _settings->LocalScreenEditing() && _cropInteraction.DraggingModel();
-                const auto result = _cropInteraction.Release(*_settings, ClickClock(), int(_mouseX), int(_mouseY));
-                _windowState.Send(ModelWindowState::Event::Release);
-                if (!result.ok) LAppPal::PrintLogLn("[Crop] Save failed: %s", result.error.c_str());
-                if (moveOutput) MoveScreenDrag();
-            }
-        }
-        return; // 编辑期间不触发模型点击、皮肤切换或键盘捕获。
-    }
-    if (button == 0)
-    {
-        if (pressed)
-        {
-            if (!_windowState.Send(ModelWindowState::Event::Press)) return;
-            _input.Press(static_cast<int>(_mouseX), static_cast<int>(_mouseY));
-        }
-        else
-        {
-            if (_windowState.Current() == ModelWindowState::State::Pressed)
-            {
-                const auto result = _input.Release(ClickClock(), static_cast<int>(_mouseX),
-                    static_cast<int>(_mouseY), [this](int x, int y)
-                    {
-                        TapModel(x, y);
-                    });
-                _windowState.Send(ModelWindowState::Event::Release);
-                if (result == InputController::ReleaseResult::DoubleClick)
-                {
-                    QueueModel({{"command", "reset_drag"}});
-                    _window->SetKeyboardGrab(true);
-                    if (_processors) _processors->SpeakGreeting(QStringLiteral("姐姐，你好喵"));
-                }
-                else if (result == InputController::ReleaseResult::Drag)
-                {
-                    QueueModel({{"command", "reset_drag"}});
-                }
-            }
-        }
-    }
-    else if (button == 1 && !pressed)
-    {
-        // 切换模型。
-        LAppPal::PrintLogLn("[Event] Switch Model Triggered");
-          LAppPal::PrintLogLn("[Event] Switch Model Triggered");
-          QueueModel({{"command", "next_model"}});
-    }
-    else if (button == 2 && pressed)
-    {
-        // 切换皮肤。
-        LAppPal::PrintLogLn("[Event] Switch Skin Triggered");
-        QueueModel({{"command", "switch_skin"}});
-    }
-}
-
-void LAppDelegate::FlushPendingTap()
-{
-    if (!_windowState.Normal()) return;
-    _input.FlushTap([this](int x, int y)
-    {
-        TapModel(x, y);
-    });
+    if (_interaction) _interaction->PointerButton(button, pressed);
 }
 
 void LAppDelegate::ResetKeyboardState()
 {
-    _input.ResetKeyboard();
+    if (_interaction) _interaction->ResetKeyboard();
 }
 
 void LAppDelegate::OnModelKey(uint32_t code, bool pressed)
 {
-    if (!_windowState.Normal()) return;
-    const auto* bindings = _models && _window->KeyboardGrabbed() ? &_models->Metadata().bindings : nullptr;
-    const ModelKeyDecision decision = _input.Key(
-        _window->KeyboardGrabbed(), code, pressed, bindings);
-    if (decision.action == ModelKeyDecision::ReleaseGrab)
-        _window->SetKeyboardGrab(false);
-    else if (decision.action == ModelKeyDecision::Trigger)
-    {
-        QueueModel({{"command", "trigger_hotkey"}, {"id", QString::fromStdString(decision.bindingId)},
-            {"model_token", _models->Metadata().hotkeys.value("model_token")}});
-    }
+    if (_interaction) _interaction->Key(code, pressed);
 }
 
 void LAppDelegate::PointerMoved(double x, double y)
 {
     SetMousePosition(x, y);
 
-    if (!_models || !_windowState.Running())
-    {
-        return;
-    }
-
-    if (!_windowState.Normal()) {
-        if (_windowState.ScreenEditing() && _windowState.GestureActive())
-            _cropInteraction.Move(*_settings, int(x), int(y), _windowHeight);
-        return;
-    }
-    if (_windowState.Current() == ModelWindowState::State::Pressed)
-    {
-        if (_settings) {
-            if (_cropInteraction.StartModelDrag(*_settings, _input.StartX(), _input.StartY(),
-                    int(x), int(y), _windowWidth, _windowHeight)) {
-                StartCropGesture();
-            }
-            return;
-        }
-    }
+    if (_interaction) _interaction->PointerMoved(x, y);
 }
 
 void LAppDelegate::SetMousePosition(double x, double y)
 {
     _hoverOpacity.Move(x, y);
-    _mouseX = static_cast<float>(x);
-    _mouseY = static_cast<float>(y);
-    _cursorLook.LocalPosition(x, y);
+    if (_interaction) _interaction->Position(x, y);
 }
 
 void LAppDelegate::PointerScroll(double vertical)
 {
-    if (!_models || !_windowState.Running()) return;
-    // 使用与 LAppView_Common 相同的逻辑投影，不访问工作线程持有的视图。
-    const float anchorX = (_mouseX - _windowWidth * .5f) * 2 / _windowHeight;
-    const float anchorY = -(_mouseY - _windowHeight * .5f) * 2 / _windowHeight;
-    const auto current = _service.Snapshot().transform;
-    const ModelTransform transform = ZoomModelAroundPoint(current, anchorX, anchorY, current.scale * (1 + float(vertical) * .1f));
-    if (!_windowState.Normal()) {
-        if (_windowState.ScreenEditing()) { auto next = _settings->Display(); next.transform = transform; _settings->Update(_settings->Owner(), next); }
-    } else {
-        _service.SetTransform(transform);
-        if (_settings) _settings->ScheduleSave(SettingsClock(), .5);
-    }
+    if (_interaction) _interaction->PointerScroll(vertical);
 }
 
 int LAppDelegate::ModelIndex() const { return _models ? _models->Metadata().index : -1; }
@@ -527,26 +400,10 @@ bool LAppDelegate::SetHidden(bool hidden)
         CancelInteraction();
         _hoverOpacity.Leave();
         _window->SetKeyboardGrab(false);
-        _input.ResetKeyboard();
+        ResetKeyboardState();
         return true;
     }
     return _window->Available();
-}
-
-bool LAppDelegate::QueueModel(QJsonObject operation)
-{
-    if (!_models) return false;
-    return _models->Submit(QJsonDocument(operation).toJson(QJsonDocument::Compact).toStdString(), [](QJsonObject reply) {
-        if (!reply.value("ok").toBool()) LAppPal::PrintLogLn("[Model] %s", reply.value("error").toString().toUtf8().constData());
-    });
-}
-
-void LAppDelegate::TapModel(int x, int y)
-{
-    const auto transform = _service.Snapshot().transform;
-    QueueModel({{"command", "tap_model"}, {"mouse_x", x}, {"mouse_y", y}, {"width", _windowWidth}, {"height", _windowHeight},
-        {"zoom", transform.scale}, {"x", transform.x}, {"y", transform.y},
-        {"model_token", _models->Metadata().hotkeys.value("model_token")}});
 }
 
 void LAppDelegate::GetClientSize(int& rWidth, int& rHeight)
