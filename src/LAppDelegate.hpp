@@ -37,59 +37,59 @@ class CommandProcessor;
 class SignalProcessor;
 
 /**
-* @brief   アプリケーションクラス。
-*   Cubism3の管理を行う。
+* @brief 应用类。
+* 管理 Cubism3 应用生命周期。
 */
 class LAppDelegate : private IApplicationRuntime, public IDesktopWindowEvents
 {
 public:
     /**
-    * @brief   クラスのインスタンス（シングルトン）を返す。<br>
-    *           インスタンスが生成されていない場合は内部でインスタンを生成する。
+    * @brief 返回类的单例。<br>
+    *        实例尚未创建时，在内部创建。
     *
-    * @return  クラスのインスタンス
+    * @return 类实例。
     */
     static LAppDelegate* GetInstance();
 
     /**
-    * @brief   クラスのインスタンス（シングルトン）を解放する。
+    * @brief 释放类的单例。
     *
     */
     static void ReleaseInstance();
 
     /**
-    * @brief   APPに必要なものを初期化する。
+    * @brief 初始化应用所需资源。
     */
     bool Initialize();
 
     /**
-    * @brief   解放する。
+    * @brief 释放资源。
     */
     bool Release();
 
     /**
-    * @brief   実行処理。
+    * @brief 执行应用运行流程。
     */
     bool Run();
 
     void SetMousePosition(double x, double y);
     void OnModelKey(uint32_t code, bool pressed);
-    /** @brief Reset pressed keys on keyboard enter/leave, seat capability loss,
-     *         and explicit keyboard-grab release.
+    /** @brief 键盘进入或离开、座席能力丢失以及显式释放键盘捕获时，
+     *         重置已按下的按键。
      */
     void ResetKeyboardState();
 
     /**
-     * @brief   ウィンドウクライアント領域の幅、高さ取得
+     * @brief 获取窗口客户区的宽度和高度。
      */
     static void GetClientSize(int& rWidth, int& rHeight);
 
     /**
-    * @brief   デスクトップウィンドウを取得する。
+    * @brief 获取桌面窗口。
     */
     DesktopWindow* GetWindow() { return _window.get(); }
 
-    // GUI-side operational proxy; model and GL objects are worker-only.
+    // GUI 侧操作代理；模型和 GL 对象仅由工作线程持有。
     ModelProcessor& Models() { return *_models; }
     ApplicationService& Service() { return _service; }
     const ApplicationService& Service() const { return _service; }
@@ -106,38 +106,38 @@ public:
     }
 
     /**
-    * @brief   アプリケーションを終了するかどうか。
+    * @brief 查询应用是否正在退出。
     */
     bool GetIsEnd() { return _windowState.Current() == ModelWindowState::State::Closing ||
         _windowState.Current() == ModelWindowState::State::Closed; }
     ModelWindowState::State WindowState() const { return _windowState.Current(); }
 
     /**
-    * @brief   アプリケーションを終了する。
+    * @brief 结束应用。
     */
     void AppEnd() { _windowState.Send(ModelWindowState::Event::Close); }
 
     /**
-     * @brief   アプリケーションの実行パスを設定する。
+     * @brief 设置应用运行路径。
      */
     void SetExecuteAbsolutePath();
 
     /**
-     * @brief   アプリケーションの実行パスを取得する。
+     * @brief 获取应用运行路径。
      */
     std::string GetExecuteAbsolutePath(){ return _executeAbsolutePath;}
 
     /**
-     * @brief ウインドウ幅の取得
+     * @brief 获取窗口宽度。
      *
-     * @return ウインドウ幅を返す
+     * @return 窗口宽度。
      */
     int GetWindowWidth() { return _windowWidth; }
 
     /**
-     * @brief ウインドウ高さの取得
+     * @brief 获取窗口高度。
      *
-     * @return ウインドウ高さを返す
+     * @return 窗口高度。
      */
     int GetWindowHeight() { return _windowHeight; }
 
@@ -156,12 +156,12 @@ private:
     int ModelCount() const override;
     bool SetHidden(bool hidden) override;
     /**
-     * @brief   コンストラクタ
+     * @brief 构造函数。
      */
     LAppDelegate();
 
     /**
-     * @brief   デストラクタ
+     * @brief 析构函数。
      */
     ~LAppDelegate();
 
@@ -183,8 +183,8 @@ private:
     std::unique_ptr<HoverOpacitySettings> _hoverSettings;
     ScreenCropInteraction _cropInteraction;
     OutputId _lastOutput = 0;
-    float _mouseX;                               ///< マウスX座標
-    float _mouseY;                               ///< マウスY座標
+    float _mouseX;                               ///< 鼠标 X 坐标。
+    float _mouseY;                               ///< 鼠标 Y 坐标。
     InputController _input;
     void FlushPendingTap();
     void ResizeView(int width, int height);
@@ -202,10 +202,10 @@ private:
     std::unique_ptr<ProcessorRuntime> _processors;
     std::unique_ptr<IpcProcessor> _ipcProcessor;
     std::unique_ptr<SignalProcessor> _signals;
-    std::string _executeAbsolutePath;            ///< アプリケーションの実行パス
+    std::string _executeAbsolutePath;            ///< 应用运行路径。
 
-    int _windowWidth;                            ///< Initialize関数で設定したウィンドウ幅
-    int _windowHeight;                           ///< Initialize関数で設定したウィンドウ高さ
+    int _windowWidth;                            ///< Initialize 设置的窗口宽度。
+    int _windowHeight;                           ///< Initialize 设置的窗口高度。
 
     float _lookCenterX;
     float _lookCenterY;

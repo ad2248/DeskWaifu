@@ -52,11 +52,11 @@ int main()
     CHECK(config.modelRegion && config.modelRegion->x == 1 && config.modelRegion->y == 2);
     CHECK(config.modelRegion->width == 300 && config.modelRegion->height == 400);
 
-    // Missing fields must use construction defaults, not previously loaded values.
+    // 缺失字段必须使用构造默认值，而非上次加载的值。
     CHECK(load("{}"));
     CHECK(SameSettings(config, defaults));
 
-    // Failed numeric conversions use the same defaults as missing fields.
+    // 数值转换失败时，使用与字段缺失时相同的默认值。
     CHECK(load(configured));
     CHECK(load(R"({"emotion_timeout":null,"model_scale":null,"model_x":null,"model_y":null,
         "window_width":null,"window_height":null})"));
@@ -69,7 +69,7 @@ int main()
     CHECK(!application.LoadFromFile(directory + "/missing.json"));
     CHECK(SameSettings(config, previous));
 
-    // A full document contains every persisted setting, but no runtime metadata.
+    // 完整文档包含全部持久化配置，不包含运行时元数据。
     std::string document, error;
     CHECK(LAppConfig::Serialize(config, document, error));
     ConfigStore::Snapshot snapshot;

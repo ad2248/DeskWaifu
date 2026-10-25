@@ -20,14 +20,14 @@ private slots:
         QCOMPARE(DecideModelKey(keyboard, true, KEY_A, true,
             static_cast<const std::vector<ModelHotkeys::Binding>*>(nullptr)).action,
             ModelKeyDecision::None);
-        QVERIFY(!keyboard.Key(KEY_A, true)); // no model still updates pressed keys
+        QVERIFY(!keyboard.Key(KEY_A, true)); // 没有模型时也更新按下状态。
         keyboard.Reset();
 
         const auto first = DecideModelKey(keyboard, true, KEY_A, true, &bindings);
         QCOMPARE(first.action, ModelKeyDecision::Trigger);
         QCOMPARE(first.bindingId, std::string("action-1"));
         QCOMPARE(DecideModelKey(keyboard, true, KEY_A, true, &bindings).action,
-            ModelKeyDecision::None); // repeat
+            ModelKeyDecision::None); // 重复按键。
         ModelHotkeys::Binding duplicate;
         duplicate.id = "action-2";
         duplicate.keys = {"A"};
@@ -35,10 +35,10 @@ private slots:
         QCOMPARE(DecideModelKey(keyboard, true, KEY_A, false, &bindings).action,
             ModelKeyDecision::None);
         QCOMPARE(DecideModelKey(keyboard, true, KEY_A, true, &bindings).action,
-            ModelKeyDecision::None); // ambiguous chord
+            ModelKeyDecision::None); // 有歧义的组合键。
         QCOMPARE(DecideModelKey(keyboard, true, KEY_ESC, true, &bindings).action,
             ModelKeyDecision::ReleaseGrab);
-        QVERIFY(keyboard.Key(KEY_A, true)); // Esc cleared held keys
+        QVERIFY(keyboard.Key(KEY_A, true)); // Esc 已清除按住的按键。
 
         keyboard.Reset();
         ModelHotkeys::Binding disabled;
@@ -70,7 +70,7 @@ private slots:
         QCOMPARE(DecideModelKey(keyboard, true, KEY_LEFTCTRL, false, &bindings).action,
             ModelKeyDecision::None);
         QCOMPARE(DecideModelKey(keyboard, true, KEY_A, true, &bindings).action,
-            ModelKeyDecision::None); // auto-repeat after chord trigger
+            ModelKeyDecision::None); // 组合键触发后的自动重复。
         QCOMPARE(DecideModelKey(keyboard, true, KEY_A, false, &bindings).action,
             ModelKeyDecision::None);
         QCOMPARE(DecideModelKey(keyboard, true, KEY_LEFTCTRL, true, &bindings).action,
@@ -132,7 +132,7 @@ private slots:
         QCOMPARE(first.action, ModelKeyDecision::Trigger);
         QCOMPARE(first.bindingId, std::string("watermark"));
         QCOMPARE(DecideModelKey(keyboard, true, KEY_TAB, true, &bindings).action,
-            ModelKeyDecision::None); // held key does not retrigger
+            ModelKeyDecision::None); // 按住的按键不重复触发。
         QCOMPARE(DecideModelKey(keyboard, true, KEY_TAB, false, &bindings).action,
             ModelKeyDecision::None);
         QCOMPARE(DecideModelKey(keyboard, true, KEY_TAB, true, &bindings).action,
@@ -146,7 +146,7 @@ private slots:
         const auto tap = [&](int x, int y) { taps.emplace_back(x, y); };
 
         QCOMPARE(clicks.Release(100, 40, 50, 45, 55), ModelDoubleClick::Pending);
-        DispatchPendingTap(clicks, tap); // expiry or pointer leave
+        DispatchPendingTap(clicks, tap); // 超时或指针离开。
         QCOMPARE(taps.size(), size_t(1));
         QCOMPARE(taps.front(), std::make_pair(45, 55));
         DispatchPendingTap(clicks, tap);
@@ -155,7 +155,7 @@ private slots:
         QCOMPARE(clicks.Release(500, 40, 50, 49, 59), ModelDoubleClick::Pending);
         QCOMPARE(clicks.Release(600, 42, 51, 43, 52), ModelDoubleClick::DoubleClick);
         DispatchPendingTap(clicks, tap);
-        QCOMPARE(taps.size(), size_t(1)); // both clicks were suppressed
+        QCOMPARE(taps.size(), size_t(1)); // 两次点击均已被抑制。
     }
 
     void pointerLeaveAndReenterWithinDoubleClickWindowStillCountsAsDoubleClick()
@@ -165,14 +165,14 @@ private slots:
         const auto tap = [&](int x, int y) { taps.emplace_back(x, y); };
 
         QCOMPARE(clicks.Release(100, 40, 50, 41, 51), ModelDoubleClick::Pending);
-        // Leaving the surface must not consume the pending click.
+        // 离开表面不能消耗待处理点击。
         QCOMPARE(clicks.Release(280, 42, 51, 43, 52), ModelDoubleClick::DoubleClick);
         DispatchPendingTap(clicks, tap);
         QVERIFY(taps.empty());
 
         QCOMPARE(clicks.Release(500, 40, 50, 41, 51), ModelDoubleClick::Pending);
         QVERIFY(clicks.Expired(851));
-        DispatchPendingTap(clicks, tap); // regular timeout still flushes singles
+        DispatchPendingTap(clicks, tap); // 普通超时仍会派发单击。
         QCOMPARE(taps.size(), size_t(1));
         QCOMPARE(taps.front(), std::make_pair(41, 51));
     }
@@ -214,7 +214,7 @@ private slots:
         QCOMPARE(clicks.Release(900, 40, 50, 40, 50), ModelDoubleClick::Pending);
         QVERIFY(!clicks.IsSecondClick(950, 60, 50));
         QVERIFY(clicks.Take());
-        // Drag path flushes the previous tap without calling Release.
+        // 拖动路径派发上一次点击，不调用 Release。
         QVERIFY(!clicks.Take());
         QCOMPARE(clicks.Release(970, 60, 50, 60, 50), ModelDoubleClick::Pending);
     }
@@ -231,7 +231,7 @@ private slots:
         QVERIFY(!clicks.Take());
 
         QCOMPARE(clicks.Release(500, 40, 50, 49, 59), ModelDoubleClick::Pending);
-        QVERIFY(clicks.Take()); // pointer left the surface: flush without waiting
+        QVERIFY(clicks.Take()); // 指针离开表面时直接取出点击，无需等待。
         QCOMPARE(clicks.X(), 49);
         QCOMPARE(clicks.Y(), 59);
         QVERIFY(!clicks.IsSecondClick(600, 40, 50));
@@ -244,12 +244,12 @@ private slots:
         QVERIFY(keyboard.Key(KEY_A, true));
         QVERIFY(keyboard.Matches({"LeftControl", "A"}));
         QVERIFY(!keyboard.Matches({"A"}));
-        QVERIFY(!keyboard.Key(KEY_A, true)); // auto-repeat
+        QVERIFY(!keyboard.Key(KEY_A, true)); // 自动重复。
         QVERIFY(!keyboard.Key(KEY_A, false));
         QVERIFY(keyboard.Key(KEY_1, true));
         QVERIFY(keyboard.Matches({"Ctrl", "N1"}));
         QVERIFY(!keyboard.Matches({"Ctrl", "Tab"}));
-        keyboard.Reset(); // focus lost
+        keyboard.Reset(); // 焦点丢失。
         QVERIFY(!keyboard.Matches({"Ctrl", "N1"}));
         QVERIFY(keyboard.Key(KEY_Z, true));
         QVERIFY(keyboard.Matches({"Z"}));
@@ -257,7 +257,7 @@ private slots:
         QVERIFY(keyboard.Key(KEY_P, true));
         QVERIFY(keyboard.Matches({"P"}));
         QVERIFY(keyboard.Key(KEY_TAB, true));
-        QVERIFY(!keyboard.Matches({"Tab"})); // P is still held
+        QVERIFY(!keyboard.Matches({"Tab"})); // P 键仍被按住。
         QVERIFY(!keyboard.Key(KEY_TAB, false));
         QVERIFY(keyboard.Matches({"P"}));
         keyboard.Reset();

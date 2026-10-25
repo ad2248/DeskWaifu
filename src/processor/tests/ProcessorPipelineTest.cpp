@@ -96,7 +96,7 @@ try {
         image.clear();
         Wait([&] { return ocr.requests == 1; });
         Check(reading.CurrentState() == ReadingClipProcessor::State::WaitingOcr && QFileInfo::exists(path), "image remains alive through queued OCR request");
-        ocr.last = {}; // The fake service has finished its use of the image.
+        ocr.last = {}; // 模拟服务已结束对图像的使用。
         loop.Post({Recognized, &ocr, &reading, {{"text", "姐姐，你好"}}});
         Wait([&] { return speech.requests == 1; });
         Check(!QFileInfo::exists(path), "temporary PNG is released after recognition");

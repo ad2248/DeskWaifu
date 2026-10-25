@@ -23,9 +23,9 @@ public:
 signals:
     void connectionChanged(bool connected, const QString& message);
     void responseReceived(const QString& command, const QJsonObject& response);
-    // Connection lost after sending a mutation; it must not be retried.
+    // 修改操作发出后连接丢失，不能重试。
     void commandOutcomeUnknown(const QString& command);
-    // Connection lost before a queued mutation was sent.
+    // 排队的修改操作尚未发出时连接丢失。
     void commandCancelled(const QString& command);
     void protocolError(const QString& message);
 

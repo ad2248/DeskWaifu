@@ -6,8 +6,8 @@
 void ClipModelRegion(ModelRegion region, int width, int height) {
     if (region.x == 0 && region.y == 0 && region.width == width && region.height == height) return;
 
-    // Clear only after Cubism has finished drawing: its mask/offscreen passes
-    // manage their own scissor state and must not inherit the display clip.
+    // 仅在 Cubism 绘制完成后清除区域；其遮罩和离屏绘制自行管理剪裁状态，
+    // 不能继承最终显示区域的剪裁设置。
     const GLboolean scissorEnabled = glIsEnabled(GL_SCISSOR_TEST);
     GLint scissor[4];
     GLfloat clearColor[4];

@@ -169,7 +169,7 @@ bool SlowReader(bool inject)
     const int slow = f.Connect();
     const int fast = f.Connect();
     if (slow < 0 || fast < 0 || !f.Send(slow, "large\nsecond\n")) return false;
-    // Fill the real Unix socket until it would block, without reading replies.
+    // 不读取回复，将真实 Unix 套接字填满直到写入会阻塞。
     for (int i = 0; i < 128; ++i) f.server.Poll();
     if (std::find(f.commands.requests.begin(), f.commands.requests.end(), "second") !=
         f.commands.requests.end()) return false;
@@ -290,7 +290,7 @@ bool AcceptBudget()
     Fixture f;
     for (int i = 0; i < 5; ++i) if (f.Connect() < 0) return false;
     f.server.Poll();
-    // The injected EINTR also consumes one of the four accept attempts.
+    // 注入的 EINTR 也消耗四次 accept 尝试中的一次。
     if (faults.accepts != 3) return false;
     f.server.Poll();
     return faults.accepts == 5;
@@ -315,7 +315,7 @@ bool GlobalFairness()
         for (int j = 0; j < ClientLimit; ++j)
             if (Fixture::Read(f.clients[j], replies[j])) return false;
     }
-    // Even with all clients flooding, no connection is starved by the global cap.
+    // 即使所有客户端持续发送，全局上限也不能让任何连接得不到处理。
     for (const auto& reply : replies) if (reply.empty()) return false;
     return true;
 }
@@ -401,7 +401,7 @@ bool DeferredReplies()
     if (reply != "fast\n" || shutdown(slow, SHUT_WR) != 0) return false;
     const auto callback = f.commands.pending.front();
     const int before = wakeups;
-    callback("done"); callback("duplicate"); // Duplicate completion must not overwrite or wake twice.
+    callback("done"); callback("duplicate"); // 重复完成不能覆盖结果或再次唤醒。
     if (wakeups != before + 1 || !f.server.HasBufferedWork()) return false;
     reply.clear(); bool closed = false;
     for (int i = 0; i < 32 && !closed; ++i) { f.server.Poll(); closed = Fixture::Read(slow, reply); }

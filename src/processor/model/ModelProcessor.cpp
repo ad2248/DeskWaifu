@@ -32,7 +32,7 @@ bool ModelProcessor::Start(std::unique_ptr<ModelRenderTarget> target, const Mode
         _runtime.reset(new ModelRuntime);
         initialized = _target->Initialize() && _runtime->Initialize(options, width, height);
         if (initialized) {
-            _metadata = _runtime->Metadata(); // Startup barrier; GUI is not dispatching yet.
+            _metadata = _runtime->Metadata(); // 启动同步屏障；GUI 此时尚未派发事件。
             _state.width = width; _state.height = height;
             _state.app.modelIndex = _metadata.index;
             _state.modelToken = _metadata.hotkeys.value("model_token").toString().toStdString();

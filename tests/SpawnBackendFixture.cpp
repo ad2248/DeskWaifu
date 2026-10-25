@@ -4,7 +4,7 @@
 int main(int argc, char** argv)
 {
     QCoreApplication application(argc, argv);
-    // Safety net if the test is interrupted before its cleanup runs.
+    // 测试在执行清理前被中断时的安全兜底。
     QTimer::singleShot(30000, &application, &QCoreApplication::quit);
     return application.exec();
 }

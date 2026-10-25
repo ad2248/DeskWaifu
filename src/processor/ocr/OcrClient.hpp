@@ -5,7 +5,7 @@
 #include <QProcess>
 #include <QTimer>
 
-// Only QtCore is needed by the main application; inference lives in the optional helper.
+// 主程序仅需 QtCore；推理由可选辅助进程完成。
 class OcrClient : public QObject
 {
     Q_OBJECT

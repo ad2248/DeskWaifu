@@ -38,14 +38,14 @@ int main()
     CHECK(!settings.Set(R"({"radius":0.2,"radius":0.3})").ok);
     for (const auto value : {"0", "0.5", "1", "2", "5e-1"}) CHECK(settings.Set("{\"radius\":" + std::string(value) + "}").ok);
     CHECK(settings.Radius() == .5f);
-    // Other independent settings preserve the saved gaze radius, and vice versa.
+    // 其他独立配置应保留已保存的视线半径，反之亦然。
     HoverOpacitySettings hover(config);
     CHECK(hover.Set(R"({"idle_opacity":0.75})").ok);
     CHECK(settings.Set(R"({"radius":0.3})").ok);
     CHECK(config.values.idleOpacity == .75f);
     LAppConfig restarted; CHECK(restarted.LoadFromFile(path));
     CHECK(restarted.values.mouseLookRadius == .3f && restarted.values.idleOpacity == .75f);
-    // Invalid documents and failed writes must not publish unsaved values.
+    // 文档无效或写入失败时，不能应用未保存的值。
     { std::ofstream file(path); file << "{invalid"; }
     CHECK(!settings.Refresh().ok && !settings.Set(R"({"radius":0.8})").ok);
     CHECK(settings.Radius() == .3f);

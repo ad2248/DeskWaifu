@@ -78,8 +78,8 @@ ModelWindowState::ModelWindowState()
         connect(transition(source, Event::CancelGesture, editIdle), &QAbstractTransition::triggered,
             this, &ModelWindowState::InteractionCancelled);
     }
-    // Leaving a mode cancels its recognizers, including pending single/double
-    // clicks. Parent exits also cover switching and closing during a gesture.
+    // 离开模式时取消其识别器，包括待处理的单击和双击。
+    // 父状态退出也覆盖手势中途切换或关闭的情况。
     for (auto* source : {_normal, _screen, panel})
         connect(source, &QState::exited, this, &ModelWindowState::InteractionCancelled);
     _machine.start();
@@ -90,9 +90,9 @@ bool ModelWindowState::Send(Event event)
 {
     const auto before = _machine.configuration();
     _machine.postEvent(new PolicyEvent(event));
-    // Qt queues state-machine processing. Drain only this machine's work so
-    // synchronous input/IPC handlers observe the committed state, without a
-    // nested application event loop dispatching input or rendering reentrantly.
+    // Qt 将状态机处理排入队列。这里只处理当前状态机的工作，
+    // 使同步输入和 IPC 处理器能看到已提交的状态，
+    // 不启动可能重入输入或渲染的嵌套应用事件循环。
     QCoreApplication::sendPostedEvents(&_machine, QEvent::MetaCall);
     return before != _machine.configuration();
 }

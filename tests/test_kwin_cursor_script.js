@@ -1,4 +1,4 @@
-// Exercise the exact script shipped by the application, without installing it.
+// 不安装脚本，直接测试应用实际提供的脚本。
 const assert = require('node:assert/strict');
 const { execFileSync } = require('node:child_process');
 const vm = require('node:vm');
@@ -24,11 +24,11 @@ assert.ok(sample.running && watchdog.running);
 sample.tick();
 assert.equal(calls.length, 1);
 sample.tick();
-assert.equal(calls.length, 1); // At most one outstanding sample.
+assert.equal(calls.length, 1); // 最多保留一个尚未完成的采样。
 let call = calls.shift();
 assert.deepEqual(call.slice(0, 4), [':1.42', '/org/deskwaifu/Cursor', 'org.deskwaifu.Cursor', 'Sample']);
 assert.deepEqual(call.slice(4, -1), ['-12', '42.5', '', '0', '0', '0', '0']);
-// Both integer and fractional JS coordinates must use the same D-Bus signature.
+// 整数和小数 JS 坐标必须使用相同的 D-Bus 签名。
 call.at(-1)('DP-1');
 sample.tick();
 call = calls.shift();

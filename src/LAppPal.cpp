@@ -43,7 +43,7 @@ static double GetCurrentTimeSeconds()
 
 csmByte* LAppPal::LoadFileAsBytes(const string filePath, csmSizeInt* outSize)
 {
-    // Check embedded shaders first
+    // 优先查找内嵌着色器。
     const EmbeddedShaders::ShaderData* embedded = EmbeddedShaders::Find(filePath);
     if (embedded)
     {
@@ -122,7 +122,7 @@ void LAppPal::PrintLog(const csmChar* format, ...)
     va_list args;
     csmChar buf[256];
     va_start(args, format);
-    vsnprintf(buf, sizeof(buf), format, args); // 標準出力でレンダリング
+    vsnprintf(buf, sizeof(buf), format, args); // 格式化标准输出内容。
     std::cout << buf;
     va_end(args);
 }
@@ -132,7 +132,7 @@ void LAppPal::PrintLogLn(const csmChar* format, ...)
     va_list args;
     csmChar buf[256];
     va_start(args, format);
-    vsnprintf(buf, sizeof(buf), format, args); // 標準出力でレンダリング
+    vsnprintf(buf, sizeof(buf), format, args); // 格式化标准输出内容。
     std::cout << buf << std::endl;
     va_end(args);
 }

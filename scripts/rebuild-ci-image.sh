@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build and privately transfer the Arch Linux CI image used by the Gitea runner.
+# 构建 Gitea 运行器使用的 Arch Linux CI 镜像，并私下传输。
 set -euo pipefail
 
 IMAGE_REPO=localhost/deskwaifu-ci
@@ -44,8 +44,8 @@ podman run --rm "$IMAGE" bash -ceu '
     test ! -S /var/run/docker.sock
 '
 
-# Gitea packages inherit their owner's visibility, not the linked repository's.
-# Never push this SDK-containing image into a potentially public user namespace.
+# Gitea 包继承所属用户的可见性，而非关联仓库的可见性。
+# 不能将包含 SDK 的镜像推送到可能公开的用户命名空间。
 IMAGE_ID=$(podman image inspect "$IMAGE" --format '{{.Id}}')
 IMAGE_ID="sha256:${IMAGE_ID#sha256:}"
 echo "Transferring $IMAGE privately to $RUNNER_HOST"

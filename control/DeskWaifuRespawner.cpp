@@ -41,8 +41,8 @@ void DeskWaifuRespawner::start(const QString& procDirectory, const QString& lock
             return;
         }
         if (!_disconnected) return;
-        // A closed IPC socket does not imply the old process has finished cleanup.
-        // Spawn's process check and shared lock prevent overlapping instances.
+        // IPC 套接字关闭不代表旧进程已清理完成。
+        // 启动时的进程检查和共享锁可防止多个实例重叠运行。
         const auto result = DeskWaifuLauncher::spawn(false, _applicationDirectory, procDirectory, lockDirectory);
         if (result.state == DeskWaifuLauncher::State::AlreadyRunning) return;
         finish(result.state == DeskWaifuLauncher::State::Started, result.message);

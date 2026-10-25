@@ -3,8 +3,8 @@
 #include "ApplicationService.hpp"
 #include "LAppConfig.hpp"
 
-// Hover settings are saved independently of the transform edit transaction.
-// Publish runtime values only after a successful atomic configuration write.
+// 悬停配置独立于变换编辑事务保存。
+// 仅在配置原子写入成功后更新运行时数值。
 class HoverOpacitySettings
 {
 public:

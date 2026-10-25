@@ -48,7 +48,7 @@ bool OcrProcessor::HandleEvent(const ProcessorEvent& event)
         Send(ProcessorEvents::Failed, event.sender, {{"error", accepted.value("error").toString()}});
     } else {
         _requester = event.sender;
-        // The native helper's existing wire protocol is isolated here; event routing never uses it.
+        // 原生辅助进程的现有传输协议隔离在此处，事件路由不使用该协议标识。
         _transportRequest = accepted.value("job_id").toString();
     }
     return true;

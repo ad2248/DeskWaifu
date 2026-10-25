@@ -60,7 +60,7 @@ target_link_libraries(qt-desktop-window-test PRIVATE deskwaifu_offscreen)
 target_link_options(qt-desktop-window-test PRIVATE -Wl,--export-dynamic-symbol=eglSwapBuffers)
 add_test(NAME qt-window-reject-platform COMMAND qt-desktop-window-test --reject-platform)
 set_tests_properties(qt-window-reject-platform PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-# Opt-in only: use an isolated compositor, never inject input into the user's session.
+# 仅显式启用时运行：使用隔离合成器，不向用户会话注入输入。
 option(DESKWAIFU_QT_LIVE_TEST "Run Qt window integration test on the selected Wayland display" OFF)
 if (DESKWAIFU_QT_LIVE_TEST)
   add_test(NAME gpu-transfer COMMAND gpu-transfer-test)
@@ -230,7 +230,7 @@ add_test(NAME model-gaze COMMAND model-gaze-test)
 set_tests_properties(model-gaze PROPERTIES
   ENVIRONMENT "EGL_PLATFORM=surfaceless" SKIP_RETURN_CODE 77)
 
-# Exercise the actual composition root with an isolated headless platform.
+# 使用隔离无头平台测试真实组装入口。
 get_target_property(DELEGATE_TEST_SOURCES ${APP_NAME} SOURCES)
 list(FILTER DELEGATE_TEST_SOURCES EXCLUDE REGEX "/(main|QtDesktopWindow)\\.cpp$")
 get_target_property(DELEGATE_TEST_INCLUDES ${APP_NAME} INCLUDE_DIRECTORIES)
@@ -252,8 +252,8 @@ add_executable(external-control-test ExternalControlTest.cpp)
 target_include_directories(external-control-test PRIVATE ../src)
 add_test(NAME external-control COMMAND external-control-test)
 
-# Exercise the actual application wiring; replace only the window/context and
-# compositor socket, not Delegate, View, Manager or model hit testing.
+# 测试真实应用接线，只替换窗口、上下文和合成器套接字，
+# 不替换 Delegate、View、Manager 或模型命中测试。
 get_target_property(INPUT_APP_SOURCES ${APP_NAME} SOURCES)
 list(FILTER INPUT_APP_SOURCES EXCLUDE REGEX "/(main|QtDesktopWindow)\\.cpp$")
 add_executable(model-pointer-test ModelPointerTest.cpp ${INPUT_APP_SOURCES})

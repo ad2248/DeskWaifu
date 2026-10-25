@@ -53,7 +53,7 @@ def check():
     assert toggle("watermark") == {"watermark": True, "blush": False}
     assert toggle("blush") == {"watermark": True, "blush": True}
     assert request("set_expression", id="F01")["ok"]
-    time.sleep(6)  # Persistent switches must survive the ordinary emotion timeout.
+    time.sleep(6)  # 持久开关必须在普通表情超时后仍保持生效。
     assert all(entry["active"] for entry in request("get_hotkeys")["hotkeys"])
     assert toggle("watermark") == {"watermark": False, "blush": True}
     assert request("set_model", name="Haru")["ok"]

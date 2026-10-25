@@ -9,8 +9,8 @@ class LAppTextureManager;
 class LAppView;
 class ModelRenderTarget;
 
-// Worker-only. Its constructor, all operations, rendering and destruction run
-// on the same rendering thread. No GUI objects or application singleton are borrowed.
+// 仅供工作线程使用。构造、所有操作、渲染和析构均在同一渲染线程执行，
+// 不借用 GUI 对象或应用单例。
 class ModelRuntime
 {
 public:

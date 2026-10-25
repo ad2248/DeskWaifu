@@ -48,7 +48,7 @@ int main()
     editor.Disconnected("gui"); CHECK(!editor.Editing() && service.Snapshot().transform.x == 1);
     CHECK(editor.Begin("gui", false, 1920, 1080).ok);
     CHECK(editor.Update("gui", draft).ok);
-    // External same-field change updates the committed state, not the preview.
+    // 外部对同一字段的修改更新已提交状态，不更新预览。
     write("{\"model_x\":5,\"model_scale\":2,\"other\":false}");
     editor.Reload(); CHECK(editor.Conflict());
     CHECK(service.Snapshot().transform.x == 3);
@@ -61,7 +61,7 @@ int main()
     CHECK(store.Read(disk, error) && disk.values.at("model_x") == "3" && !disk.values.count("other"));
     CHECK(disk.values.size() == 13 && disk.values.at("window_width") == "1900");
     CHECK(config.values.modelX == 3 && config.values.modelRegion);
-    // Position/zoom normal controls save only when their debounce expires.
+    // 普通位置和缩放控件只在防抖期结束后保存。
     CHECK(service.SetTransform({1.5f, 2, -1}).ok);
     editor.ScheduleSave(10, .5); editor.Tick(10.2);
     CHECK(editor.Dirty());
@@ -85,13 +85,13 @@ int main()
     CHECK(editor.ReloadAndDiscard("gui").ok);
     CHECK(!editor.Dirty() && service.Snapshot().transform.x == 10);
     CHECK(editor.Reset("gui").ok);
-    // Failed saves retain preview and never report a successful reset.
+    // 保存失败时保留预览，不能将重置报告为成功。
     CHECK(editor.Begin("gui", true, 1920, 1080).ok);
     CHECK(editor.Update("gui", draft).ok);
     write("broken"); CHECK(!editor.Reset("gui").ok && editor.Editing());
     CHECK(service.Snapshot().transform.x == 3);
     editor.AbortScreenEdit(); CHECK(!editor.Editing() && service.Snapshot().transform.x == 0);
-    // A 100px right / 50px down crop movement moves the model by exactly those pixels.
+    // 裁剪框向右移动 100 像素、向下移动 50 像素时，模型也应移动相同像素距离。
     TransformSettings start{{2, 1, 1}, true, {100, 100, 800, 600}};
     const auto moved = CropInteraction::Drag(start, CropInteraction::Move, 100, 50, 1000);
     CHECK(moved.region.x == 200 && moved.region.y == 150);
@@ -107,8 +107,8 @@ int main()
     const auto extreme = CropInteraction::Drag(start, CropInteraction::Left | CropInteraction::Top, INT32_MIN, INT32_MIN, 1000);
     CHECK(extreme.region.width > 0 && extreme.region.height > 0);
 
-    // Ordinary clicks do not enter editing; the first real drag transfers its
-    // original press coordinates without losing or applying its delta twice.
+    // 普通点击不进入编辑；首次真实拖动转交原始按下坐标，
+    // 不丢失位移，也不重复应用位移。
     write("{}");
     CHECK(editor.ReloadAndDiscard("gui").ok);
     ScreenCropInteraction pointer;
@@ -121,19 +121,19 @@ int main()
     pointer.Move(editor, 200, 150, 1000);
     CHECK(std::abs(service.Snapshot().transform.x - .2f) < .00001f);
     CHECK(pointer.Release(editor, 100, 200, 150).ok);
-    CHECK(editor.ScreenEditing()); // Releasing never saves/hides the frame.
+    CHECK(editor.ScreenEditing()); // 释放操作不会保存或隐藏边框。
     CHECK(store.Read(disk, error) && disk.values.empty());
     CHECK(!editor.Begin("gui", true, 1000, 1000).ok);
     CHECK(!editor.Update("gui", {}).ok && !editor.Apply("gui").ok);
     editor.Disconnected("gui"); CHECK(editor.LocalScreenEditing());
 
-    // Double-clicking the model interior is not a frame save or model action.
+    // 双击模型内部不会保存边框，也不会触发模型动作。
     for (uint32_t time : {200u, 300u}) {
         pointer.Press(editor.Display(), 200, 200);
         CHECK(pointer.Release(editor, time, 200, 200).ok);
     }
     CHECK(editor.Editing());
-    // A resize excursion returning to the press point still cannot be a click.
+    // 调整尺寸后即使回到按下位置，也不能算作点击。
     pointer.Press(editor.Display(), 0, 200);
     CHECK(pointer.Release(editor, 400, 0, 200).ok);
     pointer.Press(editor.Display(), 0, 200);
@@ -150,8 +150,8 @@ int main()
     CHECK(store.Read(disk, error) && disk.values.count("model_region"));
     CHECK(std::abs(service.Snapshot().transform.x - .2f) < .00001f);
 
-    // Existing crops are preserved. Local entry cannot steal a GUI transaction;
-    // the same frame double-click can finish a GUI-owned screen transaction.
+    // 保留现有裁剪。本地入口不能抢占 GUI 事务；
+    // 同样的边框双击可结束 GUI 持有的屏幕编辑事务。
     CHECK(editor.Begin("gui", true, 1000, 1000).ok);
     CHECK(!pointer.StartModelDrag(editor, 100, 100, 150, 100, 1000, 1000));
     CHECK(editor.OwnedBy("gui"));
@@ -163,7 +163,7 @@ int main()
     CHECK(pointer.StartModelDrag(editor, 100, 100, 150, 100, 500, 500));
     CHECK(editor.Display().region.width == 1000);
     CHECK(pointer.Release(editor, 1200, 150, 100).ok);
-    // An external same-field edit makes save fail without discarding the draft.
+    // 外部编辑同一字段会使保存失败，但不能丢弃草稿。
     const auto preview = editor.Display();
     write("{\"model_x\":9}");
     editor.Reload();
@@ -173,11 +173,11 @@ int main()
     CHECK(!pointer.Release(editor, 1400, 0, 200).ok);
     CHECK(editor.LocalScreenEditing() && editor.Conflict() && !editor.Error().empty());
     CHECK(editor.Display().transform.x == preview.transform.x);
-    // Resizing/changing outputs cancels local editing as it does panel editing.
+    // 改变输出尺寸或切换输出设备时，应像面板编辑一样取消本地编辑。
     editor.AbortScreenEdit();
     CHECK(!editor.ScreenEditing() && service.Snapshot().transform.x == 9);
 
-    // A transient write/parse failure is retryable by another frame double-click.
+    // 临时写入或解析失败后，可通过再次双击边框重试。
     pointer = ScreenCropInteraction{};
     CHECK(store.Read(disk, error));
     const auto savedDocument = disk.document;
@@ -196,7 +196,7 @@ int main()
     CHECK(pointer.Release(editor, 1900, 0, 200).ok);
     CHECK(!editor.Editing() && editor.Display().cropped && editor.Error().empty());
 
-    // One outside click saves the same draft for local and GUI screen edits.
+    // 本地和 GUI 屏幕编辑都通过一次区域外点击保存同一份草稿。
     for (const auto* owner : {"local-screen", "gui"}) {
         for (const auto point : {std::pair<int, int>{50, 250}, {750, 250}, {300, 50}, {300, 650}}) {
             CHECK(editor.Begin(owner, true, 1000, 1000).ok);
@@ -216,19 +216,19 @@ int main()
     }
 
     CHECK(editor.BeginLocalScreenEdit(1000, 1000).ok);
-    // Outside drags, including excursions back to the press point, never save.
+    // 区域外拖动不会保存，即使最终回到按下位置也一样。
     pointer.Press(editor.Display(), 50, 250);
     pointer.Move(editor, 70, 250, 1000);
     pointer.Move(editor, 50, 250, 1000);
     CHECK(pointer.Release(editor, 2100, 50, 250).ok && editor.Editing());
     pointer.Press(editor.Display(), 50, 250);
     CHECK(pointer.Release(editor, 2200, 70, 250).ok && editor.Editing());
-    // Crossing the boundary within the tap tolerance is not an outside click.
+    // 在点击容差内跨过边界，不算区域外点击。
     pointer.Press(editor.Display(), 109, 250);
     CHECK(pointer.Release(editor, 2300, 99, 250).ok && editor.Editing());
     pointer.Press(editor.Display(), 91, 250);
     CHECK(pointer.Release(editor, 2400, 101, 250).ok && editor.Editing());
-    // The resize hot zone just outside the rectangle remains a frame gesture.
+    // 紧邻矩形外侧的缩放热区仍属于边框手势。
     pointer.Press(editor.Display(), 95, 250);
     CHECK(pointer.Release(editor, 2500, 95, 250).ok && editor.Editing());
     pointer.Press(editor.Display(), 95, 250);
@@ -236,7 +236,7 @@ int main()
     CHECK(pointer.Release(editor, 2600, 75, 250).ok && editor.Editing());
     CHECK(editor.Display().region.x == 80 && editor.Display().region.width == 620);
 
-    // Outside-click save failures preserve the draft and allow another click to retry.
+    // 区域外点击保存失败时保留草稿，允许再次点击重试。
     CHECK(store.Read(disk, error));
     const auto beforeOutsideSave = disk.document;
     const auto outsidePreview = editor.Display();
@@ -249,7 +249,7 @@ int main()
     pointer.Press(editor.Display(), 50, 250);
     CHECK(pointer.Release(editor, 2800, 50, 250).ok);
     CHECK(!editor.Editing() && editor.Error().empty());
-    // Outside clicks do not bypass external-edit conflict protection either.
+    // 区域外点击也不能绕过外部编辑冲突保护。
     CHECK(editor.Begin("gui", true, 1000, 1000).ok);
     auto conflictDraft = editor.Display(); conflictDraft.transform.x += 1;
     CHECK(editor.Update("gui", conflictDraft).ok);
@@ -262,7 +262,7 @@ int main()
     CHECK(editor.Cancel("gui").ok);
     CHECK(editor.ReloadAndDiscard("gui").ok);
 
-    // Save all current object fields, not just transforms or old disk values.
+    // 保存当前对象的全部字段，而非仅保存变换或旧磁盘值。
     config.values.additionalModelDirs = {"~/模型", "with \"quotes\" and \\slashes"};
     config.values.defaultModel = "夕颜\nmodel";
     config.values.emotionTimeout = 7.25f;
@@ -283,7 +283,7 @@ int main()
     CHECK(loaded.values.defaultModel == config.values.defaultModel);
     CHECK(!disk.values.count("sourcePath"));
 
-    // Even a non-transform external edit conflicts with whole-object saves.
+    // 即使外部编辑的不是变换字段，也会与整个对象保存产生冲突。
     CHECK(editor.Begin("gui", false, 1920, 1080).ok);
     auto external = config.values;
     external.windowWidth = 999;

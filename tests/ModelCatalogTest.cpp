@@ -33,8 +33,8 @@ int main()
         symlink((first + "/Twin").c_str(), crossAlias.c_str()) != 0) return 1;
 
     const auto models = ModelCatalog::Scan({second, root + "/missing", first, second});
-    // The lexically first display name wins even when aliases are discovered
-    // through different roots, with unrelated models between them in name order.
+    // 即使别名来自不同根目录，且按名称排序时中间夹有无关模型，
+    // 仍应选择字典序最前的显示名称。
     const auto reordered = ModelCatalog::Scan({first, second, first});
     bool correct = models.size() == 3 && models[0].name == "Aalias" &&
         models[1].name == "Twin" && models[2].name == "Twin" &&

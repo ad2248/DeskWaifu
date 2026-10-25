@@ -2,16 +2,14 @@
 
 #include "ModelCache.hpp"
 
-// Activity is committed only after the requested model loads. Prefetch is
-// best-effort and never invalidates the active model or reports success for a
-// failed selection.
+// 仅在请求的模型加载完成后提交活动模型状态。预取尽力而为，
+// 不会使当前模型失效，也不会将选择失败报告为成功。
 template<typename Model>
 class ModelSession
 {
 public:
-    // Soft budget: the currently active model is pinned even if it alone
-    // exceeds the budget. Shared textures are conservatively counted once per
-    // model here; actual GPU residency is tracked by TextureResidency.
+    // 软预算：即使当前活动模型自身已超出预算，也要保留它。
+    // 此处保守地对每个模型分别计入共享纹理；实际 GPU 驻留量由 TextureResidency 跟踪。
     void SetTextureBudget(std::size_t bytes) { _textureBudget = bytes; }
     void Initialize(std::size_t count)
     {

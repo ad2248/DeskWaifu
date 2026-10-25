@@ -31,8 +31,8 @@ bool failTrigger = true;
 int triggerCalls = 0;
 ModelHotkeys* triggered = nullptr;
 
-// Only the platform boundary is replaced. Delegate, input decisions, service,
-// model discovery/loading, and the failure log all execute production code.
+// 只替换平台边界；Delegate、输入决策、服务、模型发现与加载以及失败日志
+// 均执行正式代码。
 class HeadlessWindow : public DesktopWindow
 {
 public:
@@ -56,8 +56,8 @@ public:
     }
     bool Run(const std::function<bool()>& frame) override
     {
-        // Match the platform contract: socket readiness and frames share Qt's
-        // dispatcher, but processing IPC no longer requires drawing a frame.
+        // 与平台契约一致：套接字就绪和帧使用同一个 Qt 派发器，
+        // 但处理 IPC 不再要求先绘制一帧。
         bool quitRequested = false;
         QEventLoop loop;
         QTimer frames;
@@ -112,8 +112,8 @@ std::unique_ptr<DesktopWindow> CreateDesktopWindow()
     return std::unique_ptr<DesktopWindow>(new HeadlessWindow);
 }
 
-// Inject a failure at the actual action endpoint, not a mirror trigger helper.
-// Successful calls still execute the real ModelHotkeys implementation.
+// 在真实动作执行入口注入失败，不使用复制逻辑的触发辅助函数。
+// 成功调用仍执行真实 ModelHotkeys 实现。
 extern "C" bool __real__ZN12ModelHotkeys7TriggerERKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEERS5_(
     ModelHotkeys*, const std::string&, std::string&);
 extern "C" bool __wrap__ZN12ModelHotkeys7TriggerERKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEERS5_(
@@ -143,7 +143,7 @@ int main(int argc, char** argv)
     CHECK(Write(modelDir + "test.exp3.json", R"({"Parameters":[{"Id":"ParamAngleX","Value":1
 }]})"));
     CHECK(Write(directory.path() + "/config.json", "{}"));
-    // Never connect to the user's IPC endpoint or modify their KWin scripts.
+    // 不连接用户的 IPC 端点，也不修改其 KWin 脚本。
     qputenv("XDG_RUNTIME_DIR", directory.path().toUtf8());
     qputenv("DESKWAIFU_RENDER_DEVICE", "auto");
     qputenv("DBUS_SESSION_BUS_ADDRESS", "unix:path=/nonexistent/deskwaifu-test-bus");
@@ -155,7 +155,7 @@ int main(int argc, char** argv)
     CHECK(app->Initialize());
     CHECK(events);
 
-    // Exercise the production double-click route without credentials or network.
+    // 在不提供凭据、不联网的情况下测试正式双击路径。
     std::ostringstream speechLogs;
     auto* speechPrevious = std::cout.rdbuf(speechLogs.rdbuf());
     events->PointerMoved(8, 8);
@@ -174,7 +174,7 @@ int main(int argc, char** argv)
     app->GetWindow()->SetKeyboardGrab(false);
 
     events->KeyboardKey(KEY_A, true);
-    CHECK(triggerCalls == 0); // no grab
+    CHECK(triggerCalls == 0); // 未捕获键盘。
     app->GetWindow()->SetKeyboardGrab(true);
     std::ostringstream logs;
     auto* previous = std::cout.rdbuf(logs.rdbuf());
@@ -185,7 +185,7 @@ int main(int argc, char** argv)
     CHECK(logs.str().find("injected action failure") != std::string::npos);
     CHECK(triggered && !app->Models().Metadata().hotkeys["hotkeys"].toArray()[0].toObject()["active"].toBool());
     events->KeyboardKey(KEY_A, true);
-    CHECK(triggerCalls == 1); // repeat suppressed on the actual Delegate path
+    CHECK(triggerCalls == 1); // 在真实 Delegate 路径上抑制重复按键。
     events->KeyboardKey(KEY_A, false);
     failTrigger = false;
     logs.str("");
@@ -198,8 +198,8 @@ int main(int argc, char** argv)
     events->KeyboardKey(KEY_ESC, true);
     CHECK(!app->GetWindow()->KeyboardGrabbed());
 
-    // Real IPC -> command adapter -> service: a changed model token must stop
-    // stale actions, and unavailable duplicate IDs must not report active.
+    // 真实 IPC 到命令适配器再到服务：模型令牌变化必须阻止旧动作，
+    // 不可用的重复 ID 不能报告为活动状态。
     const auto oldToken = app->Models().Metadata().hotkeys["model_token"].toString().toStdString();
     CHECK(AwaitModel(app->Models(), {{"command", "set_model"}, {"index", 1}})["ok"].toBool());
     CHECK(AwaitModel(app->Models(), {{"command", "set_model"}, {"index", 0}})["ok"].toBool());
@@ -221,7 +221,7 @@ int main(int argc, char** argv)
         "{\"command\":\"set_render_device\",\"device\":\"auto\"}\n" +
         "{\"command\":\"quit\"}\n";
     CHECK(send(fd, requests.data(), requests.size(), MSG_NOSIGNAL) == static_cast<ssize_t>(requests.size()));
-    CHECK(app->Run()); // Socket events handle the commands; quit closes the window loop.
+    CHECK(app->Run()); // 套接字事件处理命令，quit 关闭窗口循环。
     CHECK(triggerCalls == 3);
     QByteArray response;
     char buffer[4096];

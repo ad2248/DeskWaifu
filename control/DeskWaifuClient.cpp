@@ -83,8 +83,8 @@ void DeskWaifuClient::readResponses()
             emit protocolError(tr("Invalid JSON response for '%1': %2")
                 .arg(_inFlight.command, error.error == QJsonParseError::NoError
                     ? tr("Expected a JSON object") : error.errorString()));
-            // Correlation is no longer trustworthy. Disconnection retries only
-            // safe queries and reports in-flight mutations as outcome unknown.
+            // 关联关系已不再可信。断开后只重试安全查询，
+            // 对已发送的修改操作报告结果未知。
             _socket.abort();
             return;
         }
@@ -122,7 +122,7 @@ void DeskWaifuClient::handleDisconnected()
     _waitingForResponse = false;
     _readBuffer.clear();
     QStringList cancelled;
-    // Only explicitly retryable queries may cross a connection boundary.
+    // 只有显式允许重试的查询才能跨连接重试。
     for (qsizetype i = 0; i < _requests.size();) {
         if (isRetryableQuery(_requests[i].command)) ++i;
         else cancelled.append(_requests.takeAt(i).command);
@@ -137,8 +137,8 @@ void DeskWaifuClient::handleSocketError(QLocalSocket::LocalSocketError error)
 {
     Q_UNUSED(error)
     emit connectionChanged(false, _socket.errorString());
-    // Qt may emit the error before transitioning to UnconnectedState.
-    // Schedule the next attempt regardless of the state at signal delivery.
+    // Qt 可能在切换到 UnconnectedState 前发出错误信号。
+    // 不论信号到达时处于什么状态，都要安排下一次尝试。
     if (!_reconnectTimer.isActive())
     {
         _reconnectTimer.start();

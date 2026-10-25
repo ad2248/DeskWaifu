@@ -6,9 +6,8 @@
 #include <map>
 #include <string>
 
-// Per-channel arbitration. A live stream takes precedence over a persistent
-// command; within a tier the most recently updated source wins. Releasing a
-// source reveals the next source, rather than erasing unrelated controls.
+// 按通道仲裁：实时流优先于持久命令，同级中最近更新的来源优先。
+// 释放来源后恢复下一优先来源，不清除无关控制。
 class ExternalControlState
 {
 public:

@@ -27,7 +27,7 @@ def main():
             requests.append(json.dumps({"protocol": 1, "id": f"{name}-{repeat}", "image": str(args.samples / name)}))
     requests.append(json.dumps({"protocol": 1, "id": "jpeg", "image": str(args.samples / "light.jpg")}))
     start = time.perf_counter()
-    # No Python environment, model cache, GPU configuration or LD_LIBRARY_PATH is inherited by the helper.
+    # 辅助进程不继承 Python 环境、模型缓存、GPU 配置或 LD_LIBRARY_PATH。
     env = {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}
     result = subprocess.run([str(args.helper.resolve()), "--serve"], env=env,
                             input="\n".join(requests) + "\n", capture_output=True, text=True, timeout=180)

@@ -3,7 +3,7 @@
 #include "ApplicationService.hpp"
 #include "LAppConfig.hpp"
 
-// This is a next-start preference, not the currently bound rendering context.
+// 此设置用于下次启动，不代表当前已绑定的渲染上下文。
 class RenderDeviceSettings
 {
 public:

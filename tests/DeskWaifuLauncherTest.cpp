@@ -44,9 +44,9 @@ private:
             QFile status(QStringLiteral("/proc/%1/status").arg(pid));
             return status.open(QIODevice::ReadOnly) && !status.readAll().contains("State:\tZ");
         };
-        // Detached fixtures are not our children: wait for exit, not waitpid().
-        // Scope-guard cleanup can run after QtTest marks the test resolved;
-        // QTRY may stop polling then, but the detached process still must exit.
+        // 分离的夹具进程不是当前进程的子进程，应等待退出，而非调用 waitpid()。
+        // 作用域清理可能在 QtTest 判定测试结束后执行；此时 QTRY 可能停止轮询，
+        // 但仍必须确保分离进程退出。
         QVERIFY(QTest::qWaitFor([&] { return !active(); }, 2000));
     }
 
@@ -139,8 +139,8 @@ private slots:
     }
     void concurrentLaunchersStartOnlyOneBackend()
     {
-        // Do not interact with a user's existing backend. PATH and the sibling
-        // directory are empty here, so this probe can only inspect, never launch.
+        // 不与用户现有后端交互。此处 PATH 和同级目录均为空，
+        // 所以探测只能检查进程，不会启动程序。
         const auto before = DeskWaifuLauncher::spawn(false, app(), "/proc", proc());
         if (before.state == State::AlreadyRunning)
             QSKIP("A deskwaifu backend is already running for this user.");
@@ -168,7 +168,7 @@ private slots:
         QCOMPARE(first.readLine().trimmed(), QByteArray("ready"));
         QTRY_VERIFY(second.canReadLine());
         QCOMPARE(second.readLine().trimmed(), QByteArray("ready"));
-        // Both independent callers must be blocked before process inspection.
+        // 两个独立调用方都必须在检查进程之前被锁阻塞。
         QTest::qWait(100);
         QCOMPARE(first.state(), QProcess::Running);
         QCOMPARE(second.state(), QProcess::Running);
@@ -216,7 +216,7 @@ private slots:
     void backendSurvivesLaunchingProcessExit()
     {
         installBackend(app());
-        // Invalid PATH also verifies that the sibling executable has priority.
+        // 无效 PATH 也用于验证同级可执行文件具有更高优先级。
         qputenv("PATH", "/nonexistent-deskwaifu-path");
         QProcess gui;
         gui.start(QCoreApplication::applicationFilePath(), {"--launch-and-exit", app(), proc()});
@@ -232,7 +232,7 @@ private slots:
         QVERIFY(status.open(QIODevice::ReadOnly));
         QVERIFY(!status.readAll().contains("State:\tZ"));
 
-        // A second click observes the existing process instead of launching again.
+        // 第二次点击应发现已有进程，而非再次启动。
         process(QString::number(pid), "deskwaifu");
         const auto again = DeskWaifuLauncher::spawn(false, app(), proc());
         QCOMPARE(again.state, State::AlreadyRunning);

@@ -3,8 +3,8 @@
 #include "InputController.hpp"
 #include <cmath>
 
-// Retain the latest cursor sample independently of pointer capture and taps.
-// Global samples stay global so output changes do not leave stale local offsets.
+// 独立保存最新光标采样，不受指针捕获和点击影响。
+// 全局采样始终保持全局坐标，避免切换输出设备后残留旧的局部偏移。
 class CursorLook
 {
 public:

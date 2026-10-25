@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-// Use the runner's temporary directory rather than an agent-specific path.
+// 使用运行器提供的临时目录，而非代理专用路径。
 inline std::string MakeTestTemporaryDirectory(const std::string& prefix)
 {
     const char* configured = std::getenv("TMPDIR");

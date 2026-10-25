@@ -13,8 +13,8 @@ int main()
     require(!region.contains(QPoint(40, 60)));
     require(!region.contains(QPoint(50, 50)));
     require(region.contains(QPoint(75, 85)));
-    require(QtWaylandModelKey(23) == 15); // Tab
-    require(QtWaylandModelKey(9) == 1); // Escape
+    require(QtWaylandModelKey(23) == 15); // 制表键 Tab。
+    require(QtWaylandModelKey(9) == 1); // 退出键 Escape。
     require(QtWaylandModelKey(0) == 0);
     require(QtWaylandModelKey(7) == 0);
     std::cout << "Qt input region and evdev mapping passed\n";

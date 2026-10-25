@@ -1,5 +1,5 @@
-# Exercise the tests with a runner-provided temp root, with no /tmp/opencode
-# prerequisite. The GUI test must also handle roots longer than a socket name.
+# 使用运行器提供的临时根目录测试，不要求预先存在 /tmp/opencode。
+# GUI 测试还必须处理长度超出套接字名称限制的根目录。
 file(MAKE_DIRECTORY "${TEST_TEMP_ROOT}")
 foreach(test IN ITEMS "${CONFIG_TEST}" "${EDITOR_TEST}" "${WINDOW_TEST}")
   if (NOT test STREQUAL "")

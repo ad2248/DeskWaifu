@@ -6,7 +6,7 @@
 class MiniMaxSpeechSource;
 class AudioPlayer;
 
-// Business entry point. Source and output must outlive this coordinator.
+// 业务入口；语音来源和输出对象必须比此协调器存活更久。
 class SpeechPlayer : public QObject
 {
     Q_OBJECT

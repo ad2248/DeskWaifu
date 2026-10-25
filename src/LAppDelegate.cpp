@@ -150,7 +150,7 @@ bool LAppDelegate::InitializeRuntime()
         }));
     if (!_signals->Available()) return false;
 
-    // Initialize IPC socket server
+    // 初始化 IPC 套接字服务端。
     _ipc = new LAppIPC();
     _commands = new AppCommandHandler(*this);
     _commandProcessor.reset(new CommandProcessor(_processors->Loop(), *_commands));
@@ -177,7 +177,7 @@ bool LAppDelegate::Release()
     _signals.reset();
     _ipcProcessor.reset();
     const bool released = !_models || _models->Stop();
-    _models.reset(); // Purge operation completions before destroying their command service.
+    _models.reset(); // 销毁命令服务前，清除待派发的操作完成事件。
     delete _ipc; _ipc = nullptr;
     _commandProcessor.reset();
     delete _commands; _commands = nullptr;
@@ -308,7 +308,7 @@ void LAppDelegate::ResizeView(int width, int height)
 void LAppDelegate::MoveScreenDrag()
 {
     const auto cursor = _compositor.GlobalCursor();
-    if (!cursor) return; // Surface-local editing remains usable without this capability.
+    if (!cursor) return; // 缺少此能力时仍可使用表面局部编辑。
     const auto outputs = _window->Outputs();
     const auto oldId = _window->CurrentOutput();
     const auto* next = OutputController::Find(outputs,
@@ -318,14 +318,14 @@ void LAppDelegate::MoveScreenDrag()
     auto draft = _settings->Display();
     if (!_outputController.MoveTo(cursor.value.first, cursor.value.second, draft.transform)) return;
 
-    // Crop coordinates belong to the old screen, not to the moving model.
-    // Start with the destination's full extent so the moved model stays visible
-    // and the user can continue adjusting the crop before explicitly saving.
+    // 裁剪坐标属于原屏幕，不随模型移动。
+    // 先使用目标屏幕的完整范围，使移动后的模型保持可见，
+    // 用户可继续调整裁剪区域，再显式保存。
     draft.region = {0, 0, _window->Width(), _window->Height()};
     _settings->Update(_settings->Owner(), draft);
     _settings->PauseAutosave();
-    // This deliberate rebind must not be treated as a hotplug/resize cancellation
-    // on the next frame. The edit remains explicit: moving displays never saves it.
+    // 下一帧不能将此次主动重绑定误判为热插拔或尺寸变化而取消编辑。
+    // 编辑仍须显式保存，移动到其他显示器不会自动保存。
     _lastOutput = _window->CurrentOutput();
     ResizeView(_window->Width(), _window->Height());
     SetMousePosition(cursor.value.first - next->x, cursor.value.second - next->y);
@@ -390,7 +390,7 @@ void LAppDelegate::PointerButton(int button, bool pressed)
                 if (moveOutput) MoveScreenDrag();
             }
         }
-        return; // No model taps, skin changes or keyboard grabs during editing.
+        return; // 编辑期间不触发模型点击、皮肤切换或键盘捕获。
     }
     if (button == 0)
     {
@@ -424,14 +424,14 @@ void LAppDelegate::PointerButton(int button, bool pressed)
     }
     else if (button == 1 && !pressed)
     {
-        // Switch Models
+        // 切换模型。
         LAppPal::PrintLogLn("[Event] Switch Model Triggered");
           LAppPal::PrintLogLn("[Event] Switch Model Triggered");
           QueueModel({{"command", "next_model"}});
     }
     else if (button == 2 && pressed)
     {
-        // Switch Skin
+        // 切换皮肤。
         LAppPal::PrintLogLn("[Event] Switch Skin Triggered");
         QueueModel({{"command", "switch_skin"}});
     }
@@ -503,7 +503,7 @@ void LAppDelegate::SetMousePosition(double x, double y)
 void LAppDelegate::PointerScroll(double vertical)
 {
     if (!_models || !_windowState.Running()) return;
-    // Same logical projection as LAppView_Common; no worker-owned view access.
+    // 使用与 LAppView_Common 相同的逻辑投影，不访问工作线程持有的视图。
     const float anchorX = (_mouseX - _windowWidth * .5f) * 2 / _windowHeight;
     const float anchorY = -(_mouseY - _windowHeight * .5f) * 2 / _windowHeight;
     const auto current = _service.Snapshot().transform;

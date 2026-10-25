@@ -2,8 +2,8 @@
 
 #include "CropInteraction.hpp"
 
-// Pointer gestures for both local and control-panel screen editing. Clicks here
-// never enter the model's tap/keyboard-grab double-click recognizer.
+// 本地和控制面板屏幕编辑共用的指针手势。
+// 此处点击不会进入模型点击或双击键盘捕获识别器。
 class ScreenCropInteraction
 {
 public:

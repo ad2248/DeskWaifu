@@ -94,7 +94,7 @@ SpeechPlayer::SpeechPlayer(MiniMaxSpeechSource& source, AudioPlayer& audio, QObj
     connect(&_source, &MiniMaxSpeechSource::Failed, this, failed);
     connect(&_audio, &AudioPlayer::Failed, this, failed);
     _machine.start();
-    // Initialize only this machine, without a nested application event loop.
+    // 只初始化当前状态机，不运行嵌套应用事件循环。
     QCoreApplication::sendPostedEvents(&_machine, QEvent::MetaCall);
 }
 
@@ -106,7 +106,7 @@ SpeechPlayer::~SpeechPlayer()
 
 void SpeechPlayer::Speak(SpeechRequest request)
 {
-    // Empty input must not interrupt the current utterance.
+    // 空输入不能打断当前播报。
     if (request.text.trimmed().isEmpty()) return;
     auto* event = new SpeechEvent(Kind::Speak);
     event->request = std::move(request);
@@ -119,7 +119,7 @@ void SpeechPlayer::End(FinishReason reason)
 {
     if (!_id) return;
     const auto id = _id;
-    _id = 0; // Invalidate before either component can emit callbacks.
+    _id = 0; // 在任一组件发出回调之前使标识失效。
     _source.Cancel(id);
     _audio.Stop(id);
     emit Finished(id, reason);

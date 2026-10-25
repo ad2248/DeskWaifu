@@ -16,7 +16,7 @@ void ReceiveSignal(int signal)
     const int descriptor = signalPipe.load();
     if (descriptor >= 0) {
         const auto ignored = write(descriptor, &action, 1);
-        (void)ignored; // A full pipe coalesces excess activation, never blocks a signal handler.
+        (void)ignored; // 管道满时合并多余触发，绝不阻塞信号处理函数。
     }
     --activeHandlers;
     errno = previous;
@@ -42,7 +42,7 @@ SignalProcessor::SignalProcessor(ProcessorEventLoop& loop, std::function<void()>
     _notifier.reset(new QSocketNotifier(_read, QSocketNotifier::Read));
     connect(_notifier.get(), &QSocketNotifier::activated, this, [this] {
         unsigned char actions[64];
-        // Bound each notification. Remaining bytes trigger readiness again.
+        // 限制每次通知处理的数量，剩余字节会再次触发就绪通知。
         const auto count = read(_read, actions, sizeof(actions));
         for (ssize_t i = 0; i < count; ++i)
             Send(actions[i] == 1 ? QStringLiteral("signal.toggle") : QStringLiteral("signal.focus"), this);
@@ -56,8 +56,8 @@ SignalProcessor::~SignalProcessor()
         signalPipe = -1;
         sigaction(SIGUSR1, &_oldToggle, nullptr); sigaction(SIGUSR2, &_oldFocus, nullptr);
     }
-    // A handler already running on another thread may still hold the old fd.
-    // Stop it before closing/reusing either pipe endpoint (and avoid SIGPIPE).
+    // 其他线程中正在执行的信号处理函数可能仍持有旧文件描述符。
+    // 关闭或复用管道端点前先等它结束，避免触发 SIGPIPE。
     if (_write >= 0) while (activeHandlers.load() != 0) std::this_thread::yield();
     if (_read >= 0) close(_read);
     if (_write >= 0) close(_write);

@@ -3,8 +3,8 @@
 #include <QStateMachine>
 #include <array>
 
-// Window policy only; gesture coordinates and edit transactions stay in their
-// existing owners. All calls belong to the application's Qt thread.
+// 仅负责窗口策略；手势坐标和编辑事务仍由原对象持有。
+// 所有调用均在应用的 Qt 线程执行。
 class ModelWindowState : public QObject
 {
     Q_OBJECT

@@ -11,60 +11,60 @@
 #include <CubismFramework.hpp>
 
 /**
-* @brief  Sample Appで使用する定数
+* @brief 应用使用的常量。
 *
 */
 namespace LAppDefine {
 
     using namespace Csm;
 
-    extern const csmFloat32 ViewScale;              ///< 拡大縮小率
-    extern const csmFloat32 ViewMaxScale;           ///< 拡大縮小率の最大値
-    extern const csmFloat32 ViewMinScale;           ///< 拡大縮小率の最小値
+    extern const csmFloat32 ViewScale;              ///< 缩放比例。
+    extern const csmFloat32 ViewMaxScale;           ///< 最大缩放比例。
+    extern const csmFloat32 ViewMinScale;           ///< 最小缩放比例。
 
-    extern const csmFloat32 ViewLogicalLeft;        ///< 論理的なビュー座標系の左端の値
-    extern const csmFloat32 ViewLogicalRight;       ///< 論理的なビュー座標系の右端の値
-    extern const csmFloat32 ViewLogicalBottom;      ///< 論理的なビュー座標系の下端の値
-    extern const csmFloat32 ViewLogicalTop;         ///< 論理的なビュー座標系の上端の値
+    extern const csmFloat32 ViewLogicalLeft;        ///< 逻辑视图坐标系左边界。
+    extern const csmFloat32 ViewLogicalRight;       ///< 逻辑视图坐标系右边界。
+    extern const csmFloat32 ViewLogicalBottom;      ///< 逻辑视图坐标系下边界。
+    extern const csmFloat32 ViewLogicalTop;         ///< 逻辑视图坐标系上边界。
 
-    extern const csmFloat32 ViewLogicalMaxLeft;     ///< 論理的なビュー座標系の左端の最大値
-    extern const csmFloat32 ViewLogicalMaxRight;    ///< 論理的なビュー座標系の右端の最大値
-    extern const csmFloat32 ViewLogicalMaxBottom;   ///< 論理的なビュー座標系の下端の最大値
-    extern const csmFloat32 ViewLogicalMaxTop;      ///< 論理的なビュー座標系の上端の最大値
+    extern const csmFloat32 ViewLogicalMaxLeft;     ///< 逻辑视图坐标系左边界极限。
+    extern const csmFloat32 ViewLogicalMaxRight;    ///< 逻辑视图坐标系右边界极限。
+    extern const csmFloat32 ViewLogicalMaxBottom;   ///< 逻辑视图坐标系下边界极限。
+    extern const csmFloat32 ViewLogicalMaxTop;      ///< 逻辑视图坐标系上边界极限。
 
-    extern std::string ModelsDir;                   ///< モデル群パス
-    extern const csmChar* ResourcesPath;            ///< 素材パス
-    extern const csmChar* BackImageName;         ///< 背景画像ファイル
-    extern const csmChar* GearImageName;         ///< 歯車画像ファイル
-    extern const csmChar* PowerImageName;        ///< 終了ボタン画像ファイル
+    extern std::string ModelsDir;                   ///< 模型目录路径。
+    extern const csmChar* ResourcesPath;            ///< 资源路径。
+    extern const csmChar* BackImageName;         ///< 背景图片文件。
+    extern const csmChar* GearImageName;         ///< 齿轮图片文件。
+    extern const csmChar* PowerImageName;        ///< 退出按钮图片文件。
 
-    extern const csmChar* ShaderPath;               ///< シェーダーパス
-    extern const csmChar* VertShaderName;           ///< 頂点シェーダー
-    extern const csmChar* FragShaderName;           ///< フラグメントシェーダー
+    extern const csmChar* ShaderPath;               ///< 着色器路径。
+    extern const csmChar* VertShaderName;           ///< 顶点着色器。
+    extern const csmChar* FragShaderName;           ///< 片元着色器。
 
-    // モデル定義--------------------------------------------
-                                                    // 外部定義ファイル(json)と合わせる
-    extern const csmChar* MotionGroupIdle;          ///< アイドリング時に再生するモーションのリスト
-    extern const csmChar* MotionGroupTapBody;       ///< 体をタップした時に再生するモーションのリスト
+    // 模型定义--------------------------------------------
+                                                    // 与外部 JSON 定义文件保持一致。
+    extern const csmChar* MotionGroupIdle;          ///< 待机时播放的动作列表。
+    extern const csmChar* MotionGroupTapBody;       ///< 点击身体时播放的动作列表。
 
-                                                    // 外部定義ファイル(json)と合わせる
-    extern const csmChar* HitAreaNameHead;          ///< 当たり判定の[Head]タグ
-    extern const csmChar* HitAreaNameBody;          ///< 当たり判定の[Body]タグ
+                                                    // 与外部 JSON 定义文件保持一致。
+    extern const csmChar* HitAreaNameHead;          ///< 命中测试的 Head 标签。
+    extern const csmChar* HitAreaNameBody;          ///< 命中测试的 Body 标签。
 
-                                                    // モーションの優先度定数
-    extern const csmInt32 PriorityNone;             ///< モーションの優先度定数: 0
-    extern const csmInt32 PriorityIdle;             ///< モーションの優先度定数: 1
-    extern const csmInt32 PriorityNormal;           ///< モーションの優先度定数: 2
-    extern const csmInt32 PriorityForce;            ///< モーションの優先度定数: 3
+                                                    // 动作优先级常量。
+    extern const csmInt32 PriorityNone;             ///< 动作优先级常量：0。
+    extern const csmInt32 PriorityIdle;             ///< 动作优先级常量：1。
+    extern const csmInt32 PriorityNormal;           ///< 动作优先级常量：2。
+    extern const csmInt32 PriorityForce;            ///< 动作优先级常量：3。
 
-                                                    // デバッグ用ログの表示
-    extern const csmBool DebugLogEnable;            ///< デバッグ用ログ表示の有効・無効
-    extern const csmBool DebugTouchLogEnable;       ///< タッチ処理のデバッグ用ログ表示の有効・無効
+                                                    // 调试日志显示。
+    extern const csmBool DebugLogEnable;            ///< 是否显示调试日志。
+    extern const csmBool DebugTouchLogEnable;       ///< 是否显示触摸处理调试日志。
 
-    // Frameworkから出力するログのレベル設定
+    // 框架输出日志的级别设置。
     extern const CubismFramework::Option::LogLevel CubismLoggingLevel;
 
-    // デフォルトのレンダーターゲットサイズ
+    // 默认渲染目标尺寸。
     extern csmInt32 RenderTargetWidth;
     extern csmInt32 RenderTargetHeight;
 }

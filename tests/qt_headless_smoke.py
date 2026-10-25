@@ -28,7 +28,7 @@ def stop(process):
 
 
 def assert_layer_shell(trace):
-    # Protocol advertisement and QWindow properties do not prove the window role.
+    # 协议声明和 QWindow 属性不足以证明窗口获得了正确角色。
     assert re.search(r"zwlr_layer_shell_v1[@#]\d+\.get_layer_surface\(", trace), \
         "Model window did not actually acquire a layer-shell role"
     assert not re.search(r"xdg_wm_base[@#]\d+\.get_xdg_surface\(", trace), \
@@ -75,8 +75,8 @@ def main():
         aliases.mkdir()
         unusual_names = ['夕颜"\\\n001', '001']
         for name in unusual_names:
-            # Catalog identity resolves the directory: two directory symlinks
-            # to Haru collapse to one model. Distinct overlays preserve aliases.
+            # 目录索引标识会解析真实目录；两个指向 Haru 的目录链接会合并为一个模型。
+            # 独立覆盖目录可以保留各自别名。
             overlay = aliases / name
             overlay.mkdir()
             for item in (resources / "Haru").iterdir():
@@ -86,7 +86,7 @@ def main():
                    XDG_CACHE_HOME=str(root / "cache"), XDG_DATA_HOME=str(root / "data"),
                    LIBGL_ALWAYS_SOFTWARE="1", MESA_DEBUG="context",
                    QT_LOGGING_RULES="qt.qpa.wayland.warning=true")
-        # Never inherit a real compositor's control sockets or Qt shell override.
+        # 不继承真实合成器的控制套接字或 Qt shell 覆盖设置。
         for key in ("SWAYSOCK", "HYPRLAND_INSTANCE_SIGNATURE", "QT_WAYLAND_SHELL_INTEGRATION",
                     "QT_QPA_PLATFORM", "DISPLAY", "WAYLAND_DISPLAY", "QT_SCALE_FACTOR",
                     "QT_SCREEN_SCALE_FACTORS", "QT_SCALE_FACTOR_ROUNDING_POLICY"):
@@ -108,8 +108,8 @@ def main():
                                   WAYLAND_DEBUG="client")
                 if float(args.scale) != 1:
                     assert shutil.which("kscreen-doctor"), "kscreen-doctor is required to set actual output scaling"
-                    # KWin's --scale controls virtual mode size, not the output's
-                    # logical scale. Apply scaling through its output protocol.
+                    # KWin 的 --scale 控制虚拟模式尺寸，而非输出逻辑缩放。
+                    # 应通过输出协议应用缩放。
                     screen_config = json.loads(subprocess.check_output(
                         ["kscreen-doctor", "-j"], env=dict(client_env, WAYLAND_DEBUG="0"), text=True))
                     changes = [f"output.{output['name']}.scale.{args.scale}"
@@ -135,7 +135,7 @@ def main():
                 assert window_log.count("Output switch configured and committed") >= 2
                 if "DESKWAIFU_QT_TEST_HOTPLUG" in client_env:
                     assert "hotplug=1" in window_log
-                # Ensure actual Wayland input regions include empty and nonempty states.
+                # 确保真实 Wayland 输入区域覆盖空区域和非空区域两种状态。
                 populated = set()
                 empty = nonempty = False
                 for line in window_log.splitlines():
@@ -160,7 +160,7 @@ def main():
                     assert app.poll() is None, (logs / "model.log").read_text()[-6000:]
                     assert time.monotonic() < deadline, "Model startup timed out"
                     time.sleep(.05)
-                # Keep one connection throughout edit/stream transactions.
+                # 整个编辑和流事务期间保持同一连接。
                 with socket.socket(socket.AF_UNIX) as connection:
                     connection.settimeout(10)
                     connection.connect(str(runtime / "deskwaifu.sock"))
@@ -172,8 +172,8 @@ def main():
                         assert response["ok"], (command, response)
                         return response
 
-                    # Exercise the real AppCommandHandler through its socket, not a
-                    # second implementation of command parsing in the test.
+                    # 通过套接字测试真实 AppCommandHandler，
+                    # 不在测试中再实现一套命令解析。
                     def raw_request(payload):
                         connection.sendall(payload.encode() + b"\n")
                         return json.loads(stream.readline())
@@ -236,8 +236,8 @@ def main():
                     assert request("get_mouse_look")["radius"] == .25
                     assert request("set_mouse_look", radius=0)["radius"] == 0
                     assert request("set_mouse_look", radius=.5)["radius"] == .5
-                    # Settings writes change the shared config snapshot. Refresh
-                    # explicitly instead of racing the editor's periodic reload.
+                    # 配置写入会改变共享配置快照；应显式刷新，
+                    # 避免与编辑器的定期重新加载发生竞争。
                     request("reload_transform_settings")
                     request("set_expression", id="F01")
                     request("do_motion", group="Idle", index=0, priority=2)
@@ -254,7 +254,7 @@ def main():
                             crop_width=100, crop_height=100)
                     cropped = request("apply_transform_edit")
                     assert cropped["effective_width"] == 0 and cropped["effective_height"] == 0
-                    request("get_status")  # Allow the empty cropped silhouette to be presented.
+                    request("get_status")  # 给空裁剪轮廓一次呈现机会。
                     request("reset_transform_settings")
                     assert "model_region" not in json.loads((config / "config.json").read_text())
                     request("begin_transform_edit", screen=True)
@@ -267,8 +267,8 @@ def main():
                     request("release_source")
                     request("next_model")
                     request("get_hotkeys")
-                    # A pipelined client that never reads must not monopolize
-                    # command dispatch or stop actual Wayland frame commits.
+                    # 只发送流水请求、不读取回复的客户端不能独占命令派发，
+                    # 也不能阻止实际 Wayland 帧提交。
                     with socket.socket(socket.AF_UNIX) as pressure:
                         pressure.settimeout(5)
                         pressure.connect(str(runtime / "deskwaifu.sock"))
@@ -277,9 +277,9 @@ def main():
                         pressure.sendall(b'{"command":"get_status"}\n' * 256)
                         for _ in range(16):
                             request("get_status")
-                        # Readiness-based IPC can finish 16 replies before the
-                        # next presentation tick. Observe a commit with a real
-                        # deadline, not a request count tied to the old frame poll.
+                        # 就绪驱动的 IPC 可能在下一次呈现前完成 16 个回复。
+                        # 应在实际时限内观察帧提交，
+                        # 而非依赖与旧帧轮询绑定的请求次数。
                         deadline = time.monotonic() + 3
                         while True:
                             commits_after = len(re.findall(r"wl_surface[@#]\d+\.commit\(",
@@ -300,9 +300,9 @@ def main():
                 assert_layer_shell(text)
                 assert "GPU resources released before" in text, "Missing ordered GPU teardown"
                 assert re.search(r"wl_region[@#]\d+\.add\(", text), "Real model produced no input silhouette"
-                # SDK shader sets share program IDs and delete some twice at shutdown.
-                # Do not hide rendering errors or expand this allowlist to unrelated
-                # GL failures. This diagnostic predates the Qt window migration.
+                # SDK 着色器组共享程序 ID，关闭时会重复删除部分程序。
+                # 不能隐藏渲染错误，也不能将无关 GL 错误加入允许列表。
+                # 此诊断在 Qt 窗口迁移前就已存在。
                 errors = [line for line in text.splitlines() if "Mesa: error:" in line]
                 assert all(line == "Mesa: error: GL_INVALID_VALUE in glDeleteProgram" for line in errors), errors
                 assert "Wayland protocol error" not in text

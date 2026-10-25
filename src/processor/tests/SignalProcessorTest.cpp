@@ -21,7 +21,7 @@ int main(int argc, char** argv)
         for (int i = 0; i < 8; ++i) QCoreApplication::processEvents();
         CHECK(toggles == 1 && focuses == 1 && !restored);
         CHECK(!processor.HandleEvent({"unrelated"}));
-        CHECK(raise(SIGUSR1) == 0); // Destruction purges undelivered work.
+        CHECK(raise(SIGUSR1) == 0); // 析构会清除尚未派发的工作。
     }
     for (int i = 0; i < 4; ++i) QCoreApplication::processEvents();
     CHECK(toggles == 1 && focuses == 1);

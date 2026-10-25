@@ -59,8 +59,8 @@ std::string KWinOwner()
     return result;
 }
 
-// Uses a private session bus via dbus-run-session; never installs scripts or
-// touches the user's real KWin. The real compositor smoke test is opt-in.
+// 通过 dbus-run-session 使用私有会话总线，不安装脚本，
+// 也不操作用户真实的 KWin。真实合成器冒烟测试需显式启用。
 struct FakeKWin
 {
     std::atomic<bool> ready{false}, done{false}, loaded{false}, failLoad{false};
@@ -101,7 +101,7 @@ struct FakeKWin
         if (self.delayLoad.exchange(false)) {
             self.delayedLoads.emplace_back(sd_bus_message_ref(message),
                 std::chrono::steady_clock::now() + std::chrono::milliseconds(400));
-            return 1; // Registered, but the reply arrives after the client's 250 ms timeout.
+            return 1; // 注册成功，但回复晚于客户端的 250 毫秒超时。
         }
         return sd_bus_reply_method_return(message, "i", 0);
     }
@@ -122,7 +122,7 @@ struct FakeKWin
         auto& self = *static_cast<FakeKWin*>(data);
         if (self.blockRun.exchange(false)) {
             self.runBlocked = true;
-            return 1; // Do not start the script or reply before the client is killed.
+            return 1; // 客户端被终止前，不启动脚本或发送回复。
         }
         self.running = true;
         ++self.runs;
@@ -168,8 +168,8 @@ struct FakeKWin
         auto next = std::chrono::steady_clock::now();
         while (!done) {
             if (restart.exchange(false)) {
-                // Normally disconnect exactly like a dead compositor. Retain a
-                // released connection only for the separate stale-source probe.
+                // 通常像合成器退出一样断开连接。
+                // 仅为独立的旧来源探测保留已释放的连接。
                 if (retainOldConnection.exchange(false)) {
                     sd_bus_release_name(bus, "org.kde.KWin");
                     oldBus = bus;
@@ -289,7 +289,7 @@ int main(int argc, char** argv)
         const auto size = read(pipeFds[0], buffer, sizeof(buffer));
         close(pipeFds[0]);
         const std::string childName = size > 0 ? std::string(buffer, size) : "";
-        // Always reap the child, including when startup failed.
+        // 始终回收子进程，启动失败时也不例外。
         kill(child, SIGKILL);
         int status = 0;
         waitpid(child, &status, 0);
@@ -298,7 +298,7 @@ int main(int argc, char** argv)
         std::cout << "SIGKILL cleanup unloaded the orphaned script" << std::endl;
         return 0;
     }
-    CHECK(!tracker.Start()); // No KWin yet: a late compositor can recover.
+    CHECK(!tracker.Start()); // KWin 尚未启动；合成器稍后出现时应能恢复。
     CHECK(!tracker.LocalPosition(2000, 1600, x, y));
     FakeKWin kwin;
     CHECK(Wait([&] { return kwin.ready.load(); }));
@@ -306,7 +306,7 @@ int main(int argc, char** argv)
         tracker.Poll("A");
         return tracker.LocalPosition(2000, 1600, x, y);
     }));
-    CHECK(x == 500 && y == 400); // Negative output origin and 2x target scale.
+    CHECK(x == 500 && y == 400); // 输出原点为负，目标缩放为两倍。
     if (localeTest) {
         const std::string numericLocale = std::setlocale(LC_NUMERIC, nullptr);
         kwin.fractional = true;
@@ -323,7 +323,7 @@ int main(int argc, char** argv)
         return 0;
     }
     CHECK(Wait([&] { return kwin.memoryFileClosed.load(); }));
-    CHECK(tracker.Start()); // Starting an already running tracker is idempotent.
+    CHECK(tracker.Start()); // 重复启动已运行的跟踪器具有幂等性。
     CHECK(kwin.loads == 1);
     sd_bus* intruder = nullptr;
     CHECK(sd_bus_open_user(&intruder) >= 0);
@@ -341,20 +341,20 @@ int main(int argc, char** argv)
         while (sd_bus_process(intruder, nullptr) > 0) {}
         return rejected != 0;
     }));
-    CHECK(rejected == 1); // Other session-bus clients cannot inject gaze samples.
+    CHECK(rejected == 1); // 其他会话总线客户端不能注入视线采样。
     sd_bus_flush_close_unref(intruder);
     CHECK(!tracker.LocalPosition(0, 1600, x, y));
     tracker.Poll("B");
-    CHECK(!tracker.LocalPosition(2000, 1600, x, y)); // Never reuse another screen's geometry.
+    CHECK(!tracker.LocalPosition(2000, 1600, x, y)); // 不能复用其他屏幕的几何信息。
     CHECK(Wait([&] {
         tracker.Poll("B");
         return tracker.LocalPosition(1000, 750, x, y);
     }));
-    CHECK(x == -1187.5 && y == 375); // Cursor on another screen, 125% target scale.
+    CHECK(x == -1187.5 && y == 375); // 光标位于其他屏幕，目标缩放为 125%。
     kwin.invalid = true;
     usleep(1100000);
     tracker.Poll("B");
-    CHECK(!tracker.LocalPosition(1000, 750, x, y)); // Invalid/stale samples are not usable.
+    CHECK(!tracker.LocalPosition(1000, 750, x, y)); // 无效或过期采样不可用。
     kwin.invalid = false;
     const auto originalOwner = KWinOwner();
     CHECK(!originalOwner.empty());
@@ -388,8 +388,8 @@ int main(int argc, char** argv)
     tracker.Stop();
     CHECK(kwin.unloads == 3 && !kwin.loaded);
 
-    // A lost loadScript reply must not leave a registered, unstarted script
-    // blocking all subsequent loads with the same name.
+    // loadScript 回复丢失后，不能残留已注册但未启动的脚本，
+    // 以免阻塞后续所有同名加载。
     kwin.delayLoad = true;
     CHECK(!tracker.Start());
     CHECK(kwin.loaded);
@@ -400,16 +400,16 @@ int main(int argc, char** argv)
     tracker.Stop();
     CHECK(kwin.unloads == 5 && !kwin.loaded);
 
-    // Shutdown immediately after an ambiguous load must clean up even though
-    // run() was never called and no script-side watchdog could have started.
+    // 加载结果不确定后立即退出，也必须完成清理，
+    // 即使尚未调用 run()，脚本侧看门狗也未启动。
     kwin.delayLoad = true;
     CHECK(!tracker.Start());
     CHECK(kwin.loaded);
     tracker.Stop();
     CHECK(kwin.unloads == 6 && !kwin.loaded);
 
-    // Kill a real client while loadScript is registered but its delayed reply
-    // has not arrived. Neither Stop() nor the script's watchdog can help here.
+    // 在 loadScript 已注册但延迟回复尚未到达时，终止真实客户端。
+    // 此时 Stop() 和脚本看门狗都无法协助清理。
     kwin.delayLoad = true;
     const int loadsBeforeCrash = kwin.loads;
     const int runsBeforeCrash = kwin.runs;
@@ -425,7 +425,7 @@ int main(int argc, char** argv)
     CHECK(kwin.unloads == 7);
     CHECK(kwin.runs == runsBeforeCrash);
 
-    // Also cover a prompt load reply followed by an unprocessed run request.
+    // 也覆盖加载及时回复、随后 run 请求尚未处理的情况。
     kwin.blockRun = true;
     CHECK(posix_spawn(&child, argv[0], nullptr, nullptr, childArgs, environ) == 0);
     const bool blocked = Wait([&] { return kwin.runBlocked.load(); });
@@ -435,8 +435,8 @@ int main(int argc, char** argv)
     CHECK(Wait([&] { return !kwin.loaded; }));
     CHECK(kwin.unloads == 8 && kwin.runs == runsBeforeCrash);
 
-    // Restart a polling client onto another unique owner, then leave the old
-    // connection alive briefly to prove it has lost permission to send samples.
+    // 将轮询客户端重启到另一个唯一所有者，短暂保留旧连接，
+    // 验证旧连接已失去发送采样的权限。
     char* restartArgs[] = {argv[0], const_cast<char*>("--restart-client"), nullptr};
     const int loadsBeforeRestart = kwin.loads;
     const int runsBeforeRestart = kwin.runs;
@@ -456,8 +456,8 @@ int main(int argc, char** argv)
     const auto replacementOwner = KWinOwner();
     kwin.injectOldSample = true;
     const bool replied = Wait([&] { return kwin.oldConnectionClosed.load(); });
-    // Always reap the child, even if a restart assertion failed. SIGKILL skips
-    // Stop(), so only a guard targeting the replacement owner can unload it.
+    // 即使重启断言失败，也必须回收子进程。SIGKILL 不执行 Stop()，
+    // 因此只有面向替代所有者的守护进程才能卸载脚本。
     kill(child, SIGKILL);
     waitpid(child, &status, 0);
     CHECK(started && reloaded);

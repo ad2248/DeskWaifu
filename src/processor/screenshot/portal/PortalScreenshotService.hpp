@@ -11,7 +11,7 @@ class PortalScreenshotService final : public IScreenshotService
     Q_OBJECT
 public:
     explicit PortalScreenshotService(QObject* parent = nullptr);
-    // A separate bus can be supplied for isolated tests; normal callers use the factory.
+    // 隔离测试可传入独立总线，普通调用方使用工厂创建。
     PortalScreenshotService(QDBusConnection bus, int timeoutMs, QObject* parent = nullptr);
     ~PortalScreenshotService() override;
     QString Capture(const QString& parentWindow = {}) override;

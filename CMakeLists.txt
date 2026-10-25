@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.16)
 
-# Set app name.
+# 设置应用名称。
 set(APP_NAME deskwaifu)
 
-# Set directory paths based on the new layout
+# 根据当前布局设置目录路径。
 set(SDK_ROOT_PATH ${CMAKE_CURRENT_SOURCE_DIR}/CubismSdkForNative-5-r.5 CACHE PATH "Cubism SDK directory")
 set(CORE_PATH ${SDK_ROOT_PATH}/Core)
 set(FRAMEWORK_PATH ${SDK_ROOT_PATH}/Framework)
@@ -12,37 +12,37 @@ set(THIRD_PARTY_PATH ${CMAKE_CURRENT_SOURCE_DIR}/thirdParty)
 set(STB_PATH ${THIRD_PARTY_PATH}/stb)
 set(GLEW_PATH ${THIRD_PARTY_PATH}/glew CACHE PATH "GLEW source directory")
 
-# Shaders from SDK
+# 使用 SDK 中的着色器。
 set(SAMPLE_SHADER_PATH ${SDK_ROOT_PATH}/Samples/OpenGL/Shaders/Standard)
 set(FRAMEWORK_SHADER_PATH ${FRAMEWORK_PATH}/src/Rendering/OpenGL/Shaders/Standard)
 set(COMMON_SRC_PATH ${SDK_ROOT_PATH}/Samples/Common)
 
-# Set project.
+# 设置项目。
 project(${APP_NAME})
 include(GNUInstallDirs)
 
 include(CTest)
 option(DESKWAIFU_BUILD_CONTROL "Build the Qt control application" ON)
 
-# Define output directory.
+# 设置输出目录。
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin)
-# Set configuration (Release and Debug only).
+# 设置构建配置，仅支持 Release 和 Debug。
 set(CMAKE_CONFIGURATION_TYPES Debug Release
   CACHE STRING "Configurations" FORCE
 )
-# Suppress generation of ZERO_CHECK project.
+# 禁止生成 ZERO_CHECK 项目。
 set(CMAKE_SUPPRESS_REGENERATION ON)
 
-# Suppress GLEW process.
+# 禁用 GLEW 的相关构建步骤。
 set(GLEW_EGL ON CACHE BOOL "" FORCE)
 set(BUILD_UTILS OFF CACHE BOOL "" FORCE)
 
-# Specify version of compiler.
+# 指定编译器标准版本。
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Add Cubism Core.
+# 添加 Cubism Core。
 add_library(Live2DCubismCore STATIC IMPORTED)
 set_target_properties(Live2DCubismCore
   PROPERTIES
@@ -50,33 +50,33 @@ set_target_properties(Live2DCubismCore
     INTERFACE_INCLUDE_DIRECTORIES ${CORE_PATH}/include
 )
 
-# Find opengl libraries.
+# 查找 OpenGL 库。
 find_package(OpenGL REQUIRED COMPONENTS OpenGL EGL)
 
-# Add GLEW.
+# 添加 GLEW。
 set(GLEW_EGL ON CACHE BOOL "" FORCE)
 add_subdirectory(${GLEW_PATH}/build/cmake ${CMAKE_CURRENT_BINARY_DIR}/glew)
 
-# Specify Cubism Framework rendering.
+# 指定 Cubism Framework 的渲染后端。
 set(FRAMEWORK_SOURCE OpenGL)
-# Add Cubism Native Framework.
+# 添加 Cubism Native Framework。
 add_subdirectory(${FRAMEWORK_PATH} ${CMAKE_CURRENT_BINARY_DIR}/Framework)
-# Add rendering definition to framework.
+# 为框架添加渲染宏定义。
 target_compile_definitions(Framework PUBLIC CSM_TARGET_LINUX_GL)
-# Add include path of GLEW to framework.
+# 为框架添加 GLEW 头文件路径。
 target_include_directories(Framework PUBLIC ${GLEW_PATH}/include)
-# Link libraries to framework.
+# 为框架链接依赖库。
 target_link_libraries(Framework Live2DCubismCore glew_s)
 
-# System D-Bus dependency used by the compositor adapter.
+# 合成器适配器使用的系统 D-Bus 依赖。
 find_package(PkgConfig REQUIRED)
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/generated)
 
-# Make executable app.
+# 创建应用可执行文件。
 add_executable(${APP_NAME})
-# Add common source files from SDK.
+# 添加 SDK 通用源文件。
 add_subdirectory(${COMMON_SRC_PATH} ${CMAKE_CURRENT_BINARY_DIR}/src/Common)
-# Add our source files in ./src
+# 添加 ./src 中的项目源文件。
 add_subdirectory(src)
 
 install(TARGETS ${APP_NAME}
@@ -84,17 +84,17 @@ install(TARGETS ${APP_NAME}
 install(PROGRAMS deskwaifu-ctl
   DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT DeskWaifu)
 
-# Link libraries to app.
+# 为应用链接依赖库。
 target_link_libraries(${APP_NAME}
   Framework
   ${OPENGL_LIBRARIES}
 )
-# Specify include directories.
+# 指定头文件目录。
 target_include_directories(${APP_NAME} PRIVATE 
   ${STB_PATH}
 )
 
-# Generate embedded shaders header at configure time.
+# 配置阶段生成内嵌着色器头文件。
 set(EMBEDDED_SHADERS_HEADER ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedShaders.hpp)
 execute_process(
   COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_shaders.sh

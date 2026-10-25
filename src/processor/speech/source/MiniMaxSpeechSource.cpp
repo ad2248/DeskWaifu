@@ -39,7 +39,7 @@ void MiniMaxSpeechSource::Start(SpeechId id, SpeechRequest request)
     _socket->setMaxAllowedIncomingMessageSize(2 * 1024 * 1024);
     connect(_socket.get(), &QWebSocket::textMessageReceived, this, &MiniMaxSpeechSource::Receive);
     connect(_socket.get(), &QWebSocket::errorOccurred, this, [this] {
-        // Never expose errorString/server messages: they can contain credentials.
+        // 不暴露 errorString 或服务端消息，它们可能包含凭据。
         Fail(SpeechErrorCode::Network, QStringLiteral("语音连接失败"));
     });
     connect(_socket.get(), &QWebSocket::disconnected, this, [this] {
@@ -59,7 +59,7 @@ void MiniMaxSpeechSource::Cancel(SpeechId id)
     if (_socket) {
         _socket->disconnect(this);
         _socket->abort();
-        // Cancellation may run inside a socket signal handler.
+        // 取消操作可能在套接字信号回调中执行。
         _socket.release()->deleteLater();
     }
     _request = {};
@@ -129,7 +129,7 @@ void MiniMaxSpeechSource::Receive(const QString& text)
         emit Completed(id);
     } else if (_phase == Phase::Receiving &&
         (event == QStringLiteral("sentence_start") || event == QStringLiteral("sentence_end"))) {
-        // Sentence boundaries do not end the audio stream.
+        // 句子边界不代表音频流结束。
     } else {
         Fail(SpeechErrorCode::Protocol, QStringLiteral("语音服务事件顺序错误"));
     }

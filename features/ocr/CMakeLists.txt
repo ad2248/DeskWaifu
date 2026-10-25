@@ -22,7 +22,7 @@ endforeach()
 add_executable(deskwaifu-ocr main.cpp OcrEngine.cpp OcrEngine.hpp)
 target_include_directories(deskwaifu-ocr PRIVATE "${ORT_INCLUDE_DIR}" ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(deskwaifu-ocr PRIVATE "${ORT_LIBRARY}" Qt6::Core Qt6::Gui ${OpenCV_LIBS})
-# The helper has its own install component; it is never added to the application build.
+# 辅助程序使用独立安装组件，不加入主应用构建。
 file(RELATIVE_PATH _runtime_relative "${CMAKE_INSTALL_FULL_LIBEXECDIR}"
   "${CMAKE_INSTALL_FULL_LIBDIR}/deskwaifu/ocr")
 file(RELATIVE_PATH _models_relative "${CMAKE_INSTALL_FULL_LIBEXECDIR}"

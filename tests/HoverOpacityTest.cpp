@@ -13,9 +13,9 @@ int main()
     const int width = 23, height = 19;
     std::vector<unsigned char> pixels(width * height * 4, 0);
     const auto alpha = [&](int x, int y, unsigned char value) { pixels[(y * width + x) * 4 + 3] = value; };
-    // Bottom row: opaque, threshold-excluded, opaque partial block.
+    // 底行：不透明块、低于阈值的块、不透明的不完整块。
     alpha(5, 5, 255); alpha(15, 5, 10); alpha(21, 5, 11);
-    // Top partial row: adjacent blocks merge, including the partial right edge.
+    // 顶部不完整行：合并相邻块，包括右侧的不完整块。
     alpha(5, 14, 255); alpha(15, 14, 255); alpha(21, 14, 255);
     const auto regions = ExtractModelInputRegion(pixels.data(), width, height, {0, 0, width, height});
     CHECK(regions.size() == 3);
@@ -39,26 +39,26 @@ int main()
     for (const float opacity : {0.0f, 0.01f, 0.5f, 1.0f})
         for (int frame = 0; frame < 5; ++frame)
             CHECK(hover.Resolve(true, opacity, regions) == opacity);
-    // Stationary cursor: animated/cropped/switched model may leave and return.
+    // 光标静止时，动画、裁剪或模型切换可能使模型离开后再回来。
     CHECK(hover.Resolve(true, 0.5f, {}) == 1);
     CHECK(hover.Resolve(true, 0.5f, regions) == 0.5f);
-    hover.Move(15, 15); // Still on the surface during a pointer grab, but outside the model.
+    hover.Move(15, 15); // 指针捕获期间仍在表面上，但位于模型之外。
     CHECK(hover.Resolve(true, 0.5f, regions) == 1);
     hover.Move(3, 4);
-    hover.Leave(); // Also used for pointer capability loss, hide and surface replacement.
+    hover.Leave(); // 也用于指针能力丢失、隐藏和表面替换。
     CHECK(hover.Resolve(true, 0.5f, regions) == 1);
     hover.Move(3, 4);
-    CHECK(hover.Resolve(true, 0.5f, regions) == 1); // Motion alone cannot restore surface focus.
+    CHECK(hover.Resolve(true, 0.5f, regions) == 1); // 仅移动指针不能恢复表面焦点。
     hover.Enter(3, 4);
     CHECK(hover.Resolve(true, 0.5f, regions) == 0.5f);
     const std::vector<ModelRegion> handles{{14, 14, 2, 2}};
     hover.Move(15, 15);
     CHECK(ModelInputRegionContains(handles, 15, 15));
-    CHECK(hover.Resolve(true, 0.5f, regions) == 1); // Handles are not model regions.
+    CHECK(hover.Resolve(true, 0.5f, regions) == 1); // 手柄不是模型区域。
     hover.Move(3, 4);
-    CHECK(hover.Resolve(true, 0.5f, regions, {{2, 3, 3, 3}}) == 1); // Handle overlapping the model.
+    CHECK(hover.Resolve(true, 0.5f, regions, {{2, 3, 3, 3}}) == 1); // 手柄与模型重叠。
     CHECK(hover.Resolve(true, 0.5f, regions, handles) == 0.5f);
-    // Idle and hover values are independent, including fully transparent idle.
+    // 空闲和悬停值相互独立，包括空闲时完全透明的情况。
     for (const float idle : {0.0f, 0.25f, 1.0f}) {
         hover.Leave();
         CHECK(hover.Resolve(true, 0.5f, regions, {}, idle) == idle);

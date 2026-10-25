@@ -3,8 +3,8 @@
 #include <GL/glew.h>
 #include <Rendering/OpenGL/CubismRenderTarget_OpenGLES2.hpp>
 
-// An outer model frame, independent of Cubism's internal masks/render targets.
-// Input is sampled from this frame before applying any display-only opacity.
+// 模型的外层帧，与 Cubism 内部遮罩和渲染目标独立。
+// 在应用仅影响显示的透明度之前，从此帧采样输入区域。
 class ModelOpacityFrame
 {
 public:
@@ -21,8 +21,8 @@ public:
         if (resize) {
             GLint texture;
             glGetIntegerv(GL_TEXTURE_BINDING_2D, &texture);
-            // A previous presentation may have left our old texture bound;
-            // resizing deletes it, so it must not be rebound as a new texture.
+            // 上次呈现可能仍绑定着旧纹理；调整尺寸会删除它，
+            // 因此不能将该旧标识重新绑定为新纹理。
             if (GLuint(texture) == _buffer.GetColorBuffer()) texture = 0;
             const bool created = _buffer.CreateRenderTarget(width, height);
             glBindTexture(GL_TEXTURE_2D, texture);

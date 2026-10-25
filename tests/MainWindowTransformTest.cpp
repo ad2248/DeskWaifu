@@ -108,7 +108,7 @@ private slots:
         QTRY_VERIFY(combo->isEnabled());
         QCOMPARE(combo->count(), 3);
         QCOMPARE(combo->currentData().toString(), QStringLiteral("auto"));
-        QCOMPARE(mutations, 0); // Loading the preference must never save it.
+        QCOMPARE(mutations, 0); // 加载偏好设置不能触发保存。
         const auto select = [&](const QString& device) {
             const int index = combo->findData(device);
             QVERIFY(index >= 0);
@@ -137,7 +137,7 @@ private slots:
         QTRY_COMPARE(mutations, 3);
         QTRY_VERIFY_WITH_TIMEOUT(combo->isEnabled(), 6000);
         QCOMPARE(combo->currentData().toString(), QStringLiteral("auto"));
-        QCOMPARE(mutations, 3); // Reconnect queries; it must not retry a save.
+        QCOMPARE(mutations, 3); // 重连后重新查询，不能重试保存。
         QVERIFY(saved.LoadFromFile(config.sourcePath));
         QCOMPARE(saved.values.renderDevice, std::string("auto"));
         ConfigStore::Snapshot request;
@@ -362,7 +362,7 @@ private slots:
                         response.insert("surface_height", 1080);
                     }
                     if (command == "get_transform_save_result") response.insert("known", true);
-                    // Lose the apply acknowledgement first to exercise receipt-query recovery.
+                    // 先丢弃应用确认，测试通过回执查询恢复。
                     const bool loseSave = failedCommand == "get_transform_save_result" &&
                         command == "apply_transform_edit" && !lostSaveReply;
                     if (loseSave) lostSaveReply = true;
@@ -396,7 +396,7 @@ private slots:
                     QTRY_VERIFY(apply->isEnabled());
                     holdQuery = true;
                     QTRY_VERIFY(blocked);
-                    apply->click(); // This save has not left the queue when the query reply fails.
+                    apply->click(); // 查询回复失败时，此保存仍未出队。
                     ++invalidReplies;
                     blocked->write("broken-json\n");
                     blocked->flush();
@@ -427,7 +427,7 @@ private slots:
             QCOMPARE(commands.count("apply_transform_edit"), 1);
             QCOMPARE(x->value(), 2.5);
         } else if (failedCommand.endsWith("transform_edit")) {
-            QCOMPARE(x->value(), 0.); // A lost preview acknowledgement does not preserve a ghost draft.
+            QCOMPARE(x->value(), 0.); // 预览确认丢失时，不能残留虚假的草稿。
         }
         const auto before = commands.count("set_hover_opacity");
         window.findChild<QCheckBox*>("hoverOpacityEnabledCheck")->click();
@@ -520,7 +520,7 @@ private slots:
         connection->flush();
         QTRY_VERIFY(settings.Radius() == .25f && group->isEnabled());
         QCOMPARE(mutations, 1);
-        QCOMPARE(slider->value(), 25); // An older query cannot overwrite the user's release.
+        QCOMPARE(slider->value(), 25); // 旧查询不能覆盖用户释放时的值。
         QCOMPARE(spin->value(), .25);
         spin->setValue(.7);
         QTRY_VERIFY(settings.Radius() == .7f && group->isEnabled());
@@ -550,7 +550,7 @@ private slots:
         connection->abort();
         QTRY_VERIFY(!group->isEnabled());
         QTRY_VERIFY_WITH_TIMEOUT(group->toolTip() == "unknown command", 5000);
-        QCOMPARE(mutations, beforeDisconnect + 1); // Reconnects never replay mutations.
+        QCOMPARE(mutations, beforeDisconnect + 1); // 重连不能重放修改操作。
     }
 
     void displaySelection()
@@ -600,10 +600,10 @@ private slots:
         QVERIFY(combo);
         QTRY_VERIFY(combo->isEnabled() && combo->count() == 2);
         QCOMPARE(combo->currentText(), QString("DP-1"));
-        QCOMPARE(switches, 0); // Polling must not write settings.
+        QCOMPARE(switches, 0); // 轮询不能写入配置。
         QSignalSpy removed(combo->model(), &QAbstractItemModel::rowsRemoved);
         QTest::qWait(450);
-        QCOMPARE(removed.count(), 0); // Refreshes must not rebuild an open selector.
+        QCOMPARE(removed.count(), 0); // 刷新不能重建已打开的选择器。
         combo->setCurrentIndex(1);
         QVERIFY(QMetaObject::invokeMethod(combo, "activated", Qt::DirectConnection, Q_ARG(int, 1)));
         QVERIFY(!combo->isEnabled());
@@ -726,8 +726,8 @@ private slots:
         QCOMPARE(slider->value(), 37);
         QCOMPARE(value->text(), QString("37%"));
         QVERIFY(!slider->hasTracking());
-        QVERIFY(mutations.isEmpty()); // Queries must never echo settings back as writes.
-        QVERIFY(status->text().isEmpty()); // Successful queries do not invent operation feedback.
+        QVERIFY(mutations.isEmpty()); // 查询不能将读取的配置再次写回。
+        QVERIFY(status->text().isEmpty()); // 成功查询不产生虚假的操作反馈。
         const auto connectedText = connectionStatus->text();
         QVERIFY(connectedText.startsWith("Connected"));
         window.setStatusMessage("<saved>");
@@ -742,8 +742,8 @@ private slots:
         window.setStatusMessage("new status");
         QTest::qWait(60);
         QCOMPARE(status->text(), QString("new status"));
-        // Long operation messages stay in the status bar, without expanding the
-        // window or hiding the connection area. The tooltip retains all text.
+        // 较长的操作消息保留在状态栏，不撑大窗口或隐藏连接区域。
+        // 工具提示保留完整文本。
         const auto originalSize = window.size();
         window.setStatusMessage(QString(3000, 'x'));
         QCoreApplication::processEvents();
@@ -770,8 +770,8 @@ private slots:
         QCOMPARE(slider->value(), 37);
         QCOMPARE(settings.Opacity(), 0.37f);
         QVERIFY(mutations.isEmpty());
-        // Release with an older query still in flight. Its response must not
-        // restore 37% over the value waiting to be sent by the user's release.
+        // 释放时仍有旧查询在途；其回复不能用 37% 覆盖
+        // 用户释放后等待发送的值。
         QTest::mouseRelease(slider, Qt::LeftButton, Qt::NoModifier,
             QPoint(slider->width() * 4 / 5, handle.center().y()));
         QCOMPARE(slider->value(), released);
@@ -808,18 +808,18 @@ private slots:
         draft.transform.x = 4.5f;
         QVERIFY(editor.Update("another-client", draft).ok);
         QTRY_VERIFY_WITH_TIMEOUT(!window.findChild<QDoubleSpinBox*>("positionXSpin")->isEnabled(), 2000);
-        QVERIFY(group->isEnabled()); // Independent of an active position/crop edit.
+        QVERIFY(group->isEnabled()); // 与正在进行的位置或裁剪编辑独立。
         enabled->click();
         QTRY_VERIFY_WITH_TIMEOUT(!settings.Enabled() && group->isEnabled(), 2000);
         QVERIFY(mutations.last().contains("enabled") && !mutations.last().contains("opacity"));
         QCOMPARE(settings.Opacity(), 1.f);
         QVERIFY(editor.Editing());
         QCOMPARE(service.Snapshot().transform.x, 4.5f);
-        // Whole-document saves detect the independent hover write during editing.
+        // 整个文档保存会检测编辑期间独立发生的悬停配置写入。
         QVERIFY(!editor.Apply("another-client").ok);
         QVERIFY(editor.Cancel("another-client").ok);
         QCOMPARE(service.Snapshot().transform.x, 2.5f);
-        editor.Reload(); // The backend periodically refreshes the comparison snapshot.
+        editor.Reload(); // 后端会定期刷新比较快照。
         QVERIFY(editor.Reset("another-client").ok);
         QVERIFY(store.Read(disk, error));
         QVERIFY(disk.values.count("hover_opacity") && disk.values.count("hover_opacity_enabled"));
@@ -829,7 +829,7 @@ private slots:
         slider->setValue(50);
         QTRY_VERIFY_WITH_TIMEOUT(group->isEnabled() && status->text().contains("Invalid JSON"), 2000);
         QCOMPARE(settings.Opacity(), 1.f);
-        QCOMPARE(slider->value(), 100); // Save failure restores the effective backend value.
+        QCOMPARE(slider->value(), 100); // 保存失败后恢复后端生效值。
         QCOMPARE(value->text(), QString("100%"));
         QVERIFY(writeConfig(saved));
         auto* idleSlider = window.findChild<QSlider*>("idleOpacitySlider");
@@ -838,7 +838,7 @@ private slots:
         QCOMPARE(idleSlider->value(), 100);
         QVERIFY(!idleSlider->hasTracking());
         const int beforeIdle = mutations.size();
-        // While dragging, polling cannot overwrite the idle slider position.
+        // 拖动期间，轮询不能覆盖空闲透明度滑块的位置。
         idleSlider->setSliderDown(true);
         idleSlider->setSliderPosition(38);
         QTest::qWait(1100);
@@ -871,9 +871,9 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(settings.Opacity(), 0.65f, 2000);
         QTRY_VERIFY_WITH_TIMEOUT(group->isEnabled() && queries > 1, 5000);
         QCOMPARE(slider->value(), 65);
-        QCOMPARE(mutations.size(), beforeDisconnect + 1); // Lost acknowledgements are not replayed.
+        QCOMPARE(mutations.size(), beforeDisconnect + 1); // 确认丢失时不重放操作。
         QVERIFY(window.findChild<QPlainTextEdit*>("responseLog")->toPlainText().contains("unknown"));
-        idleSupported = false; // A hover-only backend keeps the old controls usable.
+        idleSupported = false; // 仅支持悬停的后端仍可使用旧控件。
         const int beforeHoverOnly = queries;
         QTRY_VERIFY_WITH_TIMEOUT(queries > beforeHoverOnly && !idleSlider->isEnabled(), 3000);
         QVERIFY(group->isEnabled() && slider->isEnabled());
@@ -895,10 +895,9 @@ private slots:
             sockaddr_un address{};
             QVERIFY(QFile::encodeName(directory.path() + "/deskwaifu.sock").size() >= qsizetype(sizeof(address.sun_path)));
         }
-        // Linux Unix socket names are limited to sun_path's size, even when
-        // their containing directory is a valid (long) filesystem path. Keep
-        // the socket in TMPDIR, but address it through this process's short
-        // directory-fd alias. The descriptor outlives both server and GUI.
+        // Linux Unix 套接字名称受 sun_path 大小限制，即使所在目录是合法长路径。
+        // 将套接字保留在 TMPDIR 中，通过当前进程较短的目录文件描述符别名寻址。
+        // 该描述符比服务端和 GUI 都存活更久。
         const int runtimeFd = open(QFile::encodeName(directory.path()).constData(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
         QVERIFY2(runtimeFd >= 0, std::strerror(errno));
         const auto closeRuntime = qScopeGuard([runtimeFd] { close(runtimeFd); });
@@ -962,11 +961,11 @@ private slots:
         auto* operationStatus = window.findChild<QLabel*>("operationStatusLabel");
         QVERIFY(connectionStatus && operationStatus);
         const auto connectedText = connectionStatus->text();
-        spawn->click(); // A connected GUI shuts down instead of starting another backend.
+        spawn->click(); // 已连接的 GUI 执行关闭，而非启动另一个后端。
         QVERIFY(operationStatus->text().contains("shutdown"));
         QCOMPARE(connectionStatus->text(), connectedText);
         QTRY_VERIFY_WITH_TIMEOUT(!width->isEnabled(), 2000);
-        QTest::qWait(100); // initial query has finished before the first user edit
+        QTest::qWait(100); // 首次用户编辑前，初始查询已经完成。
         x->setValue(2.5); zoom->setValue(1.5); enabled->setChecked(true);
         QTRY_VERIFY_WITH_TIMEOUT(apply->isEnabled(), 2000);
         QCOMPARE(width->value(), 1920);
@@ -998,8 +997,7 @@ private slots:
         QCOMPARE(disk.values.at("model_scale"), std::string("1"));
         QVERIFY(!width->isEnabled());
 
-        // Polling reflects edits initiated in the model window and unlocks the
-        // panel when a frame double-click saves that transaction.
+        // 轮询反映模型窗口发起的编辑；双击边框保存事务后，解除面板锁定。
         ScreenCropInteraction pointer;
         QVERIFY(pointer.StartModelDrag(editor, 100, 100, 120, 100, 1920, 1080));
         QVERIFY(pointer.Release(editor, 100, 120, 100).ok);

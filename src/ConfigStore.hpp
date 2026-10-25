@@ -5,8 +5,8 @@
 #include <utility>
 #include <vector>
 
-// JSON-with-line-comments document storage with atomic whole-document writes.
-// Only this class writes the document; business validation belongs to callers.
+// 存储支持行注释的 JSON 文档，并以整个文档为单位原子写入。
+// 只有此类负责写入文档；业务校验由调用方完成。
 class ConfigStore
 {
 public:

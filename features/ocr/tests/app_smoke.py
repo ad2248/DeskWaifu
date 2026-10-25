@@ -120,7 +120,7 @@ def main():
                             return None
 
                         pid = wait_for(worker_pid)
-                        os.kill(pid, signal.SIGKILL)  # Only this isolated test application's known helper child.
+                        os.kill(pid, signal.SIGKILL)  # 只终止隔离测试应用中已确认的辅助子进程。
                         assert wait_for(lambda: finished(crashed))["state"] == "failed"
                         wait_for(lambda: not command("get_ocr_status")["running"])
                         recovered = submit("light.jpg")
@@ -135,7 +135,7 @@ def main():
                     stop(app)
                 wait_for(lambda: not endpoint.exists())
         finally:
-            # The compositor may own a private D-Bus child, not the user's session bus.
+            # 合成器可能持有私有 D-Bus 子进程，而非用户的会话总线。
             if sway.poll() is None:
                 os.killpg(sway.pid, signal.SIGTERM)
             stop(sway)

@@ -11,7 +11,7 @@ bool Equal(ModelRegion a, ModelRegion b)
 
 int main()
 {
-    // Non-block-aligned dimensions exercise both partial rows and columns.
+    // 使用未按块对齐的尺寸，覆盖不完整行和列。
     const int width = 27, height = 27;
     std::vector<unsigned char> pixels(width * height * 4, 255);
     const auto full = ExtractModelInputRegion(pixels.data(), width, height, {0, 0, width, height});
@@ -32,8 +32,8 @@ int main()
             CHECK(Equal(IntersectModelRegions(box, clip), box));
             CHECK(Equal(IntersectModelRegions(box, {0, 0, width, height}), box));
         }
-        // On an opaque image these sampled blocks cover exactly the clip,
-        // without any input rectangles outside it or overlapping each other.
+        // 对不透明图像，采样块必须恰好覆盖裁剪区，
+        // 输入矩形不能越界，也不能彼此重叠。
         for (int y = 0; y < height; ++y) for (int x = 0; x < width; ++x) {
             int count = 0;
             for (const auto box : rectangles)
@@ -46,7 +46,7 @@ int main()
         if (clip.width == 0 || clip.height == 0) CHECK(rectangles.empty());
     }
 
-    // Transparent gaps split horizontal runs; alpha 10 is transparent, 11 is not.
+    // 透明间隙分隔水平连续区间；alpha 为 10 时透明，为 11 时不透明。
     pixels.assign(width * height * 4, 0);
     CHECK(ExtractModelInputRegion(pixels.data(), width, height, {0, 0, width, height}).empty());
     pixels[(5 * width + 5) * 4 + 3] = 11;
@@ -60,7 +60,7 @@ int main()
     CHECK(Equal(sparse[1], {20, 17, 7, 10}));
     CHECK(Equal(sparse[2], {0, 7, 20, 10}));
 
-    // Partial edge blocks use their actual dimensions for sampling and Y conversion.
+    // 边缘不完整块使用实际尺寸进行采样和 Y 坐标转换。
     pixels.assign(23 * 24 * 4, 255);
     const auto shortEdges = ExtractModelInputRegion(pixels.data(), 23, 24, {0, 0, 23, 24});
     CHECK(shortEdges.size() == 3);

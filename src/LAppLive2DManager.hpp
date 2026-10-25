@@ -30,8 +30,8 @@ struct ModelDiscoveryOptions
 };
 
 /**
-* @brief サンプルアプリケーションにおいてCubismModelを管理するクラス<br>
-*         モデル生成と破棄、タップイベントの処理、モデル切り替えを行う。
+* @brief 在应用中管理 CubismModel 的类。<br>
+*        负责模型创建和销毁、点击事件处理以及模型切换。
 *
 */
 class LAppLive2DManager
@@ -39,105 +39,105 @@ class LAppLive2DManager
 
 public:
     /**
-    * @brief   クラスのインスタンス（シングルトン）を返す。<br>
-    *           インスタンスが生成されていない場合は内部でインスタンを生成する。
+    * @brief 返回类的单例。<br>
+    *        实例尚未创建时，在内部创建。
     *
-    * @return  クラスのインスタンス
+    * @return 类实例。
     */
 
     /**
-    * @brief   クラスのインスタンス（シングルトン）を解放する。
+    * @brief 释放类的单例。
     *
     */
 
     /**
-    * @brief   Resources フォルダにあるモデルフォルダ名を取得する
+    * @brief 获取 Resources 下的模型目录名称。
     *
     */
     Csm::csmVector<Csm::csmString> GetModelDir() const;
 
     /**
-    * @brief   Resources フォルダにあるモデルフォルダのサイズを取得する
+    * @brief 获取 Resources 下的模型目录数量。
     *
     */
     Csm::csmInt32 GetModelDirSize() const;
 
     /**
-    * @brief   現在のシーンで保持しているモデルを返す
+    * @brief 返回当前场景持有的模型。
     *
-    * @param[in]   no  モデルリストのインデックス値
-    * @return      モデルのインスタンスを返す。インデックス値が範囲外の場合はNULLを返す。
+    * @param[in]   no 模型列表中的索引。
+    * @return 模型实例；索引越界时返回 NULL。
     */
     LAppModel* GetModel(Csm::csmUint32 no) const;
 
     /**
-     * @brief   モデルのオフスクリーンのサイズを設定
+     * @brief 设置模型离屏渲染尺寸。
      *
-     * @param[in]   width   ウインドウの幅
-     * @param[in]   height  ウインドウの高さ
+     * @param[in]   width 窗口宽度。
+     * @param[in]   height 窗口高度。
      */
     void SetRenderTargetSize(Csm::csmUint32 width, Csm::csmUint32 height);
 
     /**
-    * @brief   現在のシーンで保持しているすべてのモデルを解放する
+    * @brief 释放当前场景持有的全部模型。
     *
     */
     void ReleaseAllModel();
 
     /**
-    * @brief   画面をドラッグしたときの処理
+    * @brief 处理画面拖动。
     *
-    * @param[in]   x   画面のX座標
-    * @param[in]   y   画面のY座標
+    * @param[in]   x 画面 X 坐标。
+    * @param[in]   y 画面 Y 坐标。
     */
     void OnDrag(Csm::csmFloat32 x, Csm::csmFloat32 y) const;
 
     /**
-    * @brief   画面をタップしたときの処理
+    * @brief 处理画面点击。
     *
-    * @param[in]   x   Clip-space X coordinate (-1..1).
-    * @param[in]   y   Clip-space Y coordinate (-1..1).
+    * @param[in]   x 裁剪空间 X 坐标（-1..1）。
+    * @param[in]   y 裁剪空间 Y 坐标（-1..1）。
     */
     void OnTap(Csm::csmFloat32 x, Csm::csmFloat32 y, int width, int height, ModelTransform transform);
 
     /**
-    * @brief   画面を更新するときの処理
-    *          モデルの更新処理および描画処理を行う
+    * @brief 处理画面更新。
+    *        更新并绘制模型。
     */
     void OnUpdate(int width, int height, ModelTransform transform, const ModelFrameInput& input,
         const std::function<void(LAppModel&)>& beforeDraw,
         const std::function<void(LAppModel&)>& afterDraw) const;
 
     /**
-    * @brief   次のシーンに切り替える<br>
-    *           サンプルアプリケーションではモデルセットの切り替えを行う。
+    * @brief 切换到下一个场景。<br>
+    *        示例应用中用于切换模型集合。
     */
     bool NextScene();
 
     /**
-    * @brief   現在のモデルのスキンを切り替える
+    * @brief 切换当前模型的皮肤。
     */
     void SwitchSkin();
 
     /**
-    * @brief   シーンを切り替える<br>
-    *           サンプルアプリケーションではモデルセットの切り替えを行う。
+    * @brief 切换场景。<br>
+    *        示例应用中用于切换模型集合。
     */
     bool ChangeScene(Csm::csmInt32 index);
 
     /**
-     * @brief   モデル個数を得る
-     * @return  所持モデル個数
+     * @brief 获取模型数量。
+     * @return 持有的模型数量。
      */
     Csm::csmUint32 GetModelNum() const;
 
     /**
-     * @brief   viewMatrixをセットする
+     * @brief 设置 viewMatrix。
      */
     void SetViewMatrix(Live2D::Cubism::Framework::CubismMatrix44* m);
 
     /**
-     * @brief   Get the current scene (model) index.
+     * @brief 获取当前场景（模型）的索引。
      */
     Csm::csmInt32 GetSceneIndex() const { return _session.CurrentIndex(); }
 
@@ -150,23 +150,23 @@ public:
 private:
     void SetUpModel();
     /**
-    * @brief  コンストラクタ
+    * @brief 构造函数。
     */
 
     /**
-    * @brief  デストラクタ
+    * @brief 析构函数。
     */
 
-    Csm::CubismMatrix44* _viewMatrix; ///< モデル描画に用いるView行列
+    Csm::CubismMatrix44* _viewMatrix; ///< 模型绘制使用的视图矩阵。
     LAppTextureManager& _textures;
     int _viewportWidth;
     int _viewportHeight;
     ModelDiscoveryOptions _discovery;
     ModelLoader _loader;
     std::vector<ModelDescriptor> _descriptors;
-    Csm::csmVector<LAppModel*> _models; ///< 表示中モデルのコンテナ（所有権はキャッシュ側）
-    ModelSession<LAppModel> _session; ///< Active model, cache and residency policy.
+    Csm::csmVector<LAppModel*> _models; ///< 当前显示模型的容器，所有权属于缓存。
+    ModelSession<LAppModel> _session; ///< 活动模型、缓存和驻留策略。
     std::unique_ptr<LAppModel> _sampleModel;
 
-    Csm::csmVector<Csm::csmString> _modelDir; ///< モデルディレクトリ名のコンテナ
+    Csm::csmVector<Csm::csmString> _modelDir; ///< 模型目录名称容器。
 };

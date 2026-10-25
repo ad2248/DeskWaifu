@@ -55,7 +55,7 @@ int main(int argc, char** argv)
     CHECK(!policy.Send(Event::OutputReady));
     CHECK(policy.Send(Event::Released) && policy.Current() == State::Closed);
     CHECK(!policy.Send(Event::Initialize) && !policy.Send(Event::Close));
-    CHECK(!unrelatedEvent); // Dispatch must never pump the application's event loop.
+    CHECK(!unrelatedEvent); // 派发不能处理应用事件循环中的其他事件。
     for (const auto event : {Event::Initialize, Event::Initialized, Event::SwitchOutput}) {
         ModelWindowState failure;
         failure.Send(Event::Initialize);

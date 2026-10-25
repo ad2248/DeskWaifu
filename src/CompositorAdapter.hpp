@@ -47,7 +47,7 @@ public:
     virtual Capability<std::string> HyprlandSocket(const std::string& request) = 0;
 };
 
-// Reader injection makes the poll-ready/read-interrupted transition testable.
+// 注入读取函数，以便测试 poll 就绪后读取被中断的情况。
 Capability<std::string> ReadBoundedCompositorResponse(int fd,
     ssize_t (*reader)(int, void*, std::size_t));
 

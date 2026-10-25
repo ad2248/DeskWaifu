@@ -23,7 +23,7 @@ public:
     {
         if (!_renderer) return true;
         if (!_renderer->Shutdown()) {
-            (void)_renderer.release(); // Never retry GL destruction on the GUI thread.
+            (void)_renderer.release(); // 不在 GUI 线程重试 GL 资源析构。
             return false;
         }
         _renderer.reset();
@@ -90,8 +90,8 @@ public:
         return true;
     }
 private:
-    std::unique_ptr<QOffscreenSurface> _surface; // Created/destroyed on GUI thread.
-    std::unique_ptr<QOpenGLContext> _context;   // Moved to and destroyed on render thread.
+    std::unique_ptr<QOffscreenSurface> _surface; // 在 GUI 线程创建和销毁。
+    std::unique_ptr<QOpenGLContext> _context;   // 移入渲染线程，并在那里销毁。
     std::unique_ptr<QOpenGLFramebufferObject> _frame;
 };
 }

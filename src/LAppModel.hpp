@@ -21,120 +21,120 @@
 #include "LAppTextureManager.hpp"
 
 /**
- * @brief ユーザーが実際に使用するモデルの実装クラス<br>
- *         モデル生成、機能コンポーネント生成、更新処理とレンダリングの呼び出しを行う。
+ * @brief 用户实际使用的模型实现类。<br>
+ *        负责模型和功能组件的创建、更新及渲染调用。
  *
  */
 class LAppModel : public LAppModel_Common
 {
 public:
     /**
-     * @brief Switch to the next skin by cycling through motion groups
+     * @brief 循环切换动作组，以切换到下一套皮肤。
      */
     void SwitchSkin();
     ModelHotkeys& Hotkeys() { return _hotkeys; }
 
     /**
-     * @brief コンストラクタ
+     * @brief 构造函数。
      */
     LAppModel(class LAppTextureManager& textures, int width, int height, float emotionTimeout);
     void SetViewport(int width, int height) { _viewportWidth = width; _viewportHeight = height; }
 
     /**
-     * @brief デストラクタ
+     * @brief 析构函数。
      *
      */
     virtual ~LAppModel();
 
     /**
-     * @brief model3.jsonが置かれたディレクトリとファイルパスからモデルを生成する
+     * @brief 根据 model3.json 所在目录及文件路径创建模型。
      *
      */
     bool LoadAssets(const Csm::csmChar* dir, const Csm::csmChar* fileName);
 
     /**
-     * @brief レンダラを再構築する
+     * @brief 重建渲染器。
      *
      */
     void ReloadRenderer();
 
     /**
-     * @brief   モデルの更新処理。モデルのパラメータから描画状態を決定する。
+     * @brief 更新模型，根据模型参数确定绘制状态。
      *
      */
     void Update(const ModelFrameInput& input);
 
     /**
-     * @brief   モデルを描画する処理。モデルを描画する空間のView-Projection行列を渡す。
+     * @brief 绘制模型，传入模型绘制空间的视图投影矩阵。
      *
-     * @param[in]  matrix  View-Projection行列
+     * @param[in]  matrix 视图投影矩阵。
      */
     void Draw(Csm::CubismMatrix44& matrix);
 
     /**
-     * @brief   引数で指定したモーションの再生を開始する。
+     * @brief 开始播放参数指定的动作。
      *
-     * @param[in]   group                       モーショングループ名
-     * @param[in]   no                          グループ内の番号
-     * @param[in]   priority                    優先度
-     * @param[in]   onFinishedMotionHandler     モーション再生終了時に呼び出されるコールバック関数。NULLの場合、呼び出されない。
-     * @param[in]   onBeganMotionHandler        モーション再生開始時に呼び出されるコールバック関数。NULLの場合、呼び出されない。
-     * @return                                  開始したモーションの識別番号を返す。個別のモーションが終了したか否かを判定するIsFinished()の引数で使用する。開始できない時は「-1」
+     * @param[in]   group 动作组名称。
+     * @param[in]   no 组内编号。
+     * @param[in]   priority 优先级。
+     * @param[in]   onFinishedMotionHandler 动作播放结束时的回调；为 NULL 时不调用。
+     * @param[in]   onBeganMotionHandler 动作播放开始时的回调；为 NULL 时不调用。
+     * @return 已开始动作的标识，用作 IsFinished() 的参数判断动作是否结束；无法开始时返回 -1。
      */
     Csm::CubismMotionQueueEntryHandle StartMotion(const Csm::csmChar* group, Csm::csmInt32 no, Csm::csmInt32 priority, Csm::ACubismMotion::FinishedMotionCallback onFinishedMotionHandler = NULL, Csm::ACubismMotion::BeganMotionCallback onBeganMotionHandler = NULL);
 
     /**
-     * @brief   ランダムに選ばれたモーションの再生を開始する。
+     * @brief 开始播放随机选中的动作。
      *
-     * @param[in]   group                       モーショングループ名
-     * @param[in]   priority                    優先度
-     * @param[in]   onFinishedMotionHandler     モーション再生終了時に呼び出されるコールバック関数。NULLの場合、呼び出されない。
-     * @param[in]   onBeganMotionHandler        モーション再生開始時に呼び出されるコールバック関数。NULLの場合、呼び出されない。
-     * @return                                  開始したモーションの識別番号を返す。個別のモーションが終了したか否かを判定するIsFinished()の引数で使用する。開始できない時は「-1」
+     * @param[in]   group 动作组名称。
+     * @param[in]   priority 优先级。
+     * @param[in]   onFinishedMotionHandler 动作播放结束时的回调；为 NULL 时不调用。
+     * @param[in]   onBeganMotionHandler 动作播放开始时的回调；为 NULL 时不调用。
+     * @return 已开始动作的标识，用作 IsFinished() 的参数判断动作是否结束；无法开始时返回 -1。
      */
     Csm::CubismMotionQueueEntryHandle StartRandomMotion(const Csm::csmChar* group, Csm::csmInt32 priority, Csm::ACubismMotion::FinishedMotionCallback onFinishedMotionHandler = NULL, Csm::ACubismMotion::BeganMotionCallback onBeganMotionHandler = NULL);
 
     /**
-     * @brief   引数で指定した表情モーションをセットする
+     * @brief 设置参数指定的表情动作。
      *
-     * @param   expressionID    表情モーションのID
+     * @param   expressionID 表情动作 ID。
      */
     void SetExpression(const Csm::csmChar* expressionID);
 
     /**
-     * @brief   ランダムに選ばれた表情モーションをセットする
+     * @brief 设置随机选中的表情动作。
      *
      */
     void SetRandomExpression();
 
     /**
-    * @brief   イベントの発火を受け取る
+    * @brief 接收事件触发通知。
     *
     */
     virtual void MotionEventFired(const Live2D::Cubism::Framework::csmString& eventValue);
 
     /**
-     * @brief    当たり判定テスト。<br>
-     *            指定IDの頂点リストから矩形を計算し、座標が矩形範囲内か判定する。
+     * @brief 命中测试。<br>
+     *        根据指定 ID 的顶点列表计算矩形，判断坐标是否位于矩形内。
      *
-     * @param[in]   hitAreaName     当たり判定をテストする対象のID
-     * @param[in]   x               判定を行うX座標
-     * @param[in]   y               判定を行うY座標
+     * @param[in]   hitAreaName 命中测试目标的 ID。
+     * @param[in]   x 待测试的 X 坐标。
+     * @param[in]   y 待测试的 Y 坐标。
      */
     virtual Csm::csmBool HitTest(const Csm::csmChar* hitAreaName, Csm::csmFloat32 x, Csm::csmFloat32 y);
 
     /**
-     * @brief   別ターゲットに描画する際に使用するバッファの取得
+     * @brief 获取绘制到其他目标时使用的缓冲区。
      */
     Csm::Rendering::CubismRenderTarget_OpenGLES2& GetRenderBuffer();
 
     /**
-     * @brief   Get all expression IDs for IPC queries.
+     * @brief 获取全部表情 ID，供 IPC 查询。
      */
     std::vector<std::string> GetExpressionIds() const;
 
     /**
-     * @brief   Motion info for IPC queries.
+     * @brief 供 IPC 查询的动作信息。
      */
     struct MotionInfo {
         std::string group;
@@ -143,19 +143,19 @@ public:
     };
 
     /**
-     * @brief   Get all available motions for IPC queries.
+     * @brief 获取全部可用动作，供 IPC 查询。
      */
     std::vector<MotionInfo> GetMotionList() const;
     std::size_t TextureBytes() const;
 
     /**
-     * @brief   Get the model setting (for IPC to query model capabilities).
+     * @brief 获取模型配置，供 IPC 查询模型能力。
      */
     Csm::ICubismModelSetting* GetModelSetting() const { return _modelSetting; }
 
 protected:
     /**
-     *  @brief  モデルを描画する処理。モデルを描画する空間のView-Projection行列を渡す。
+     * @brief 绘制模型，传入模型绘制空间的视图投影矩阵。
      *
      */
     void DoDraw();
@@ -168,85 +168,85 @@ private:
     float _emotionTimeout;
     ModelHotkeys _hotkeys;
     /**
-     * @brief model3.jsonからモデルを生成する。<br>
-     *         model3.jsonの記述に従ってモデル生成、モーション、物理演算などのコンポーネント生成を行う。
+     * @brief 根据 model3.json 创建模型。<br>
+     *        按文件描述创建模型、动作和物理计算等组件。
      *
-     * @param[in]   setting     ICubismModelSettingのインスタンス
+     * @param[in]   setting ICubismModelSetting 实例。
      *
      */
     void SetupModel(Csm::ICubismModelSetting* setting);
 
     /**
-     * @brief OpenGLのテクスチャユニットにテクスチャをロードする
+     * @brief 向 OpenGL 纹理单元加载纹理。
      *
      */
     bool SetupTextures();
     Csm::csmVector<Csm::ACubismMotion*> _autoMotions;
 
     /**
-     * @brief   モーションデータをグループ名から一括でロードする。<br>
-     *           モーションデータの名前は内部でModelSettingから取得する。
+     * @brief 根据组名批量加载动作数据。<br>
+     *        动作数据名称在内部从 ModelSetting 获取。
      *
-     * @param[in]   group  モーションデータのグループ名
+     * @param[in]   group 动作数据组名。
      */
     void PreloadMotionGroup(const Csm::csmChar* group);
 
     /**
-     * @brief   モーションデータをグループ名から一括で解放する。<br>
-     *           モーションデータの名前は内部でModelSettingから取得する。
+     * @brief 根据组名批量释放动作数据。<br>
+     *        动作数据名称在内部从 ModelSetting 获取。
      *
-     * @param[in]   group  モーションデータのグループ名
+     * @param[in]   group 动作数据组名。
      */
     void ReleaseMotionGroup(const Csm::csmChar* group) const;
 
     /**
-    * @brief すべてのモーションデータの解放
+    * @brief 释放全部动作数据。
     *
-    * すべてのモーションデータを解放する。
+    * 释放全部动作数据。
     */
     void ReleaseMotions();
 
     /**
-    * @brief すべての表情データの解放
+    * @brief 释放全部表情数据。
     *
-    * すべての表情データを解放する。
+    * 释放全部表情数据。
     */
     void ReleaseExpressions();
 
-    Csm::ICubismModelSetting* _modelSetting; ///< モデルセッティング情報
-    Csm::csmString _modelHomeDir; ///< モデルセッティングが置かれたディレクトリ
-    Csm::csmFloat32 _userTimeSeconds; ///< デルタ時間の積算値[秒]
-    Csm::csmVector<Csm::CubismIdHandle> _eyeBlinkIds; ///< モデルに設定されたまばたき機能用パラメータID
-    Csm::csmVector<Csm::CubismIdHandle> _lipSyncIds; ///< モデルに設定されたリップシンク機能用パラメータID
-    Csm::csmMap<Csm::csmString, Csm::ACubismMotion*>   _motions; ///< 読み込まれているモーションのリスト
-    Csm::csmMap<Csm::csmString, Csm::ACubismMotion*>   _expressions; ///< 読み込まれている表情のリスト
+    Csm::ICubismModelSetting* _modelSetting; ///< 模型配置信息。
+    Csm::csmString _modelHomeDir; ///< 模型配置所在目录。
+    Csm::csmFloat32 _userTimeSeconds; ///< 累计帧间隔时间，单位为秒。
+    Csm::csmVector<Csm::CubismIdHandle> _eyeBlinkIds; ///< 模型眨眼功能使用的参数 ID。
+    Csm::csmVector<Csm::CubismIdHandle> _lipSyncIds; ///< 模型唇形同步功能使用的参数 ID。
+    Csm::csmMap<Csm::csmString, Csm::ACubismMotion*>   _motions; ///< 已加载的动作列表。
+    Csm::csmMap<Csm::csmString, Csm::ACubismMotion*>   _expressions; ///< 已加载的表情列表。
     Csm::csmVector<Csm::csmRectF> _hitArea;
     Csm::csmVector<Csm::csmRectF> _userArea;
-    const Csm::CubismId* _idParamAngleX; ///< パラメータID: ParamAngleX
-    const Csm::CubismId* _idParamAngleY; ///< パラメータID: ParamAngleX
-    const Csm::CubismId* _idParamAngleZ; ///< パラメータID: ParamAngleX
-    const Csm::CubismId* _idParamBodyAngleX; ///< パラメータID: ParamBodyAngleX    
+    const Csm::CubismId* _idParamAngleX; ///< 参数 ID：ParamAngleX。
+    const Csm::CubismId* _idParamAngleY; ///< 参数 ID：ParamAngleX。
+    const Csm::CubismId* _idParamAngleZ; ///< 参数 ID：ParamAngleX。
+    const Csm::CubismId* _idParamBodyAngleX; ///< 参数 ID：ParamBodyAngleX。
     
-    const Csm::CubismId* _idParamBodyAngleY; ///< パラメータID: ParamBodyAngleY
+    const Csm::CubismId* _idParamBodyAngleY; ///< 参数 ID：ParamBodyAngleY。
     
-    const Csm::CubismId* _idParamBodyAngleZ; ///< パラメータID: ParamBodyAngleZ
-    const Csm::CubismId* _idParamEyeBallX; ///< パラメータID: ParamEyeBallX
-    const Csm::CubismId* _idParamEyeBallY; ///< パラメータID: ParamEyeBallXY
+    const Csm::CubismId* _idParamBodyAngleZ; ///< 参数 ID：ParamBodyAngleZ。
+    const Csm::CubismId* _idParamEyeBallX; ///< 参数 ID：ParamEyeBallX。
+    const Csm::CubismId* _idParamEyeBallY; ///< 参数 ID：ParamEyeBallXY。
 
-    Csm::csmBool _motionUpdated; ///< モーション更新フラグ
+    Csm::csmBool _motionUpdated; ///< 动作更新标志。
     Csm::csmInt32 _currentSkinIndex;
 
-    Csm::csmFloat32 _lastExpressionTime; ///< Time when the last expression was set
-    static const Csm::csmFloat32 ExpressionTimeoutSeconds; ///< Seconds before expression reverts to default
-    Csm::csmInt32 _nextExpressionIndex; ///< Round-robin index for cycling expressions
+    Csm::csmFloat32 _lastExpressionTime; ///< 上次设置表情的时间。
+    static const Csm::csmFloat32 ExpressionTimeoutSeconds; ///< 表情恢复默认值前的等待秒数。
+    Csm::csmInt32 _nextExpressionIndex; ///< 循环切换表情的轮转索引。
 
-    /// All parameter IDs found across skin motion groups, used to reset before switching
+    /// 各皮肤动作组中的全部参数 ID，用于切换前重置。
     Csm::csmVector<const Csm::CubismId*> _allSkinParamIds;
-    /// Default values for each skin parameter (from model defaults)
+    /// 各皮肤参数的模型默认值。
     Csm::csmVector<Csm::csmFloat32> _allSkinParamDefaults;
-    void CollectSkinParams(); ///< Scan motion group JSONs to collect skin parameter IDs
+    void CollectSkinParams(); ///< 扫描动作组 JSON，收集皮肤参数 ID。
 
-    LAppWavFileHandler_Common _wavFileHandler; ///< wavファイルハンドラ
+    LAppWavFileHandler_Common _wavFileHandler; ///< WAV 文件处理器。
 
-    Csm::Rendering::CubismRenderTarget_OpenGLES2 _renderBuffer;   ///< フレームバッファ以外の描画先
+    Csm::Rendering::CubismRenderTarget_OpenGLES2 _renderBuffer;   ///< 默认帧缓冲以外的绘制目标。
 };

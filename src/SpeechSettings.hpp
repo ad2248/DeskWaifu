@@ -3,7 +3,7 @@
 #include "ApplicationService.hpp"
 #include "LAppConfig.hpp"
 
-// Credentials are write-only over IPC; only presence is queried by the GUI.
+// 凭据在 IPC 中只写不读；GUI 只能查询是否已配置。
 class SpeechSettings
 {
 public:

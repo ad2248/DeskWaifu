@@ -5,8 +5,8 @@
 #include <functional>
 #include <memory>
 
-// POSIX handlers only write a byte to a nonblocking self-pipe. Business actions
-// execute as ordinary GUI-owned ProcessorEvents, independently of presentation.
+// POSIX 信号处理函数只向非阻塞自管道写入一个字节。
+// 业务操作作为 GUI 线程中的普通 ProcessorEvent 执行，不依赖呈现。
 class SignalProcessor final : public Processor
 {
 public:

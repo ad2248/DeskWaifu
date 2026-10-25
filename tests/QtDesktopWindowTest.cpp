@@ -53,8 +53,8 @@ struct Events : IDesktopWindowEvents
     void OutputSwitchFinished() override { ++switchesFinished; }
 };
 
-// A pointer-triggered output rebind runs outside the frame callback. Delay an
-// expose event so the frame timer definitely becomes ready in its nested loop.
+// 指针触发的输出重绑定发生在帧回调之外。延迟暴露事件，
+// 确保帧定时器在嵌套循环期间到期。
 struct SlowExpose : QObject
 {
     bool switching = false;
@@ -72,8 +72,8 @@ struct SlowExpose : QObject
 };
 }
 
-// Inspect the actual window back buffer immediately before presentation, not
-// the model FBO (which can contain pixels even when nothing reaches the screen).
+// 在呈现前检查真实窗口后备缓冲，而非模型 FBO；
+// 即使屏幕上没有内容，模型 FBO 也可能包含像素。
 extern "C" EGLBoolean eglSwapBuffers(EGLDisplay display, EGLSurface surface)
 {
     if (checkWindowPixels) {
@@ -177,8 +177,8 @@ int main(int argc, char** argv)
             QCoreApplication::sendEvent(qt, &release);
             Require(events.presses == 1 && events.releases == 1 && events.x == 25 && events.y == 35,
                 "Qt double-click must preserve the application's press/release policy and logical coordinates");
-            // QKeyEvent's default device creates Qt's fallback primary keyboard.
-            // Request focus before constructing one, just like a real double-click.
+            // QKeyEvent 的默认设备会创建 Qt 回退主键盘。
+            // 与真实双击一样，应先请求焦点，再构造按键事件。
             Require(!qt->isActive() && !window->KeyboardGrabbed(),
                 "The model must not take keyboard focus before a grab request");
             const auto grab = window->SetKeyboardGrab(true);
@@ -246,8 +246,8 @@ int main(int argc, char** argv)
             hotplugPassed = true;
             return false;
         }
-        // Reproduce NVIDIA/EGL's GL_NONE window draw target on every presented
-        // frame, including after output replacement. Present must select it.
+        // 每个呈现帧都复现 NVIDIA/EGL 的 GL_NONE 窗口绘制目标，
+        // 包括输出设备替换之后；Present 必须显式选择绘制目标。
         gl->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, QOpenGLContext::currentContext()->defaultFramebufferObject());
         const GLenum none = GL_NONE;
         gl->glDrawBuffers(1, &none);

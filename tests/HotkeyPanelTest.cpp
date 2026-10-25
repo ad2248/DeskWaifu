@@ -80,7 +80,7 @@ private slots:
         QVERIFY(toggle->isEnabled());
         toggle->click();
         QCOMPARE(spy.count(), 1);
-        // An unsupported chord must not shadow an otherwise valid binding.
+        // 不支持的组合键不能遮蔽原本有效的绑定。
         panel->setBindings({binding("valid", {"Tab"}), binding("invalid", {"Tab", "MouseBack"})});
         QTest::keyClick(table, Qt::Key_Tab);
         QCOMPARE(spy.count(), 2);

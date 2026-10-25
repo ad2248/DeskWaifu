@@ -24,7 +24,7 @@ int main(int argc, char** argv)
         processor.ExecuteAsync("one", "client", [&](std::string reply) { replies.push_back(reply); });
         processor.ExecuteAsync("two", "client", [&](std::string reply) { replies.push_back(reply); });
         processor.Disconnected("client");
-        CHECK(service.calls.empty() && replies.empty()); // Never bypass ordered event dispatch.
+        CHECK(service.calls.empty() && replies.empty()); // 不能绕过有序事件派发。
         for (int i = 0; i < 8; ++i) QCoreApplication::processEvents();
         CHECK(service.calls == std::vector<std::string>({"client:one", "client:two", "client:disconnected"}));
         CHECK(replies == std::vector<std::string>({"one", "two"}));

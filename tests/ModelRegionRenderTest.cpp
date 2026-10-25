@@ -40,7 +40,7 @@ int main()
     CHECK(eglMakeCurrent(display, surface, surface, context));
     glewExperimental = GL_TRUE;
     CHECK(glewInit() == GLEW_OK);
-    while (glGetError() != GL_NO_ERROR) {} // Some drivers probe unavailable extensions during glewInit.
+    while (glGetError() != GL_NO_ERROR) {} // 部分驱动在 glewInit 期间探测不可用扩展。
 
     for (const auto requested : {ModelRegion{3, 2, 5, 4}, ModelRegion{},
         ModelRegion{0, 0, 13, 9}, ModelRegion{-3, -2, 8, 6}})
@@ -50,7 +50,7 @@ int main()
         glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
         glClearColor(1, 0, 0, 1);
         glClear(GL_COLOR_BUFFER_BIT);
-        // Clipping must ignore these incoming states, then restore them.
+        // 裁剪时必须忽略传入的这些状态，并在结束后恢复。
         glEnable(GL_SCISSOR_TEST);
         glScissor(1, 2, 3, 4);
         glColorMask(GL_FALSE, GL_TRUE, GL_FALSE, GL_FALSE);
@@ -82,8 +82,8 @@ int main()
     glDisable(GL_SCISSOR_TEST);
     ClipModelRegion({3, 2, 5, 4}, 13, 9);
     CHECK(!glIsEnabled(GL_SCISSOR_TEST));
-    // Editor frame is drawn after clipping, including outside the model clip,
-    // and restores the renderer's GL state.
+    // 编辑边框在裁剪后绘制，包括模型裁剪区域之外的部分，
+    // 并恢复渲染器的 GL 状态。
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glClearColor(0, 0, 0, 0);
     glClear(GL_COLOR_BUFFER_BIT);
@@ -100,12 +100,12 @@ int main()
     CHECK(frameColor[0] == .25f && frameColor[1] == .5f && frameColor[2] == .75f);
     std::vector<unsigned char> framePixels(13 * 9 * 4);
     glReadPixels(0, 0, 13, 9, GL_RGBA, GL_UNSIGNED_BYTE, framePixels.data());
-    CHECK(framePixels[(8 * 13) * 4 + 3] == 255); // top edge
-    CHECK(framePixels[(5 * 13) * 4 + 3] == 255); // clipped left handle
-    CHECK(framePixels[(4 * 13 + 5) * 4 + 3] == 0); // untouched background
+    CHECK(framePixels[(8 * 13) * 4 + 3] == 255); // 上边缘。
+    CHECK(framePixels[(5 * 13) * 4 + 3] == 255); // 被裁剪的左侧手柄。
+    CHECK(framePixels[(4 * 13 + 5) * 4 + 3] == 0); // 未受影响的背景。
     CHECK(glGetError() == GL_NO_ERROR);
 
-    // Exercise the same outer frame used by LAppView with real RGBA8 pixels.
+    // 使用真实 RGBA8 像素，测试与 LAppView 相同的外层帧。
     const GLuint vertex = Compile(GL_VERTEX_SHADER,
         "#version 120\nattribute vec2 position; varying vec2 uv;"
         "void main(){uv=(position+1.0)*0.5;gl_Position=vec4(position,0.0,1.0);}");
@@ -143,7 +143,7 @@ int main()
             else hover.Leave();
             glClearColor(0, 0, 0, 0); glClear(GL_COLOR_BUFFER_BIT);
             CHECK(frame.Begin(13, 9));
-            // Model animation/material alpha is 0.8, not forced to 1.
+            // 模型动画和材质的 alpha 为 0.8，不强制设为 1。
             glClearColor(0.4f, 0.2f, 0, 0.8f); glClear(GL_COLOR_BUFFER_BIT);
             const auto modelRegions = ReadModelInputRegion(frame.Framebuffer(), 13, 9, {2, 1, 8, 7}, scratch);
             CHECK(ModelInputRegionContains(modelRegions, 4, 4));
@@ -167,8 +167,8 @@ int main()
             CHECK(std::abs(int(pixel[0]) - int(std::lround(102 * opacity))) <= 1);
             CHECK(std::abs(int(pixel[1]) - int(std::lround(51 * opacity))) <= 1);
             CHECK(std::abs(int(pixel[3]) - int(std::lround(204 * opacity))) <= 1);
-            // Explicit source selection works even after presentation; it also
-            // restores the window's read binding and does not read faded pixels.
+            // 呈现后显式选择来源仍有效；同时恢复窗口的读取绑定，
+            // 且不读取已经淡化的像素。
             const auto after = ReadModelInputRegion(frame.Framebuffer(), 13, 9, {2, 1, 8, 7}, scratch);
             CHECK(after.size() == modelRegions.size());
             for (size_t i = 0; i < after.size(); ++i) {
@@ -186,11 +186,11 @@ int main()
             hover.Enter(4, 4);
             CHECK(glGetError() == GL_NO_ERROR);
         }
-        // Resize and model replacement must not retain pixels from the old frame.
+        // 调整尺寸和替换模型不能保留旧帧像素。
         CHECK(frame.Begin(7, 5));
         GLint textureBinding;
         glGetIntegerv(GL_TEXTURE_BINDING_2D, &textureBinding);
-        CHECK(textureBinding == 0); // Do not resurrect the deleted, previously bound texture.
+        CHECK(textureBinding == 0); // 不重新创建先前绑定但已被删除的纹理。
         CHECK(ReadModelInputRegion(frame.Framebuffer(), 7, 5, {0, 0, 7, 5}, scratch).empty());
         glClearColor(1, 1, 1, 1); glClear(GL_COLOR_BUFFER_BIT);
         CHECK(ModelInputRegionContains(ReadModelInputRegion(frame.Framebuffer(), 7, 5,
@@ -200,7 +200,7 @@ int main()
         CHECK(ReadModelInputRegion(frame.Framebuffer(), 7, 5, {0, 0, 7, 5}, scratch).empty());
         frame.Present(1, [](GLuint, float) {});
         CHECK(!frame.Begin(0, 5));
-    } // Destroy GPU resources before EGL teardown.
+    } // 清理 EGL 之前先销毁 GPU 资源。
     glDeleteProgram(program);
     CHECK(glGetError() == GL_NO_ERROR);
     eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);

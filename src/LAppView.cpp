@@ -45,7 +45,7 @@ LAppView::LAppView(LAppLive2DManager& manager, LAppTextureManager& textures) :
 #endif
     if (_renderTarget != SelectTarget_None) SetRenderTargetClearColor(0.0f, 0.0f, 0.0f);
 
-    // タッチ関係のイベント管理
+    // 管理触摸相关事件。
     _touchManager = new TouchManager_Common();
 }
 
@@ -84,7 +84,7 @@ void LAppView::Initialize(int width, int height)
     _height = height;
     LAppView_Common::Initialize(width, height);
 
-    // シェーダー作成
+    // 创建着色器。
     if(_spriteShader == NULL)
     {
         _spriteShader = new LAppSpriteShader();
@@ -93,19 +93,19 @@ void LAppView::Initialize(int width, int height)
 
 void LAppView::Render(ModelTransform transform, const ModelFrameInput& input)
 {
-    // Disable background and UI to make it a transparent desktop pet
+    // 禁用背景和界面，使桌宠背景透明。
     // _back->Render(_width, _height);
     // _gear->Render(_width, _height);
     // _power->Render(_width, _height);
 
     _manager.SetViewMatrix(_viewMatrix);
 
-    // Cubism更新・描画
+    // 更新并绘制 Cubism 模型。
     _manager.OnUpdate(_width, _height, transform, input,
         [this](LAppModel& model) { PreModelDraw(model); },
         [this](LAppModel& model) { PostModelDraw(model); });
 
-    // 各モデルが持つ描画ターゲットをテクスチャとする場合
+    // 将各模型持有的绘制目标作为纹理时。
     if (_renderTarget == SelectTarget_ModelFrameBuffer && _renderSprite)
     {
         const GLfloat uvVertex[] =
@@ -119,7 +119,7 @@ void LAppView::Render(ModelTransform transform, const ModelFrameInput& input)
         for(csmUint32 i=0; i<_manager.GetModelNum(); i++)
         {
             LAppModel* model = _manager.GetModel(i);
-            float alpha = i < 1 ? 1.0f : model->GetOpacity(); // 片方のみ不透明度を取得できるようにする
+            float alpha = i < 1 ? 1.0f : model->GetOpacity(); // 只对其中一个模型获取透明度。
             _renderSprite->SetColor(1.0f * alpha, 1.0f * alpha, 1.0f * alpha, alpha);
 
             if (model)
@@ -144,7 +144,7 @@ void LAppView::PresentOpacityFrame(float opacity)
         glDisable(GL_CULL_FACE);
         glDisable(GL_SCISSOR_TEST);
         glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-        // Both RGB and alpha must be scaled for premultiplied-alpha blending.
+        // 预乘 alpha 混合时，RGB 和 alpha 必须同时缩放。
         _renderSprite->SetColor(alpha, alpha, alpha, alpha);
         _renderSprite->RenderImmidiate(texture, uv, _width, _height);
         _renderSprite->SetColor(1, 1, 1, 1);
@@ -157,7 +157,7 @@ void LAppView::InitializeSprite()
 
     int width = _width, height = _height;
 
-    // 画面全体を覆うサイズ
+    // 覆盖整个画面的尺寸。
     float x = width * 0.5f;
     float y = height * 0.5f;
     _renderSprite = new LAppSprite(x, y, static_cast<float>(width), static_cast<float>(height), 0, programId);
@@ -181,11 +181,11 @@ void LAppView::OnTouchesMoved(float px, float py) const
 
 void LAppView::OnTouchesEnded(float px, float py, ModelTransform transform) const
 {
-    // タッチ終了
+    // 触摸结束。
     _manager.OnDrag(0.0f, 0.0f);
     {
 
-        // シングルタップ
+        // 单击。
         if (_width <= 0 || _height <= 0) return;
         const float x = 2.0f * px / _width - 1.0f;
         const float y = 1.0f - 2.0f * py / _height;
@@ -200,50 +200,50 @@ void LAppView::OnTouchesEnded(float px, float py, ModelTransform transform) cons
 
 void LAppView::PreModelDraw(LAppModel &refModel)
 {
-    // 別のレンダリングターゲットへ向けて描画する場合の使用するフレームバッファ
+    // 绘制到其他渲染目标时使用的帧缓冲。
     Csm::Rendering::CubismRenderTarget_OpenGLES2* useTarget = NULL;
 
     if (_renderTarget != SelectTarget_None)
-    {// 別のレンダリングターゲットへ向けて描画する場合
+    {// 绘制到其他渲染目标时。
 
         // 透過設定
         glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 
-        // 使用するターゲット
+        // 使用的目标。
         useTarget = (_renderTarget == SelectTarget_ViewFrameBuffer) ? &_renderBuffer : &refModel.GetRenderBuffer();
 
         if (!useTarget->IsValid())
-        {// 描画ターゲット内部未作成の場合はここで作成
+        {// 绘制目标尚未创建时，在此创建。
             int bufWidth = _width, bufHeight = _height;
 
             if(bufWidth!=0 && bufHeight!=0)
             {
-                // モデル描画キャンバス
+                // 模型绘制画布。
                 useTarget->CreateRenderTarget(static_cast<csmUint32>(bufWidth), static_cast<csmUint32>(bufHeight));
             }
         }
 
-        // レンダリング開始
+        // 开始渲染。
         useTarget->BeginDraw();
-        useTarget->Clear(_clearColor[0], _clearColor[1], _clearColor[2], _clearColor[3]); // 背景クリアカラー
+        useTarget->Clear(_clearColor[0], _clearColor[1], _clearColor[2], _clearColor[3]); // 背景清除颜色。
     }
 }
 
 void LAppView::PostModelDraw(LAppModel &refModel)
 {
-    // 別のレンダリングターゲットへ向けて描画する場合の使用するフレームバッファ
+    // 绘制到其他渲染目标时使用的帧缓冲。
     Csm::Rendering::CubismRenderTarget_OpenGLES2* useTarget = NULL;
 
     if (_renderTarget != SelectTarget_None)
-    {// 別のレンダリングターゲットへ向けて描画する場合
+    {// 绘制到其他渲染目标时。
 
-        // 使用するターゲット
+        // 使用的目标。
         useTarget = (_renderTarget == SelectTarget_ViewFrameBuffer) ? &_renderBuffer : &refModel.GetRenderBuffer();
 
-        // レンダリング終了
+        // 结束渲染。
         useTarget->EndDraw();
 
-        // LAppViewの持つフレームバッファを使うなら、スプライトへの描画はここ
+        // 使用 LAppView 持有的帧缓冲时，在此绘制到精灵。
         if (_renderTarget == SelectTarget_ViewFrameBuffer && _renderSprite)
         {
             const GLfloat uvVertex[] =
@@ -275,8 +275,8 @@ void LAppView::SetRenderTargetClearColor(float r, float g, float b)
 
 float LAppView::GetSpriteAlpha(int assign) const
 {
-    // assignの数値に応じて適当に決定
-    float alpha = 0.4f + static_cast<float>(assign) * 0.5f; // サンプルとしてαに適当な差をつける
+    // 根据 assign 的数值选择透明度。
+    float alpha = 0.4f + static_cast<float>(assign) * 0.5f; // 为示例中的 alpha 设置适当差异。
     if (alpha > 1.0f)
     {
         alpha = 1.0f;
@@ -297,7 +297,7 @@ void LAppView::ResizeSprite()
         return;
     }
 
-    // 描画領域サイズ
+    // 绘制区域尺寸。
     int width = _width, height = _height;
 
     float x = 0.0f;

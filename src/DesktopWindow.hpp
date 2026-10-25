@@ -9,8 +9,8 @@
 #include "ModelRenderTarget.hpp"
 struct RenderFrame;
 
-// Coordinates exposed to the application are output-local logical pixels.
-// The backend owns the surface, GL context and presentation, never model resources.
+// 向应用暴露的坐标为输出设备局部逻辑像素。
+// 后端持有表面、GL 上下文并负责呈现，不持有模型资源。
 class DesktopWindow : public IOutputBackend
 {
 public:

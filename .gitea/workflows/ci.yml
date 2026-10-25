@@ -11,8 +11,8 @@ permissions:
 jobs:
   test:
     name: Arch build and headless Wayland test
-    # This label must map to the image-ID-pinned deskwaifu-ci image (force_pull=false).
-    # Rebuild and privately transfer it with scripts/rebuild-ci-image.sh.
+    # 此标签必须映射到按镜像 ID 固定的 deskwaifu-ci 镜像，且 force_pull=false。
+    # 使用 scripts/rebuild-ci-image.sh 重建并私下传输镜像。
     runs-on: deskwaifu-arch
     timeout-minutes: 30
     steps:

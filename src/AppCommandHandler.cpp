@@ -17,7 +17,7 @@
 #include <limits>
 #include <stdexcept>
 
-// ─── JSON replies ────────────────────────────────────────────────────────────
+// ─── JSON 回复 ───────────────────────────────────────────────────────────────
 
 static std::string JsonEscape(const std::string& s)
 {
@@ -50,7 +50,7 @@ static std::string Reply(const AppResult& result)
         : "{\"ok\":false,\"error\":\"" + JsonEscape(result.error) + "\"}";
 }
 
-// ─── Command handlers ─────────────────────────────────────────────────────────
+// ─── 命令处理 ─────────────────────────────────────────────────────────────────
 
 void AppCommandHandler::Disconnected(const std::string& connection)
 {
@@ -217,8 +217,8 @@ try
                 if (cropped->second != "true" && cropped->second != "false") return Reply(AppResult::Failure("cropped must be boolean"));
                 next.cropped = cropped->second == "true";
             }
-            // Numeric X/Y edits have the same paired movement semantics as the
-            // on-screen move handle. Resizing on screen bypasses this adapter.
+            // 编辑 X/Y 数值时，与屏幕上的移动手柄一样同时移动模型和裁剪框。
+            // 屏幕上的缩放操作不经过此适配器。
             if (next.cropped && previous.cropped && app->GetWindowHeight() > 0 && next.transform.scale > 0) {
                 double units = 2.0 / app->GetWindowHeight() / next.transform.scale;
                 next.transform.x += (int64_t(next.region.x) - previous.region.x) * units;
@@ -237,7 +237,7 @@ try
         else if (command == "relocate_crop") {
             auto next = editor.Display();
             auto r = next.region;
-            // Keep model and crop together, including when recovering an offscreen rectangle.
+            // 模型与裁剪框始终一起移动，恢复屏幕外的矩形时也不例外。
             int64_t dx = -int64_t(r.x), dy = -int64_t(r.y);
             result = editor.Update(connection, TransformEditor::MoveCrop(next, dx, dy, app->GetWindowHeight()));
         }
@@ -277,7 +277,7 @@ try
         return reply;
     }
 
-    // ── get_available_models ──
+    // ── 获取可用模型 ──
     if (command == "get_available_models")
     {
         const auto& dirs = metadata.names;
@@ -292,7 +292,7 @@ try
         return oss.str();
     }
 
-    // ── get_current_model ──
+    // ── 获取当前模型 ──
     if (command == "get_current_model")
     {
         const auto& dirs = metadata.names;
@@ -314,7 +314,7 @@ try
     if (command == "get_motions")
         return QJsonDocument(QJsonObject{{"ok", true}, {"motions", metadata.motions}}).toJson(QJsonDocument::Compact).toStdString();
 
-    // ── set_mouth_y ──
+    // ── 设置嘴部开合 ──
     if (command == "set_mouth_y")
     {
         if (JsonGetBool(request, "reset")) {
@@ -327,7 +327,7 @@ try
         return Reply(app->Service().SetMouth(source, lifetime, value));
     }
 
-    // ── set_model_zoom ──
+    // ── 设置模型缩放 ──
     if (command == "set_model_zoom")
     {
         if (editor.Editing()) return Reply(AppResult::Failure("Transform editor is active"));
@@ -343,7 +343,7 @@ try
         return Reply(result);
     }
 
-    // ── set_model_position ──
+    // ── 设置模型位置 ──
     if (command == "set_model_position")
     {
         if (editor.Editing()) return Reply(AppResult::Failure("Transform editor is active"));
@@ -355,7 +355,7 @@ try
         return Reply(result);
     }
 
-    // ── get_model_position ──
+    // ── 获取模型位置 ──
     if (command == "get_model_position")
     {
         std::ostringstream oss;
@@ -366,7 +366,7 @@ try
         return oss.str();
     }
 
-    // ── toggle_hidden ──
+    // ── 切换隐藏状态 ──
     if (command == "toggle_hidden")
     {
         auto result = app->Service().SetVisibility(app->Service().Snapshot().hidden);
@@ -376,7 +376,7 @@ try
         return oss.str();
     }
 
-    // ── set_look ──
+    // ── 设置视线 ──
     if (command == "set_look")
     {
         if (JsonGetBool(request, "reset"))
@@ -412,7 +412,7 @@ try
         return result.str();
     }
 
-    // ── get_status ──
+    // ── 获取状态 ──
     if (command == "get_status")
     {
         const auto& dirs = metadata.names;

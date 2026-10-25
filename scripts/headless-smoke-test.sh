@@ -184,7 +184,7 @@ with connect() as first, connect() as second:
         assert state['mouth'] == 0.8 and state['look_x'] == 0.25, state
     first.close()
     with connect() as observer:
-        # Disconnection is processed on the next frame; use a bounded retry.
+        # 下一帧才处理断开通知，因此使用有界重试。
         import time
         for _ in range(100):
             state = request(observer, 'get_control_status')
@@ -249,8 +249,7 @@ timeout 20 "$BUILD_DIR/bin/deskwaifu-control" --smoke-test \
     >"$LOG_DIR/deskwaifu-control.log" 2>&1
 kill -0 "$APP_PID"
 {
-    # Exercise Qt/LayerShellQt surface replacement while keeping the model's
-    # original OpenGL context and resources alive.
+    # 测试 Qt/LayerShellQt 表面替换，同时保留模型原有的 OpenGL 上下文和资源。
     swaymsg create_output >/dev/null
     for _ in {1..100}; do
         count=$(swaymsg -t get_outputs -r | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')
@@ -289,8 +288,8 @@ sys.path.insert(0, "tests")
 from qt_headless_smoke import assert_layer_shell, assert_keyboard_capability
 trace = pathlib.Path(sys.argv[1]).read_text()
 assert_layer_shell(trace)
-# WLR_LIBINPUT_NO_DEVICES=1 deliberately leaves this seat without a keyboard.
-# Do not let --no-keyboard hide a focus regression on a keyboard-capable seat.
+# WLR_LIBINPUT_NO_DEVICES=1 刻意让此座席没有键盘。
+# 对具备键盘能力的座席，不能让 --no-keyboard 掩盖焦点回归。
 assert_keyboard_capability(trace, expected=False)
 PY
 assert_ok quit

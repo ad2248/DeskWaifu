@@ -260,7 +260,7 @@ bool LAppIPC::FlushClient(ClientBuffer& client, std::size_t& bytes, std::size_t&
         else return false;
     }
     if (client.sent == client.response.size()) {
-        // Release the large allocation as well as the logical pending bytes.
+        // 同时释放大块内存和逻辑上的待发送字节。
         std::string{}.swap(client.response);
         client.sent = 0;
     }
@@ -271,7 +271,7 @@ void LAppIPC::Poll()
 {
     if (_serverFd < 0) return;
 
-    // Count attempts as well as successes, so EINTR cannot bypass the budget.
+    // 尝试次数和成功次数均计入预算，避免 EINTR 绕过限制。
     for (std::size_t i = 0; i < AcceptsPerPoll; ++i)
     {
         const int fd = accept4(_serverFd, nullptr, nullptr, SOCK_NONBLOCK | SOCK_CLOEXEC);
@@ -286,8 +286,8 @@ void LAppIPC::Poll()
         _clients.push_back(std::move(client));
     }
 
-    // Rotate the first served connection so a global command budget does not
-    // permanently favor the first clients under sustained pipelined input.
+    // 轮换首先服务的连接，避免持续流水输入时，
+    // 全局命令预算始终优先分配给最前面的客户端。
     if (!_clients.empty()) std::rotate(_clients.begin(), _clients.begin() + 1, _clients.end());
     std::size_t commands = 0;
     for (auto it = _clients.begin(); it != _clients.end();)
@@ -303,8 +303,8 @@ void LAppIPC::Poll()
         }
         std::size_t bytes = WriteBytesPerClient, attempts = WriteAttemptsPerClient;
         bool alive = FlushClient(client, bytes, attempts);
-        // Backpressure: do not execute another command or keep reading while
-        // this client's reply is still pending. Other clients keep progressing.
+        // 回压：当前客户端的回复尚未发完时，不再执行命令或继续读取。
+        // 其他客户端仍可正常推进。
         if (alive && !client.pending && client.response.empty()) {
             char buffer[4096];
             const auto capacity = std::min(sizeof(buffer), MaxRequestBytes + 1 - client.buf.size());
@@ -322,7 +322,7 @@ void LAppIPC::Poll()
                 if (pos > MaxRequestBytes) { alive = false; break; }
                 const std::string line = client.buf.substr(0, pos);
                 client.buf.erase(0, pos + 1);
-                ++commands; // Empty lines also consume work budget.
+                ++commands; // 空行也消耗工作预算。
                 if (line.empty()) continue;
                 client.pending = std::make_shared<PendingReply>();
                 std::weak_ptr<PendingReply> pending = client.pending;
@@ -344,7 +344,7 @@ void LAppIPC::Poll()
             }
             const auto newline = client.buf.find('\n');
             if (newline > MaxRequestBytes && client.buf.size() > MaxRequestBytes) alive = false;
-            // A peer may half-close its write end and still read our replies.
+            // 对端可能半关闭写端，同时继续读取回复。
             if (client.eof && !client.pending && client.response.empty() && newline == std::string::npos) alive = false;
         }
         if (!alive) {

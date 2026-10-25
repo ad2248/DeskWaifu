@@ -7,15 +7,15 @@
 #include <memory>
 #include <vector>
 
-// Qt supplies the waiting/wakeup mechanism. This object supplies ordered,
-// non-recursive dispatch on its owning (GUI) thread; it is not another exec loop.
+// Qt 提供等待和唤醒机制。此对象在所属 GUI 线程上按顺序、非递归地派发事件，
+// 不另行实现 exec 循环。
 class ProcessorEventLoop : public QObject
 {
 public:
     explicit ProcessorEventLoop(QObject* parent = nullptr) : QObject(parent) {}
     bool Register(IProcessor* processor);
     void Unregister(IProcessor* processor);
-    bool Post(ProcessorEvent event); // Thread-safe; pointer lifetimes remain the producer's responsibility.
+    bool Post(ProcessorEvent event); // 线程安全；指针生命周期仍由生产者负责。
     bool Contains(IProcessor* processor) const;
 
 protected:

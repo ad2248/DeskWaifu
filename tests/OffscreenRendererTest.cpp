@@ -45,7 +45,7 @@ int main(int argc, char**)
             glClearColor(.125f, .25f, .5f, .5f);
             glClear(GL_COLOR_BUFFER_BIT);
             glDisable(GL_SCISSOR_TEST);
-            // Caller pack state must neither corrupt the copy nor be lost.
+            // 调用方的像素打包状态既不能破坏复制，也不能丢失。
             glPixelStorei(GL_PACK_ALIGNMENT, 8);
             glPixelStorei(GL_PACK_ROW_LENGTH, 40);
             glPixelStorei(GL_PACK_SKIP_ROWS, 2);

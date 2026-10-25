@@ -212,9 +212,8 @@ int main()
         [&] { if (!serviceAlive) ok = false; disconnected = true; },
         [&] { if (!disconnected) ok = false; serviceAlive = false; });
 
-    // Exercise the real transport destructor with a connected stream. Cleanup
-    // and service destruction still work after the transport is gone; there is
-    // no reverse port dependency for either operation to dereference.
+    // 在流连接仍存在时测试真实传输层析构。传输层销毁后，清理和服务析构
+    // 仍正常工作，两者都不需要解引用反向传输接口依赖。
     struct LifetimeCommands : FakeCommands
     {
         bool& ok;

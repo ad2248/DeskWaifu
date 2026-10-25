@@ -15,7 +15,7 @@ bool ImageProcessor::HandleEvent(const ProcessorEvent& event)
     }
     if (event.type != ReadImage) return false;
     if (_busy) { Send(Failed, event.sender, {{"error", "image service is busy"}}); return true; }
-    // Clipboard access belongs to the GUI thread; PNG encoding belongs to the worker.
+    // GUI 线程访问剪贴板，工作线程负责 PNG 编码。
     const auto image = event.data.contains("image") ? qvariant_cast<QImage>(event.data.value("image")) : _clipboard();
     if (image.isNull()) { Send(Failed, event.sender, {{"error", "clipboard contains no image"}}); return true; }
     _requester = event.sender;

@@ -26,8 +26,7 @@ int main()
     if (!apply({2.0f, 1.0f, -1.0f}).ok) return 1;
     if (!apply({0.1f, 0.0f, 0.0f}).ok || service.Snapshot().transform.scale != 0.1f) return 1;
     if (!apply({10.0f, 0.0f, 0.0f}).ok || service.Snapshot().transform.scale != 10.0f) return 1;
-    // Both configuration and IPC call the same operation: invalid partial
-    // updates leave every field unchanged.
+    // 配置和 IPC 调用同一个操作；无效的局部更新不能改变任何字段。
     if (apply({std::numeric_limits<float>::quiet_NaN(), 2.0f, 0.0f}).ok ||
         apply({2.0f, std::numeric_limits<float>::infinity(), 0.0f}).ok ||
         apply({11.0f, 1.0f, 0.0f}).ok ||
@@ -36,7 +35,7 @@ int main()
     auto snapshot = service.Snapshot();
     if (snapshot.transform.scale != 10.0f || snapshot.transform.x != 0.0f ||
         snapshot.transform.y != 0.0f) return 1;
-    runtime.selected = 1; // Read-only model snapshot, committed by the operational processor.
+    runtime.selected = 1; // 由操作处理器提交的只读模型快照。
     if (service.Snapshot().modelIndex != 1) return 1;
     runtime.grabbed = true;
     runtime.failVisibility = true;

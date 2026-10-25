@@ -45,17 +45,17 @@ int main()
     if (policy.MoveTo(500, 400, transform) || backend.current != 42 || transform.x != 0) return 1;
     backend.fails = false;
     if (!policy.Focus("left") || backend.current != 17 || policy.Focus("missing")) return 1;
-    // Stable registry IDs are not vector positions; removal is explicit.
+    // 稳定的注册表 ID 不是向量索引；移除须显式进行。
     backend.outputs.erase(backend.outputs.begin());
     if (policy.Current(backend.outputs) || policy.Focus("left")) return 1;
-    backend.current = 42; // backend reconciled current output after removal
+    backend.current = 42; // 后端在移除后已重新确定当前输出设备。
     if (!policy.Current(backend.outputs) || policy.Current(backend.outputs)->id != 42) return 1;
     backend.outputs.push_back({53, "tall", 4480, 0, 1080, 2160});
     transform = {9.0f, 0.0f, 0.0f};
     if (!policy.MoveTo(5020, 1080, transform) || transform.scale != 6.0f) return 1;
     transform = OutputController::Reposition({9.0f, 0.0f, 0.0f},
         {1, "big", 0, 0, 3840, 2160}, {2, "small", 0, 0, 100, 100}, 50, 50);
-    if (transform.scale != 10.0f) return 1; // clamp before service validation
+    if (transform.scale != 10.0f) return 1; // 服务校验前先限制范围。
     FakeEvents events;
     events.PointerMoved(3, 4);
     events.KeyboardKey(12, true);

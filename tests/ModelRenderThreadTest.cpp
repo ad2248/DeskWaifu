@@ -10,7 +10,7 @@
 
 #define CHECK(c) do { if (!(c)) { std::cerr << __LINE__ << ": " << #c << '\n'; return 1; } } while (false)
 
-// The linked application composition root is not used by this worker integration test.
+// 此工作线程集成测试不使用所链接的应用组装入口。
 std::unique_ptr<DesktopWindow> CreateDesktopWindow() { return {}; }
 
 struct Calls
@@ -75,18 +75,18 @@ int main(int argc, char** argv)
         {"", directory.path().toStdString(), "", {}, -1}, 64, 48));
     CHECK(processor.Metadata().names.size() == 2 && processor.Metadata().index == 0);
 
-    // GUI dispatcher is deliberately not serviced. Model update/render must still run.
+    // 刻意不处理 GUI 派发器；模型更新和渲染仍必须继续执行。
     QThread::msleep(150);
     CHECK(calls.frames >= 2 && processor.Frame() && processor.Frame()->rgba.size() == 64 * 48 * 4);
     const auto first = processor.Frame();
     const int before = calls.frames;
     ModelRenderState state; state.width = 32; state.height = 24;
     state.clip = {0, 0, 32, 24}; state.app.hidden = true;
-    for (int i = 0; i < 10000; ++i) processor.SetState(state); // Replace, do not queue 10,000 frames.
+    for (int i = 0; i < 10000; ++i) processor.SetState(state); // 替换状态，不排入一万帧。
     QThread::msleep(100);
     const auto hidden = processor.Frame();
     CHECK(hidden && hidden->width == 32 && hidden->height == 24 && hidden->regions.empty());
-    CHECK(first->width == 64 && first->rgba.size() == 64 * 48 * 4); // Immutable retained frame.
+    CHECK(first->width == 64 && first->rgba.size() == 64 * 48 * 4); // 保留帧不可变。
     CHECK(calls.frames > before && calls.frames < before + 50);
     for (auto byte : hidden->rgba) CHECK(byte == 0);
 
@@ -115,7 +115,7 @@ int main(int argc, char** argv)
     CHECK(!calls.wrongThread && calls.destroyedOnGui && calls.shutdowns == 1);
     CHECK(!processor.Submit(R"({"command":"reset_drag"})"));
 
-    // Failed initialization must unwind on the same worker and leave Cubism reusable.
+    // 初始化失败后必须在同一工作线程清理，并保证 Cubism 可以再次使用。
     ModelProcessor failed(loop);
     Calls failedCalls;
     CHECK(!failed.Start(std::unique_ptr<ModelRenderTarget>(new TrackedTarget(failedCalls)),

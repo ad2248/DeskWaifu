@@ -14,9 +14,9 @@ struct Result
 };
 
 QString executablePath(const QString& applicationDirectory);
-// Returns 0 when absent, or -1 when process inspection is unavailable.
+// 进程不存在时返回 0，无法检查进程时返回 -1。
 qint64 runningPid(const QString& procDirectory = QStringLiteral("/proc"));
-// Directories are injectable to isolate process fixtures and cross-process locks in tests.
+// 允许注入目录，以隔离测试中的进程夹具和跨进程锁。
 Result spawn(bool connected, const QString& applicationDirectory,
              const QString& procDirectory = QStringLiteral("/proc"),
              const QString& lockDirectory = {});

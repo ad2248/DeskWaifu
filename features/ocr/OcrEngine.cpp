@@ -103,7 +103,7 @@ Ort::Value OcrEngine::Run(Ort::Session& session, std::vector<float>& pixels, int
 
 std::vector<std::vector<cv::Point2f>> OcrEngine::Detect(const cv::Mat& image)
 {
-    // Match the PaddleOCR general pipeline: min side 64, max side 4000, multiples of 32.
+    // 与 PaddleOCR 通用流程一致：最短边 64、最长边 4000，尺寸为 32 的倍数。
     double ratio = std::min(image.rows, image.cols) < 64 ? 64.0 / std::min(image.rows, image.cols) : 1.0;
     int height = int(image.rows * ratio), width = int(image.cols * ratio);
     if (std::max(height, width) > 4000) {
@@ -137,9 +137,9 @@ std::vector<std::vector<cv::Point2f>> OcrEngine::Detect(const cv::Mat& image)
         for (auto p : points) local.emplace_back(int(p.x - left), int(p.y - top));
         cv::fillPoly(mask, std::vector<std::vector<cv::Point>>{local}, cv::Scalar(1));
         if (cv::mean(probability(cv::Rect(left, top, mask.cols, mask.rows)), mask)[0] < 0.6) continue;
-        // DB quad mode expands a minimum-area rectangle, then takes its minimum-area rectangle again.
-        // Its continuous round-offset bounding rectangle grows by 2*area*ratio/perimeter per side.
-        // Unlike pyclipper's integer offset, this retains float precision (see parity tests).
+        // DB 四边形模式先扩张最小面积矩形，再求一次最小面积矩形。
+        // 连续圆角偏移的包围矩形，每边增加 2*area*ratio/perimeter。
+        // 与 pyclipper 的整数偏移不同，此处保留浮点精度，参见一致性测试。
         const float distance = rect.size.area() * 1.5f / (2 * (rect.size.width + rect.size.height));
         rect.size.width += 2 * distance;
         rect.size.height += 2 * distance;
@@ -155,7 +155,7 @@ std::vector<std::vector<cv::Point2f>> OcrEngine::Detect(const cv::Mat& image)
     std::sort(boxes.begin(), boxes.end(), [](const auto& a, const auto& b) {
         return a[0].y == b[0].y ? a[0].x < b[0].x : a[0].y < b[0].y;
     });
-    // Paddle's local row ordering, not a document-layout algorithm.
+    // 使用 Paddle 的局部行排序，而非文档版面分析算法。
     for (size_t i = 1; i < boxes.size(); ++i)
         for (size_t j = i; j > 0 && std::abs(boxes[j][0].y - boxes[j - 1][0].y) < 10 && boxes[j][0].x < boxes[j - 1][0].x; --j)
             std::swap(boxes[j], boxes[j - 1]);

@@ -12,9 +12,8 @@ struct PendingCommand
 using PendingCommandPtr = std::shared_ptr<PendingCommand>;
 Q_DECLARE_METATYPE(PendingCommandPtr)
 
-// Routes existing configuration/control commands through the same ordered
-// event dispatcher. Platform/config state stays on the GUI thread; the model
-// adapter forwards only model operations to its worker.
+// 将现有配置和控制命令交给同一个有序事件派发器。
+// 平台和配置状态保留在 GUI 线程，模型适配器只将模型操作转交工作线程。
 class CommandProcessor final : public Processor, public ICommandService
 {
 public:

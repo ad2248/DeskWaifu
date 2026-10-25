@@ -8,7 +8,7 @@
 #include "speech/SpeechProcessor.hpp"
 #include "reading_clip/ReadingClipProcessor.hpp"
 
-// Composition only. Business sequencing lives in ReadingClipProcessor, not here.
+// 仅负责组装，业务流程顺序由 ReadingClipProcessor 管理，不在此处实现。
 class ProcessorRuntime
 {
 public:
@@ -22,7 +22,7 @@ public:
     void SpeakGreeting(const QString& text)
     { _loop.Post({ProcessorEvents::Speak, nullptr, &_speech, {{"text", text}, {"replace", true}}}); }
 private:
-    ProcessorEventLoop _loop; // Outlives every handler and queued pointer.
+    ProcessorEventLoop _loop; // 比所有处理器和排队指针存活更久。
     ImageProcessor _images;
     OcrProcessor _ocr;
     ScreenshotProcessor _screenshots;

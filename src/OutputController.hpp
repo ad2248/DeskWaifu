@@ -33,7 +33,7 @@ public:
     static ModelTransform Reposition(ModelTransform current, const OutputSnapshot& oldOutput,
         const OutputSnapshot& nextOutput, int globalX, int globalY);
 
-    // Returns false for a missing capability/output or failed backend switch.
+    // 缺少能力或输出设备，或后端切换失败时返回 false。
     bool MoveTo(int x, int y, ModelTransform& transform);
     bool Focus(const std::string& name);
     const OutputSnapshot* Current(const std::vector<OutputSnapshot>& outputs) const

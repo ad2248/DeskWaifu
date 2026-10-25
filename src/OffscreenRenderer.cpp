@@ -123,7 +123,7 @@ bool OffscreenRenderer::Initialize(const std::string& pciDevice)
         std::cerr << "[GPU] Cannot initialize offscreen OpenGL functions: " << glewGetErrorString(glewError) << '\n';
         return false;
     }
-    // GLEW probes can leave an error behind; do not attribute it to rendering.
+    // GLEW 探测可能遗留错误，不能将其误判为渲染错误。
     while (glGetError() != GL_NO_ERROR) {}
     std::cout << "[GPU] Render device " << pciDevice << ": " << glGetString(GL_VENDOR)
         << " / " << glGetString(GL_RENDERER) << " / " << glGetString(GL_VERSION) << std::endl;

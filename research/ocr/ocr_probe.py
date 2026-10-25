@@ -43,7 +43,7 @@ def memory():
 
     return {
         "rss_mib": round(psutil.Process().memory_info().rss / 1024**2, 2),
-        # Linux ru_maxrss is KiB and includes imports, loading and previous requests.
+    # Linux 的 ru_maxrss 单位为 KiB，包含导入、加载和之前请求占用的内存。
         "process_peak_rss_mib": round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 2),
     }
 
@@ -53,7 +53,7 @@ def load_engine(args):
     rec_name = "PP-OCRv6_medium_rec"
     det_dir = model_directory(args.models_root, det_name)
     rec_dir = model_directory(args.models_root, rec_name)
-    # Avoid model-source connectivity checks; explicit local paths prevent model downloads.
+    # 跳过模型源连通性检查；显式本地路径可防止下载模型。
     os.environ["PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK"] = "True"
     start = time.perf_counter()
     with contextlib.redirect_stdout(sys.stderr):
@@ -78,7 +78,7 @@ def recognize(engine, image, max_side):
     from PIL import Image
 
     image = Path(image).expanduser().resolve(strict=True)
-    # Reject rather than resize: output polygons remain in original image pixels.
+    # 拒绝超限图像而非缩放，使输出多边形保持原图像素坐标。
     with Image.open(image) as source:
         width, height = source.size
         if max(width, height) > max_side:
@@ -102,7 +102,7 @@ def emit(payload):
 
 
 def serve(engine, max_side):
-    # Serial requests intentionally bound concurrency to one; no background queue.
+            # 刻意串行处理请求，并发数限制为一，不使用后台队列。
     for line in sys.stdin:
         request_id = None
         try:

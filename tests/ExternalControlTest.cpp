@@ -12,7 +12,7 @@ struct Runtime : IApplicationRuntime
 int main()
 {
     Runtime runtime;
-    ApplicationService app(runtime); // non-IPC source uses identical API
+    ApplicationService app(runtime); // 非 IPC 来源使用相同 API。
     using Lifetime = ExternalControlState::Lifetime;
     if (!app.SetMouth("cli", Lifetime::Persistent, 0.3f).ok ||
         !app.SetLook("cli", Lifetime::Persistent, 0.1f, 0.2f).ok) return 1;
@@ -25,7 +25,7 @@ int main()
     if (input.mouth != 0.8f || input.lookX != 0.7f) return 1;
     app.ReleaseControls("tracker2");
     if (app.FrameInput().lookX != -0.5f || app.FrameInput().mouth != 0.8f) return 1;
-    app.ReleaseControls("audio"); // persistent CLI survives short connection closure
+    app.ReleaseControls("audio"); // 持久 CLI 控制不会因短连接关闭而消失。
     if (app.FrameInput().mouth != 0.3f || app.FrameInput().lookX != -0.5f) return 1;
     app.ResetLook("tracker");
     if (app.FrameInput().lookX != 0.1f) return 1;
@@ -34,7 +34,7 @@ int main()
     if (app.SetLook("bad", Lifetime::Stream, std::numeric_limits<float>::infinity(), 0.0f).ok ||
         app.SetMouth("bad", Lifetime::Stream, 2.0f).ok) return 1;
     app.SetMouth("cli", Lifetime::Persistent, 0.4f);
-    app.ClearControls(); // Called only after an actual model change completes.
+    app.ClearControls(); // 只在模型实际切换完成后调用。
     if (app.FrameInput().hasMouth || app.FrameInput().hasLook) return 1;
     app.SetMouth("cli", Lifetime::Persistent, 0.5f);
     app.ReleaseControls("cli");

@@ -15,7 +15,7 @@ struct TransformSettings
     ModelRegion region;
 };
 
-// Owns the editing transaction, not the rendering/platform policy.
+// 持有编辑事务，不负责渲染或平台策略。
 class TransformEditor
 {
 public:
@@ -30,7 +30,7 @@ public:
         ConfigStore::Snapshot snapshot;
         TransformSettings parsed;
         LAppConfig::Values values;
-        if (!Read(snapshot, values, parsed, _error)) { _loadFailed = true; return true; } // Never overwrite an invalid file.
+        if (!Read(snapshot, values, parsed, _error)) { _loadFailed = true; return true; } // 不覆盖无效文件。
         _config.values = std::move(values);
         _snapshot = snapshot; _runtime = parsed;
         _service.SetTransform(parsed.transform);
@@ -192,7 +192,7 @@ public:
         bool changed = false;
         for (const auto* key : {"model_x", "model_y", "model_scale", "model_region"})
             if (Get(latest, key) != Get(_snapshot, key)) changed = true;
-        // Preserve the old comparison snapshot while unsaved local changes exist.
+        // 存在未保存的本地变更时，保留原来的比较快照。
         if (_dirty && !Editing() && changed) { _conflict = true; _error = "External transform changes conflict with unsaved settings"; return; }
         _config.values = std::move(values);
         _snapshot = latest;
@@ -203,7 +203,7 @@ public:
         }
     }
 
-    // Integer pixel deltas, transformed into the model's existing coordinate system.
+    // 将整数像素增量转换到模型现有坐标系。
     static TransformSettings MoveCrop(TransformSettings value, int64_t dx, int64_t dy, int height)
     {
         auto bounded = [](int64_t n) { return int(std::max<int64_t>(INT32_MIN, std::min<int64_t>(INT32_MAX, n))); };

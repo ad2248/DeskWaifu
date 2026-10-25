@@ -5,7 +5,7 @@
 #include <QSharedPointer>
 #include <QTemporaryDir>
 
-// A private temporary PNG survives while any queued event/service retains it.
+// 只要排队事件或服务仍持有引用，私有临时 PNG 就保持有效。
 class ImageFile
 {
 public:

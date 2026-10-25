@@ -3,7 +3,7 @@
 #include "ApplicationService.hpp"
 #include "LAppConfig.hpp"
 
-// Publish the new mouse gaze limit only after its configuration is saved.
+// 配置保存成功后才更新鼠标视线范围限制。
 class MouseLookSettings
 {
 public:

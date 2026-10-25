@@ -6,7 +6,7 @@
 #include <vector>
 #include <linux/input-event-codes.h>
 
-// Raw evdev keys: deliberately limited to the common, layout-independent keys.
+// 原始 evdev 按键，刻意限定为常用且不依赖键盘布局的按键。
 inline std::string ModelKeyName(uint32_t key)
 {
     if (key >= KEY_Q && key <= KEY_P) return std::string(1, "QWERTYUIOP"[key - KEY_Q]);
@@ -37,7 +37,7 @@ class ModelKeyboard
 public:
     void Reset() { _pressed.clear(); }
 
-    // Returns true only for a new, recognized key press; releases/repeats don't trigger.
+    // 仅对新按下且可识别的按键返回 true；释放和重复事件不触发。
     bool Key(uint32_t code, bool down)
     {
         const std::string name = ModelKeyName(code);
@@ -63,7 +63,7 @@ private:
     std::set<uint32_t> _pressed;
 };
 
-// Click counting is kept separate from the renderer so timing/drag rules can be tested.
+// 点击计数与渲染器分离，以便测试时间和拖动判定规则。
 class ModelDoubleClick
 {
 public:
@@ -75,8 +75,8 @@ public:
             && x - _x > -Distance && x - _x < Distance
             && y - _y > -Distance && y - _y < Distance;
     }
-    // Only call for a non-drag release. On drag, flush/take the pending tap
-    // instead of calling Release, so a dragged gesture cannot count as a click.
+    // 仅在非拖动释放时调用。拖动时应派发或取出待处理点击，而非调用 Release，
+    // 避免将拖动手势计为点击。
     Result Release(uint32_t time, int x, int y, int tapX, int tapY)
     {
         if (IsSecondClick(time, x, y))
@@ -92,7 +92,7 @@ public:
         _tapY = tapY;
         return Pending;
     }
-    // Double-click distance uses press coordinates; the eventual tap uses release coordinates.
+    // 双击距离使用按下坐标，最终点击使用释放坐标。
     bool Expired(uint32_t time) const { return _pending && static_cast<uint32_t>(time - _time) > Delay; }
     bool Take() { bool pending = _pending; _pending = false; return pending; }
     int X() const { return _tapX; }

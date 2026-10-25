@@ -25,8 +25,8 @@ int main()
     ApplicationService service(runtime);
     LAppConfig config; config.sourcePath = path;
 
-    // Preserve the edit transaction coverage of the removed native protocol stub.
-    // Actual Qt input-region commits are checked by qt_headless_smoke.py.
+    // 保留已移除原生协议桩的编辑事务测试覆盖。
+    // 实际 Qt 输入区域提交由 qt_headless_smoke.py 验证。
     for (const auto* owner : {"local-screen", "gui"}) {
         for (const auto size : {ModelRegion{0, 0, 1000, 800}, ModelRegion{0, 0, 1280, 720}}) {
             for (const auto& model : {std::vector<ModelRegion>{{110, 130, 120, 40}, {140, 170, 80, 60}},

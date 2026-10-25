@@ -35,7 +35,7 @@ int main()
                 R"({"command":"get_status"} trailing)", "[]", "{", "{}//comment",
                 R"({"command":"\ud800"})", R"({"index":001})"})
             if (ConfigStore::Parse(invalid, request, error, false)) return 1;
-        // Configuration documents still support comments.
+        // 配置文档仍支持注释。
         if (!ConfigStore::Parse("{}//comment", request, error)) return 1;
         for (const auto* value : {"0.9", "1e0", "2147483648", "-2147483649", "null", "true", "[]", "{}",
                 "\"banana\"", "\"0\"", "\"0junk\""}) {

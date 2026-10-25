@@ -17,18 +17,18 @@ struct ModelOperation
 using ModelOperationPtr = std::shared_ptr<ModelOperation>;
 Q_DECLARE_METATYPE(ModelOperationPtr)
 
-// GUI-side operational adapter. Frames use a bounded latest-state/latest-frame
-// mailbox, never per-frame ProcessorEvents or an unbounded Qt signal queue.
+// GUI 侧的操作适配器。帧使用有界的最新状态和最新帧交换槽，
+// 不使用逐帧 ProcessorEvent 或无界 Qt 信号队列。
 class ModelProcessor final : public Processor
 {
 public:
     explicit ModelProcessor(ProcessorEventLoop& loop);
     ~ModelProcessor() override;
     bool Start(std::unique_ptr<ModelRenderTarget> target, const ModelRuntimeOptions& options, int width, int height);
-    bool Stop(); // Join before unregistering, then destroy the GUI-owned surface.
+    bool Stop(); // 注销前等待线程结束，然后销毁 GUI 持有的表面。
     bool HandleEvent(const ProcessorEvent& event) override;
-    // Native events: model.operation {json: string} -> model.result {reply: object},
-    // with result receiver = original sender. Submit is the legacy callback adapter.
+    // 原生事件：model.operation {json: string} -> model.result {reply: object}，
+    // 结果接收者为原发送者。Submit 用于适配旧式回调。
     bool Submit(const std::string& json, std::function<void(QJsonObject)> complete = {});
     void SetState(ModelRenderState state);
     std::shared_ptr<const RenderFrame> Frame() const;

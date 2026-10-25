@@ -1,7 +1,7 @@
 name: OpenCode PR Review
 
 on:
-  # Load the workflow from the trusted base branch, never from the PR head.
+  # 从可信的目标分支加载工作流，不能从 PR 来源分支加载。
   pull_request_target:
     types: [opened, reopened, synchronize]
 

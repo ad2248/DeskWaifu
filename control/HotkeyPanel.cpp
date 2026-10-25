@@ -33,9 +33,8 @@ HotkeyPanel::HotkeyPanel(QWidget* parent) : QWidget(parent)
 
 HotkeyPanel::~HotkeyPanel()
 {
-    // QWidget's base destructor hides the window and emits focusChanged
-    // after members such as _pressed are already destroyed. Disconnect the
-    // application signal while those members are still alive.
+    // QWidget 基类析构时会隐藏窗口并发出 focusChanged，
+    // 此时 _pressed 等成员已被销毁，因此应在成员仍存活时断开应用信号。
     QObject::disconnect(qApp, nullptr, this, nullptr);
     qApp->removeEventFilter(this);
 }

@@ -46,7 +46,7 @@ int main()
     CHECK(!saved.values.count("other") && !saved.values.count("model_region"));
     struct stat st; CHECK(stat(path.c_str(), &st) == 0 && (st.st_mode & 0777) == 0640);
     CHECK(!store.Commit("{\"model_x\":3}", before, parsed, error));
-    // A whole-document write must also detect unrelated external edits.
+    // 整个文档写入也必须检测无关字段的外部编辑。
     auto expected = saved;
     CHECK(store.Commit("{\"other\":[1,2,3]}", saved, parsed, error));
     CHECK(!store.Commit("{\"model_x\":4}", expected, saved, error));

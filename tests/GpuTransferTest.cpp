@@ -30,7 +30,7 @@ int swaps = 0;
 int renderedWidth = 0, renderedHeight = 0;
 }
 
-// Verify pixels on the presentation GPU, not merely in the render GPU's FBO.
+// 验证呈现 GPU 上的像素，而非仅验证渲染 GPU 的 FBO。
 extern "C" EGLBoolean eglSwapBuffers(EGLDisplay display, EGLSurface window)
 {
     if (surface) {
@@ -103,7 +103,7 @@ int main(int argc, char** argv)
             glClearColor(.125f, .25f, .5f, .5f); glClear(GL_COLOR_BUFFER_BIT);
             Require(target->Read(frame.rgba), "Cannot read worker frame");
         }, Qt::BlockingQueuedConnection);
-        // Upload must retain source dimensions/stride across a presentation resize.
+        // 呈现尺寸变化时，上传仍必须保留源图像尺寸和行跨度。
         if (frames == 4) surface->resize(surface->width() / 2, surface->height() / 2);
         Require(window->UploadFrame(frame), "Cannot upload immutable worker frame");
         glEnable(GL_SCISSOR_TEST); glScissor(20, 20, 40, 40);

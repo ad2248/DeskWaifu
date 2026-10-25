@@ -21,8 +21,7 @@ struct AppSnapshot
     int modelCount = 0;
 };
 
-// Platform/SDK ports: the service owns state and only commits changes after
-// the corresponding runtime operation succeeds.
+// 平台和 SDK 接口：服务持有状态，仅在对应的运行时操作成功后提交变更。
 class IApplicationRuntime
 {
 public:

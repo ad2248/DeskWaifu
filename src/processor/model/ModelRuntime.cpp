@@ -48,7 +48,7 @@ bool ModelRuntime::Shutdown(bool contextCurrent)
 {
     if (!_started) return true;
     if (!contextCurrent && (_view || _manager || _textures)) {
-        // Never run GL destructors against another context or another thread.
+        // 不能在其他上下文或线程中执行 GL 析构。
         (void)_view.release(); (void)_manager.release(); (void)_textures.release();
         _started = false;
         return false;
@@ -164,7 +164,7 @@ std::shared_ptr<RenderFrame> ModelRuntime::Render(const ModelRenderState& state,
     const bool opacityFrame = state.opacity != 1 && !state.app.hidden && _view->BeginOpacityFrame();
     if (!state.app.hidden) {
         if (!state.editing && state.hasLook) _manager->OnDrag(state.lookX, state.lookY);
-        // A model switch must never briefly apply the previous model's control sources.
+        // 切换模型后，即使短暂一帧也不能应用上一个模型的控制来源。
         auto* model = _manager->GetModel(0);
         _view->Render(state.app.transform, model && state.modelToken == model->Hotkeys().Token() ? state.controls : ModelFrameInput{});
     }

@@ -6,8 +6,8 @@
 
 class QThread;
 
-// Construct/prepare on the GUI thread; all GL methods, initialization and shutdown
-// run on the render thread. Destruction follows thread join on the GUI thread.
+// 在 GUI 线程构造和准备；所有 GL 方法、初始化和关闭操作均在渲染线程执行。
+// 等待渲染线程结束后，在 GUI 线程销毁此对象。
 class ModelRenderTarget
 {
 public:

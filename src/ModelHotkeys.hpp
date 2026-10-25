@@ -5,7 +5,7 @@
 
 namespace Live2D { namespace Cubism { namespace Framework { class CubismModel; } } }
 
-// Independent of the renderer: model configuration and persistent expression state.
+// 与渲染器独立的模型配置和持久表情状态。
 class ModelHotkeys
 {
 public:
@@ -31,7 +31,7 @@ public:
     bool Trigger(const std::string& id, std::string& error);
     void Update(float seconds);
     void Apply(Live2D::Cubism::Framework::CubismModel* model) const;
-    // Resolve IDs against this model's current bindings, never a caller's index.
+    // 根据当前模型的绑定解析 ID，不使用调用方传入的索引。
     bool IsActive(const std::string& id) const;
     const std::vector<Binding>& Bindings() const { return _bindings; }
     const std::vector<Expression>& Expressions() const { return _expressions; }

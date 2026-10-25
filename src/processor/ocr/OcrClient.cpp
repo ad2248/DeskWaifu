@@ -48,7 +48,7 @@ OcrClient::OcrClient(QString executable, int timeoutMs, int idleMs) : _executabl
     connect(&_deadline, &QTimer::timeout, this, [this] { Fail("OCR request timed out"); });
     connect(&_idle, &QTimer::timeout, this, [this] { _ready = false; _process.kill(); });
     connect(&_process, &QProcess::readyReadStandardOutput, this, [this] { ReadOutput(); });
-    // Never retain an unbounded diagnostic stream or include image contents in application logs.
+    // 不保留无界诊断输出，也不将图像内容写入应用日志。
     connect(&_process, &QProcess::readyReadStandardError, this, [this] { _process.readAllStandardError(); });
     connect(&_process, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
         if (error == QProcess::FailedToStart) Fail("OCR helper failed to start: " + _process.errorString());

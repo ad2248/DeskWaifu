@@ -15,7 +15,7 @@ inline QJsonObject AwaitModel(ModelProcessor& processor, QJsonObject operation =
     while (!done && timeout.elapsed() < 5000) {
         QCoreApplication::processEvents(); QThread::msleep(1);
     }
-    // No callback may borrow our stack after a failed assertion.
+    // 断言失败后，任何回调都不能继续借用当前栈变量。
     if (!done) qFatal("Timed out waiting for model operation");
     return result;
 }

@@ -8,7 +8,7 @@
 
 struct LAppConfig
 {
-    // Only persisted fields belong here; runtime bookkeeping stays outside.
+    // 此处只放持久化字段，运行时管理状态保存在外部。
     struct Values
     {
         std::vector<std::string> additionalModelDirs;

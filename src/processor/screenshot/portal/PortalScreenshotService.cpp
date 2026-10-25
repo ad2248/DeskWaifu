@@ -107,14 +107,14 @@ QString PortalScreenshotService::Capture(const QString& parentWindow)
     _deadline.start();
     auto call = QDBusMessage::createMethodCall(Service, DesktopPath, "org.freedesktop.portal.Screenshot", "Screenshot");
     call << parentWindow << QVariantMap{{"handle_token", token}, {"interactive", true}, {"modal", true}};
-    // Subscribe before the method call: portals can emit Response before returning the handle.
+    // 先订阅再调用方法，因为 Portal 可能在返回句柄前发出 Response。
     auto* watcher = new QDBusPendingCallWatcher(_bus.asyncCall(call), QCoreApplication::instance());
     const QPointer<PortalScreenshotService> self(this);
     const auto bus = _bus;
     connect(watcher, &QDBusPendingCallWatcher::finished, watcher, [self, request, bus](QDBusPendingCallWatcher* pending) {
         const QDBusPendingReply<QDBusObjectPath> reply = *pending;
         pending->deleteLater();
-        // Cancellation/destruction may precede a delayed method reply. Close its real handle too.
+        // 取消或析构可能早于延迟的方法回复，此时也要关闭回复中的真实句柄。
         if (!self || request->cancelled) {
             if (!reply.isError() && !request->responded) CloseRequest(bus, reply.value().path());
             return;
@@ -148,7 +148,7 @@ bool PortalScreenshotService::Cancel(const QString& requestId)
 
 void PortalScreenshotService::Fail(const std::shared_ptr<Request>& request, Error error, const QString& message)
 {
-    // Copy before clearing _request: callers may pass that member by reference.
+    // 清除 _request 前先复制，因为调用方可能按引用传入该成员。
     const auto current = request;
     if (_request != current || current->finished) return;
     current->finished = current->cancelled = true;
@@ -191,6 +191,6 @@ void PortalScreenshotService::Decode(const std::shared_ptr<Request>& request, co
         _request.reset();
         emit Captured(request->id, result.image);
     });
-    // Decode without blocking the rendering/event-loop thread; never borrow the service in a worker.
+    // 后台解码不能阻塞渲染或事件循环线程，也不能在工作线程借用服务对象。
     watcher->setFuture(QtConcurrent::run([path] { return ReadImage(path); }));
 }

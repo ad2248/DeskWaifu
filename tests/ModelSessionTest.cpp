@@ -23,12 +23,12 @@ int main()
     {
         ++calls;
         if (index == 3) ++activeLoads;
-        if (index == 2) return nullptr;  // broken model, including prefetch
+        if (index == 2) return nullptr;  // 损坏的模型，预取时也一样。
         return std::unique_ptr<FakeModel>(new FakeModel(index));
     };
     if (!session.Select(0, load) || session.CurrentIndex() != 0 || !session.Current()) return 1;
     if (session.Cache().Get(1) == nullptr || session.Cache().Get(2) != nullptr) return 1;
-    // A read-only cache still lends mutable models for viewport updates.
+    // 只读缓存仍可借出可修改模型，以更新视口。
     const auto& view = session.Cache();
     for (std::size_t i = 0; i < view.Size(); ++i)
         if (auto* model = view.Get(i)) model->value += 10;
@@ -40,10 +40,10 @@ int main()
     if (session.Cache().Get(0) || session.Cache().Get(2)) return 1;
     if (!session.Select(3, load) || !session.Cache().Get(4)) return 1;
     if (session.Cache().Get(1)) return 1;
-    session.SetTextureBudget(16); // only the active model fits
+    session.SetTextureBudget(16); // 预算仅容纳活动模型。
     if (!session.Select(3, load) || session.Cache().Get(4) != nullptr ||
         session.Cache().ModelBytes() != 16) return 1;
-    session.SetTextureBudget(8); // active model is pinned above the soft budget
+    session.SetTextureBudget(8); // 活动模型超出软预算时仍被保留。
     auto* pinned = session.Current();
     const int beforeSelect = activeLoads;
     if (!pinned || session.Cache().ModelBytes() != 16) return 1;

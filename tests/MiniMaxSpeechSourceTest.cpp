@@ -135,7 +135,7 @@ private slots:
         QSignalSpy errors(&source, &MiniMaxSpeechSource::Failed);
         QSignalSpy done(&source, &MiniMaxSpeechSource::Completed);
         source.Start(7, {"test", {}});
-        source.Cancel(6); // Must not cancel another task.
+        source.Cancel(6); // 不能取消其他任务。
         QTRY_VERIFY(server.hasPendingConnections());
         auto* socket = server.nextPendingConnection();
         socket->setParent(&server);
