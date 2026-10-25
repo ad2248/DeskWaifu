@@ -1,3 +1,4 @@
+find_package(Qt6 6.5 REQUIRED COMPONENTS Network)
 add_executable(processor-event-loop-test ProcessorEventLoopTest.cpp)
 target_link_libraries(processor-event-loop-test PRIVATE deskwaifu_events)
 add_test(NAME processor-event-loop COMMAND processor-event-loop-test)

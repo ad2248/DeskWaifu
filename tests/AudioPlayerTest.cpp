@@ -1,6 +1,6 @@
-#include "AudioPlayer.hpp"
-#include "MiniMaxSpeechSource.hpp"
-#include "SpeechPlayer.hpp"
+#include "processor/speech/audio/AudioPlayer.hpp"
+#include "processor/speech/source/MiniMaxSpeechSource.hpp"
+#include "processor/speech/SpeechPlayer.hpp"
 #include <QFile>
 #include <QMediaDevices>
 #include <QAudioDevice>

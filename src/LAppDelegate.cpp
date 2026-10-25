@@ -6,9 +6,9 @@
  */
 
 #include "LAppDelegate.hpp"
-#include "MiniMaxSpeechSource.hpp"
-#include "AudioPlayer.hpp"
-#include "SpeechPlayer.hpp"
+#include "processor/speech/source/MiniMaxSpeechSource.hpp"
+#include "processor/speech/audio/AudioPlayer.hpp"
+#include "processor/speech/SpeechPlayer.hpp"
 #include "OcrClient.hpp"
 #include "processor/ProcessorRuntime.hpp"
 #include "processor/ipc/IpcProcessor.hpp"

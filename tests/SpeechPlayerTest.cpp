@@ -1,6 +1,6 @@
-#include "SpeechPlayer.hpp"
-#include "MiniMaxSpeechSource.hpp"
-#include "AudioPlayer.hpp"
+#include "processor/speech/SpeechPlayer.hpp"
+#include "processor/speech/source/MiniMaxSpeechSource.hpp"
+#include "processor/speech/audio/AudioPlayer.hpp"
 #include <QtTest>
 
 class FakeSource : public MiniMaxSpeechSource

@@ -1,4 +1,4 @@
-#include "MiniMaxSpeechSource.hpp"
+#include "processor/speech/source/MiniMaxSpeechSource.hpp"
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QWebSocket>

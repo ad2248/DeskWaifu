@@ -1,6 +1,6 @@
 #pragma once
 
-#include "SpeechTypes.hpp"
+#include "processor/speech/SpeechTypes.hpp"
 #include <QAudioFormat>
 #include <QObject>
 #include <QTimer>

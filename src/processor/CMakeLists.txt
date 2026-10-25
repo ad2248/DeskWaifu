@@ -1,4 +1,6 @@
+find_package(Qt6 6.5 REQUIRED COMPONENTS Gui Concurrent)
 add_subdirectory(screenshot)
+add_subdirectory(speech)
 
 add_library(deskwaifu_events STATIC
   ../event/ProcessorEvent.hpp ../event/ProcessorEventLoop.hpp ../event/ProcessorEventLoop.cpp)

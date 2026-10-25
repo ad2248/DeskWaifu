@@ -6,8 +6,8 @@
 #include "processor/screenshot/ScreenshotProcessor.hpp"
 #include "processor/speech/SpeechProcessor.hpp"
 #include "processor/ipc/IpcProcessor.hpp"
-#include "MiniMaxSpeechSource.hpp"
-#include "AudioPlayer.hpp"
+#include "processor/speech/source/MiniMaxSpeechSource.hpp"
+#include "processor/speech/audio/AudioPlayer.hpp"
 #include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QFileInfo>

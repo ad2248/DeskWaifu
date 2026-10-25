@@ -1001,7 +1001,8 @@ deskwaifu/
 │   ├── LAppIPC.*           # IPC socket server for external control
 │   ├── event/              # Pointer-routed, queued event dispatch on the Qt main thread
 │   ├── processor/          # Stateful processors, one subdirectory per responsibility
-│   │   └── screenshot/     # Event adapter, service interface and portal/ backend
+│   │   ├── screenshot/     # Event adapter, service interface and portal/ backend
+│   │   └── speech/         # Speech events/coordinator, audio/ playback and source/ backend
 │   └── LAppDefine.*        # Global constants and configuration
 ├── thirdParty/             # Third-party dependencies (GLEW, stb)
 ├── cmake/                  # CMake helper scripts

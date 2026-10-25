@@ -1,6 +1,6 @@
 #include "SpeechPlayer.hpp"
-#include "AudioPlayer.hpp"
-#include "MiniMaxSpeechSource.hpp"
+#include "audio/AudioPlayer.hpp"
+#include "source/MiniMaxSpeechSource.hpp"
 #include <QAbstractTransition>
 #include <QCoreApplication>
 #include <functional>
