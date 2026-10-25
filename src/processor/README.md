@@ -41,6 +41,8 @@ processor/
 
 ## 统一事件模型
 
+`processor-boundaries` 是已知跨域 include、具体处理器类型和历史回调绕道的静态护栏，不是完整的 C++ 调用图分析。任意 lambda/类型别名中的业务转调仍需代码审查；不得仅凭静态检查通过宣称所有回调均已证明安全。
+
 ```cpp
 struct ProcessorEvent {
     QString type;

@@ -154,6 +154,20 @@ try {
     first.connectToServer(path); second.connectToServer(path);
     Check(first.waitForConnected(1000) && second.waitForConnected(1000), "private IPC connections");
     Check(Request(second, {{"command", "get_status"}}).value("model_index") == 0, "metadata state cache");
+    // 已释放的单击也必须被隐藏取消，不能与重新显示后的点击组成双击。
+    auto click = [&] {
+        window->events->PointerMoved(300, 200);
+        window->events->PointerButton(0, true);
+        window->events->PointerButton(0, false);
+        Drain();
+    };
+    QElapsedTimer clicks; clicks.start();
+    click();
+    Check(Request(second, {{"command", "toggle_hidden"}}).value("hidden").toBool(), "hide pending single click");
+    Check(!Request(second, {{"command", "toggle_hidden"}}).value("hidden").toBool(), "show after pending click");
+    click();
+    Check(clicks.elapsed() < ModelDoubleClick::Delay, "regression clicks must fall within double-click interval");
+    Check(!window->grabbed && speech.spoken == 0, "hide/show separates clicks without keyboard capture or greeting");
     Check(Request(second, {{"command", "begin_transform_edit"}}).value("editing").toBool(), "GUI owns edit transaction");
     Check(!Request(first, {{"command", "set_model"}, {"index", 1}}).value("ok").toBool(), "real edit guard before model action");
     Check(model.selections == 0, "rejected edit does not reach model");

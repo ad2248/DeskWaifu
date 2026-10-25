@@ -1,4 +1,4 @@
-"""Production ownership rules and negative fixtures (not just a path allowlist)."""
+"""Static ownership guardrails for known bypasses; not whole-program callback analysis."""
 from pathlib import Path
 import re
 import unittest
@@ -39,6 +39,14 @@ def violations(path, text):
 
 
 class ProcessorBoundaries(unittest.TestCase):
+    def test_ci_variant_paths_exist(self):
+        workflow = (SOURCE.parent / ".gitea/workflows/ci.yml").read_text()
+        paths = re.findall(r"endswith\('(/src/[^']+)'\)", workflow)
+        self.assertTrue(paths, "CI must verify the variant's manager compilation")
+        for path in paths:
+            self.assertTrue((SOURCE.parent / path.lstrip("/")).is_file(), path)
+        self.assertIn("expected in shlex.split(entry['command'])", workflow)
+
     def test_production_tree(self):
         errors = []
         for path in SOURCE.rglob("*"):
