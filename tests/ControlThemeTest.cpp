@@ -10,7 +10,7 @@
 #include <QStyleOptionComboBox>
 #include <QtTest>
 
-// Some desktop themes keep form fields at their initial size hint ("自动").
+// 部分桌面主题让表单字段保持初始建议尺寸，此时内容只有“自动”。
 class CompactFormStyle : public QProxyStyle
 {
 public:
@@ -102,7 +102,7 @@ private slots:
         ui.renderDeviceCombo->setStyle(&style);
         window.resize(720, 560);
         window.show();
-        QCoreApplication::processEvents(); // The initial hint contains only "自动".
+        QCoreApplication::processEvents(); // 初始建议尺寸只包含“自动”。
         ui.renderDeviceCombo->addItems({
             "Mesa Intel(R) Graphics (ARL) (0000:00:02.0)",
             "NVIDIA GeForce RTX 2070 SUPER (0000:02:00.0)"});
@@ -125,7 +125,7 @@ private slots:
         ui.renderDeviceCombo->hidePopup();
         const auto screenshot = qEnvironmentVariable("DESKWAIFU_DROPDOWN_SCREENSHOT");
         if (!screenshot.isEmpty() && fontSize == 13) QVERIFY(window.grab().save(screenshot));
-        // An exceptionally long device name may elide, but must not widen the window.
+        // 特别长的设备名可以省略显示，但不能使窗口变宽。
         ui.renderDeviceCombo->addItem(QString(600, 'W'));
         ui.renderDeviceCombo->setCurrentIndex(ui.renderDeviceCombo->count() - 1);
         QCoreApplication::processEvents();

@@ -13,7 +13,7 @@ inline QRegion QtModelInputRegion(const std::vector<ModelRegion>& regions)
     return mask;
 }
 
-// Qt Wayland reports XKB keycodes; model bindings use evdev codes.
+// Qt Wayland 报告 XKB 键码，模型绑定使用 evdev 键码。
 inline unsigned int QtWaylandModelKey(unsigned int scanCode)
 {
     return scanCode >= 8 ? scanCode - 8 : 0;

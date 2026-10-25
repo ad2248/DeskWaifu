@@ -96,13 +96,13 @@ private slots:
         DeskWaifuRespawner respawner(client, app());
         QSignalSpy finished(&respawner, &DeskWaifuRespawner::finished);
         respawner.start(proc(), directory.path());
-        respawner.start(proc(), directory.path()); // A repeated click must not queue another quit.
+        respawner.start(proc(), directory.path()); // 重复点击不能再次排入 quit 命令。
         QTRY_VERIFY(socket->canReadLine());
         QCOMPARE(QJsonDocument::fromJson(socket->readLine()).object().value("command").toString(), "quit");
         QSignalSpy cancelled(&client, &DeskWaifuClient::commandCancelled);
         if (acknowledged) socket->write("{\"ok\":true}\n");
         else {
-            // The old backend exits without acknowledging quit or consuming its queue.
+            // 旧后端退出，既不确认 quit，也不处理其排队命令。
             for (const auto& command : {"toggle_hidden", "next_model", "do_motion", "set_output"})
                 client.sendCommand(QString::fromLatin1(command));
         }
@@ -110,8 +110,8 @@ private slots:
         QTRY_COMPARE(cancelled.size(), acknowledged ? 0 : 4);
         QTest::qWait(350);
         QVERIFY(respawner.isRunning());
-        QCOMPARE(finished.size(), 0); // IPC closed, but process still alive.
-        server.close(); // The replacement's IPC endpoint is not ready immediately.
+        QCOMPARE(finished.size(), 0); // IPC 已关闭，但进程仍存活。
+        server.close(); // 替代进程的 IPC 端点不会立即就绪。
         oldBackend.terminate();
         QVERIFY(oldBackend.waitForFinished());
         QTRY_COMPARE_WITH_TIMEOUT(finished.size(), 1, 3000);
@@ -123,13 +123,13 @@ private slots:
         QVERIFY2(finished[0][0].toBool(), qPrintable(message));
         QVERIFY(newPid > 0);
         QVERIFY(kill(newPid, 0) == 0);
-        QTest::qWait(3400); // Failed connection attempts must not stop automatic retries.
+        QTest::qWait(3400); // 连接失败不能终止自动重试。
         QVERIFY(!client.isConnected());
         QVERIFY(server.listen(client.socketPath()));
         QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections() && client.isConnected(), 3000);
         auto* replacement = server.nextPendingConnection();
         QTest::qWait(150);
-        QVERIFY(!replacement->canReadLine()); // Quit must never reach the replacement.
+        QVERIFY(!replacement->canReadLine()); // quit 不能发送给替代进程。
         QVERIFY(!respawner.isRunning());
     }
     void quitRejected()
@@ -185,7 +185,7 @@ private slots:
         QVERIFY(server.listen(client.socketPath()));
         auto* socket = connectClient(server, client);
         QVERIFY(socket);
-        client.sendCommand("get_status"); // Hold quit behind a query that never replies.
+        client.sendCommand("get_status"); // 将 quit 排在永不回复的查询之后。
         DeskWaifuRespawner respawner(client, app());
         QSignalSpy finished(&respawner, &DeskWaifuRespawner::finished);
         respawner.start(proc(), directory.path(), 200);

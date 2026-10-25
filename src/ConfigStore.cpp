@@ -14,7 +14,7 @@
 namespace {
 struct Member { std::string key; size_t valueStart, end; };
 
-// Validate the complete document, rejecting duplicate keys (including escaped spellings).
+// 校验整个文档，拒绝重复键，包括转义后相同的键名。
 class Document
 {
 public:
@@ -255,7 +255,7 @@ bool ConfigStore::Commit(const std::string& document, const Snapshot& expected, 
     std::vector<char> name(temporary.begin(), temporary.end()); name.push_back(0);
     int fd = mkstemp(name.data());
     if (fd < 0) { error = std::strerror(errno); return false; }
-    // A persisted API key must not inherit world/group-readable permissions.
+    // 持久化的 API 密钥不能继承允许同组用户或其他用户读取的权限。
     const bool secret = next.values.count("minimax_api_key") && next.values.at("minimax_api_key") != "\"\"";
     bool ok = fchmod(fd, secret ? 0600 : exists ? original.st_mode & 0777 : 0600) == 0;
     if (ok && exists) { struct stat created; ok = fstat(fd, &created) == 0;
@@ -264,8 +264,8 @@ bool ConfigStore::Commit(const std::string& document, const Snapshot& expected, 
     while (ok && offset < document.size()) { ssize_t n = write(fd, document.data() + offset, document.size() - offset); if (n < 0 && errno == EINTR) continue; if (n <= 0) ok = false; else offset += n; }
     if (ok) ok = fsync(fd) == 0;
     if (close(fd) != 0) ok = false;
-    // Editors need not honor locks. Narrow the race, but do not claim a CAS
-    // against arbitrary external writers between this check and rename.
+    // 外部编辑器未必遵守锁约定。这里只缩小竞争窗口，不保证检查到 rename 之间
+    // 面对任意外部写入者时仍具备比较并交换（CAS）语义。
     std::string current;
     if (ok && (!ReadPath(path, current, error) || current != text)) { error = "Config changed during save; retry"; ok = false; }
     if (ok) ok = rename(name.data(), path.c_str()) == 0;

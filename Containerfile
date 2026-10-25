@@ -1,9 +1,9 @@
-# Arch Linux CI image for DeskWaifu.
+# DeskWaifu 使用的 Arch Linux CI 镜像。
 #
-# The ci target contains the proprietary Cubism SDK from the local build
-# context. Keep it private: Gitea packages under a public owner are public too.
+# ci 目标包含本地构建上下文中的专有 Cubism SDK。
+# 必须保持私有：公开所有者名下的 Gitea 包也会公开。
 #
-# Build and privately transfer to the runner:
+# 构建并私下传输到运行器：
 #   bash scripts/rebuild-ci-image.sh
 
 FROM archlinux:base-devel AS ci

@@ -30,13 +30,13 @@ GLuint LAppSpriteShader::GetShaderId() const
 
 GLuint LAppSpriteShader::CreateShader()
 {
-    // シェーダーのパスの作成
+    // 构建着色器路径。
     Csm::csmString vertShaderFile(LAppDefine::ShaderPath);
     vertShaderFile += LAppDefine::VertShaderName;
     Csm::csmString fragShaderFile(LAppDefine::ShaderPath);
     fragShaderFile += LAppDefine::FragShaderName;
 
-    // シェーダーのコンパイル
+    // 编译着色器。
     GLuint vertexShaderId = CompileShader(vertShaderFile, GL_VERTEX_SHADER);
     GLuint fragmentShaderId = CompileShader(fragShaderFile, GL_FRAGMENT_SHADER);
 
@@ -47,12 +47,12 @@ GLuint LAppSpriteShader::CreateShader()
         return 0;
     }
 
-    //プログラムオブジェクトの作成
+    // 创建着色器程序对象。
     GLuint programId = glCreateProgram();
     glAttachShader(programId, vertexShaderId);
     glAttachShader(programId, fragmentShaderId);
 
-    // リンク
+    // 链接。
     glLinkProgram(programId);
     GLint linked = GL_FALSE;
     glGetProgramiv(programId, GL_LINK_STATUS, &linked);
@@ -76,7 +76,7 @@ GLuint LAppSpriteShader::CreateShader()
 
     glUseProgram(programId);
 
-    // 不要になったシェーダーオブジェクトの削除
+    // 删除不再需要的着色器对象。
     glDeleteShader(vertexShaderId);
     glDeleteShader(fragmentShaderId);
 
@@ -108,17 +108,17 @@ bool LAppSpriteShader::CheckShader(GLuint shaderId)
 
 GLuint LAppSpriteShader::CompileShader(Csm::csmString filename, GLenum shaderType)
 {
-    // ファイル読み込み
+    // 读取文件。
     Csm::csmSizeInt bufferSize = 0;
     const char* shaderString = reinterpret_cast<const char*>(LAppPal::LoadFileAsBytes(filename.GetRawString(), &bufferSize));
     const GLint glSize = (GLint)bufferSize;
 
-    // コンパイル
+    // 编译。
     GLuint shaderId = glCreateShader(shaderType);
     glShaderSource(shaderId, 1, &shaderString, &glSize);
     glCompileShader(shaderId);
 
-    // 読み込んだシェーダー文字列の開放
+    // 释放读取的着色器字符串。
     LAppPal::ReleaseBytes(reinterpret_cast<Csm::csmByte*>(const_cast<char*>(shaderString)));
 
     if (!CheckShader(shaderId))

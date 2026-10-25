@@ -450,7 +450,7 @@ void MainWindow::handleResponse(const QString& command, const QJsonObject& respo
         _speechSave->setEnabled(_client.isConnected());
         _speechClear->setEnabled(_client.isConnected() && ok && response.value(QStringLiteral("configured")).toBool());
         if (mutation) setStatusMessage(_speechStatus->text(), 5000);
-        return; // Never put credential-related payloads into the response log.
+        return; // 不能将凭据相关内容写入回复日志。
     }
     if (command == QStringLiteral("get_mouse_look") || command == QStringLiteral("set_mouse_look")) {
         const bool mutation = command == QStringLiteral("set_mouse_look");
@@ -478,8 +478,8 @@ void MainWindow::handleResponse(const QString& command, const QJsonObject& respo
         const bool mutation = command == QStringLiteral("set_hover_opacity");
         if (mutation) _hoverSetPending = false;
         else _hoverQueryPending = false;
-        // A query sent before the user's release must not overwrite their drag
-        // position or a mutation queued behind that query.
+        // 用户释放鼠标前发出的查询，不能覆盖其拖动位置，
+        // 也不能覆盖排在该查询之后的修改操作。
         if (!mutation && (_hoverSetPending || ui->hoverOpacitySlider->isSliderDown() || ui->idleOpacitySlider->isSliderDown())) return;
         const double opacity = response.value(QStringLiteral("opacity")).toDouble(-1);
         const auto idleOpacity = response.value(QStringLiteral("idle_opacity"));

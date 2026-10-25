@@ -1,0 +1,48 @@
+cmake_minimum_required(VERSION 3.16)
+project(deskwaifu_ocr VERSION 0.1.0 LANGUAGES CXX)
+include(GNUInstallDirs)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(ONNXRUNTIME_ROOT "" CACHE PATH "Unpacked CPU ONNX Runtime C/C++ SDK")
+set(OCR_MODELS_DIR "" CACHE PATH "Exported PP-OCRv6 bundle")
+find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui)
+find_package(OpenCV REQUIRED COMPONENTS core imgproc OPTIONAL_COMPONENTS geometry)
+find_path(ORT_INCLUDE_DIR onnxruntime_cxx_api.h PATHS "${ONNXRUNTIME_ROOT}/include" NO_DEFAULT_PATH REQUIRED)
+find_library(ORT_LIBRARY onnxruntime PATHS "${ONNXRUNTIME_ROOT}/lib" NO_DEFAULT_PATH REQUIRED)
+foreach(name detection.onnx recognition.onnx dictionary.json manifest.json)
+  if(NOT EXISTS "${OCR_MODELS_DIR}/${name}")
+    message(FATAL_ERROR "Missing ${name}; export the model bundle first")
+  endif()
+endforeach()
+foreach(name LICENSE ThirdPartyNotices.txt)
+  if(NOT EXISTS "${ONNXRUNTIME_ROOT}/${name}")
+    message(FATAL_ERROR "ONNX Runtime SDK must include ${name}")
+  endif()
+endforeach()
+add_executable(deskwaifu-ocr main.cpp OcrEngine.cpp OcrEngine.hpp)
+target_include_directories(deskwaifu-ocr PRIVATE "${ORT_INCLUDE_DIR}" ${OpenCV_INCLUDE_DIRS})
+target_link_libraries(deskwaifu-ocr PRIVATE "${ORT_LIBRARY}" Qt6::Core Qt6::Gui ${OpenCV_LIBS})
+# 辅助程序使用独立安装组件，不加入主应用构建。
+file(RELATIVE_PATH _runtime_relative "${CMAKE_INSTALL_FULL_LIBEXECDIR}"
+  "${CMAKE_INSTALL_FULL_LIBDIR}/deskwaifu/ocr")
+file(RELATIVE_PATH _models_relative "${CMAKE_INSTALL_FULL_LIBEXECDIR}"
+  "${CMAKE_INSTALL_FULL_DATADIR}/deskwaifu/ocr")
+target_compile_definitions(deskwaifu-ocr PRIVATE OCR_MODELS_RELATIVE="${_models_relative}")
+set_target_properties(deskwaifu-ocr PROPERTIES INSTALL_RPATH "$ORIGIN/${_runtime_relative}")
+install(TARGETS deskwaifu-ocr RUNTIME DESTINATION ${CMAKE_INSTALL_LIBEXECDIR} COMPONENT DeskWaifuOCR)
+install(FILES "${OCR_MODELS_DIR}/detection.onnx" "${OCR_MODELS_DIR}/recognition.onnx"
+  "${OCR_MODELS_DIR}/dictionary.json" "${OCR_MODELS_DIR}/manifest.json"
+  DESTINATION ${CMAKE_INSTALL_DATADIR}/deskwaifu/ocr COMPONENT DeskWaifuOCR)
+file(GLOB _ort_libraries "${ONNXRUNTIME_ROOT}/lib/libonnxruntime.so*")
+install(FILES ${_ort_libraries} DESTINATION ${CMAKE_INSTALL_LIBDIR}/deskwaifu/ocr COMPONENT DeskWaifuOCR)
+install(FILES "${ONNXRUNTIME_ROOT}/LICENSE" "${ONNXRUNTIME_ROOT}/ThirdPartyNotices.txt"
+  DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/deskwaifu-ocr/onnxruntime COMPONENT DeskWaifuOCR)
+install(FILES LICENSE-PaddleOCR NOTICE
+  DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/deskwaifu-ocr/models COMPONENT DeskWaifuOCR)
+install(FILES README.md RESULTS.md
+  DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/deskwaifu-ocr COMPONENT DeskWaifuOCR)
+set(CPACK_PACKAGE_NAME deskwaifu-ocr)
+set(CPACK_GENERATOR TXZ)
+set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
+set(CPACK_PACKAGING_INSTALL_PREFIX "${CMAKE_INSTALL_PREFIX}")
+include(CPack)

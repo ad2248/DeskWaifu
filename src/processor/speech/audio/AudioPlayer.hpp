@@ -1,6 +1,6 @@
 #pragma once
 
-#include "SpeechTypes.hpp"
+#include "processor/speech/SpeechTypes.hpp"
 #include <QAudioFormat>
 #include <QObject>
 #include <QTimer>
@@ -9,7 +9,7 @@
 class QAudioSink;
 class QIODevice;
 
-// PCM output only. All methods belong to the Qt application thread.
+// 仅负责 PCM 输出，所有方法均在 Qt 应用线程调用。
 class AudioPlayer : public QObject
 {
     Q_OBJECT

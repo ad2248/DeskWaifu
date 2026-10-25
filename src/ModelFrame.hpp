@@ -2,8 +2,8 @@
 
 #include "ApplicationService.hpp"
 
-// Shared by the runtime loop and headless tests: reapply cached mouse gaze
-// before every visible frame, then let the model apply external overrides.
+// 运行循环和无头测试共用：每个可见帧先重新应用缓存的鼠标视线，
+// 再由模型应用外部覆盖值。
 template<typename CursorUpdate, typename Render>
 void RenderModelFrame(const ApplicationService& service, bool editing,
     CursorUpdate updateCursor, Render render)

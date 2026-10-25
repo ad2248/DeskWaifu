@@ -4,8 +4,8 @@
 #include <memory>
 #include <vector>
 
-// A session owns its cached models; callers receive borrowed pointers only.
-// Current eviction policy is retained for compatibility; #81 owns GPU budget.
+// 会话持有缓存模型，调用方只获得借用指针。
+// 为保持兼容，沿用现有淘汰策略；GPU 预算由 #81 跟进。
 template<typename Model>
 class ModelCache
 {

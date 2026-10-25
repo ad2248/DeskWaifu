@@ -24,8 +24,8 @@ class QtWindowConfigurationTest(unittest.TestCase):
     def test_screen_edit_uses_tested_frame_input_region(self):
         self.assertRegex(
             (SOURCE / "LAppDelegate.cpp").read_text(),
-            r"_window->SetInputRegion\(ModelFrameInputRegions\(_settings->ScreenEditing\(\),\s*"
-            r"_windowWidth, _windowHeight, modelRegions\)\);",
+            r"ModelFrameInputRegions\(_settings->ScreenEditing\(\),\s*"
+            r"_windowWidth, _windowHeight, regions\)\);",
         )
 
     def test_overlay_covers_reserved_panel_area(self):

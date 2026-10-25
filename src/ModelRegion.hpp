@@ -4,7 +4,7 @@
 #include <array>
 #include <cstdint>
 
-// Surface-local coordinates, with the origin at the top left.
+// 表面局部坐标，原点位于左上角。
 struct ModelRegion
 {
     int x = 0;
@@ -36,7 +36,7 @@ inline ModelRegion ModelRegionToOpenGL(ModelRegion region, int surfaceHeight)
     return {region.x, surfaceHeight - region.y - region.height, region.width, region.height};
 }
 
-// The caller supplies a region already intersected with the surface.
+// 调用方传入的区域须已与表面范围求交。
 inline std::array<ModelRegion, 4> OutsideModelRegion(ModelRegion region, int width, int height)
 {
     return {{

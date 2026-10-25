@@ -26,8 +26,8 @@ namespace {
 constexpr int TimeoutMs = 250;
 constexpr int ExitPollIntervalMs = 5;
 
-// Only timed-out, unreaped children are transferred here. The worker owns their
-// PIDs until waitpid consumes them; it never waits for unrelated children.
+// 仅接管已超时且尚未回收的子进程；工作线程持有其 PID，直到 waitpid 完成回收。
+// 不等待无关子进程。
 class DeferredChildReaper
 {
 public:
@@ -62,8 +62,8 @@ private:
                     child = _children.erase(child);
                 else ++child;
             }
-            // At process shutdown, remaining live children are reparented by
-            // the kernel. Never block shutdown on an uninterruptible child.
+            // 进程退出时，内核会重新托管仍存活的子进程。
+            // 不因不可中断的子进程而阻塞退出。
             if (_stopping) return;
             if (_children.empty())
                 _wake.wait(lock, [this] { return _stopping || !_children.empty(); });
@@ -97,8 +97,8 @@ bool WaitForExitBefore(pid_t pid, std::chrono::steady_clock::time_point deadline
     }
 }
 
-// Enumerate in the parent: readdir and sysconf are not async-signal-safe in a
-// forked multithreaded process. The command pipe already exists at this point.
+// 在父进程中枚举：多线程进程 fork 后，readdir 和 sysconf 不具备异步信号安全性。
+// 此时命令管道已创建。
 bool OpenDescriptors(std::vector<int>& descriptors)
 {
     DIR* directory = opendir("/proc/self/fd");
@@ -181,8 +181,7 @@ bool String(const std::string& json, const std::string& key, std::string& value)
     return true;
 }
 
-// Extract top-level JSON objects without letting a nested rect/name from a
-// different output affect a focused result.
+// 只提取顶层 JSON 对象，避免其他输出设备中嵌套的 rect/name 干扰焦点结果。
 std::vector<std::string> Objects(const std::string& json)
 {
     std::vector<std::string> objects;
@@ -232,8 +231,8 @@ Capability<std::string> BoundedCompositorTransport::Command(const std::vector<st
     if (!output || !WaitForExitBefore(pid, deadline, status)) {
         output.status = CapabilityStatus::Unavailable;
         kill(-pid, SIGKILL);
-        // The direct child can leave its original process group. Always signal
-        // its PID as well, and never follow a failed signal with an unbounded wait.
+        // 直接子进程可能脱离原进程组，因此也要向其 PID 发送信号。
+        // 信号发送失败后，不能无限等待。
         int killed;
         do { killed = kill(pid, SIGKILL); } while (killed < 0 && errno == EINTR);
         if (killed < 0 && errno != ESRCH)

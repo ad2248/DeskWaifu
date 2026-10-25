@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Generate a C++ header embedding shader files as string literals.
-# Usage: embed_shaders.sh <framework_shader_dir> <sample_shader_dir> <output_file>
+# 生成将着色器文件内嵌为字符串字面量的 C++ 头文件。
+# 用法：embed_shaders.sh <framework_shader_dir> <sample_shader_dir> <output_file>
 set -euo pipefail
 
 FRAMEWORK_DIR="$1"

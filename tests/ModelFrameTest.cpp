@@ -9,18 +9,13 @@
 
 struct Runtime : IApplicationRuntime
 {
-    bool SelectModel(int) override { return true; }
     int ModelIndex() const override { return 0; }
     int ModelCount() const override { return 1; }
     bool SetHidden(bool) override { return true; }
-    bool PlayMotion(const std::string&, int, int) override { return true; }
-    bool SetExpression(const std::string&) override { return true; }
-    bool TriggerHotkey(const std::string&, std::string&) override { return true; }
-    bool SwitchSkin() override { return true; }
 };
 
-// A recording render boundary tests frame scheduling and forwarded values only.
-// Actual input consumption belongs to ModelGazeTest's real LAppModel.
+// 记录型渲染边界只测试帧调度和转发数值。
+// 实际输入应用由 ModelGazeTest 中的真实 LAppModel 验证。
 struct Model
 {
     std::pair<float, float> target{0, 0};
@@ -67,7 +62,7 @@ int main()
     frame();
     CHECK(updates == 2 && model.drags.size() == 1 && model.rendered.back() == mouse);
 
-    // A click/release resets the model target without a new cursor sample.
+    // 点击释放会重置模型目标，不需要新的光标采样。
     model.OnDrag(0, 0);
     CHECK(model.target == std::make_pair(0.0f, 0.0f));
     frame();
@@ -91,8 +86,8 @@ int main()
     CHECK(service.SetTransform({1, 0, 0}).ok);
     cursor.GlobalPosition(-50, 150);
 
-    // These are the same service entry points used by IPC command handling
-    // and connection cleanup. Verify forwarding, not model input consumption.
+    // 使用与 IPC 命令处理和连接清理相同的服务入口。
+    // 此处验证转发，而非模型对输入的应用。
     CHECK(service.SetLook("ipc:tracker", ExternalControlState::Lifetime::Stream, -.8f, .3f).ok);
     frame();
     CHECK(updates == 6 && model.drags.size() == 6 && model.drags.back() == mouse);
@@ -112,7 +107,7 @@ int main()
     frame();
     CHECK(updates == 9 && model.drags.size() == 9 && model.rendered.size() == 11);
     CHECK(model.rendered.back() == mouse);
-    // A settings change takes effect without a fresh cursor sample.
+    // 配置变更无需新的光标采样即可生效。
     radius = .25f;
     frame();
     CHECK(std::abs(std::hypot(model.rendered.back().first, model.rendered.back().second) - .25f) < .00001f);

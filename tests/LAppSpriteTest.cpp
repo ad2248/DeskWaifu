@@ -86,7 +86,7 @@ int main()
             glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, textures[2], 0);
             CHECK(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
             glViewport(0, 0, width, height);
-            // A non-centered rect distinguishes top-left input from GL's Y axis.
+            // 非居中矩形可区分左上角输入坐标与 GL 的 Y 轴方向。
             sprite.ResetRect(3, 4, 4, 4);
             CHECK(sprite.IsHit(3, height - 4, width, height));
             CHECK(!sprite.IsHit(3, height - 9, width, height));
@@ -102,7 +102,7 @@ int main()
                     background[2] / 255.f, background[3] / 255.f);
                 glClear(GL_COLOR_BUFFER_BIT);
                 if (immediate) {
-                    // LAppView's opacity path scales both premultiplied RGB and alpha.
+                    // LAppView 的透明度路径同时缩放预乘 RGB 和 alpha。
                     glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
                     sprite.SetColor(.5f, .5f, .5f, .5f);
                     sprite.RenderImmidiate(textures[1], uv, width, height);
@@ -112,8 +112,8 @@ int main()
                 }
                 std::vector<unsigned char> pixels(width * height * 4);
                 glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
-                // Render multiplies all source channels (including alpha)
-                // by .5. Immediate receives premultiplied channels scaled by .5.
+                // Render 将包括 alpha 在内的所有源通道乘以 0.5。
+                // Immediate 接收已按 0.5 缩放的预乘通道。
                 const double source[] = {immediate ? 64.0 : 127.5, immediate ? 32.0 : 64.0,
                     immediate ? 16.0 : 32.0, immediate ? 64.0 : 63.75};
                 const double destinationFactor = immediate ? 1.0 - 64.0 / 255 : .5;
@@ -127,7 +127,7 @@ int main()
                 }
                 CHECK(glGetError() == GL_NO_ERROR);
             }
-            // Invalid targets neither divide by zero nor draw/hit the old rect.
+            // 无效目标不能导致除零，也不能继续绘制或命中旧矩形。
             glClearColor(0, 0, 0, 0); glClear(GL_COLOR_BUFFER_BIT);
             sprite.Render(0, height);
             sprite.Render(width, -1);

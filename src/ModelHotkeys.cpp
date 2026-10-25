@@ -19,8 +19,8 @@ Json ReadJson(const std::string& path)
 {
     std::ifstream stream(path, std::ios::binary);
     std::string data((std::istreambuf_iterator<char>(stream)), {});
-    // Cubism's numeric parser only accepts a comma or newline after a number.
-    // Normalize insignificant whitespace/delimiters so compact JSON works too.
+    // Cubism 的数值解析器只接受数值后接逗号或换行。
+    // 规范化无关紧要的空白和分隔符，使紧凑 JSON 也能正常解析。
     std::string normalized;
     bool quoted = false, escaped = false;
     for (char c : data)
@@ -192,7 +192,7 @@ void ModelHotkeys::Update(float seconds)
 
 void ModelHotkeys::Apply(CubismModel* model) const
 {
-    // The caller restores the saved base before this pass on every frame.
+    // 调用方在每帧执行此阶段前，恢复已保存的基础参数。
     for (const auto& expression : _expressions)
     {
         if (expression.weight <= 0) continue;

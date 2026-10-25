@@ -15,20 +15,20 @@
 #include "TextureResidency.hpp"
 
 /**
-* @brief テクスチャ管理クラス
+* @brief 纹理管理类。
 *
-* 画像読み込み、管理を行うクラス。
+* 负责图像读取与管理。
 */
 class LAppTextureManager : public LAppTextureManager_Common
 {
 public:
     /**
-    * @brief コンストラクタ
+    * @brief 构造函数。
     */
     LAppTextureManager();
 
     /**
-    * @brief デストラクタ
+    * @brief 析构函数。
     *
     */
     ~LAppTextureManager();

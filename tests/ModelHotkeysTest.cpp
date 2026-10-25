@@ -94,7 +94,7 @@ private slots:
         ModelHotkeys other;
         other.Load(directory.path().toStdString() + "/", "test.model3.json");
         auto foreign = other.Bindings()[0];
-        // No public query accepts Binding or its arbitrary internal index.
+        // 公开查询不接受 Binding 或任意内部索引。
         foreign.expression = std::numeric_limits<int>::max();
         QVERIFY(!hotkeys.IsActive(foreign.id));
         hotkeys.Load(directory.path().toStdString() + "/", "test.model3.json");
@@ -102,8 +102,8 @@ private slots:
         const auto token = hotkeys.Token();
         std::string error;
         QVERIFY(hotkeys.Trigger(old.id, error));
-        QVERIFY(hotkeys.IsActive(foreign.id)); // same ID means the current binding
-        QVERIFY(!other.IsActive(old.id)); // never the other owner's active state
+        QVERIFY(hotkeys.IsActive(foreign.id)); // 相同 ID 表示当前绑定。
+        QVERIFY(!other.IsActive(old.id)); // 不能读取另一个所有者的活动状态。
         QVERIFY(!hotkeys.IsActive("missing"));
         QVERIFY(!hotkeys.IsActive(""));
 
@@ -112,7 +112,7 @@ private slots:
         QVERIFY(token != hotkeys.Token());
         QVERIFY(hotkeys.Trigger("replacement", error));
         QVERIFY(hotkeys.IsActive("replacement"));
-        QVERIFY(!hotkeys.IsActive(old.id)); // old index 0 now belongs to another ID
+        QVERIFY(!hotkeys.IsActive(old.id)); // 旧索引 0 现在属于另一个 ID。
         hotkeys.Load(directory.path().toStdString() + "/", "absent.model3.json");
         QVERIFY(!hotkeys.IsActive("replacement"));
     }

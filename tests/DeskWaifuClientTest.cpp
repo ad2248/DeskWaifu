@@ -68,14 +68,14 @@ void DeskWaifuClientTest::reconnectsAfterFailedAttempts()
             server.nextPendingConnection()->abort();
             QTRY_VERIFY(!client.isConnected());
         }
-        // Preserve a filesystem entry without a listener to simulate a stale socket.
+        // 保留没有监听者的文件系统条目，以模拟残留套接字。
         if (staleSocket) QVERIFY(QFile::rename(client.socketPath(), client.socketPath() + ".stale"));
         server.close();
         if (staleSocket) QVERIFY(QFile::rename(client.socketPath() + ".stale", client.socketPath()));
     }
     QSignalSpy connectionSpy(&client, &DeskWaifuClient::connectionChanged);
     if (!restart) client.connectToServer();
-    QTest::qWait(3400); // The backend is unavailable for more than two retry intervals.
+    QTest::qWait(3400); // 后端不可用时间超过两个重试间隔。
     QVERIFY(!client.isConnected());
     QVERIFY(connectionSpy.size() >= 2);
     QVERIFY(QLocalServer::removeServer(client.socketPath()));
@@ -297,7 +297,7 @@ void DeskWaifuClientTest::recoversFromInvalidResponse()
     auto* first = server.nextPendingConnection();
     QTRY_VERIFY(first->canReadLine());
     first->readLine();
-    // A trailing frame on the damaged connection must not complete the next request.
+    // 损坏连接上的尾随帧不能完成下一请求。
     first->write(reply + "{\"ok\":true,\"stale\":true}\n");
     first->flush();
     QTRY_VERIFY(!client.isConnected());

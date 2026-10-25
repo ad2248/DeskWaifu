@@ -66,7 +66,7 @@ LAppLive2DManager::LAppLive2DManager(LAppTextureManager& textures, int width, in
         return;
     }
 
-    // Find default model index from config
+    // 根据配置查找默认模型索引。
     csmInt32 selected = 0;
     const std::string& defaultModel = _discovery.defaultModel;
     if (!defaultModel.empty())
@@ -216,15 +216,15 @@ bool LAppLive2DManager::ChangeScene(Csm::csmInt32 index)
     if (GetModelDirSize() == 0 || index < 0 || index >= GetModelDirSize()) return false;
     if (!_session.Select(index, [this](int candidate)
         { return _loader.Load(_descriptors[candidate]); })) return false;
-    // 表示モデルリストを更新
+    // 更新显示模型列表。
     _models.Clear();
     _sampleModel.reset();
     _models.PushBack(_session.Current());
-    // Cached models must not retain hotkey switches or accept an old panel token.
+    // 缓存模型不能保留热键开关状态，也不能接受旧控制面板令牌。
     _session.Current()->Hotkeys().Reset();
 
 #if defined(USE_RENDER_TARGET) || defined(USE_MODEL_RENDER_TARGET)
-    // Sample second model borrows the selected model's asset descriptor.
+    // 第二个示例模型借用所选模型的资源描述。
     _sampleModel = _loader.Load(_descriptors[index]);
     if (_sampleModel)
     {

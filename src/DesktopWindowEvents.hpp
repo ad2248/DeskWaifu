@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-// Window events report input; only the application chooses policy.
+// 窗口事件只报告输入，处理策略由应用决定。
 class IDesktopWindowEvents
 {
 public:
@@ -15,7 +15,7 @@ public:
     virtual void KeyboardChanged() = 0;
     virtual void KeyboardKey(std::uint32_t code, bool pressed) = 0;
     virtual void SurfaceClosed() = 0;
-    // Output replacement may pump Qt events while the surface is unavailable.
+    // 替换输出设备时，表面不可用期间仍可能处理 Qt 事件。
     virtual void OutputSwitchStarted() {}
     virtual void OutputSwitchFinished() {}
 };

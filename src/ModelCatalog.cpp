@@ -46,8 +46,8 @@ std::vector<ModelDescriptor> ModelCatalog::Scan(const std::vector<std::string>& 
                 if (json.size() <= suffix.size() ||
                     json.compare(json.size() - suffix.size(), suffix.size(), suffix) != 0)
                     continue;
-                // A directory may overlay shared symlinked assets with its
-                // own hotkey config. Resolve the directory, not the file.
+                // 目录可能通过符号链接复用资源，并提供自己的热键配置。
+                // 因此解析目录的真实路径，而非文件的真实路径。
                 struct stat info;
                 if (stat((modelDir + json).c_str(), &info) == 0 && S_ISREG(info.st_mode))
                     result.push_back({modelDir + json, name, modelDir, json});
@@ -60,8 +60,8 @@ std::vector<ModelDescriptor> ModelCatalog::Scan(const std::vector<std::string>& 
     {
         return a.name == b.name ? a.id < b.id : a.name < b.name;
     });
-    // Name order chooses the first alias deterministically. Equal identities
-    // need not be adjacent when other models sort between their display names.
+    // 按名称排序，确定性地选择第一个别名。其他模型可能排在别名之间，
+    // 因而相同标识的条目不一定相邻。
     std::set<std::string> seen;
     result.erase(std::remove_if(result.begin(), result.end(), [&](const ModelDescriptor& model)
         { return !seen.insert(model.id).second; }), result.end());

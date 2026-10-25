@@ -65,7 +65,7 @@ bool LAppConfig::LoadFromFile(const std::string& path, std::string* diagnostic)
 {
     if (diagnostic) diagnostic->clear();
     sourcePath = path;
-    // Unlike ConfigStore::Read, startup distinguishes a missing file from {}.
+    // 与 ConfigStore::Read 不同，启动时区分文件不存在与空对象 {}。
     std::ifstream file(path);
     if (!file.is_open()) return false;
     std::stringstream text; text << file.rdbuf();
@@ -99,7 +99,7 @@ bool LAppConfig::Decode(const ConfigStore::Snapshot& snapshot, Values& values, s
             [](unsigned char c) { return c < 0x20 || c == 0x7f; })) {
         error = "Invalid minimax_api_key"; return false;
     }
-    // Missing or unconvertible legacy numeric fields keep construction defaults.
+    // 旧版数值字段缺失或无法转换时，保留构造时的默认值。
     const auto number = [&](const char* key, auto& destination) {
         const auto it = snapshot.values.find(key);
         if (it == snapshot.values.end()) return;

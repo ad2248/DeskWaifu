@@ -1,6 +1,6 @@
-#include "SpeechPlayer.hpp"
-#include "MiniMaxSpeechSource.hpp"
-#include "AudioPlayer.hpp"
+#include "processor/speech/SpeechPlayer.hpp"
+#include "processor/speech/source/MiniMaxSpeechSource.hpp"
+#include "processor/speech/audio/AudioPlayer.hpp"
 #include <QtTest>
 
 class FakeSource : public MiniMaxSpeechSource
@@ -47,7 +47,7 @@ private slots:
         QTRY_COMPARE(player.CurrentState(), SpeechPlayer::State::Draining);
         QCOMPARE(audio.finished, id);
         QCOMPARE(done.size(), 0);
-        emit audio.PlaybackStarted(id); // Late device activation cannot undo draining.
+        emit audio.PlaybackStarted(id); // 晚到的设备激活通知不能撤销排空状态。
         QCoreApplication::processEvents();
         QCOMPARE(player.CurrentState(), SpeechPlayer::State::Draining);
         emit audio.Drained(id);
@@ -112,7 +112,7 @@ private slots:
         player.Speak({"again", {}});
         QTRY_VERIFY(player.CurrentId() > id);
         emit source.Ready(player.CurrentId(), {});
-        emit source.Completed(player.CurrentId()); // Even a zero-audio task needs draining.
+        emit source.Completed(player.CurrentId()); // 零音频任务也需要排空。
         QTRY_COMPARE(player.CurrentState(), SpeechPlayer::State::Draining);
         emit audio.Drained(player.CurrentId());
         QTRY_COMPARE(done.size(), 2);

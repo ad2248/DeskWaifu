@@ -1,6 +1,8 @@
 #include <GL/glew.h>
 #include <EGL/egl.h>
 #include "DesktopWindow.hpp"
+#include "processor/model/RenderFrame.hpp"
+#include <QThread>
 #include <QGuiApplication>
 #include <QWindow>
 #include <cstdlib>
@@ -28,7 +30,7 @@ int swaps = 0;
 int renderedWidth = 0, renderedHeight = 0;
 }
 
-// Verify pixels on the presentation GPU, not merely in the render GPU's FBO.
+// 验证呈现 GPU 上的像素，而非仅验证渲染 GPU 的 FBO。
 extern "C" EGLBoolean eglSwapBuffers(EGLDisplay display, EGLSurface window)
 {
     if (surface) {
@@ -66,6 +68,12 @@ int main(int argc, char** argv)
     Events events;
     auto window = CreateDesktopWindow();
     Require(window->Initialize(640, 480, events), "Cannot initialize cross-GPU window");
+    auto target = window->RenderTarget(device);
+    QThread thread;
+    QObject worker;
+    Require(target->Prepare(&thread), "Cannot prepare render target");
+    worker.moveToThread(&thread); thread.start();
+    QMetaObject::invokeMethod(&worker, [&] { Require(target->Initialize(), "Cannot initialize render-thread target"); }, Qt::BlockingQueuedConnection);
     surface = dynamic_cast<QWindow*>(window.get());
     const auto outputs = window->Outputs();
     Require(window->SetInputRegion({{20, 20, 40, 40}}), "Cannot set model input region with offscreen context");
@@ -85,20 +93,28 @@ int main(int argc, char** argv)
             Require(window->MakeCurrent(), "Cannot restore render context after switching back");
             glBindFramebuffer(GL_FRAMEBUFFER, window->Framebuffer());
         }
-        // Reproduce a surface size change after the model FBO was bound. The
-        // upload must retain the source stride, then scale to the new surface.
+        RenderFrame frame;
+        frame.width = renderedWidth; frame.height = renderedHeight;
+        QMetaObject::invokeMethod(&worker, [&] {
+            Require(target->Bind(frame.width, frame.height), "Cannot bind worker frame");
+            glDisable(GL_SCISSOR_TEST);
+            glClearColor(0, 0, 0, 0); glClear(GL_COLOR_BUFFER_BIT);
+            glEnable(GL_SCISSOR_TEST); glScissor(20, 20, 40, 40);
+            glClearColor(.125f, .25f, .5f, .5f); glClear(GL_COLOR_BUFFER_BIT);
+            Require(target->Read(frame.rgba), "Cannot read worker frame");
+        }, Qt::BlockingQueuedConnection);
+        // 呈现尺寸变化时，上传仍必须保留源图像尺寸和行跨度。
         if (frames == 4) surface->resize(surface->width() / 2, surface->height() / 2);
-        glDisable(GL_SCISSOR_TEST);
-        glClearColor(0, 0, 0, 0);
-        glClear(GL_COLOR_BUFFER_BIT);
-        glEnable(GL_SCISSOR_TEST);
-        glScissor(20, 20, 40, 40);
-        glClearColor(.125f, .25f, .5f, .5f);
-        glClear(GL_COLOR_BUFFER_BIT);
-        // Leave scissoring enabled to ensure presentation copies the full frame.
+        Require(window->UploadFrame(frame), "Cannot upload immutable worker frame");
+        glEnable(GL_SCISSOR_TEST); glScissor(20, 20, 40, 40);
         return true;
     }), "Cross-GPU frame loop failed");
     Require(swaps == 4, "Missing transferred frames");
+    QMetaObject::invokeMethod(&worker, [&] {
+        Require(target->Shutdown(), "Cannot stop worker target");
+        worker.moveToThread(app.thread());
+    }, Qt::BlockingQueuedConnection);
+    thread.quit(); thread.wait(); target.reset();
     surface = nullptr;
     window->Shutdown();
     window->Shutdown();

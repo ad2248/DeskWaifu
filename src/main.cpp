@@ -23,7 +23,7 @@ int main(int argc, char* argv[])
 {
     if (argc == 5 && std::strcmp(argv[1], "--kwin-cursor-guard") == 0)
         return RunKWinCursorGuard(argv[2], argv[3], argv[4]);
-    // deskwaifu toggle
+    // 切换桌宠显示状态。
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "toggle") == 0 || strcmp(argv[i], "--toggle") == 0) {
             system("killall -s SIGUSR1 deskwaifu");
@@ -35,7 +35,7 @@ int main(int argc, char* argv[])
         }
     }
 
-    // Parse CLI args
+    // 解析命令行参数。
     std::string modelsDir = "";
     std::string configPath = "";
     std::string renderDevice;
@@ -60,7 +60,7 @@ int main(int argc, char* argv[])
         }
     }
 
-    // Load config
+    // 加载配置。
     LAppConfig& config = LAppConfig::GetInstance();
     if (configPath.empty()) {
         configPath = LAppConfig::GetDefaultConfigPath();
@@ -77,7 +77,7 @@ int main(int argc, char* argv[])
         printf("[APP]Config unavailable or invalid at: %s (using defaults)\n", configPath.c_str());
     }
 
-    // Select only the offscreen renderer; leave Qt's Wayland GPU untouched.
+    // 只选择离屏渲染设备，不改变 Qt 的 Wayland GPU。
     if (!renderDeviceOverride) {
         const char* environment = getenv("DESKWAIFU_RENDER_DEVICE");
         renderDevice = environment ? environment : config.values.renderDevice;
@@ -93,7 +93,7 @@ int main(int argc, char* argv[])
     }
     qputenv("DESKWAIFU_RENDER_DEVICE", QByteArray::fromStdString(renderDevice));
 
-    // Models dir: CLI flag > default XDG path
+    // 模型目录优先级：命令行参数高于默认 XDG 路径。
     if (modelsDir.empty()) {
         const char *configHome = getenv("XDG_CONFIG_HOME");
         if (configHome && strlen(configHome) > 0) {
@@ -107,28 +107,28 @@ int main(int argc, char* argv[])
         }
     }
 
-    // Resolve absolute path
+    // 解析绝对路径。
     char resolved_path[PATH_MAX];
     if (realpath(modelsDir.c_str(), resolved_path) != NULL) {
         modelsDir = std::string(resolved_path);
     }
 
-    // Ensure modelsDir ends with trailing slash
+    // 确保 modelsDir 以斜杠结尾。
     if (!modelsDir.empty() && modelsDir.back() != '/') {
         modelsDir += "/";
     }
 
     LAppDefine::ModelsDir = modelsDir;
 
-    // Apply config to LAppDefine
+    // 将配置应用到 LAppDefine。
     LAppDefine::RenderTargetWidth = config.values.windowWidth;
     LAppDefine::RenderTargetHeight = config.values.windowHeight;
 
-    // The guard subprocess above intentionally does not initialize Qt or Wayland.
+    // 上面的守护子进程刻意不初始化 Qt 或 Wayland。
     QGuiApplication application(argc, argv);
     application.setApplicationName("deskwaifu");
     application.setQuitOnLastWindowClosed(false);
-    // create the application instance
+    // 创建应用实例。
     if (LAppDelegate::GetInstance()->Initialize() == GL_FALSE)
     {
         if (!LAppDelegate::GetInstance()->Release())

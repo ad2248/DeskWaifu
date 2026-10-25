@@ -125,7 +125,7 @@ void LAppModel::SetupModel(ICubismModelSetting* setting)
     csmByte* buffer;
     csmSizeInt size;
 
-    //Cubism Model
+    // Cubism 模型。
     if (strcmp(_modelSetting->GetModelFileName(), "") != 0)
     {
         csmString path = _modelSetting->GetModelFileName();
@@ -142,11 +142,11 @@ void LAppModel::SetupModel(ICubismModelSetting* setting)
         DeleteBuffer(buffer, path.GetRawString());
     }
 
-    //Expression
+    // 表情。
     {
         csmBool hasExpression = false;
         
-        // 1. Load from model3.json
+        // 1. 从 model3.json 加载。
         if (_modelSetting->GetExpressionCount() > 0)
         {
             const csmInt32 count = _modelSetting->GetExpressionCount();
@@ -173,7 +173,7 @@ void LAppModel::SetupModel(ICubismModelSetting* setting)
             }
         }
         
-        // 2. Auto-discover standalone expressions, including VTube Studio's exp/ folder.
+        // 2. 自动发现独立表情，包括 VTube Studio 的 exp/ 目录。
         for (const auto& directory : ModelHotkeys::ExpressionDirectories()) {
             csmString searchDir = _modelHomeDir + directory.c_str();
             DIR* pDir = opendir(searchDir.GetRawString());
@@ -183,7 +183,7 @@ void LAppModel::SetupModel(ICubismModelSetting* setting)
                     csmString fileName = ent->d_name;
                     if (strstr(fileName.GetRawString(), ".exp3.json")) {
                         csmString name = fileName;
-                        if (_expressions[name] == NULL) { // Not already loaded
+                        if (_expressions[name] == NULL) { // 尚未加载。
                             csmString fullPath = searchDir + fileName;
                             buffer = CreateBuffer(fullPath.GetRawString(), &size);
                             if (buffer) {
@@ -209,7 +209,7 @@ void LAppModel::SetupModel(ICubismModelSetting* setting)
         }
     }
 
-    //Physics
+    // 物理效果。
     if (strcmp(_modelSetting->GetPhysicsFileName(), "") != 0)
     {
         csmString path = _modelSetting->GetPhysicsFileName();
@@ -226,7 +226,7 @@ void LAppModel::SetupModel(ICubismModelSetting* setting)
         }
     }
 
-    //Pose
+    // 姿势。
     if (strcmp(_modelSetting->GetPoseFileName(), "") != 0)
     {
         csmString path = _modelSetting->GetPoseFileName();
@@ -243,7 +243,7 @@ void LAppModel::SetupModel(ICubismModelSetting* setting)
         }
     }
 
-    //EyeBlink
+    // 眨眼。
     {
         if (_modelSetting->GetEyeBlinkParameterCount() > 0)
         {
@@ -254,7 +254,7 @@ void LAppModel::SetupModel(ICubismModelSetting* setting)
         }
     }
 
-    //Breath
+    // 呼吸。
     {
         _breath = CubismBreath::Create();
 
@@ -272,7 +272,7 @@ void LAppModel::SetupModel(ICubismModelSetting* setting)
         _updateScheduler.AddUpdatableList(breath);
     }
 
-    //UserData
+    // 用户数据。
     if (strcmp(_modelSetting->GetUserDataFile(), "") != 0)
     {
         csmString path = _modelSetting->GetUserDataFile();
@@ -282,7 +282,7 @@ void LAppModel::SetupModel(ICubismModelSetting* setting)
         DeleteBuffer(buffer, path.GetRawString());
     }
 
-    // EyeBlinkIds
+    // 眨眼参数 ID。
     {
         csmInt32 eyeBlinkIdCount = _modelSetting->GetEyeBlinkParameterCount();
         for (csmInt32 i = 0; i < eyeBlinkIdCount; ++i)
@@ -291,7 +291,7 @@ void LAppModel::SetupModel(ICubismModelSetting* setting)
         }
     }
 
-    // LipSyncIds
+    // 唇形同步参数 ID。
     {
         csmInt32 lipSyncIdCount = _modelSetting->GetLipSyncParameterCount();
         for (csmInt32 i = 0; i < lipSyncIdCount; ++i)
@@ -303,7 +303,7 @@ void LAppModel::SetupModel(ICubismModelSetting* setting)
         _updateScheduler.AddUpdatableList(lipSync);
     }
 
-    // Look
+    // 视线。
     {
         _look = CubismLook::Create();
 
@@ -332,7 +332,7 @@ void LAppModel::SetupModel(ICubismModelSetting* setting)
         return;
     }
 
-    //Layout
+    // 布局。
     csmMap<csmString, csmFloat32> layout;
     _modelSetting->GetLayoutMap(layout);
     _modelMatrix->SetupFromLayout(layout);
@@ -345,15 +345,14 @@ void LAppModel::SetupModel(ICubismModelSetting* setting)
         PreloadMotionGroup(group);
     }
 
-    // Auto-discover extra .motion3.json
+    // 自动发现额外的 .motion3.json 文件。
     DIR* pDirM = opendir(_modelHomeDir.GetRawString());
     if (pDirM != NULL) {
         struct dirent* entM;
         while ((entM = readdir(pDirM)) != NULL) {
             csmString fileName = entM->d_name;
             if (strstr(fileName.GetRawString(), ".motion3.json") && !strstr(fileName.GetRawString(), "loop") && !strstr(fileName.GetRawString(), "idle")) {
-                // very rough check: try not to double load if already in some group, but hard to know.
-                // let's just load it.
+                // 很难准确判断文件是否已属于某个动作组，因此直接加载。
                 csmString fullPath = _modelHomeDir + fileName;
                 csmSizeInt sizeM;
                 csmByte* buffM = CreateBuffer(fullPath.GetRawString(), &sizeM);
@@ -372,7 +371,7 @@ void LAppModel::SetupModel(ICubismModelSetting* setting)
 
     _motionManager->StopAllMotions();
 
-    // Collect all parameter IDs used across skin motion groups
+    // 收集各皮肤动作组使用的全部参数 ID。
     CollectSkinParams();
 
     _updating = false;
@@ -385,9 +384,9 @@ void LAppModel::CollectSkinParams()
     _allSkinParamDefaults.Clear();
 
     csmInt32 groupCount = _modelSetting->GetMotionGroupCount();
-    if (groupCount <= 1) return; // No skin switching needed
+    if (groupCount <= 1) return; // 无需切换皮肤。
 
-    // Collect all unique parameter IDs animated by any motion group
+    // 收集所有动作组中参与动画的参数 ID，并去重。
     for (csmInt32 g = 0; g < groupCount; g++)
     {
         const csmChar* group = _modelSetting->GetMotionGroupName(g);
@@ -410,7 +409,7 @@ void LAppModel::CollectSkinParams()
 
                 CubismIdHandle paramId = motionJson.GetMotionCurveId(c);
 
-                // Check if already collected
+                // 检查是否已经收集。
                 bool found = false;
                 for (csmInt32 k = 0; k < _allSkinParamIds.GetSize(); k++)
                 {
@@ -423,7 +422,7 @@ void LAppModel::CollectSkinParams()
                 if (!found)
                 {
                     _allSkinParamIds.PushBack(paramId);
-                    // Store the model's default value for this parameter
+                    // 保存此参数在模型中的默认值。
                     csmInt32 paramIndex = _model->GetParameterIndex(paramId);
                     csmFloat32 defaultVal = _model->GetParameterDefaultValue(paramIndex);
                     _allSkinParamDefaults.PushBack(defaultVal);
@@ -445,7 +444,7 @@ void LAppModel::PreloadMotionGroup(const csmChar* group)
 
     for (csmInt32 i = 0; i < count; i++)
     {
-        //ex) idle_0
+        // 例如 idle_0。
         csmString name = Utils::CubismString::GetFormatedString("%s_%d", group, i);
         csmString path = _modelSetting->GetMotionFileName(group, i);
         path = _modelHomeDir + path;
@@ -490,9 +489,9 @@ void LAppModel::ReleaseMotionGroup(const csmChar* group) const
 }
 
 /**
-* @brief すべてのモーションデータの解放
+* @brief 释放全部动作数据。
 *
-* すべてのモーションデータを解放する。
+* 释放全部动作数据。
 */
 void LAppModel::ReleaseMotions()
 {
@@ -507,9 +506,9 @@ void LAppModel::ReleaseMotions()
 }
 
 /**
-* @brief すべての表情データの解放
+* @brief 释放全部表情数据。
 *
-* すべての表情データを解放する。
+* 释放全部表情数据。
 */
 void LAppModel::ReleaseExpressions()
 {
@@ -526,46 +525,46 @@ void LAppModel::Update(const ModelFrameInput& input)
     const csmFloat32 deltaTimeSeconds = LAppPal::GetDeltaTime();
     _userTimeSeconds += deltaTimeSeconds;
 
-    // モーションによるパラメータ更新の有無
+    // 动作是否更新了参数。
     _motionUpdated = false;
 
     //-----------------------------------------------------------------
-    _model->LoadParameters(); // 前回セーブされた状態をロード
+    _model->LoadParameters(); // 加载上次保存的状态。
 
     if (_motionManager->IsFinished())
     {
-        // モーションの再生がない場合、待機モーションの中からランダムで再生する
+        // 没有正在播放的动作时，随机播放待机动作。
         StartRandomMotion(MotionGroupIdle, PriorityIdle);
     }
     else
     {
-        _motionUpdated = _motionManager->UpdateMotion(_model, deltaTimeSeconds); // モーションを更新
+        _motionUpdated = _motionManager->UpdateMotion(_model, deltaTimeSeconds); // 更新动作。
     }
-    _model->SaveParameters(); // 状態を保存
+    _model->SaveParameters(); // 保存状态。
     //-----------------------------------------------------------------
 
     // 不透明度
     _opacity = _model->GetModelOpacity();
 
-    // Override the mouse target before CubismLookUpdater consumes it. Applying
-    // this after the scheduler lets the next frame's mouse update erase it.
+    // 在 CubismLookUpdater 使用鼠标目标前应用覆盖值；若在调度器之后应用，
+    // 下一帧的鼠标更新会将其覆盖。
     if (input.hasLook) _dragManager->Set(input.lookX, input.lookY);
     _updateScheduler.OnLateUpdate(_model, deltaTimeSeconds);
 
-    // Apply persistent hotkey expressions after the transient expression pipeline.
-    // LoadParameters above restores the base each frame, so Add never accumulates.
+    // 临时表情流程结束后，再应用持久热键表情。
+    // 上面的 LoadParameters 每帧恢复基础值，因此 Add 不会逐帧累积。
     _hotkeys.Update(deltaTimeSeconds);
     _hotkeys.Apply(_model);
 
-    // External mouth Y override (IPC lipsync)
+    // 外部嘴部 Y 覆盖值，用于 IPC 唇形同步。
     if (input.hasMouth)
     {
         for (csmUint32 i = 0; i < _lipSyncIds.GetSize(); ++i)
             _model->SetParameterValue(_lipSyncIds[i], input.mouth);
     }
 
-    // Expression timeout: revert to default after emotion_timeout seconds
-    // emotion_timeout < 0 means expressions never revert
+    // 表情超时：经过 emotion_timeout 秒后恢复默认表情。
+    // emotion_timeout < 0 表示不自动恢复。
     {
         float timeout = _emotionTimeout;
         if (timeout >= 0.0f && _lastExpressionTime >= 0.0f &&
@@ -598,7 +597,7 @@ CubismMotionQueueEntryHandle LAppModel::StartMotion(const csmChar* group, csmInt
 
     const csmString fileName = _modelSetting->GetMotionFileName(group, no);
 
-    //ex) idle_0
+    // 例如 idle_0。
     csmString name = Utils::CubismString::GetFormatedString("%s_%d", group, no);
     CubismMotion* motion = static_cast<CubismMotion*>(_motions[name.GetRawString()]);
     csmBool autoDelete = false;
@@ -616,7 +615,7 @@ CubismMotionQueueEntryHandle LAppModel::StartMotion(const csmChar* group, csmInt
         if (motion)
         {
             motion->SetEffectIds(_eyeBlinkIds, _lipSyncIds);
-            autoDelete = true; // 終了時にメモリから削除
+            autoDelete = true; // 播放结束时释放内存。
         }
 
         DeleteBuffer(buffer, path.GetRawString());
@@ -627,7 +626,7 @@ CubismMotionQueueEntryHandle LAppModel::StartMotion(const csmChar* group, csmInt
         motion->SetFinishedMotionHandler(onFinishedMotionHandler);
     }
 
-    //voice
+    // 语音。
     csmString voice = _modelSetting->GetMotionSoundFileName(group, no);
     if (strcmp(voice.GetRawString(), "") != 0)
     {
@@ -689,7 +688,7 @@ void LAppModel::Draw(CubismMatrix44& matrix)
 
 csmBool LAppModel::HitTest(const csmChar* hitAreaName, csmFloat32 x, csmFloat32 y)
 {
-    // 透明時は当たり判定なし。
+    // 透明时不参与命中测试。
     if (_opacity < 1)
     {
         return false;
@@ -705,16 +704,16 @@ csmBool LAppModel::HitTest(const csmChar* hitAreaName, csmFloat32 x, csmFloat32 
     }
     
     if (count == 0) {
-        // Fallback for models without configured HitAreas (like 薇薇安)
-        // Check generic top/bottom zones
+        // 为未配置 HitAreas 的模型（如薇薇安）提供回退判定。
+        // 检查通用的上下半区。
         if (strcmp(hitAreaName, HitAreaNameHead) == 0) {
-            return y > 0.0f; // upper half of logical space
+            return y > 0.0f; // 逻辑空间的上半区。
         } else if (strcmp(hitAreaName, HitAreaNameBody) == 0) {
-            return y <= 0.0f; // lower half
+            return y <= 0.0f; // 下半区。
         }
     }
     
-    return false; // 存在しない場合はfalse
+    return false; // 区域不存在时返回 false。
 }
 
 void LAppModel::SetExpression(const csmChar* expressionID)
@@ -781,7 +780,7 @@ void LAppModel::SwitchSkin()
         return;
     }
 
-    // Reset all skin parameters to their defaults before switching
+    // 切换前，将全部皮肤参数恢复为默认值。
     for (csmInt32 i = 0; i < _allSkinParamIds.GetSize(); i++)
     {
         _model->SetParameterValue(_allSkinParamIds[i], _allSkinParamDefaults[i]);

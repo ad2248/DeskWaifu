@@ -51,7 +51,7 @@ std::pair<GLuint, std::size_t> LAppTextureManager::UploadTexture(const std::stri
         return {};
     }
 
-    // png情報を取得する
+    // 获取 PNG 信息。
     png = stbi_load_from_memory(
         address,
         static_cast<int>(size),
@@ -78,7 +78,7 @@ std::pair<GLuint, std::size_t> LAppTextureManager::UploadTexture(const std::stri
 #endif
     }
 
-    // OpenGL用のテクスチャを生成する
+    // 创建 OpenGL 纹理。
     glGenTextures(1, &textureId);
     if (!textureId) {
         LAppPal::PrintLogLn("%s", TextureFailureMessage(fileName, "glGenTextures failed").c_str());

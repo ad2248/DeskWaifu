@@ -12,9 +12,9 @@
 #include <string>
 
 /**
-* @brief プラットフォーム依存機能を抽象化する Cubism Platform Abstraction Layer.
+* @brief 抽象平台相关功能的 Cubism 平台抽象层。
 *
-* ファイル読み込みや時刻取得等のプラットフォームに依存する関数をまとめる
+* 集中文件读取、时间获取等平台相关函数。
 *
 */
 class LAppPal
@@ -22,30 +22,30 @@ class LAppPal
 public:
     static void SetResourceBasePath(const std::string& base);
     /**
-    * @brief ファイルをバイトデータとして読み込む
+    * @brief 将文件读取为字节数据。
     *
-    * ファイルをバイトデータとして読み込む
+    * 将文件读取为字节数据。
     *
-    * @param[in]   filePath    読み込み対象ファイルのパス
-    * @param[out]  outSize     ファイルサイズ
-    * @return                  バイトデータ
+    * @param[in]   filePath 待读取文件的路径。
+    * @param[out]  outSize 文件大小。
+    * @return 字节数据。
     */
     static Csm::csmByte* LoadFileAsBytes(const std::string filePath, Csm::csmSizeInt* outSize);
 
 
     /**
-    * @brief バイトデータを解放する
+    * @brief 释放字节数据。
     *
-    * バイトデータを解放する
+    * 释放字节数据。
     *
-    * @param[in]   byteData    解放したいバイトデータ
+    * @param[in]   byteData 待释放的字节数据。
     */
     static void ReleaseBytes(Csm::csmByte* byteData);
 
     /**
-    * @biref   デルタ時間（前回フレームとの差分）を取得する
+    * @biref 获取与上一帧的时间差。
     *
-    * @return  デルタ時間[ms]
+    * @return 帧间隔时间，单位为毫秒。
     *
     */
     static Csm::csmFloat32 GetDeltaTime();
@@ -53,43 +53,43 @@ public:
     static void UpdateTime();
 
     /**
-    * @brief ログを出力する
+    * @brief 输出日志。
     *
-    * ログを出力する
+    * 输出日志。
     *
-    * @param[in]   format  書式付文字列
-    * @param[in]   ...     (可変長引数)文字列
+    * @param[in]   format 格式字符串。
+    * @param[in]   ... 可变字符串参数。
     *
     */
     static void PrintLog(const Csm::csmChar* format, ...);
 
     /**
-    * @brief ログを出力し最後に改行する
+    * @brief 输出日志并在末尾换行。
     *
-    * ログを出力し最後に改行する
+    * 输出日志并在末尾换行。
     *
-    * @param[in]   format  書式付文字列
-    * @param[in]   ...     (可変長引数)文字列
+    * @param[in]   format 格式字符串。
+    * @param[in]   ... 可变字符串参数。
     *
     */
     static void PrintLogLn(const Csm::csmChar* format, ...);
 
     /**
-    * @brief メッセージを出力する
+    * @brief 输出消息。
     *
-    * メッセージを出力する
+    * 输出消息。
     *
-    * @param[in]   message  文字列
+    * @param[in]   message 字符串。
     *
     */
     static void PrintMessage(const Csm::csmChar* message);
 
     /**
-    * @brief メッセージを出力し最後に改行する
+    * @brief 输出消息并在末尾换行。
     *
-    * メッセージを出力し最後に改行する
+    * 输出消息并在末尾换行。
     *
-    * @param[in]   message  文字列
+    * @param[in]   message 字符串。
     *
     */
     static void PrintMessageLn(const Csm::csmChar* message);

@@ -1,5 +1,6 @@
 #include "OffscreenRenderer.hpp"
 #include "RenderDevice.hpp"
+#include "ReadRgbaFrame.hpp"
 #include <GL/glew.h>
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
@@ -82,17 +83,19 @@ OffscreenRenderer::~OffscreenRenderer() { Shutdown(); }
 
 bool OffscreenRenderer::Initialize(const std::string& pciDevice)
 {
-    if (!ValidRenderDevice(pciDevice) || pciDevice.empty() || pciDevice == "auto") return false;
+    if (!ValidRenderDevice(pciDevice)) return false;
     const auto getDisplay = reinterpret_cast<PFNEGLGETPLATFORMDISPLAYEXTPROC>(eglGetProcAddress("eglGetPlatformDisplayEXT"));
     if (!getDisplay) return false;
+    const bool automatic = pciDevice.empty() || pciDevice == "auto";
     EGLDeviceEXT selected = EGL_NO_DEVICE_EXT;
-    for (const auto& device : EnumerateDevices()) if (device.info.pciAddress == pciDevice) selected = device.handle;
-    if (selected == EGL_NO_DEVICE_EXT) {
+    if (!automatic) for (const auto& device : EnumerateDevices()) if (device.info.pciAddress == pciDevice) selected = device.handle;
+    if (!automatic && selected == EGL_NO_DEVICE_EXT) {
         std::cerr << "[GPU] Requested PCI device is unavailable: " << pciDevice << '\n';
         return false;
     }
     auto& s = *_state;
-    s.display = getDisplay(EGL_PLATFORM_DEVICE_EXT, selected, nullptr);
+    s.display = automatic ? getDisplay(EGL_PLATFORM_SURFACELESS_MESA, EGL_DEFAULT_DISPLAY, nullptr)
+        : getDisplay(EGL_PLATFORM_DEVICE_EXT, selected, nullptr);
     if (s.display == EGL_NO_DISPLAY || !eglInitialize(s.display, nullptr, nullptr) || !eglBindAPI(EGL_OPENGL_API)) {
         std::cerr << "[GPU] Cannot initialize device EGL display\n";
         return false;
@@ -120,7 +123,7 @@ bool OffscreenRenderer::Initialize(const std::string& pciDevice)
         std::cerr << "[GPU] Cannot initialize offscreen OpenGL functions: " << glewGetErrorString(glewError) << '\n';
         return false;
     }
-    // GLEW probes can leave an error behind; do not attribute it to rendering.
+    // GLEW 探测可能遗留错误，不能将其误判为渲染错误。
     while (glGetError() != GL_NO_ERROR) {}
     std::cout << "[GPU] Render device " << pciDevice << ": " << glGetString(GL_VENDOR)
         << " / " << glGetString(GL_RENDERER) << " / " << glGetString(GL_VERSION) << std::endl;
@@ -172,30 +175,7 @@ bool OffscreenRenderer::BindFrame(int width, int height)
 bool OffscreenRenderer::ReadFrame(std::vector<unsigned char>& pixels)
 {
     auto& s = *_state;
-    if (!s.framebuffer || s.width <= 0 || s.height <= 0) return false;
-    GLint previous, alignment, rowLength, skipRows, skipPixels, packBuffer;
-    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &previous);
-    glGetIntegerv(GL_PACK_ALIGNMENT, &alignment);
-    glGetIntegerv(GL_PACK_ROW_LENGTH, &rowLength);
-    glGetIntegerv(GL_PACK_SKIP_ROWS, &skipRows);
-    glGetIntegerv(GL_PACK_SKIP_PIXELS, &skipPixels);
-    glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &packBuffer);
-    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
-    glPixelStorei(GL_PACK_ALIGNMENT, 1);
-    glPixelStorei(GL_PACK_ROW_LENGTH, 0);
-    glPixelStorei(GL_PACK_SKIP_ROWS, 0);
-    glPixelStorei(GL_PACK_SKIP_PIXELS, 0);
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, s.framebuffer);
-    glReadBuffer(GL_COLOR_ATTACHMENT0);
-    pixels.resize(static_cast<size_t>(s.width) * s.height * 4);
-    glReadPixels(0, 0, s.width, s.height, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, previous);
-    glPixelStorei(GL_PACK_ALIGNMENT, alignment);
-    glPixelStorei(GL_PACK_ROW_LENGTH, rowLength);
-    glPixelStorei(GL_PACK_SKIP_ROWS, skipRows);
-    glPixelStorei(GL_PACK_SKIP_PIXELS, skipPixels);
-    glBindBuffer(GL_PIXEL_PACK_BUFFER, packBuffer);
-    return glGetError() == GL_NO_ERROR;
+    return ReadRgbaFrame(s.framebuffer, s.width, s.height, pixels);
 }
 
 unsigned int OffscreenRenderer::Framebuffer() const { return _state->framebuffer; }

@@ -2,15 +2,14 @@
 #include "TransformEditor.hpp"
 #include <vector>
 
-// Top strip moves the entire model/crop pair; remaining edges resize only.
+// 顶部区域同时移动模型与裁剪框，其余边缘只调整裁剪尺寸。
 class CropInteraction
 {
 public:
     enum Handle { None = 0, Move = 1, Left = 2, Right = 4, Top = 8, Bottom = 16, Model = 32 };
     static std::vector<ModelRegion> Handles(ModelRegion r)
     {
-        // Draw only visible frame segments; int64 arithmetic avoids overflowing
-        // requested rectangles which are valid but lie outside the surface.
+        // 只绘制可见边框；使用 int64 运算，避免合法但位于表面外的矩形发生溢出。
         auto clamp = [](int64_t n) { return int(std::max<int64_t>(INT32_MIN, std::min<int64_t>(INT32_MAX, n))); };
         return {{r.x, r.y, r.width, 8}, {r.x, clamp(int64_t(r.y) + r.height - 8), r.width, 8},
             {r.x, r.y, 8, r.height}, {clamp(int64_t(r.x) + r.width - 8), r.y, 8, r.height},

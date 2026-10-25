@@ -8,8 +8,8 @@
 
 class LAppModel;
 
-// Organizes a complete render frame; the model session owns the models and
-// passes borrowed pointers, while the View supplies pre/post draw hooks.
+// 组织完整的渲染帧；模型会话持有模型并传入借用指针，
+// View 提供绘制前后的钩子。
 class ModelRenderer
 {
 public:

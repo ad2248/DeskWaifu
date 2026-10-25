@@ -32,7 +32,7 @@ qint64 runningPid(const QString& procDirectory)
         if (!numeric || entry.ownerId() != getuid()) continue;
 
         QFile status(entry.filePath() + QStringLiteral("/status"));
-        if (!status.open(QIODevice::ReadOnly)) continue; // Process may have exited.
+        if (!status.open(QIODevice::ReadOnly)) continue; // 进程可能已经退出。
         const QByteArray contents = status.readAll();
         bool namedDeskWaifu = false;
         bool zombie = false;
@@ -59,12 +59,12 @@ Result spawn(bool connected, const QString& applicationDirectory, const QString&
     if (runtime.isEmpty())
         return {State::Failed, QObject::tr("Cannot find a runtime directory for the DeskWaifu startup lock.")};
     QLockFile lock(QDir(runtime).filePath(QStringLiteral("deskwaifu-spawn.lock")));
-    lock.setStaleLockTime(0); // Never steal a live launcher's lock because startup is slow.
+    lock.setStaleLockTime(0); // 不能因启动缓慢而抢占仍在运行的启动器所持有的锁。
     if (!lock.tryLock(2000))
         return {State::Failed, QObject::tr("Cannot acquire the DeskWaifu startup lock; another launch may be in progress.")};
 
-    // Every GUI for this user shares the lock. Recheck only after acquiring it,
-    // and keep it held across startDetached's successful exec handshake.
+    // 当前用户的所有 GUI 共用此锁；获取锁后重新检查进程，
+    // 并持锁直到 startDetached 完成 exec 成功握手。
     const qint64 running = runningPid(procDirectory);
     if (running < 0)
         return {State::Failed, QObject::tr("Cannot inspect running processes; DeskWaifu was not started.")};
@@ -83,11 +83,11 @@ Result spawn(bool connected, const QString& applicationDirectory, const QString&
     process.setStandardOutputFile(QProcess::nullDevice());
     process.setStandardErrorFile(QProcess::nullDevice());
     qint64 pid = 0;
-    // A detached session is independent of the GUI and survives its destruction/exit.
+    // 分离会话独立于 GUI，GUI 销毁或退出后仍继续运行。
     if (!process.startDetached(&pid))
         return {State::Failed, QObject::tr("Failed to start DeskWaifu: %1").arg(process.errorString())};
-    // On Linux startDetached waits for exec to succeed, so /proc already exposes
-    // the executable/name before the RAII lock is released (no socket wait needed).
+    // Linux 上 startDetached 会等待 exec 成功，因此 RAII 锁释放前，
+    // /proc 已能提供可执行文件和进程名，无需等待套接字。
     return {State::Started, QObject::tr("Started DeskWaifu (PID %1); waiting for connection.").arg(pid), pid};
 }
 }

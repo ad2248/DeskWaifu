@@ -37,8 +37,8 @@ int main()
     second.Reset();
     if (deletes != 1 || textures.ResidentBytes() != 32) return 1;
     if (textures.Acquire("missing", upload)) return 1;
-    // The loader may fail after its first texture; destroying the partial
-    // model must relinquish that lease without harming a shared borrower.
+    // 加载器可能在加载首张纹理后失败；销毁部分构建的模型时，
+    // 必须释放该租约，同时不影响共享借用者。
     {
         auto partial = textures.Acquire("other", upload);
         if (!partial || textures.ResidentCount() != 1 ||
@@ -54,22 +54,21 @@ int main()
             [&] { assert(textures.ResidentCount() == 0); order.push_back(4); },
             [&] { order.push_back(5); }, [&] { current = false; order.push_back(6); });
     };
-    // A failed bind must never invoke GPU deletion or release the context.
+    // 绑定失败时，不能删除 GPU 资源或释放上下文。
     if (ReleaseGpuResources(true, [] { return false; }, release) || !order.empty() || deletes != 1) return 1;
     if (!ReleaseGpuResources(true, [&] { order.push_back(0); return current; }, release)) return 1;
     if (order != std::vector<int>({0, 1, 2, 3, 4, 5, 6}) || deletes != 2 || current) return 1;
-    // Before EGL initialization, no GPU resources exist, so partial teardown
-    // must not attempt eglMakeCurrent.
+    // EGL 初始化前不存在 GPU 资源，因此部分清理不能尝试 eglMakeCurrent。
     bool touched = false;
     if (!ReleaseGpuResources(false, [&] { touched = true; return false; }, [] {}) || touched) return 1;
 
-    // Starting Cubism alone is CPU-only and must not request an EGL bind.
+    // 单独启动 Cubism 只使用 CPU，不能请求绑定 EGL。
     if (HasGpuResources(nullptr, nullptr, 0)) return 1;
     const int gpuOwner = 0;
     if (!HasGpuResources(&gpuOwner, nullptr, 0) ||
         !HasGpuResources(nullptr, &gpuOwner, 0) ||
         !HasGpuResources(nullptr, nullptr, 1)) return 1;
-    // Cubism may have started without creating a view, manager or texture.
+    // Cubism 可能已启动，但尚未创建视图、管理器或纹理。
     bool cubismStarted = true, cleaned = false, bound = false;
     if (!ReleaseGpuResources(HasGpuResources(nullptr, nullptr, 0),
             [&] { bound = true; return false; },

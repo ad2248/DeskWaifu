@@ -16,7 +16,7 @@ LAppSprite::LAppSprite(float x, float y, float width, float height, GLuint textu
     _rect.up = (y + height * 0.5f);
     _rect.down = (y - height * 0.5f);
 
-    // 何番目のattribute変数か
+    // 获取各顶点属性变量的位置。
     _positionLocation = glGetAttribLocation(programId, "position");
     _uvLocation      = glGetAttribLocation(programId, "uv");
     _textureLocation = glGetUniformLocation(programId, "texture");
@@ -50,14 +50,14 @@ void LAppSprite::Render(int maxWidth, int maxHeight) const
     // 透過設定
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    // attribute属性を有効にする
+    // 启用顶点属性。
     glEnableVertexAttribArray(_positionLocation);
     glEnableVertexAttribArray(_uvLocation);
 
-    // uniform属性の登録
+    // 设置 uniform 参数。
     glUniform1i(_textureLocation, 0);
 
-    // 頂点データ
+    // 顶点数据。
     float positionVertex[] =
     {
         (_rect.right - maxWidth * 0.5f) / (maxWidth * 0.5f), (_rect.up   - maxHeight * 0.5f) / (maxHeight * 0.5f),
@@ -66,13 +66,13 @@ void LAppSprite::Render(int maxWidth, int maxHeight) const
         (_rect.right - maxWidth * 0.5f) / (maxWidth * 0.5f), (_rect.down - maxHeight * 0.5f) / (maxHeight * 0.5f)
     };
 
-    // attribute属性を登録
+    // 设置顶点属性。
     glVertexAttribPointer(_positionLocation, 2, GL_FLOAT, false, 0, positionVertex);
     glVertexAttribPointer(_uvLocation, 2, GL_FLOAT, false, 0, uvVertex);
 
     glUniform4f(_colorLocation, _spriteColor[0], _spriteColor[1], _spriteColor[2], _spriteColor[3]);
 
-    // モデルの描画
+    // 绘制模型。
     glBindTexture(GL_TEXTURE_2D, _textureId);
     glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
 }
@@ -84,14 +84,14 @@ void LAppSprite::RenderImmidiate(GLuint textureId, const GLfloat uvVertex[8], in
         return;
     }
 
-    // attribute属性を有効にする
+    // 启用顶点属性。
     glEnableVertexAttribArray(_positionLocation);
     glEnableVertexAttribArray(_uvLocation);
 
-    // uniform属性の登録
+    // 设置 uniform 参数。
     glUniform1i(_textureLocation, 0);
 
-    // 頂点データ
+    // 顶点数据。
     float positionVertex[] =
     {
         (_rect.right - maxWidth * 0.5f) / (maxWidth * 0.5f), (_rect.up - maxHeight * 0.5f) / (maxHeight * 0.5f),
@@ -100,13 +100,13 @@ void LAppSprite::RenderImmidiate(GLuint textureId, const GLfloat uvVertex[8], in
         (_rect.right - maxWidth * 0.5f) / (maxWidth * 0.5f), (_rect.down - maxHeight * 0.5f) / (maxHeight * 0.5f)
     };
 
-    // attribute属性を登録
+    // 设置顶点属性。
     glVertexAttribPointer(_positionLocation, 2, GL_FLOAT, false, 0, positionVertex);
     glVertexAttribPointer(_uvLocation, 2, GL_FLOAT, false, 0, uvVertex);
 
     glUniform4f(_colorLocation, _spriteColor[0], _spriteColor[1], _spriteColor[2], _spriteColor[3]);
 
-    // モデルの描画
+    // 绘制模型。
     glBindTexture(GL_TEXTURE_2D, textureId);
     glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
 }
@@ -117,7 +117,7 @@ bool LAppSprite::IsHit(float pointX, float pointY, int maxWidth, int maxHeight) 
     {
         return false;
     }
-    //Y座標は変換する必要あり
+    // 需要转换 Y 坐标。
     float y = maxHeight - pointY;
 
     return (pointX >= _rect.left && pointX <= _rect.right && y <= _rect.up && y >= _rect.down);

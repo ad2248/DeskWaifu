@@ -8,7 +8,7 @@
 
 #define CHECK(c) do { if (!(c)) { std::cerr << __LINE__ << ": " << #c << '\n'; return 1; } } while (false)
 
-// Permission errors must be deterministic even when CI runs with root privileges.
+// 即使 CI 使用 root 权限运行，权限错误测试也必须具有确定性。
 static bool denyConfigWrites = false;
 extern "C" int __real_mkstemp(char*);
 extern "C" int __wrap_mkstemp(char* name)
@@ -19,14 +19,9 @@ extern "C" int __wrap_mkstemp(char* name)
 
 struct Runtime : IApplicationRuntime
 {
-    bool SelectModel(int) override { return true; }
     int ModelIndex() const override { return 0; }
     int ModelCount() const override { return 1; }
     bool SetHidden(bool) override { return true; }
-    bool PlayMotion(const std::string&, int, int) override { return true; }
-    bool SetExpression(const std::string&) override { return true; }
-    bool TriggerHotkey(const std::string&, std::string&) override { return true; }
-    bool SwitchSkin() override { return true; }
 };
 
 struct Backend : IOutputBackend
@@ -51,7 +46,7 @@ int main()
     TransformEditor editor(service, config); CHECK(editor.Initialize({}));
     Backend backend; OutputSettings settings(backend, editor, config);
     CHECK(settings.Initialize().ok && backend.current == 2);
-    CHECK(editor.Display().transform.x == 2 && editor.Display().cropped); // Restart preserves placement.
+    CHECK(editor.Display().transform.x == 2 && editor.Display().cropped); // 重启后保留布局。
     CHECK(!settings.Select("missing").ok && backend.current == 2);
     CHECK(editor.Begin("gui", false, 1280, 1024).ok);
     CHECK(!settings.Select("DP-1").ok && backend.current == 2);
@@ -67,10 +62,10 @@ int main()
     CHECK(store.Read(disk, error) && disk.values.at("model_output") == "\"DP-1\"");
     CHECK(!disk.values.count("model_region"));
     CHECK(editor.Reset("gui").ok);
-    CHECK(config.values.modelOutput == "DP-1"); // Other transform saves retain the display choice.
+    CHECK(config.values.modelOutput == "DP-1"); // 保存其他变换时保留显示器选择。
     CHECK(store.Read(disk, error) && disk.values.at("model_output") == "\"DP-1\"");
     CHECK(service.SetTransform({2, 3, 4}).ok);
-    CHECK(settings.Select("DP-1").ok && service.Snapshot().transform.x == 3); // Same output is a no-op.
+    CHECK(settings.Select("DP-1").ok && service.Snapshot().transform.x == 3); // 选择相同输出设备不执行操作。
     write("broken");
     CHECK(!settings.Select("HDMI-A-1").ok && backend.current == 1);
     CHECK(service.Snapshot().transform.x == 3 && config.values.modelOutput == "DP-1");
@@ -88,14 +83,14 @@ int main()
         CHECK(ConfigStore::Parse(json, disk, error));
         LAppConfig::Values values; CHECK(!LAppConfig::Decode(disk, values, error));
     }
-    // An upgrade must still start from a readable legacy config in a read-only directory.
+    // 升级时，即使旧配置位于只读目录，只要可读取就应正常启动。
     const std::string legacy = R"({"model_x":0.25,"model_y":-0.5,"model_scale":2})";
     write(legacy);
     CHECK(editor.ReloadAndDiscard("gui").ok);
     backend.outputs = {{1, "DP-1", 0, 0, 1920, 1080}, {2, "HDMI-A-1", 1920, 0, 1280, 1024}};
     backend.current = 2;
     backend.fail = true;
-    CHECK(!settings.Initialize().ok && settings.Warning().empty()); // A real display failure remains fatal.
+    CHECK(!settings.Initialize().ok && settings.Warning().empty()); // 真实显示设备故障仍为致命错误。
     backend.fail = false;
     CHECK(chmod(directory.c_str(), 0555) == 0);
     denyConfigWrites = true;
@@ -106,14 +101,14 @@ int main()
     CHECK(!settings.Warning().empty());
     CHECK(editor.Display().transform.scale == 2 && editor.Display().transform.x == .25f && editor.Display().transform.y == -.5f);
     CHECK(store.Read(disk, error) && disk.document == legacy && !disk.values.count("model_output"));
-    // An explicit switch must still fail and restore the previous output on the same error.
+    // 相同错误下，显式切换仍应失败并恢复原输出设备。
     denyConfigWrites = true;
     const auto selected = settings.Select("HDMI-A-1");
     denyConfigWrites = false;
     CHECK(!selected.ok && backend.current == 1);
     CHECK(store.Read(disk, error) && disk.document == legacy);
     CHECK(settings.Initialize().ok && settings.Warning().empty());
-    // Display and idle-opacity saves must preserve each other's configuration.
+    // 显示器和空闲透明度保存时，必须相互保留对方配置。
     HoverOpacitySettings opacity(config);
     CHECK(opacity.Set("{\"idle_opacity\":0.65}").ok);
     CHECK(config.values.modelOutput == "DP-1");

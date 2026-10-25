@@ -23,7 +23,7 @@ ModelKeyDecision DecideModelKey(ModelKeyboard& keyboard, bool grabbed,
     }
     if (!keyboard.Key(code, pressed) || !bindings) return {};
 
-    // Ambiguous chords are ignored, as in the control panel.
+    // 与控制面板一致，忽略存在歧义的组合键。
     const typename Bindings::value_type* match = nullptr;
     for (const auto& binding : *bindings)
     {

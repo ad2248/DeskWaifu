@@ -6,8 +6,8 @@
 #include <string>
 #include <utility>
 
-// Leases borrow the table; the composition root destroys every model before
-// the texture store. Textures are never retained without an active borrower.
+// 租约借用资源表；组装入口必须先销毁全部模型，再销毁纹理存储。
+// 没有活动借用者时不保留纹理。
 template<typename Id>
 class TextureResidency
 {
@@ -61,7 +61,7 @@ public:
         if (key.empty()) return {};
         auto found = _entries.find(key);
         if (found == _entries.end()) {
-            auto resource = create(key); // pair<Id, bytes>, zero ID means failure
+            auto resource = create(key); // 返回 pair<Id, bytes>，ID 为零表示失败。
             if (!resource.first) return {};
             found = _entries.emplace(key, Entry{resource.first, resource.second, 0}).first;
             _bytes += resource.second;

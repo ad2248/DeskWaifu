@@ -7,8 +7,8 @@
 #include <sstream>
 #include <stdexcept>
 
-// Read only validated top-level members. Missing optional fields use defaults;
-// present fields of the wrong type must never silently turn into valid values.
+// 仅读取已校验的顶层成员。可选字段缺失时使用默认值；
+// 字段存在但类型错误时，不能悄悄将其转换为合法值。
 inline std::string JsonGetString(const ConfigStore::Snapshot& request, const std::string& key)
 {
     const auto it = request.values.find(key);
@@ -24,7 +24,7 @@ inline bool JsonGetBool(const ConfigStore::Snapshot& request, const std::string&
     const auto it = request.values.find(key);
     if (it == request.values.end()) return false;
     auto value = it->second;
-    // Retain the legacy reset/stream_source boolean spellings only.
+    // 仅保留旧版 reset/stream_source 的布尔值写法。
     if (!value.empty() && value.front() == '"') value = JsonGetString(request, key);
     if (value == "true" || value == "1") return true;
     if (value == "false" || value == "0") return false;

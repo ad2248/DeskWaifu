@@ -15,9 +15,9 @@ case "$tested_sha" in
   *) echo "invalid head SHA" >&2; exit 2 ;;
 esac
 
-# Host runners have a minimal PATH and can otherwise pick an older system
-# OpenCode instead of the user's installed version (and its current models).
-# An explicit override always wins; keep PATH fallback for other installations.
+# 主机运行器的 PATH 很精简，可能选中旧版系统 OpenCode，
+# 而非用户安装的版本及其当前模型。
+# 显式覆盖值始终优先；其他安装方式仍可通过 PATH 查找。
 opencode_bin="${OPENCODE_BIN:-}"
 if test -z "$opencode_bin"; then
   if test -x "${HOME}/.opencode/bin/opencode"; then

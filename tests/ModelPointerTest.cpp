@@ -5,6 +5,9 @@
 #include "LAppModel.hpp"
 #include "LAppLive2DManager.hpp"
 #include "LAppDefine.hpp"
+#include "LAppTextureManager.hpp"
+#include "LAppAllocator_Common.hpp"
+#include "ModelProcessorTestHelpers.hpp"
 #include <Rendering/OpenGL/CubismRenderer_OpenGLES2.hpp>
 #include <Id/CubismIdManager.hpp>
 #include "TestTemporaryDirectory.hpp"
@@ -22,6 +25,8 @@
 #include <chrono>
 #include <unistd.h>
 #include <QCoreApplication>
+#include <QEventLoop>
+#include <QTimer>
 
 #define CHECK(condition) do { if (!(condition)) { \
     std::cerr << "Line " << __LINE__ << ": " << #condition << '\n'; return 1; \
@@ -34,6 +39,8 @@ std::vector<Hit> hits;
 class Window : public DesktopWindow
 {
 public:
+    std::unique_ptr<ModelRenderTarget> RenderTarget(const std::string&) override { return CreateEglModelRenderTarget("auto"); }
+    bool UploadFrame(const RenderFrame&) override { return true; }
     IDesktopWindowEvents* events = nullptr;
     std::vector<OutputSnapshot> outputs{{1, "left", 0, 0, 800, 600},
         {2, "right", 800, 0, 1000, 800}};
@@ -101,27 +108,26 @@ void click(int x, int y)
 
 int releaseTest(LAppDelegate& app)
 {
-    app.GetView()->OnTouchesBegan(100, 100);
-    app.GetView()->OnTouchesEnded(150, 120, app.Service().Snapshot().transform);
+    CHECK(AwaitModel(app.Models(), {{"command", "tap_model"}, {"mouse_x", 150}, {"mouse_y", 120}})["ok"].toBool());
     CHECK(!hits.empty());
     CHECK(near(hits[0].x, -250.f / 300) && near(hits[0].y, 180.f / 300));
     hits.clear();
-    app.GetView()->OnTouchesBegan(100, 100);
-    app.GetView()->OnTouchesEnded(700, 500, app.Service().Snapshot().transform);
+    CHECK(AwaitModel(app.Models(), {{"command", "tap_model"}, {"mouse_x", 700}, {"mouse_y", 500}})["ok"].toBool());
     CHECK(!hits.empty());
     CHECK(near(hits[0].x, 1) && near(hits[0].y, -200.f / 300));
     hits.clear();
-    // The real Delegate's delayed single tap is delivered only once. A second,
-    // distant release flushes it without waiting for the frame timer.
+    // 真实 Delegate 的延迟单击只派发一次。远处的第二次释放会立即派发它，
+    // 无需等待帧定时器。
     click(300, 200);
     CHECK(hits.empty());
     click(500, 400);
+    AwaitModel(app.Models());
     CHECK(!hits.empty() && near(hits[0].x, -100.f / 300));
-    // Finish the second click as a double click: its pending tap must disappear.
+    // 将第二次点击补成双击，其待处理单击必须被取消。
     hits.clear();
     click(500, 400);
     CHECK(hits.empty() && window->grabbed);
-    window->events->KeyboardKey(1, true); // Escape releases the real grab path.
+    window->events->KeyboardKey(1, true); // Escape 通过真实路径释放键盘捕获。
     CHECK(!window->grabbed);
     window->events->KeyboardChanged();
     const auto before = app.Service().Snapshot().transform;
@@ -131,38 +137,53 @@ int releaseTest(LAppDelegate& app)
     hits.clear();
     click(400, 300);
     CHECK(hits.empty());
-    std::this_thread::sleep_for(std::chrono::milliseconds(ModelDoubleClick::Delay + 20));
+    // 不绘制任何帧，Qt 定时器仍须派发延迟单击。
+    QEventLoop wait;
+    QTimer::singleShot(ModelDoubleClick::Delay + 20, &wait, &QEventLoop::quit);
+    wait.exec();
+    AwaitModel(app.Models());
+    CHECK(hits.size() == 1 && near(hits[0].x, -.1f) && near(hits[0].y, .2f));
     return 0;
 }
 
 int transformTest(LAppDelegate& app)
 {
-    // A visible point at (0.2, 0.3) in the model's hit-test coordinates.
-    // Derive its pixel position independently from the render convention.
+    // 模型命中测试坐标中的可见点为 (0.2, 0.3)。
+    // 独立于渲染实现约定推导其像素位置。
     for (const auto size : {std::pair<int, int>{800, 600}, {600, 800}}) {
         window->outputs[0].width = size.first; window->outputs[0].height = size.second;
-        app.GetView()->Initialize(size.first, size.second);
         for (const auto t : {ModelTransform{1, 0, 0}, {1, .2f, -.1f}, {2, 0, 0}, {2, .1f, -.2f}}) {
             CHECK(app.Service().SetTransform(t).ok);
             const float x = size.first * .5f + (.2f + t.x) * t.scale * size.second * .5f;
             const float y = size.second * .5f - (.3f + t.y) * t.scale * size.second * .5f;
             hits.clear();
-            app.GetView()->OnTouchesBegan(x, y);
-            app.GetView()->OnTouchesEnded(x, y, app.Service().Snapshot().transform);
+            CHECK(AwaitModel(app.Models(), {{"command", "tap_model"}, {"mouse_x", x}, {"mouse_y", y},
+                {"width", size.first}, {"height", size.second}, {"zoom", t.scale}, {"x", t.x}, {"y", t.y}})["ok"].toBool());
             CHECK(!hits.empty() && near(hits[0].x, .2f) && near(hits[0].y, .3f));
-            CHECK(hits[0].area == "Head" && hits[0].result); // Actual fallback HitTest.
+            CHECK(hits[0].area == "Head" && hits[0].result); // 实际的回退命中测试。
         }
     }
 
-    // Use the actual renderer's final MVP, rather than reproducing a projection
-    // formula in the test. Cover configured HitAreas, fallback and portrait fit.
-    LAppLive2DManager manager(*app.GetTextureManager(), 800, 600,
+    // 使用真实渲染器的最终 MVP，不在测试中重写投影公式。
+    // 覆盖已配置的 HitAreas、回退判定及竖屏适配。
+    CHECK(app.Models().Stop());
+    // 底层几何检查使用独立且按顺序执行的 Cubism 生命周期。
+    // 上面的应用级检查只通过操作事件访问模型。
+    CHECK(eglInitialize(window->display, nullptr, nullptr));
+    CHECK(window->MakeCurrent());
+    LAppAllocator_Common allocator;
+    Csm::CubismFramework::Option option{};
+    CHECK(Csm::CubismFramework::StartUp(&allocator, &option));
+    Csm::CubismFramework::Initialize();
+    struct Cleanup { ~Cleanup() { Csm::CubismFramework::Dispose(); Csm::CubismFramework::CleanUp(); } } cleanup;
+    LAppTextureManager textures;
+    LAppLive2DManager manager(textures, 800, 600,
         {LAppDefine::ModelsDir, {}, "", -1});
     class View : public LAppView {
     public:
         using LAppView::LAppView;
         void ChangeView() { _viewMatrix->Scale(1.3f, 1.3f); _viewMatrix->Translate(.1f, -.2f); }
-    } view(manager, *app.GetTextureManager());
+    } view(manager, textures);
     for (int index = 0; index < manager.GetModelDirSize(); ++index) {
         CHECK(manager.ChangeScene(index));
         auto* model = manager.GetModel(0);
@@ -247,21 +268,21 @@ int dragTest(LAppDelegate& app)
         window->events->PointerButton(0, true);
         window->events->PointerMoved(1100, 350);
     };
-    // No global-cursor capability: keep the local crop transaction usable.
+    // 缺少全局光标能力时，本地裁剪事务仍应可用。
     drag();
     CHECK(app.Settings().LocalScreenEditing());
     window->events->PointerButton(0, false);
     CHECK(window->current == 1 && app.Settings().LocalScreenEditing());
     CHECK(app.Settings().Cancel("local-screen").ok);
 
-    // An available cursor on the same screen must not rebind or reset the crop.
+    // 同一屏幕上的有效光标不能触发重绑定或重置裁剪。
     drag();
     const auto region = app.Settings().Display().region;
     CHECK(releaseWithCursor(700, 350) == 0);
     CHECK(window->switches == initialSwitches && app.Settings().Display().region.width == region.width);
     CHECK(app.Settings().Cancel("local-screen").ok);
 
-    // A failed rebind leaves the complete draft intact and does not save.
+    // 重绑定失败应完整保留草稿，不触发保存。
     window->failSwitch = true;
     drag();
     const auto preview = app.Settings().Display().transform;
@@ -271,14 +292,14 @@ int dragTest(LAppDelegate& app)
     CHECK(app.Settings().Cancel("local-screen").ok);
     window->failSwitch = false;
 
-    // Explicit control-panel screen edits remain ordinary local crop gestures.
+    // 显式控制面板屏幕编辑仍使用普通本地裁剪手势。
     CHECK(app.Settings().Begin("panel", true, 800, 600).ok);
     drag();
     window->events->PointerButton(0, false);
     CHECK(window->current == 1 && app.Settings().OwnedBy("panel"));
     CHECK(app.Settings().Cancel("panel").ok);
 
-    // Resizing a crop edge isn't a cross-monitor model move either.
+    // 调整裁剪边缘也不属于跨屏移动模型。
     CHECK(app.Settings().BeginLocalScreenEdit(800, 600).ok);
     window->events->PointerMoved(0, 300);
     window->events->PointerButton(0, true);
@@ -298,7 +319,7 @@ int dragTest(LAppDelegate& app)
     CHECK(destination.region.width == 1000 && destination.region.height == 800);
     CHECK(app.GetWindowWidth() == 1000 && app.GetWindowHeight() == 800);
     CHECK(near(destination.transform.scale, .75f));
-    window->events->PointerButton(0, false); // No captured drag: don't switch twice.
+    window->events->PointerButton(0, false); // 没有捕获的拖动，不应再次切换。
     CHECK(window->switches == initialSwitches + 1);
     return 0;
 }
@@ -307,7 +328,7 @@ int stateTest(LAppDelegate& app)
 {
     using State = ModelWindowState::State;
     CHECK(app.WindowState() == State::NormalIdle);
-    click(300, 200); // Pending model tap must be discarded when editing begins.
+    click(300, 200); // 开始编辑时必须丢弃待处理的模型点击。
     CHECK(app.Settings().Begin("panel", false, 800, 600).ok);
     CHECK(app.WindowState() == State::PanelEditing);
     const auto transform = app.Service().Snapshot().transform;
@@ -316,7 +337,7 @@ int stateTest(LAppDelegate& app)
     CHECK(app.Service().Snapshot().transform.scale == transform.scale);
     CHECK(app.Settings().Cancel("panel").ok);
     CHECK(app.WindowState() == State::NormalIdle);
-    // A same-position click is not the second half of the old double click.
+    // 同位置点击不能与之前的点击组成双击。
     click(300, 200);
     CHECK(!window->grabbed && hits.empty());
     CHECK(app.Settings().Begin("panel", true, 800, 600).ok);
@@ -346,7 +367,7 @@ int stateTest(LAppDelegate& app)
     window->events->PointerMoved(60, 300);
     CHECK(app.Settings().Display().region.width == 750);
     CHECK(app.Settings().Display().transform.x == beforeResize.x);
-    // A panel cancellation immediately terminates the old captured gesture.
+    // 面板取消操作应立即结束之前捕获的手势。
     CHECK(app.Settings().Cancel("panel").ok);
     CHECK(app.WindowState() == State::NormalIdle);
     CHECK(app.Settings().Begin("next-panel", true, 800, 600).ok);
@@ -357,7 +378,7 @@ int stateTest(LAppDelegate& app)
     CHECK(app.WindowState() == State::EditIdle);
     CHECK(app.Settings().Apply("next-panel").ok);
     CHECK(app.WindowState() == State::NormalIdle);
-    // Hide/show must not leave a captured press or pending double click behind.
+    // 隐藏和显示不能残留捕获的按下状态或待处理双击。
     window->events->PointerMoved(400, 300);
     window->events->PointerButton(0, true);
     CHECK(app.Service().SetVisibility(false).ok);
@@ -365,7 +386,7 @@ int stateTest(LAppDelegate& app)
     CHECK(app.Service().SetVisibility(true).ok);
     window->events->PointerButton(0, false);
     CHECK(!window->grabbed && hits.empty());
-    // A switch cancels the hand gesture but retains an intentional edit draft.
+    // 切换会取消当前手势，但保留主动编辑的草稿。
     window->events->PointerMoved(400, 300);
     window->events->PointerButton(0, true);
     CHECK(app.WindowState() == State::Pressed);
@@ -385,12 +406,12 @@ int stateTest(LAppDelegate& app)
     CHECK(app.Settings().Display().transform.scale == draft.transform.scale);
     window->events->PointerButton(0, false);
     CHECK(app.Settings().LocalScreenEditing());
-    // Hotplug cancels the transaction too, unlike an intentional switch.
+    // 与主动切换不同，热插拔也会取消事务。
     window->needsRebind = true;
     window->ReconcileOutputs();
     CHECK(!app.Settings().Editing() && app.WindowState() == State::NormalIdle);
     window->duringSwitch = {};
-    // Closing in a nested output wait must not be undone by OutputReady.
+    // 嵌套等待输出设备时触发的关闭，不能被 OutputReady 撤销。
     window->duringSwitch = [&] { app.AppEnd(); };
     CHECK(window->SwitchOutput(1));
     CHECK(app.GetIsEnd() && app.WindowState() == State::Closing);
@@ -403,8 +424,8 @@ int stateTest(LAppDelegate& app)
 }
 }
 
-// Observe diagnostics emitted by the real Manager and HitTest path. Do not
-// replace hit decisions or actions with a test-only implementation.
+// 观察真实 Manager 和命中测试路径发出的诊断信息，
+// 不用测试专用实现替换命中决策或动作。
 extern "C" void __wrap__ZN7LAppPal10PrintLogLnEPKcz(const char* format, ...)
 {
     va_list args; va_start(args, format);
@@ -433,7 +454,7 @@ int main(int argc, char** argv)
     CHECK(!directory.empty());
     setenv("XDG_RUNTIME_DIR", directory.c_str(), 1);
     setenv("HYPRLAND_INSTANCE_SIGNATURE", "pointer-test", 1);
-    unsetenv("DBUS_SESSION_BUS_ADDRESS"); // Never load scripts in the user's session.
+    unsetenv("DBUS_SESSION_BUS_ADDRESS"); // 不在用户会话中加载脚本。
     const auto models = directory + "/models";
     CHECK(mkdir(models.c_str(), 0700) == 0);
     const auto modelDirectory = models + "/pointer";
@@ -478,16 +499,16 @@ int main(int argc, char** argv)
     if (result == 0 && scenario != "transform" && scenario != "state") {
         window->script = [&](const std::function<bool()>& frame) {
             if (!frame()) return false;
-            // The first real frame after an intentional cross-output rebind
-            // must not run the hotplug/resize cancellation path.
+            // 主动跨输出设备重绑定后的第一个真实帧，
+            // 不能进入热插拔或尺寸变化的取消路径。
             if (scenario == "drag") {
                 if (window->current != 2 || !app->Settings().LocalScreenEditing() ||
                     app->Settings().Display().region.width != 1000) return false;
                 const auto draft = app->Settings().Display();
                 ConfigStore::Snapshot disk;
                 if (!configStore.Read(disk, configError) || disk.document != beforeDrag.document) return false;
-                // Advance the real editor beyond the .5s autosave debounce;
-                // do not add wall-clock sleeps to the pointer regression test.
+                // 将真实编辑器时间推进到 0.5 秒自动保存防抖期之后，
+                // 不为指针回归测试添加实际等待。
                 const double now = std::chrono::duration<double>(
                     std::chrono::steady_clock::now().time_since_epoch()).count();
                 app->Settings().Tick(now + 1);
@@ -503,9 +524,10 @@ int main(int argc, char** argv)
                     near(saved.transform.x, draft.transform.x) && near(saved.transform.y, draft.transform.y) &&
                     disk.values.at("model_output") == beforeDrag.values.at("model_output");
             }
+            AwaitModel(app->Models());
             return hits.size() == 1 && near(hits[0].x, -.1f) && near(hits[0].y, .2f);
         };
-        CHECK(app->Run()); // Also executes the real frame and GPU teardown paths.
+        CHECK(app->Run()); // 同时执行真实帧和 GPU 清理路径。
     } else {
         CHECK(app->Release());
         CHECK(app->WindowState() == ModelWindowState::State::Closed);
@@ -515,7 +537,7 @@ int main(int argc, char** argv)
         unlink(wide.c_str()) == 0 && unlink(wideMoc.c_str()) == 0 &&
         rmdir(modelDirectory.c_str()) == 0 && rmdir(models.c_str()) == 0);
     CHECK(unlink(configPath.c_str()) == 0);
-    // The IPC ownership lock is intentionally persistent within its runtime dir.
+    // IPC 所有权锁刻意保留在运行时目录中。
     unlink((directory + "/deskwaifu.sock.lock").c_str());
     CHECK(rmdir(directory.c_str()) == 0);
     return result;

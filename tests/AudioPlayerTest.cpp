@@ -1,6 +1,6 @@
-#include "AudioPlayer.hpp"
-#include "MiniMaxSpeechSource.hpp"
-#include "SpeechPlayer.hpp"
+#include "processor/speech/audio/AudioPlayer.hpp"
+#include "processor/speech/source/MiniMaxSpeechSource.hpp"
+#include "processor/speech/SpeechPlayer.hpp"
 #include <QFile>
 #include <QMediaDevices>
 #include <QAudioDevice>
@@ -36,7 +36,7 @@ private slots:
         audio.Start(1, Format());
         audio.Append(1, QByteArray(1, '\0'));
         audio.Append(1, QByteArray(4799, '\0'));
-        QTest::qWait(300); // An underrun without EOF must not complete the task.
+        QTest::qWait(300); // 尚未到达 EOF 时，音频缓冲欠载不能结束任务。
         QCOMPARE(done.size(), 0);
         audio.Append(1, QByteArray(4800, '\0'));
         audio.FinishInput(1);
@@ -61,7 +61,7 @@ private slots:
         audio.Start(3, Format());
         audio.Stop(2);
         audio.Append(2, "invalid");
-        audio.FinishInput(3); // Zero audio completes normally.
+        audio.FinishInput(3); // 零音频数据也应正常结束。
         QTRY_COMPARE_WITH_TIMEOUT(done.size(), 1, 5000);
         QCOMPARE(errors.size(), 0);
         QCOMPARE(done[0][0].toULongLong(), 3ULL);

@@ -3,14 +3,17 @@
 #include "LAppDelegate.hpp"
 #include "LAppDefine.hpp"
 #include "ModelHotkeys.hpp"
+#include "ModelProcessorTestHelpers.hpp"
 
 #include <QDir>
 #include <QCoreApplication>
+#include <QEventLoop>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QTemporaryDir>
+#include <QTimer>
 #include <cstring>
 #include <iostream>
 #include <sstream>
@@ -28,11 +31,13 @@ bool failTrigger = true;
 int triggerCalls = 0;
 ModelHotkeys* triggered = nullptr;
 
-// Only the platform boundary is replaced. Delegate, input decisions, service,
-// model discovery/loading, and the failure log all execute production code.
+// 只替换平台边界；Delegate、输入决策、服务、模型发现与加载以及失败日志
+// 均执行正式代码。
 class HeadlessWindow : public DesktopWindow
 {
 public:
+    std::unique_ptr<ModelRenderTarget> RenderTarget(const std::string&) override { return CreateEglModelRenderTarget("auto"); }
+    bool UploadFrame(const RenderFrame&) override { return true; }
     bool Initialize(int, int, IDesktopWindowEvents& receiver) override
     {
         events = &receiver;
@@ -51,9 +56,18 @@ public:
     }
     bool Run(const std::function<bool()>& frame) override
     {
-        // IPC work is bounded per frame; the expanded command batch spans frames.
-        for (int i = 0; i < 8; ++i) if (!frame()) return true;
-        return false;
+        // 与平台契约一致：套接字就绪和帧使用同一个 Qt 派发器，
+        // 但处理 IPC 不再要求先绘制一帧。
+        bool quitRequested = false;
+        QEventLoop loop;
+        QTimer frames;
+        QObject::connect(&frames, &QTimer::timeout, &loop, [&] {
+            if (!frame()) { quitRequested = true; loop.quit(); }
+        });
+        frames.start(1);
+        QTimer::singleShot(2000, &loop, &QEventLoop::quit);
+        loop.exec();
+        return quitRequested;
     }
     bool MakeCurrent() override { return eglMakeCurrent(display, surface, surface, context); }
     void Shutdown() override
@@ -98,8 +112,8 @@ std::unique_ptr<DesktopWindow> CreateDesktopWindow()
     return std::unique_ptr<DesktopWindow>(new HeadlessWindow);
 }
 
-// Inject a failure at the actual action endpoint, not a mirror trigger helper.
-// Successful calls still execute the real ModelHotkeys implementation.
+// 在真实动作执行入口注入失败，不使用复制逻辑的触发辅助函数。
+// 成功调用仍执行真实 ModelHotkeys 实现。
 extern "C" bool __real__ZN12ModelHotkeys7TriggerERKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEERS5_(
     ModelHotkeys*, const std::string&, std::string&);
 extern "C" bool __wrap__ZN12ModelHotkeys7TriggerERKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEERS5_(
@@ -121,6 +135,7 @@ int main(int argc, char** argv)
     CHECK(QFile::link(QStringLiteral(SDK_RESOURCES "/Haru/Haru.moc3"), modelDir + "Haru.moc3"));
     CHECK(Write(modelDir + "test.model3.json",
         R"({"Version":3,"FileReferences":{"Moc":"Haru.moc3"}})"));
+    CHECK(Write(modelDir + "z-other.model3.json", R"({"Version":3,"FileReferences":{"Moc":"Haru.moc3"}})"));
     CHECK(Write(modelDir + "test.vtube.json", R"({"Hotkeys":[{
         "HotkeyID":"binding-42","Action":"ToggleExpression","File":"test.exp3.json",
         "Triggers":{"Trigger1":"A"}},
@@ -128,7 +143,7 @@ int main(int argc, char** argv)
     CHECK(Write(modelDir + "test.exp3.json", R"({"Parameters":[{"Id":"ParamAngleX","Value":1
 }]})"));
     CHECK(Write(directory.path() + "/config.json", "{}"));
-    // Never connect to the user's IPC endpoint or modify their KWin scripts.
+    // 不连接用户的 IPC 端点，也不修改其 KWin 脚本。
     qputenv("XDG_RUNTIME_DIR", directory.path().toUtf8());
     qputenv("DESKWAIFU_RENDER_DEVICE", "auto");
     qputenv("DBUS_SESSION_BUS_ADDRESS", "unix:path=/nonexistent/deskwaifu-test-bus");
@@ -140,7 +155,7 @@ int main(int argc, char** argv)
     CHECK(app->Initialize());
     CHECK(events);
 
-    // Exercise the production double-click route without credentials or network.
+    // 在不提供凭据、不联网的情况下测试正式双击路径。
     std::ostringstream speechLogs;
     auto* speechPrevious = std::cout.rdbuf(speechLogs.rdbuf());
     events->PointerMoved(8, 8);
@@ -159,34 +174,42 @@ int main(int argc, char** argv)
     app->GetWindow()->SetKeyboardGrab(false);
 
     events->KeyboardKey(KEY_A, true);
-    CHECK(triggerCalls == 0); // no grab
+    CHECK(triggerCalls == 0); // 未捕获键盘。
     app->GetWindow()->SetKeyboardGrab(true);
     std::ostringstream logs;
     auto* previous = std::cout.rdbuf(logs.rdbuf());
     events->KeyboardKey(KEY_A, true);
+    AwaitModel(app->Models());
+    // 模型操作完成不代表其结果事件已由交互处理器消费。
+    QElapsedTimer resultWait; resultWait.start();
+    while (logs.str().find("injected action failure") == std::string::npos && resultWait.elapsed() < 5000) {
+        QCoreApplication::processEvents(); QThread::msleep(1);
+    }
     std::cout.rdbuf(previous);
     CHECK(triggerCalls == 1);
-    CHECK(logs.str().find("[Hotkeys] Trigger failed for binding binding-42: injected action failure") != std::string::npos);
-    CHECK(triggered && !triggered->IsActive("binding-42"));
+    CHECK(logs.str().find("injected action failure") != std::string::npos);
+    CHECK(triggered && !app->Models().Metadata().hotkeys["hotkeys"].toArray()[0].toObject()["active"].toBool());
     events->KeyboardKey(KEY_A, true);
-    CHECK(triggerCalls == 1); // repeat suppressed on the actual Delegate path
+    CHECK(triggerCalls == 1); // 在真实 Delegate 路径上抑制重复按键。
     events->KeyboardKey(KEY_A, false);
     failTrigger = false;
     logs.str("");
     previous = std::cout.rdbuf(logs.rdbuf());
     events->KeyboardKey(KEY_A, true);
+    AwaitModel(app->Models());
     std::cout.rdbuf(previous);
-    CHECK(triggerCalls == 2 && triggered->IsActive("binding-42"));
+    CHECK(triggerCalls == 2 && app->Models().Metadata().hotkeys["hotkeys"].toArray()[0].toObject()["active"].toBool());
     CHECK(logs.str().find("Trigger failed") == std::string::npos);
     events->KeyboardKey(KEY_ESC, true);
     CHECK(!app->GetWindow()->KeyboardGrabbed());
 
-    // Real IPC -> command adapter -> service: a changed model token must stop
-    // stale actions, and unavailable duplicate IDs must not report active.
-    const auto oldToken = triggered->Token();
-    triggered->Reset();
-    const auto token = triggered->Token();
-    CHECK(token != oldToken && !triggered->IsActive("binding-42"));
+    // 真实 IPC 到命令适配器再到服务：模型令牌变化必须阻止旧动作，
+    // 不可用的重复 ID 不能报告为活动状态。
+    const auto oldToken = app->Models().Metadata().hotkeys["model_token"].toString().toStdString();
+    CHECK(AwaitModel(app->Models(), {{"command", "set_model"}, {"index", 1}})["ok"].toBool());
+    CHECK(AwaitModel(app->Models(), {{"command", "set_model"}, {"index", 0}})["ok"].toBool());
+    const auto token = app->Models().Metadata().hotkeys["model_token"].toString().toStdString();
+    CHECK(token != oldToken && !app->Models().Metadata().hotkeys["hotkeys"].toArray()[0].toObject()["active"].toBool());
     const int fd = socket(AF_UNIX, SOCK_STREAM, 0);
     CHECK(fd >= 0);
     sockaddr_un address{};
@@ -203,7 +226,7 @@ int main(int argc, char** argv)
         "{\"command\":\"set_render_device\",\"device\":\"auto\"}\n" +
         "{\"command\":\"quit\"}\n";
     CHECK(send(fd, requests.data(), requests.size(), MSG_NOSIGNAL) == static_cast<ssize_t>(requests.size()));
-    CHECK(app->Run()); // Poll handles the requests; quit skips rendering and tears down.
+    CHECK(app->Run()); // 套接字事件处理命令，quit 关闭窗口循环。
     CHECK(triggerCalls == 3);
     QByteArray response;
     char buffer[4096];
@@ -212,6 +235,7 @@ int main(int argc, char** argv)
     close(fd);
     CHECK(count == 0);
     const auto lines = response.split('\n');
+    if (lines.size() != 8) std::cerr << "Unexpected IPC response: " << response.toStdString() << '\n';
     CHECK(lines.size() == 8 && lines.back().isEmpty());
     const auto stale = QJsonDocument::fromJson(lines[0]).object();
     CHECK(!stale["ok"].toBool(true) && stale["error"].toString().contains("Model changed"));

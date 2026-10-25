@@ -6,19 +6,18 @@
 #include <deque>
 
 class LAppDelegate;
-class LAppLive2DManager;
 
 class AppCommandHandler : public ICommandService
 {
 public:
-    AppCommandHandler(LAppDelegate& app, LAppLive2DManager& models)
-        : _app(app), _models(models) {}
+    explicit AppCommandHandler(LAppDelegate& app) : _app(app) {}
     std::string Execute(const std::string& json, const std::string& connection) override;
+    void ExecuteAsync(const std::string& json, const std::string& connection,
+        std::function<void(std::string)> complete) override;
     void Disconnected(const std::string& connection) override;
 
 private:
     LAppDelegate& _app;
-    LAppLive2DManager& _models;
     std::map<std::string, std::string> _saveReceipts;
     std::deque<std::string> _receiptOrder;
     void RememberSave(const std::string& id, const std::string& result)

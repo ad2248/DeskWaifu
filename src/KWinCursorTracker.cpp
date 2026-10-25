@@ -25,7 +25,7 @@ bool Number(const char* text, double& value)
 {
     if (!text || !*text || std::strlen(text) > 64) return false;
     std::istringstream input(text);
-    input.imbue(std::locale::classic()); // JavaScript always serializes decimal points as '.'.
+    input.imbue(std::locale::classic()); // JavaScript 序列化时始终使用 '.' 作为小数点。
     input >> std::noskipws >> value;
     return !input.fail() && input.eof() && std::isfinite(value);
 }
@@ -33,13 +33,13 @@ bool Number(const char* text, double& value)
 
 int RunKWinCursorGuard(const char* owner, const char* scriptName, const char* client)
 {
-    // Detach so the cleaner can outlive a SIGKILL of the renderer. The short-
-    // lived intermediate is reaped by StartGuard; init reaps the actual cleaner.
+    // 分离清理进程，使渲染进程被 SIGKILL 后它仍能存活。
+    // 短暂存在的中间进程由 StartGuard 回收，实际清理进程由 init 回收。
     const pid_t child = fork();
     if (child < 0) return 1;
     if (child > 0) return 0;
-    // Survive terminal group signals; do not match the renderer's killall
-    // toggle/focus commands when reusing the same executable.
+    // 避免被终端进程组信号终止；复用同一可执行文件时，不能被渲染进程的
+    // killall 显示切换或焦点命令匹配到。
     if (setsid() < 0 || prctl(PR_SET_NAME, "dw-kwin-clean", 0, 0, 0) < 0) _exit(1);
     sd_bus* bus = nullptr;
     if (sd_bus_open_user(&bus) < 0) _exit(1);
@@ -48,7 +48,7 @@ int RunKWinCursorGuard(const char* owner, const char* scriptName, const char* cl
     pollfd control{STDIN_FILENO, POLLIN, 0};
     int result;
     do { result = poll(&control, 1, -1); } while (result < 0 && errno == EINTR);
-    // EOF on the control pipe is independent of whether the script has run.
+    // 控制管道是否到达 EOF，与脚本是否已运行无关。
     auto hasOwner = [bus](const char* name) {
         sd_bus_message* reply = nullptr;
         int alive = 1;
@@ -58,8 +58,8 @@ int RunKWinCursorGuard(const char* owner, const char* scriptName, const char* cl
         sd_bus_message_unref(reply);
         return result < 0 ? result : alive;
     };
-    // Wait until the broker has drained the dead client's messages. Otherwise
-    // cleanup from this connection could overtake a still-queued loadScript.
+    // 等待消息代理处理完已退出客户端的消息，否则当前连接的清理操作
+    // 可能早于仍在排队的 loadScript 执行。
     while (hasOwner(client) != 0) {
         if (hasOwner(owner) == 0 || !sd_bus_is_open(bus)) _exit(0);
         usleep(200000);
@@ -72,7 +72,7 @@ int RunKWinCursorGuard(const char* owner, const char* scriptName, const char* cl
             sd_bus_error_has_name(&error, SD_BUS_ERROR_NAME_HAS_NO_OWNER);
         sd_bus_error_free(&error);
         if (result >= 0 || gone || !sd_bus_is_open(bus)) break;
-        usleep(200000); // Keep cleaning after transient compositor timeouts.
+        usleep(200000); // 合成器暂时超时后继续清理。
     }
     sd_bus_flush_close_unref(bus);
     _exit(0);
@@ -80,7 +80,7 @@ int RunKWinCursorGuard(const char* owner, const char* scriptName, const char* cl
 
 std::string KWinCursorScript(const std::string& destination, const std::string& scriptName)
 {
-    // Both strings are generated from the D-Bus unique name, never user input.
+    // 两个字符串都由 D-Bus 唯一名称生成，不来自用户输入。
     return "var destination = '" + destination + "';\nvar scriptName = '" + scriptName + R"JS(';
 var outputName = '';
 var pending = false;
@@ -143,8 +143,8 @@ bool KWinCursorTracker::Start()
     _scriptName = std::string("deskwaifu-cursor-") + unique + "-" + std::to_string(getpid());
     static const sd_bus_vtable table[] = {
         SD_BUS_VTABLE_START(0),
-        // JS numeric variants can become either D-Bus int32 or double. Explicit
-        // string arguments keep the wire signature stable for both kinds.
+        // JS 数值可能转换为 D-Bus int32 或 double。
+        // 显式使用字符串参数，确保两种情况下的协议签名一致。
         SD_BUS_METHOD("Sample", "sssssss", "s", Sample, SD_BUS_VTABLE_UNPRIVILEGED),
         SD_BUS_VTABLE_END
     };
@@ -164,8 +164,8 @@ bool KWinCursorTracker::Load()
 {
     _retry = std::chrono::steady_clock::now() + std::chrono::seconds(2);
     _sampleTime = {};
-    // A timeout does not cancel a server-side registration. Clean it up before
-    // reusing the name, and let KWin finish its deferred deletion before retrying.
+    // 超时不会取消服务端注册。复用名称前先清理注册，
+    // 重试前等待 KWin 完成延迟删除。
     if (_registered) {
         Unload();
         return false;
@@ -181,10 +181,10 @@ bool KWinCursorTracker::Load()
         _error = "KWin unavailable: " + std::string(std::strerror(-result));
         return false;
     }
-    if (!StartGuard()) return false; // Must be ready before any registration request.
+    if (!StartGuard()) return false; // 必须在发送任何注册请求前就绪。
 
-    // KWin opens this path when run() reads the script. No file is installed,
-    // and the anonymous file disappears automatically if this process dies.
+    // KWin 在 run() 读取脚本时打开此路径。不安装任何文件，
+    // 进程退出后匿名文件会自动消失。
     if (_scriptFd >= 0) close(_scriptFd);
     _scriptFd = memfd_create("deskwaifu-kwin-cursor", MFD_CLOEXEC);
     const char* unique = nullptr;
@@ -202,7 +202,7 @@ bool KWinCursorTracker::Load()
     int id = -1;
     if (result >= 0) result = sd_bus_message_read(reply, "i", &id);
     sd_bus_message_unref(reply);
-    if (result >= 0 && id < 0) _registered = false; // Explicit rejection, not a lost reply.
+    if (result >= 0 && id < 0) _registered = false; // 明确拒绝，而非回复丢失。
     if (result < 0 || id < 0) {
         _error = "KWin could not load transient cursor script";
         return false;
@@ -230,7 +230,7 @@ bool KWinCursorTracker::Unload()
         "unloadScript", nullptr, nullptr, "s", _scriptName.c_str());
     if (result < 0) {
         _error = "KWin could not unload transient cursor script; retrying";
-        return false; // Still uncertain: do not overwrite the registration on retry.
+        return false; // 结果仍不确定，重试时不能覆盖已有注册。
     }
     _registered = false;
     return true;
@@ -267,7 +267,7 @@ bool KWinCursorTracker::StartGuard()
     int result = initialized;
     if (result == 0) result = posix_spawn_file_actions_adddup2(&actions, control[0], STDIN_FILENO);
     if (result == 0) result = posix_spawn_file_actions_adddup2(&actions, status[1], STDOUT_FILENO);
-    // Do not keep the renderer's Wayland, IPC, GPU or control-write FDs alive.
+    // 不保留渲染进程的 Wayland、IPC、GPU 或控制管道写端文件描述符。
     if (result == 0) result = posix_spawn_file_actions_addclosefrom_np(&actions, STDERR_FILENO + 1);
     const char* client = nullptr;
     sd_bus_get_unique_name(_bus, &client);
@@ -301,8 +301,8 @@ void KWinCursorTracker::StopGuard()
     if (_guardControl >= 0) close(_guardControl);
     _guardControl = -1;
     if (_guardStatus >= 0) {
-        // Usually immediate; never make shutdown wait indefinitely for KWin.
-        // A cleaner that is still retrying remains independent after we return.
+        // 通常会立即完成，退出时不能无限等待 KWin。
+        // 返回后，仍在重试的清理进程继续独立运行。
         pollfd finished{_guardStatus, POLLIN, 0};
         int result;
         do { result = poll(&finished, 1, 500); } while (result < 0 && errno == EINTR);
@@ -316,7 +316,7 @@ void KWinCursorTracker::Poll(const std::string& outputName)
 {
     _outputName = outputName;
     if (!_bus) return;
-    // Bound dispatch work so a busy session bus cannot starve rendering.
+    // 限制每次派发的工作量，避免繁忙的会话总线阻塞渲染。
     for (int i = 0; i < 32 && sd_bus_process(_bus, nullptr) > 0; ++i) {}
     const auto lastSample = _sampleTime == std::chrono::steady_clock::time_point{} ? _loadedAt : _sampleTime;
     if (_loaded && std::chrono::steady_clock::now() - lastSample > std::chrono::seconds(3)) {
@@ -365,8 +365,7 @@ int KWinCursorTracker::OwnerChanged(sd_bus_message* message, void* data, sd_bus_
     if (result < 0) return result;
     if (std::strcmp(name, KWin) == 0) {
         auto& self = *static_cast<KWinCursorTracker*>(data);
-        // An acquisition signal queued before GetNameOwner must not discard
-        // registration state for the very same KWin connection.
+        // GetNameOwner 之前排队的名称获取信号，不能清除同一 KWin 连接的注册状态。
         if (self._owner != newOwner) {
             self._loaded = false;
             self._registered = false;

@@ -13,45 +13,45 @@
 #include "CubismFramework.hpp"
 
 /**
-* @brief スプライト用のシェーダー設定を保持するクラス
+* @brief 保存精灵着色器设置的类。
 */
 class LAppSpriteShader
 {
 public:
     /**
-     * @brief コンストラクタ
+     * @brief 构造函数。
      */
     LAppSpriteShader();
 
     /**
-     * @brief デストラクタ
+     * @brief 析构函数。
      */
     ~LAppSpriteShader();
 
     /**
-     * @brief   シェーダーIDを取得する
+     * @brief 获取着色器 ID。
      */
     GLuint GetShaderId() const;
 
 private:
     /**
-    * @brief シェーダーを作成する。
+    * @brief 创建着色器。
     */
     GLuint CreateShader();
 
     /**
-     * @brief   CreateShader内部関数 エラーチェック
+     * @brief CreateShader 内部的错误检查函数。
      */
     bool CheckShader(GLuint shaderId);
 
     /**
-     * @brief シェーダーをコンパイルする
-     *        コンパイルに失敗した場合には 0 が戻る。
+     * @brief 编译着色器。
+     *        编译失败时返回 0。
      *
-     * @param[in]       filename     シェーダーファイル名
-     * @param[in]       shaderType   作成するシェーダーの種類
+     * @param[in]       filename 着色器文件名。
+     * @param[in]       shaderType 待创建的着色器类型。
      */
     GLuint CompileShader(Csm::csmString filename, GLenum shaderType);
 
-    GLuint _programId;                       ///< シェーダID
+    GLuint _programId;                       ///< 着色器 ID。
 };

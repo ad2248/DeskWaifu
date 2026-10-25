@@ -1,12 +1,12 @@
 #!/bin/bash
 #
-# DeskWaifu Install Script
-# Checks dependencies, downloads third-party libraries, and builds the project.
+# DeskWaifu 安装脚本。
+# 检查依赖、下载第三方库并构建项目。
 #
 
 set -euo pipefail
 
-# ─── Colors & Helpers ─────────────────────────────────────────────────────────
+# ─── 颜色与辅助函数 ───────────────────────────────────────────────────────────
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -21,10 +21,10 @@ warn()    { echo -e "${YELLOW}[WARN]${RESET}  $*"; }
 error()   { echo -e "${RED}[ERROR]${RESET} $*"; }
 step()    { echo -e "\n${BOLD}===> $*${RESET}"; }
 
-# Track overall status
+# 跟踪整体状态。
 ERRORS=0
 
-# ─── Project Root ─────────────────────────────────────────────────────────────
+# ─── 项目根目录 ───────────────────────────────────────────────────────────────
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
@@ -32,7 +32,7 @@ cd "$SCRIPT_DIR"
 SDK_DIR="CubismSdkForNative-5-r.5"
 NPROC=$(nproc 2>/dev/null || echo 4)
 
-# ─── Step 1: Check system dependencies ───────────────────────────────────────
+# ─── 第一步：检查系统依赖 ─────────────────────────────────────────────────────
 
 step "Checking system dependencies"
 
@@ -65,7 +65,7 @@ check_command pkg-config   "pkg-config / pkgconf"
 check_command curl         "curl"
 check_command unzip        "unzip"
 
-# Libraries via pkg-config
+# 通过 pkg-config 检查库。
 check_pkg_config wayland-client  "libwayland-dev / wayland-devel"
 check_pkg_config libsystemd      "libsystemd-dev / systemd-devel / systemd-libs"
 check_pkg_config egl             "libegl-dev / mesa-libEGL-devel"
@@ -87,7 +87,7 @@ if [ "$ERRORS" -gt 0 ]; then
     exit 1
 fi
 
-# ─── Step 2: Check Live2D Cubism SDK ─────────────────────────────────────────
+# ─── 第二步：检查 Live2D Cubism SDK ────────────────────────────────────────────
 
 step "Checking Live2D Cubism SDK"
 
@@ -131,7 +131,7 @@ else
     fi
 fi
 
-# ─── Step 3: Download third-party dependencies (GLEW & GLFW) ─────────────────
+# ─── 第三步：下载第三方依赖（GLEW 与 GLFW）─────────────────────────────────────
 
 step "Setting up third-party dependencies (GLEW & GLFW)"
 
@@ -139,7 +139,7 @@ GLEW_VERSION=2.3.1
 GLFW_VERSION=3.4
 THIRDPARTY_DIR="$SCRIPT_DIR/thirdParty"
 
-# GLEW
+# GLEW 依赖。
 if [ -d "$THIRDPARTY_DIR/glew" ] && [ -f "$THIRDPARTY_DIR/glew/include/GL/glew.h" ]; then
     success "GLEW already present, skipping download"
 else
@@ -154,13 +154,13 @@ else
     info "Extracting GLEW..."
     unzip -oq "$THIRDPARTY_DIR/glew.zip" -d "$THIRDPARTY_DIR"
     rm -f "$THIRDPARTY_DIR/glew.zip"
-    # Rename to 'glew' (remove version suffix)
+    # 重命名为 glew，移除版本后缀。
     rm -rf "$THIRDPARTY_DIR/glew"
     mv "$THIRDPARTY_DIR/glew-"* "$THIRDPARTY_DIR/glew"
     success "GLEW $GLEW_VERSION extracted"
 fi
 
-# ─── Step 4: Configure with CMake ────────────────────────────────────────────
+# ─── 第四步：使用 CMake 配置 ───────────────────────────────────────────────────
 
 step "Configuring project with CMake"
 
@@ -174,7 +174,7 @@ else
     exit 1
 fi
 
-# ─── Step 5: Build ───────────────────────────────────────────────────────────
+# ─── 第五步：构建 ─────────────────────────────────────────────────────────────
 
 step "Building deskwaifu (using $NPROC parallel jobs)"
 
@@ -185,7 +185,7 @@ else
     exit 1
 fi
 
-# ─── Done ─────────────────────────────────────────────────────────────────────
+# ─── 完成 ─────────────────────────────────────────────────────────────────────
 
 BINARY="$BUILD_DIR/bin/deskwaifu"
 

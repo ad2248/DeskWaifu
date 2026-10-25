@@ -1,0 +1,21 @@
+[project]
+name = "deskwaifu-ocr-research"
+version = "0.1.0"
+description = "Local-only PP-OCRv6 experiments, not part of DeskWaifu builds"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "paddleocr>=3.0,<4",
+    "paddlepaddle>=3.0,<4",
+    "pillow>=11,<13",
+    "psutil>=7,<8",
+]
+
+[tool.uv]
+package = false
+
+[dependency-groups]
+export = [
+    "onnx>=1.23.2",
+    "onnxruntime>=1.31.0",
+    "paddle2onnx>=2.0.1",
+]

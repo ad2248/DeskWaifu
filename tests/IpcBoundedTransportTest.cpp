@@ -79,6 +79,7 @@ constexpr int ClientLimit = 16;
 
 struct Commands : ICommandService
 {
+    std::vector<std::function<void(std::string)>> pending;
     std::vector<std::string> requests;
     std::vector<std::string> disconnected;
     std::string Execute(const std::string& request, const std::string&) override
@@ -90,6 +91,11 @@ struct Commands : ICommandService
         return request;
     }
     void Disconnected(const std::string& source) override { disconnected.push_back(source); }
+    void ExecuteAsync(const std::string& request, const std::string& source, std::function<void(std::string)> complete) override
+    {
+        if (request == "delayed") { requests.push_back(request); pending.push_back(std::move(complete)); }
+        else complete(Execute(request, source));
+    }
 };
 
 struct Fixture
@@ -163,7 +169,7 @@ bool SlowReader(bool inject)
     const int slow = f.Connect();
     const int fast = f.Connect();
     if (slow < 0 || fast < 0 || !f.Send(slow, "large\nsecond\n")) return false;
-    // Fill the real Unix socket until it would block, without reading replies.
+    // 不读取回复，将真实 Unix 套接字填满直到写入会阻塞。
     for (int i = 0; i < 128; ++i) f.server.Poll();
     if (std::find(f.commands.requests.begin(), f.commands.requests.end(), "second") !=
         f.commands.requests.end()) return false;
@@ -284,7 +290,7 @@ bool AcceptBudget()
     Fixture f;
     for (int i = 0; i < 5; ++i) if (f.Connect() < 0) return false;
     f.server.Poll();
-    // The injected EINTR also consumes one of the four accept attempts.
+    // 注入的 EINTR 也消耗四次 accept 尝试中的一次。
     if (faults.accepts != 3) return false;
     f.server.Poll();
     return faults.accepts == 5;
@@ -309,7 +315,7 @@ bool GlobalFairness()
         for (int j = 0; j < ClientLimit; ++j)
             if (Fixture::Read(f.clients[j], replies[j])) return false;
     }
-    // Even with all clients flooding, no connection is starved by the global cap.
+    // 即使所有客户端持续发送，全局上限也不能让任何连接得不到处理。
     for (const auto& reply : replies) if (reply.empty()) return false;
     return true;
 }
@@ -379,6 +385,33 @@ bool PendingReplyDisconnect()
     f.server.Release();
     return f.commands.disconnected.size() == 1 && f.commands.requests.size() == 1;
 }
+
+bool DeferredReplies()
+{
+    Fixture f;
+    int wakeups = 0;
+    f.server.SetReadyCallback([&] { ++wakeups; });
+    const int slow = f.Connect(), fast = f.Connect();
+    if (slow < 0 || fast < 0 || !f.Send(slow, "delayed\nsecond\n")) return false;
+    for (int i = 0; i < 16; ++i) f.server.Poll();
+    if (f.commands.pending.size() != 1 || f.commands.requests.size() != 1 || f.server.HasBufferedWork()) return false;
+    if (!f.Send(fast, "fast\n")) return false;
+    std::string reply;
+    for (int i = 0; i < 16 && reply.empty(); ++i) { f.server.Poll(); Fixture::Read(fast, reply); }
+    if (reply != "fast\n" || shutdown(slow, SHUT_WR) != 0) return false;
+    const auto callback = f.commands.pending.front();
+    const int before = wakeups;
+    callback("done"); callback("duplicate"); // 重复完成不能覆盖结果或再次唤醒。
+    if (wakeups != before + 1 || !f.server.HasBufferedWork()) return false;
+    reply.clear(); bool closed = false;
+    for (int i = 0; i < 32 && !closed; ++i) { f.server.Poll(); closed = Fixture::Read(slow, reply); }
+    if (!closed || reply != "done\nsecond\n") return false;
+    if (!f.Send(fast, "delayed\n") || f.commands.pending.size() != 2) return false;
+    f.server.Release();
+    const int releasedWakeups = wakeups;
+    f.commands.pending.back()("late completion after transport teardown");
+    return wakeups == releasedWakeups;
+}
 }
 
 int main()
@@ -388,6 +421,7 @@ int main()
         if (!result) { std::fprintf(stderr, "FAILED: %s\n", name); ok = false; }
     };
     check(SlowReader(false), "slow reader receives complete ordered replies while another client progresses");
+    check(DeferredReplies(), "deferred replies preserve ordering, half-close and late completion safety");
     check(SlowReader(true), "small send buffer, short writes, EAGAIN and EINTR preserve replies");
     check(RequestBoundaries(), "fragmented request exactly at the line limit");
     check(RejectLongRequest(false), "unterminated request over the limit is disconnected");

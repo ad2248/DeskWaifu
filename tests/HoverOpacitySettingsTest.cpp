@@ -20,7 +20,7 @@ int main()
     CHECK(!settings.Enabled() && settings.Opacity() == 0.5f);
     CHECK(settings.Set(R"({"enabled":true})").ok);
     CHECK(settings.Enabled() && settings.Opacity() == 0.5f);
-    CHECK(access(path.c_str(), F_OK) == 0); // A missing configuration is created.
+    CHECK(access(path.c_str(), F_OK) == 0); // 配置不存在时创建配置。
     const auto write = [&](const std::string& text) { std::ofstream file(path); file << text; };
     write("{\n // keep comment\n\"model_x\":2.5,\"extra\":\"keep\",\"hover_opacity_enabled\":true,\"hover_opacity\":0.37\n}\n");
     CHECK(settings.Refresh().ok);
@@ -49,7 +49,7 @@ int main()
         CHECK(!settings.Enabled() && settings.Opacity() == 0.5f);
         CHECK(store.Read(disk, error) && disk.document == saved);
     }
-    // Invalid documents and write/read failures do not publish unsaved runtime values.
+    // 文档无效或读写失败时，不更新未保存的运行时值。
     write("{invalid");
     CHECK(!settings.Set(R"({"enabled":true,"opacity":0.8})").ok);
     CHECK(!settings.Refresh().ok);
@@ -65,7 +65,7 @@ int main()
     HoverOpacitySettings restarted(restartedConfig);
     CHECK(restarted.Refresh().ok);
     CHECK(restarted.Enabled() && restarted.Opacity() == 0.8f);
-    // A partial update preserves another writer's current, unrelated setting.
+    // 局部更新保留其他写入者当前无关的配置。
     CHECK(store.Read(disk, error));
     ConfigStore::Snapshot external;
     auto externalValues = config.values;

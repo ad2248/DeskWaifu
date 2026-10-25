@@ -49,28 +49,32 @@ target_link_libraries(deskwaifu_renderer PUBLIC Framework)
       ${CMAKE_CURRENT_SOURCE_DIR}/LAppTextureManager.hpp
       ${CMAKE_CURRENT_SOURCE_DIR}/LAppView.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/LAppView.hpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/processor/model/ModelRuntime.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/processor/model/ModelProcessor.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp
   )
 
 target_include_directories(${APP_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(${APP_NAME} deskwaifu_loader deskwaifu_renderer deskwaifu_ipc deskwaifu_input deskwaifu_output deskwaifu_compositor deskwaifu_kwin_cursor)
 find_package(Qt6 6.5 REQUIRED COMPONENTS Gui OpenGL WaylandClient StateMachine)
-find_package(Qt6 6.5 REQUIRED COMPONENTS WebSockets Multimedia)
-add_library(deskwaifu_speech STATIC
-  SpeechTypes.hpp MiniMaxSpeechSource.cpp MiniMaxSpeechSource.hpp
-  AudioPlayer.cpp AudioPlayer.hpp SpeechPlayer.cpp SpeechPlayer.hpp)
-set_target_properties(deskwaifu_speech PROPERTIES AUTOMOC ON)
-target_include_directories(deskwaifu_speech PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(deskwaifu_speech PUBLIC Qt6::WebSockets Qt6::Multimedia Qt6::StateMachine)
+add_library(deskwaifu_ocr_client STATIC processor/ocr/OcrClient.cpp processor/ocr/OcrClient.hpp)
+set_target_properties(deskwaifu_ocr_client PROPERTIES AUTOMOC ON)
+target_include_directories(deskwaifu_ocr_client PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/processor/ocr)
+target_compile_definitions(deskwaifu_ocr_client PRIVATE
+  DESKWAIFU_OCR_HELPER_PATH="${CMAKE_INSTALL_FULL_LIBEXECDIR}/deskwaifu-ocr")
+target_link_libraries(deskwaifu_ocr_client PUBLIC Qt6::Core)
+target_link_libraries(${APP_NAME} deskwaifu_ocr_client)
+add_subdirectory(processor)
 target_link_libraries(${APP_NAME} deskwaifu_speech)
+target_link_libraries(${APP_NAME} deskwaifu_processors)
 add_library(deskwaifu_window_state STATIC ModelWindowState.cpp ModelWindowState.hpp)
 set_target_properties(deskwaifu_window_state PROPERTIES AUTOMOC ON)
 target_include_directories(deskwaifu_window_state PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(deskwaifu_window_state PUBLIC Qt6::StateMachine)
 find_package(LayerShellQt 6.6 REQUIRED)
-add_library(deskwaifu_offscreen STATIC OffscreenRenderer.cpp)
+add_library(deskwaifu_offscreen STATIC OffscreenRenderer.cpp ModelRenderTarget.cpp ReadRgbaFrame.cpp)
 target_include_directories(deskwaifu_offscreen PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${GLEW_PATH}/include)
-target_link_libraries(deskwaifu_offscreen PUBLIC glew_s OpenGL::OpenGL OpenGL::EGL)
+target_link_libraries(deskwaifu_offscreen PUBLIC glew_s OpenGL::OpenGL OpenGL::EGL Qt6::Gui Qt6::OpenGL)
 target_sources(${APP_NAME} PRIVATE QtDesktopWindow.cpp)
 target_link_libraries(${APP_NAME} deskwaifu_offscreen)
 target_link_libraries(${APP_NAME} Qt6::Gui Qt6::OpenGL Qt6::WaylandClient LayerShellQt::Interface deskwaifu_window_state)

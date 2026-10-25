@@ -23,8 +23,8 @@ public:
     explicit MainWindow(QWidget* parent = nullptr, const QString& procDirectory = QStringLiteral("/proc"));
     ~MainWindow() override;
 
-    // Update operation feedback without replacing the connection status.
-    // An empty message clears it; a positive timeout clears it after that delay.
+    // 更新操作反馈，不替换连接状态。
+    // 空消息立即清除反馈；正数超时表示延迟相应时间后清除。
     void setStatusMessage(const QString& message, int timeoutMs = 0);
 
 signals:

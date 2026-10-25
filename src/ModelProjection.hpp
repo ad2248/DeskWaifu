@@ -3,7 +3,7 @@
 #include "ModelTransform.hpp"
 #include <Math/CubismMatrix44.hpp>
 
-// Keep the render-side composition order shared with the zoom invariant.
+// 渲染端的变换组合顺序必须与缩放不变量保持一致。
 inline void ApplyModelTransform(Live2D::Cubism::Framework::CubismMatrix44& projection,
     ModelTransform transform)
 {
@@ -11,8 +11,8 @@ inline void ApplyModelTransform(Live2D::Cubism::Framework::CubismMatrix44& proje
     projection.TranslateRelative(transform.x, transform.y);
 }
 
-// Clip-space projection shared by drawing and pointer hit testing. The model
-// matrix is deliberately excluded: Cubism's IsHit already inverts that matrix.
+// 绘制和指针命中测试共用的裁剪空间投影。
+// 刻意不包含模型矩阵，因为 Cubism 的 IsHit 已对其执行逆变换。
 inline Live2D::Cubism::Framework::CubismMatrix44 BuildModelProjection(
     float canvasWidth, int width, int height, ModelTransform transform,
     Live2D::Cubism::Framework::CubismMatrix44* view)

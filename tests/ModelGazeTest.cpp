@@ -45,7 +45,7 @@ int main()
     {
         LAppTextureManager textures;
         LAppModel model(textures, 16, 16, -1);
-        // Keep motions/expressions out of the fixture so they cannot mask gaze.
+        // 夹具中不包含动作或表情，避免掩盖视线效果。
         const auto directory = MakeTestTemporaryDirectory("deskwaifu-gaze");
         CHECK(!directory.empty());
         const auto setting = directory + "/gaze.model3.json";
@@ -65,8 +65,8 @@ int main()
         CHECK(model.GetModel()->GetParameterIndex(eyeX) < model.GetModel()->GetParameterCount());
         CHECK(model.GetModel()->GetParameterIndex(eyeY) < model.GetModel()->GetParameterCount());
 
-        // Mirror the runtime: cached mouse gaze is reapplied before EVERY update.
-        // Test the real scheduler and eye parameters, not only a mock target.
+        // 与运行时一致，每次更新前都重新应用缓存的鼠标视线。
+        // 测试真实调度器和眼球参数，而非仅测试模拟目标。
         const auto frames = [&](float mouseX, float mouseY, const ModelFrameInput& input, float radius = 2.f) {
             CursorLook cursor;
             cursor.LocalPosition(100 + mouseX * 100, 100 - mouseY * 100);
@@ -83,8 +83,8 @@ int main()
         CHECK(model.GetModel()->GetParameterValue(eyeX) < -0.4f);
         CHECK(model.GetModel()->GetParameterValue(eyeY) < -0.3f);
 
-        // Exercise the real flags independently, including nonzero ignored
-        // fields and explicit zero overrides. No mirror input dispatcher.
+        // 分别测试真实标志，包括被忽略字段中的非零值和显式零覆盖值。
+        // 不另写一套输入派发逻辑。
         model.GetModel()->SetParameterValue(mouth, .25f);
         model.GetModel()->SetParameterValue(eyeX, 0);
         model.GetModel()->SetParameterValue(eyeY, 0);

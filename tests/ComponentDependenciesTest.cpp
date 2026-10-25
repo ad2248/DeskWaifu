@@ -10,8 +10,8 @@ int main()
         ResolveResourcePath("/app/", "/models/a.model3.json") != "/models/a.model3.json")
         return 1;
 
-    // Initialization can stop before the view exists; teardown still keeps
-    // the owning service alive until every borrower has been released.
+    // 初始化可能在创建视图前终止；清理时仍须保持服务存活，
+    // 直到所有借用者均已释放。
     std::vector<int> order;
     ReleaseRuntimeInOrder(
         [&] { order.push_back(1); }, [&] { order.push_back(2); },

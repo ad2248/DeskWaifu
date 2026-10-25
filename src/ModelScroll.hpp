@@ -2,8 +2,8 @@
 
 #include "ModelTransform.hpp"
 
-// Shared with the scroll callback so coordinate conversion and null-view
-// handling can be verified independently of the renderer and Wayland.
+// 与滚轮回调共用，以便独立于渲染器和 Wayland
+// 验证坐标转换及空视图处理。
 template <typename View>
 ModelTransform ZoomModelFromScroll(ModelTransform current, View* view,
     float mouseX, float mouseY, float yoffset)

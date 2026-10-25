@@ -3,8 +3,8 @@
 #include "ModelRegion.hpp"
 #include <vector>
 
-// Pixels are RGBA8, bottom-to-top as returned by glReadPixels. Only the
-// model's own alpha belongs here, never the final hover/display opacity.
+// 像素为 glReadPixels 返回的自下而上 RGBA8 数据。
+// 此处只使用模型自身的 alpha，不使用最终悬停或显示透明度。
 inline std::vector<ModelRegion> ExtractModelInputRegion(const unsigned char* pixels,
     int width, int height, ModelRegion clip)
 {
@@ -44,7 +44,7 @@ inline bool ModelInputRegionContains(const std::vector<ModelRegion>& regions, do
     return false;
 }
 
-// Editing must receive outside clicks even when the model/crop is fully empty.
+// 即使模型或裁剪区域完全为空，编辑模式也必须接收区域外的点击。
 inline std::vector<ModelRegion> ModelFrameInputRegions(bool screenEditing, int width, int height,
     const std::vector<ModelRegion>& modelRegions)
 {

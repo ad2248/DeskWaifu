@@ -22,7 +22,9 @@ Commands:
   get_transform_settings, begin_transform_edit, update_transform_edit,
   apply_transform_edit, cancel_transform_edit, reset_transform_settings,
   retry_transform_save, reload_transform_settings, get_transform_save_result,
-  relocate_crop, set_output
+   relocate_crop, set_output,
+   get_ocr_status, ocr_recognize, get_ocr_result, cancel_ocr,
+   reading_clip, get_reading_clip_status
 
 The socket is $XDG_RUNTIME_DIR/deskwaifu.sock (fallback: /tmp/deskwaifu.sock).
 --reset is shorthand for --reset true. --stream_source is for long-lived

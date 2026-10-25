@@ -96,7 +96,7 @@ class CliTest(unittest.TestCase):
         self.assertIn("timed out", result.stderr)
 
     def test_invalid_arguments(self):
-        # A listening server proves rejection happens before transmission.
+        # 监听服务端用于证明拒绝发生在发送之前。
         for args in [["set_model", "--index", "0.9"], ["set_model", "--index", "banana"],
                      ["set_model", "--index", "2147483648"], ["set_model_zoom", "--value", "NaN"],
                      ["set_model_zoom", "--value", "1e999"], ["set_model", "--index", "001"],

@@ -28,7 +28,7 @@ int main()
     CHECK(Equal(ModelRegionToOpenGL({100, 80, 800, 700}, 1080), {100, 300, 800, 700}));
     CHECK(Equal(IntersectModelRegions({90, 70, 20, 20}, {100, 80, 800, 700}), {100, 80, 10, 10}));
 
-    // Every pixel outside is cleared exactly once, including an empty clip.
+    // 区域外的每个像素恰好清除一次，裁剪区为空时也不例外。
     for (const auto clip : {ModelRegion{3, 2, 5, 4}, ModelRegion{}, ModelRegion{0, 0, 13, 9}})
     {
         const auto outside = OutsideModelRegion(clip, 13, 9);
@@ -96,5 +96,5 @@ int main()
         R"({"model_region":{"width":10,"height":10,"width":20}})"})
         CHECK(!load(invalid));
     CHECK(load("{}"));
-    CHECK(!config.modelRegion); // Reload must reset the optional region.
+    CHECK(!config.modelRegion); // 重新加载必须重置可选区域。
 }

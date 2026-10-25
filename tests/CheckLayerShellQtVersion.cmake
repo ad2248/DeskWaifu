@@ -1,5 +1,5 @@
-# Exercise the actual application's dependency requirement without requiring an
-# older LayerShellQt installation. APIs used for screen selection require 6.6.
+# 无需安装旧版 LayerShellQt，即可测试应用真实依赖要求。
+# 屏幕选择使用的 API 要求 6.6 版本。
 file(READ "${APP_SOURCE}/CMakeLists.txt" source)
 string(REGEX MATCH "find_package\\(LayerShellQt[^\n]*\\)" requirement "${source}")
 if (NOT requirement)

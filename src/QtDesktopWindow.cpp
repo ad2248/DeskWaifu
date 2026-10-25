@@ -1,6 +1,6 @@
 #include "DesktopWindow.hpp"
 #include "QtWindowInput.hpp"
-#include "OffscreenRenderer.hpp"
+#include "processor/model/RenderFrame.hpp"
 #include <QEventLoop>
 #include <QGuiApplication>
 #include <QKeyEvent>
@@ -20,8 +20,8 @@
 #include <iostream>
 
 namespace {
-// Only name/version are needed to query Qt's registry. This extension never
-// binds or sends requests; LayerShellQt owns the real protocol implementation.
+// 查询 Qt 注册表只需要协议名称和版本。此扩展不绑定协议或发送请求，
+// 实际协议实现由 LayerShellQt 持有。
 class LayerShellProbe : public QWaylandClientExtension
 {
 public:
@@ -39,10 +39,9 @@ class QtDesktopWindow : public QWindow, public DesktopWindow
 public:
     ~QtDesktopWindow() override
     {
-        // Failed application teardown intentionally leaves GPU objects to process exit.
+        // 应用清理失败时，刻意将 GPU 对象留到进程退出时回收。
         (void)_frame.release();
         (void)_context.release();
-        (void)_offscreen.release();
     }
     bool Initialize(int width, int height, IDesktopWindowEvents& events) override
     {
@@ -59,8 +58,8 @@ public:
         setSurfaceType(QSurface::OpenGLSurface);
         QSurfaceFormat format;
         format.setRenderableType(QSurfaceFormat::OpenGL);
-        // Cubism's existing renderer uses client-side vertex/index arrays.
-        // Qt may otherwise create a core context, where those draws are invalid.
+        // Cubism 现有渲染器使用客户端顶点和索引数组。
+        // 否则 Qt 可能创建核心上下文，导致此类绘制无效。
         format.setVersion(3, 3);
         format.setProfile(QSurfaceFormat::CompatibilityProfile);
         format.setOption(QSurfaceFormat::DeprecatedFunctions);
@@ -111,15 +110,6 @@ public:
         auto* gl = _context->extraFunctions();
         std::cout << "[GPU] Window presentation: " << gl->glGetString(GL_VENDOR) << " / "
             << gl->glGetString(GL_RENDERER) << " / " << gl->glGetString(GL_VERSION) << std::endl;
-        const auto device = qEnvironmentVariable("DESKWAIFU_RENDER_DEVICE");
-        if (!device.isEmpty() && device != "auto") {
-            _context->doneCurrent();
-            _offscreen.reset(new OffscreenRenderer);
-            if (!_offscreen->Initialize(device.toStdString())) {
-                std::cerr << "[GPU] Offscreen initialization failed for " << device.toStdString() << '\n';
-                return false;
-            }
-        }
         std::cout << "[Qt] Layer-shell model window configured: " << Width() << 'x' << Height() << std::endl;
         return true;
     }
@@ -131,7 +121,7 @@ public:
         QEventLoop loop;
         QTimer timer;
         QObject::connect(&timer, &QTimer::timeout, &loop, [&] {
-            if (drawing || _switching) return; // Output replacement runs a bounded nested event loop.
+            if (drawing || _switching) return; // 替换输出设备时会运行有时限的嵌套事件循环。
             drawing = true;
             if (_needsRebind) ReconcileOutputs();
             if (!MakeCurrent() || !BindFrame()) {
@@ -156,26 +146,15 @@ public:
 
     bool MakeCurrent() override
     {
-        if (_offscreen) {
-            if (QOpenGLContext::currentContext()) QOpenGLContext::currentContext()->doneCurrent();
-            return _offscreen->MakeCurrent();
-        }
         return _context && handle() && _context->makeCurrent(this)
             && QOpenGLContext::currentContext() == _context.get();
     }
     void Shutdown() override
     {
         _events = nullptr;
-        if (_offscreen) {
-            if (!_offscreen->Shutdown()) {
-                std::cerr << "[GPU] Failed to bind offscreen context for teardown\n";
-                return;
-            }
-            _offscreen.reset();
-        }
         if (_context) {
             if (MakeCurrent()) _frame.reset();
-            else (void)_frame.release(); // Never call a GL destructor on a missing context.
+            else (void)_frame.release(); // 缺少上下文时不能执行 GL 析构。
             _context->doneCurrent();
             _context.reset();
         }
@@ -188,15 +167,30 @@ public:
     int Height() const override { return height(); }
     unsigned int Framebuffer() const override
     {
-        return _offscreen ? _offscreen->Framebuffer() : (_frame ? _frame->handle() : 0);
+        return _frame ? _frame->handle() : 0;
+    }
+    bool UploadFrame(const RenderFrame& frame) override
+    {
+        if (frame.width <= 0 || frame.height <= 0 || frame.rgba.size() != size_t(frame.width) * frame.height * 4) return false;
+        if (!_frame || _frame->width() != frame.width || _frame->height() != frame.height)
+            _frame.reset(new QOpenGLFramebufferObject(frame.width, frame.height));
+        if (!_frame->isValid()) return false;
+        auto* gl = _context->extraFunctions();
+        gl->glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+        gl->glPixelStorei(GL_UNPACK_ALIGNMENT, 1); gl->glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+        gl->glPixelStorei(GL_UNPACK_SKIP_ROWS, 0); gl->glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
+        gl->glActiveTexture(GL_TEXTURE0); gl->glBindTexture(GL_TEXTURE_2D, _frame->texture());
+        gl->glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, frame.width, frame.height, GL_RGBA, GL_UNSIGNED_BYTE, frame.rgba.data());
+        gl->glBindTexture(GL_TEXTURE_2D, 0);
+        return gl->glGetError() == GL_NO_ERROR;
     }
     bool SetInputRegion(const std::vector<ModelRegion>& regions) override
     {
         if (!Available()) return false;
         const QRegion mask = QtModelInputRegion(regions);
         _emptyInput = mask.isEmpty();
-        // An empty QWindow mask means "reset to the whole window", NOT no input.
-        // Set the explicit all-input-transparent flag before removing the mask.
+        // 空 QWindow 掩码表示恢复整个窗口，而不是不接收输入。
+        // 移除掩码前，先显式设置全部输入穿透标志。
         if (mask.isEmpty()) {
             setFlag(Qt::WindowTransparentForInput, true);
             setMask({});
@@ -209,9 +203,8 @@ public:
     bool KeyboardGrabbed() const override { return _keyboard.IsGrabbed(); }
     ModelKeyboardGrabState::GrabResult SetKeyboardGrab(bool grabbed) override
     {
-        // Qt's device list may contain no keyboard until the first key event.
-        // Let the compositor grant layer-shell focus instead of rejecting the
-        // very request needed to receive that first event.
+        // 首次按键事件之前，Qt 设备列表可能还没有键盘。
+        // 应让合成器授予 layer-shell 焦点，不能拒绝接收首次事件所必需的请求。
         const auto result = _keyboard.SetGrabbed(grabbed, Available(), true);
         if (result != ModelKeyboardGrabState::GrabResult::Changed) return result;
         LayerShellQt::Window::get(this)->setKeyboardInteractivity(grabbed
@@ -252,7 +245,6 @@ public:
         _switching = true;
         if (_events) _events->OutputSwitchStarted();
         _context->doneCurrent();
-        if (_offscreen) _offscreen->DoneCurrent();
         hide();
         destroy();
         setScreen(chosen);
@@ -286,7 +278,7 @@ protected:
     {
         if (_events && event->type() == QEvent::Close) {
             _events->SurfaceClosed();
-            event->ignore(); // Keep the surface alive for ordered GPU teardown.
+            event->ignore(); // 保留表面，以便按顺序清理 GPU 资源。
             return true;
         }
         if (_events && !_switching) {
@@ -353,9 +345,8 @@ private:
     void AddScreen(QScreen* screen) { _screens.push_back({_nextId++, screen}); }
     bool BindFrame()
     {
-        if (_offscreen) return _offscreen->BindFrame(width(), height());
-        // Retain existing logical-pixel crop/config semantics at any output scale.
-        // Only final presentation scales to the physical backing buffer.
+        // 在任意输出缩放比例下保留现有逻辑像素裁剪和配置语义。
+        // 只有最终呈现时才缩放到物理后备缓冲区。
         if (!_frame || _frame->size() != size()) {
             _frame.reset(new QOpenGLFramebufferObject(size(), QOpenGLFramebufferObject::CombinedDepthStencil));
         }
@@ -363,29 +354,6 @@ private:
     }
     bool Present()
     {
-        if (_offscreen) {
-            if (!_offscreen->ReadFrame(_pixels)) return false;
-            // A frame callback can switch to a differently sized output. Upload
-            // the dimensions actually read, then scale to the new window size.
-            const QSize rendered(_offscreen->Width(), _offscreen->Height());
-            _offscreen->DoneCurrent();
-            if (!_context->makeCurrent(this)) return false;
-            if (!_frame || _frame->size() != rendered)
-                _frame.reset(new QOpenGLFramebufferObject(rendered));
-            if (!_frame->isValid()) return false;
-            auto* gl = _context->extraFunctions();
-            gl->glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-            gl->glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-            gl->glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-            gl->glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
-            gl->glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
-            gl->glActiveTexture(GL_TEXTURE0);
-            gl->glBindTexture(GL_TEXTURE_2D, _frame->texture());
-            // Both ends use bottom-up OpenGL coordinates and premultiplied RGBA.
-            // Copy bytes without QImage conversion, flipping, or alpha blending.
-            gl->glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, rendered.width(), rendered.height(), GL_RGBA, GL_UNSIGNED_BYTE, _pixels.data());
-            gl->glBindTexture(GL_TEXTURE_2D, 0);
-        }
         const int physicalWidth = qRound(width() * devicePixelRatio());
         const int physicalHeight = qRound(height() * devicePixelRatio());
         auto* gl = _context->extraFunctions();
@@ -394,8 +362,8 @@ private:
         gl->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, destination);
         const bool scissor = gl->glIsEnabled(GL_SCISSOR_TEST);
         gl->glDisable(GL_SCISSOR_TEST);
-        // NVIDIA/EGL can leave the window draw target at GL_NONE. Binding its
-        // framebuffer alone does not restore it, and blitting then draws nothing.
+        // NVIDIA/EGL 可能让窗口绘制目标停留在 GL_NONE。
+        // 仅绑定帧缓冲不会恢复绘制目标，随后执行复制也不会显示内容。
         auto* desktopGl = QOpenGLVersionFunctionsFactory::get<QOpenGLFunctions_1_0>(_context.get());
         desktopGl->glDrawBuffer(destination ? GL_COLOR_ATTACHMENT0 : GL_BACK);
         gl->glBlitFramebuffer(0, 0, _frame->width(), _frame->height(), 0, 0,
@@ -403,8 +371,7 @@ private:
         const bool presented = gl->glGetError() == GL_NO_ERROR;
         if (scissor) gl->glEnable(GL_SCISSOR_TEST);
         _context->swapBuffers(this);
-        if (_offscreen) return MakeCurrent() && BindFrame() && presented;
-        _frame->bind(); // Input/IPC callbacks may use model GPU resources between frames.
+        _frame->bind();
         return presented;
     }
     struct ScreenEntry { OutputId id; QPointer<QScreen> screen; };
@@ -417,8 +384,6 @@ private:
     ModelKeyboardGrabState _keyboard;
     std::unique_ptr<QOpenGLContext> _context;
     std::unique_ptr<QOpenGLFramebufferObject> _frame;
-    std::unique_ptr<OffscreenRenderer> _offscreen;
-    std::vector<unsigned char> _pixels;
 };
 }
 

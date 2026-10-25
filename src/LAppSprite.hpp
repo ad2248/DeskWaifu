@@ -13,78 +13,78 @@
 #include "LAppSprite_Common.hpp"
 
 /**
-* @brief スプライトを実装するクラス。
+* @brief 实现精灵绘制的类。
 *
-* テクスチャID、Rectの管理。
+* 管理纹理 ID 和矩形区域。
 *
 */
 class LAppSprite : public LAppSprite_Common
 {
 public:
     /**
-    * @brief コンストラクタ
+    * @brief 构造函数。
     *
-    * @param[in]       x            x座標
-    * @param[in]       y            y座標
-    * @param[in]       width        横幅
-    * @param[in]       height       高さ
-    * @param[in]       textureId    テクスチャID
-    * @param[in]       programId    シェーダID
+    * @param[in]       x X 坐标。
+    * @param[in]       y Y 坐标。
+    * @param[in]       width 宽度。
+    * @param[in]       height 高度。
+    * @param[in]       textureId 纹理 ID。
+    * @param[in]       programId 着色器程序 ID。
     */
     LAppSprite(float x, float y, float width, float height, GLuint textureId, GLuint programId);
 
     /**
-    * @brief デストラクタ
+    * @brief 析构函数。
     */
     ~LAppSprite();
 
     /**
-    * @brief 描画する
+    * @brief 执行绘制。
     *
     */
-    // Target dimensions are supplied by the caller, independently of the window.
+    // 目标尺寸由调用方提供，与窗口独立。
     void Render(int maxWidth, int maxHeight) const;
 
     /**
-    * @brief テクスチャを指定しての描画
+    * @brief 使用指定纹理绘制。
     *
     */
     void RenderImmidiate(GLuint textureId, const GLfloat uvVertex[8], int maxWidth, int maxHeight) const;
 
     /**
-    * @brief コンストラクタ
+    * @brief 构造函数。
     *
-    * @param[in]       pointX    x座標
-    * @param[in]       pointY    y座標
+    * @param[in]       pointX X 坐标。
+    * @param[in]       pointY Y 坐标。
     */
     bool IsHit(float pointX, float pointY, int maxWidth, int maxHeight) const;
 
     /**
-     * @brief 色設定
+     * @brief 设置颜色。
      *
-     * @param[in]       r (0.0~1.0)
-     * @param[in]       g (0.0~1.0)
-     * @param[in]       b (0.0~1.0)
-     * @param[in]       a (0.0~1.0)
+     * @param[in]       r 红色分量（0.0~1.0）。
+     * @param[in]       g 绿色分量（0.0~1.0）。
+     * @param[in]       b 蓝色分量（0.0~1.0）。
+     * @param[in]       a 透明度（0.0~1.0）。
      */
     void SetColor(float r, float g, float b, float a);
 
     /**
-     * @brief サイズ再設定
+     * @brief 重新设置尺寸。
      *
-     * @param[in]       x            x座標
-     * @param[in]       y            y座標
-     * @param[in]       width        横幅
-     * @param[in]       height       高さ
+     * @param[in]       x X 坐标。
+     * @param[in]       y Y 坐标。
+     * @param[in]       width 宽度。
+     * @param[in]       height 高度。
      */
     void ResetRect(float x, float y, float width, float height);
 
 private:
     Rect _rect;          ///< 矩形
-    int _positionLocation;  ///< 位置アトリビュート
-    int _uvLocation;        ///< UVアトリビュート
-    int _textureLocation;   ///< テクスチャアトリビュート
-    int _colorLocation;     ///< カラーアトリビュート
+    int _positionLocation;  ///< 位置属性。
+    int _uvLocation;        ///< UV 属性。
+    int _textureLocation;   ///< 纹理属性。
+    int _colorLocation;     ///< 颜色属性。
 
-    float _spriteColor[4];  ///< 表示カラー
+    float _spriteColor[4];  ///< 显示颜色。
 };

@@ -11,7 +11,7 @@ public:
                                QObject* parent = nullptr);
     ~DeskWaifuRespawner() override;
     bool isRunning() const { return _timer.isActive(); }
-    // Injectable process/lock directories and deadline keep tests isolated.
+    // 允许注入进程目录、锁目录和时限，以保持测试隔离。
     void start(const QString& procDirectory = QStringLiteral("/proc"),
                const QString& lockDirectory = {}, int timeoutMs = 10000);
 

@@ -3,7 +3,7 @@
 #include "OutputController.hpp"
 #include "TransformEditor.hpp"
 
-// Display names survive reconnects, unlike Wayland registry IDs.
+// 与 Wayland 注册表 ID 不同，显示器名称在重新连接后仍可使用。
 class OutputSettings
 {
 public:
@@ -22,8 +22,8 @@ public:
                 return _backend.SwitchOutput(output.id) ? AppResult::Success()
                     : AppResult::Failure("Failed to restore configured display");
         if (!_backend.SwitchOutput(outputs.front().id)) return AppResult::Failure("Failed to select fallback display");
-        // A readable legacy configuration must remain usable even when it cannot
-        // be upgraded on disk. Only explicit selection rolls back on save failure.
+        // 可读取的旧配置即使无法在磁盘上升级，也必须保持可用。
+        // 只有显式选择输出设备时，保存失败才回滚。
         const auto saved = _editor.SaveOutput(outputs.front().name);
         if (!saved.ok) _warning = "Could not save fallback display: " + saved.error;
         return AppResult::Success();

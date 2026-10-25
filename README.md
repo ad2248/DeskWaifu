@@ -41,6 +41,7 @@ https://github.com/user-attachments/assets/95dfdedc-4957-4bb7-b79f-f3addd97a6db
 - **Configurable model directory** — load models from any path via CLI flag or XDG config
 - **JSON configuration** — customize behavior via `config.json` (default model, emotion timeout, additional model dirs, scale/position, window size)
 - **IPC control** — Unix domain socket API for external control (model switching, expressions, motions, lipsync, zoom, position, look-at direction)
+- **Optional local OCR (experimental)** — an independently installed C++/ONNX Runtime helper with bundled models; asynchronous image-file recognition over IPC, without Python or OCR dependencies in the main application. See [OCR package and protocol](features/ocr/README.md).
 
 ## Prerequisites
 
@@ -54,7 +55,7 @@ https://github.com/user-attachments/assets/95dfdedc-4957-4bb7-b79f-f3addd97a6db
 | **Wayland development libraries** | Required by Qt Wayland; Qt owns protocol dispatch |
 | **libsystemd development library** | `sd-bus` for the transient KWin cursor bridge |
 | **EGL & OpenGL** | `libegl-dev`, `libgl-dev` or equivalent |
-| **Qt 6.5+** | `Gui`, `OpenGL`, `WaylandClient`, `StateMachine`, `WebSockets`, `Multimedia` and the Qt Wayland platform plugin; `Widgets` and `Network` for the optional control panel |
+| **Qt 6.5+** | `Gui`, `OpenGL`, `WaylandClient`, `StateMachine`, `WebSockets`, `Multimedia`, `DBus`, `Concurrent` and the Qt Wayland platform plugin; `Widgets` and `Network` for the optional control panel |
 | **LayerShellQt 6.6+** | Required for the model's desktop overlay window |
 | **curl, unzip** | For downloading third-party dependencies (GLEW) |
 
@@ -998,6 +999,10 @@ deskwaifu/
 │   ├── LAppView.*          # View/projection matrices, rendering coordination
 │   ├── LAppModel.*         # Individual Live2D model instance
 │   ├── LAppIPC.*           # IPC socket server for external control
+│   ├── event/              # Pointer-routed, queued event dispatch on the Qt main thread
+│   ├── processor/          # Stateful processors, one subdirectory per responsibility
+│   │   ├── screenshot/     # Event adapter, service interface and portal/ backend
+│   │   └── speech/         # Speech events/coordinator, audio/ playback and source/ backend
 │   └── LAppDefine.*        # Global constants and configuration
 ├── thirdParty/             # Third-party dependencies (GLEW, stb)
 ├── cmake/                  # CMake helper scripts
@@ -1006,6 +1011,7 @@ deskwaifu/
 
 ### Key design decisions
 
+- **Event processors (staged migration)** — image reading, OCR, screenshots, speech, clipboard reading and socket readiness use [stateful processors](src/processor/README.md). Internal events carry sender/receiver pointers and stop propagation when consumed; IPC no longer polls on the rendering clock. Dedicated model rendering-thread migration is still pending.
 - **Qt-only windowing** — `QWindow` and LayerShellQt own the overlay window, input and screen lifecycle; the application does not manage raw Wayland surfaces.
 - **OpenGL rendering** — Cubism draws into a Qt-managed context. Qt's Wayland platform plugin may use EGL internally; the application does not create or swap EGL window surfaces.
 - **Layer-shell overlay** — the application renders as a Wayland layer surface, sitting above normal windows.
