@@ -1,4 +1,7 @@
+#include <GL/glew.h>
 #include "processor/model/ModelProcessor.hpp"
+#include "LAppModel.hpp"
+#include "LAppLive2DManager.hpp"
 #include "ModelProcessorTestHelpers.hpp"
 #include "DesktopWindow.hpp"
 #include <QCoreApplication>
@@ -12,6 +15,46 @@
 
 // 此工作线程集成测试不使用所链接的应用组装入口。
 std::unique_ptr<DesktopWindow> CreateDesktopWindow() { return {}; }
+
+namespace {
+struct Observation
+{
+    int updates = 0, consecutiveDrags = 0;
+    bool pendingDrag = false, appliedDrag = false;
+    float x = 0, y = 0;
+    ModelFrameInput input;
+};
+std::mutex observationMutex;
+Observation observation;
+Observation Observed()
+{
+    std::lock_guard<std::mutex> lock(observationMutex); return observation;
+}
+bool WaitUntil(const std::function<bool()>& ready)
+{
+    QElapsedTimer deadline; deadline.start();
+    while (!ready() && deadline.elapsed() < 5000) { QCoreApplication::processEvents(); QThread::msleep(1); }
+    return ready();
+}
+}
+
+// 只观察真实入口，仍调用正式实现；不在测试中复制帧调度或输入转发逻辑。
+extern "C" void __real__ZNK17LAppLive2DManager6OnDragEff(const LAppLive2DManager*, float, float);
+extern "C" void __wrap__ZNK17LAppLive2DManager6OnDragEff(const LAppLive2DManager* manager, float x, float y)
+{
+    __real__ZNK17LAppLive2DManager6OnDragEff(manager, x, y);
+    std::lock_guard<std::mutex> lock(observationMutex);
+    observation.pendingDrag = true; observation.x = x; observation.y = y;
+}
+extern "C" void __real__ZN9LAppModel6UpdateERK15ModelFrameInput(LAppModel*, const ModelFrameInput&);
+extern "C" void __wrap__ZN9LAppModel6UpdateERK15ModelFrameInput(LAppModel* model, const ModelFrameInput& input)
+{
+    __real__ZN9LAppModel6UpdateERK15ModelFrameInput(model, input);
+    std::lock_guard<std::mutex> lock(observationMutex);
+    ++observation.updates; observation.input = input;
+    observation.appliedDrag = observation.pendingDrag; observation.pendingDrag = false;
+    observation.consecutiveDrags = observation.appliedDrag ? observation.consecutiveDrags + 1 : 0;
+}
 
 struct Calls
 {
@@ -46,8 +89,12 @@ public:
     using Processor::Processor;
     bool received = false;
     IProcessor* sender = nullptr;
+    ModelHitTest hitTest;
     bool HandleEvent(const ProcessorEvent& event) override
     {
+        if (event.type == "model.hit_test.ready") {
+            hitTest = event.data.value("callback").value<ModelHitTest>(); return true;
+        }
         if (event.type != "model.result") return false;
         received = event.receiver == this && event.data.value("reply").toJsonObject()["ok"].toBool();
         sender = event.sender;
@@ -79,6 +126,39 @@ int main(int argc, char** argv)
     QThread::msleep(150);
     CHECK(calls.frames >= 2 && processor.Frame() && processor.Frame()->rgba.size() == 64 * 48 * 4);
     const auto first = processor.Frame();
+    Receiver hitReceiver(loop);
+    CHECK(loop.Post({"model.hit_test.request", &hitReceiver, &processor, {}}));
+    QElapsedTimer handshake; handshake.start();
+    while (!hitReceiver.hitTest && handshake.elapsed() < 5000) QCoreApplication::processEvents();
+    CHECK(hitReceiver.hitTest);
+    const auto originalToken = processor.Metadata().hotkeys.value("model_token").toString().toStdString();
+    const auto hit = hitReceiver.hitTest({20, 10, 64, 48, originalToken});
+    CHECK(hit.available && hit.parts == std::vector<std::string>{"Head"});
+    CHECK(!hitReceiver.hitTest({20, 10, 32, 48, originalToken}).available);
+    CHECK(!hitReceiver.hitTest({20, 10, 64, 48, "stale"}).available);
+    // 直接覆盖生产 ModelRuntime::Render：每帧重施视线、编辑抑制、外部输入转发。
+    ModelRenderState gaze; gaze.width = 64; gaze.height = 48; gaze.clip = {0, 0, 64, 48};
+    gaze.modelToken = originalToken; gaze.hasLook = true; gaze.lookX = .5f; gaze.lookY = -.3f;
+    gaze.controls = {true, .7f, true, -.8f, .3f};
+    processor.SetState(gaze);
+    CHECK(WaitUntil([&] {
+        const auto value = Observed();
+        return value.appliedDrag && value.x == .5f && value.y == -.3f && value.input.hasLook &&
+            value.input.lookX == -.8f && value.input.lookY == .3f && value.input.hasMouth && value.input.mouth == .7f;
+    }));
+    const int gazeUpdates = Observed().updates;
+    CHECK(AwaitModel(processor)["ok"].toBool()); // reset_drag 后，静止光标仍须在后续帧恢复。
+    CHECK(WaitUntil([&] {
+        const auto value = Observed();
+        return value.updates >= gazeUpdates + 3 && value.consecutiveDrags >= 3 && value.x == .5f && value.y == -.3f;
+    }));
+    gaze.editing = true; processor.SetState(gaze);
+    CHECK(WaitUntil([&] { const auto value = Observed(); return !value.appliedDrag && value.input.hasLook; }));
+    gaze.editing = false; gaze.controls = {}; processor.SetState(gaze);
+    CHECK(WaitUntil([&] { const auto value = Observed(); return value.appliedDrag && !value.input.hasLook && !value.input.hasMouth; }));
+    gaze.modelToken = "stale"; gaze.controls = {true, .9f, true, .9f, .9f}; processor.SetState(gaze);
+    const int staleUpdates = Observed().updates;
+    CHECK(WaitUntil([&] { const auto value = Observed(); return value.updates > staleUpdates && !value.input.hasLook && !value.input.hasMouth; }));
     const int before = calls.frames;
     ModelRenderState state; state.width = 32; state.height = 24;
     state.clip = {0, 0, 32, 24}; state.app.hidden = true;
@@ -89,6 +169,15 @@ int main(int argc, char** argv)
     CHECK(first->width == 64 && first->rgba.size() == 64 * 48 * 4); // 保留帧不可变。
     CHECK(calls.frames > before && calls.frames < before + 50);
     for (auto byte : hidden->rgba) CHECK(byte == 0);
+    const int hiddenUpdates = Observed().updates;
+    QThread::msleep(50);
+    CHECK(Observed().updates == hiddenUpdates); // 隐藏后仍产出透明帧，但不更新模型。
+    gaze.modelToken = originalToken; gaze.controls = {}; processor.SetState(gaze);
+    CHECK(WaitUntil([&] {
+        const auto frame = processor.Frame();
+        const auto value = Observed();
+        return frame && !frame->hidden && frame->width == 64 && value.updates > hiddenUpdates && value.appliedDrag;
+    }));
 
     CHECK(!AwaitModel(processor, {{"command", "set_model"}, {"index", -1}})["ok"].toBool());
     CHECK(processor.Metadata().index == 0 && changes == 0);
@@ -99,6 +188,7 @@ int main(int argc, char** argv)
     CHECK(!AwaitModel(processor, {{"command", "set_expression"}, {"id", "missing"}})["ok"].toBool());
     CHECK(!AwaitModel(processor, {{"command", "do_motion"}, {"group", "missing"}})["ok"].toBool());
     CHECK(!AwaitModel(processor, {{"command", "trigger_hotkey"}, {"model_token", "stale"}, {"id", "missing"}})["ok"].toBool());
+    CHECK(!AwaitModel(processor, {{"command", "random_expression"}, {"model_token", "stale"}})["ok"].toBool());
 
     bool completedOnGui = false;
     CHECK(processor.Submit(R"({"command":"reset_drag"})", [&](QJsonObject reply) {
@@ -112,6 +202,7 @@ int main(int argc, char** argv)
     for (int i = 0; i < 4; ++i) QCoreApplication::processEvents();
     CHECK(receiver.received && receiver.sender == &processor);
     CHECK(processor.Stop() && processor.Stop());
+    CHECK(!hitReceiver.hitTest({20, 10, 64, 48, originalToken}).available);
     CHECK(!calls.wrongThread && calls.destroyedOnGui && calls.shutdowns == 1);
     CHECK(!processor.Submit(R"({"command":"reset_drag"})"));
 
@@ -125,14 +216,33 @@ int main(int argc, char** argv)
     Calls recoveredCalls;
     CHECK(recovered.Start(std::unique_ptr<ModelRenderTarget>(new TrackedTarget(recoveredCalls)),
         {"", directory.path().toStdString(), "", {}, -1}, 16, 16));
+    Receiver recoveredReceiver(loop);
+    CHECK(loop.Post({"model.hit_test.request", &recoveredReceiver, &recovered, {}}));
+    handshake.restart();
+    while (!recoveredReceiver.hitTest && handshake.elapsed() < 5000) QCoreApplication::processEvents();
+    CHECK(recoveredReceiver.hitTest);
+    const auto oldCallback = recoveredReceiver.hitTest;
+    const auto oldToken = recovered.Metadata().hotkeys.value("model_token").toString().toStdString();
     recoveredCalls.failBind = true;
     QThread::msleep(100);
     CHECK(!recovered.Error().isEmpty() && !recovered.Submit(R"({"command":"reset_drag"})"));
+    CHECK(!oldCallback({8, 8, 16, 16, oldToken}).available);
     CHECK(recovered.Stop() && !recoveredCalls.wrongThread && recoveredCalls.shutdowns == 1);
     recoveredCalls.failBind = false;
     CHECK(recovered.Start(std::unique_ptr<ModelRenderTarget>(new TrackedTarget(recoveredCalls)),
         {"", directory.path().toStdString(), "", {}, -1}, 16, 16));
     CHECK(recovered.Error().isEmpty() && AwaitModel(recovered)["ok"].toBool());
+    CHECK(!oldCallback({8, 8, 16, 16, oldToken}).available); // 重启不能复活旧回调。
+    recoveredReceiver.hitTest = {};
+    CHECK(loop.Post({"model.hit_test.request", &recoveredReceiver, &recovered, {}}));
+    handshake.restart();
+    const auto newToken = recovered.Metadata().hotkeys.value("model_token").toString().toStdString();
+    while (handshake.elapsed() < 5000) {
+        QCoreApplication::processEvents();
+        if (recoveredReceiver.hitTest && recoveredReceiver.hitTest({8, 8, 16, 16, newToken}).available) break;
+        QThread::msleep(1);
+    }
+    CHECK(recoveredReceiver.hitTest && recoveredReceiver.hitTest({8, 8, 16, 16, newToken}).available);
     CHECK(recovered.Stop() && recoveredCalls.shutdowns == 2);
     return 0;
 }

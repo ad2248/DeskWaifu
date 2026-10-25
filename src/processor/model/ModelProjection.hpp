@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ModelTransform.hpp"
+#include "contracts/ModelTransform.hpp"
 #include <Math/CubismMatrix44.hpp>
 
 // 渲染端的变换组合顺序必须与缩放不变量保持一致。

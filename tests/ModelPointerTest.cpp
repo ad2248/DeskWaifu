@@ -8,6 +8,7 @@
 #include "LAppTextureManager.hpp"
 #include "LAppAllocator_Common.hpp"
 #include "ModelProcessorTestHelpers.hpp"
+#include "DispatchedInput.hpp"
 #include <Rendering/OpenGL/CubismRenderer_OpenGLES2.hpp>
 #include <Id/CubismIdManager.hpp>
 #include "TestTemporaryDirectory.hpp"
@@ -35,6 +36,7 @@
 namespace {
 struct Hit { std::string area; float x, y; bool result; };
 std::vector<Hit> hits;
+int expressionCalls = 0;
 
 class Window : public DesktopWindow
 {
@@ -42,6 +44,7 @@ public:
     std::unique_ptr<ModelRenderTarget> RenderTarget(const std::string&) override { return CreateEglModelRenderTarget("auto"); }
     bool UploadFrame(const RenderFrame&) override { return true; }
     IDesktopWindowEvents* events = nullptr;
+    DispatchedInput input;
     std::vector<OutputSnapshot> outputs{{1, "left", 0, 0, 800, 600},
         {2, "right", 800, 0, 1000, 800}};
     OutputId current = 1;
@@ -55,7 +58,7 @@ public:
     EGLContext context = EGL_NO_CONTEXT;
     bool Initialize(int, int, IDesktopWindowEvents& sink) override
     {
-        events = &sink;
+        input.Set(sink); events = &input;
         display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
         if (display == EGL_NO_DISPLAY || !eglInitialize(display, nullptr, nullptr)) return false;
         const EGLint attributes[] = {EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
@@ -118,11 +121,17 @@ int releaseTest(LAppDelegate& app)
     hits.clear();
     // 真实 Delegate 的延迟单击只派发一次。远处的第二次释放会立即派发它，
     // 无需等待帧定时器。
+    QElapsedTimer ready; ready.start();
+    while (!app.Models().Frame() && ready.elapsed() < 5000) {
+        QCoreApplication::processEvents(); QThread::msleep(1);
+    }
+    CHECK(app.Models().Frame());
     click(300, 200);
     CHECK(hits.empty());
+    const int expressionBefore = expressionCalls;
     click(500, 400);
     AwaitModel(app.Models());
-    CHECK(!hits.empty() && near(hits[0].x, -100.f / 300));
+    CHECK(expressionCalls == expressionBefore + 1);
     // 将第二次点击补成双击，其待处理单击必须被取消。
     hits.clear();
     click(500, 400);
@@ -142,7 +151,7 @@ int releaseTest(LAppDelegate& app)
     QTimer::singleShot(ModelDoubleClick::Delay + 20, &wait, &QEventLoop::quit);
     wait.exec();
     AwaitModel(app.Models());
-    CHECK(hits.size() == 1 && near(hits[0].x, -.1f) && near(hits[0].y, .2f));
+    CHECK(expressionCalls == expressionBefore + 2);
     return 0;
 }
 
@@ -219,6 +228,10 @@ int transformTest(LAppDelegate& app)
                     view.OnTouchesEnded(px, py, t);
                     CHECK(hits.size() == 1 && near(hits[0].x, x) && near(hits[0].y, y));
                     CHECK(hits[0].area == (head ? "Head" : "Body") && hits[0].result);
+                    const auto snapshot = manager.HitSnapshot(size.first, size.second, t);
+                    const auto hit = snapshot.Test({px, py, size.first, size.second, snapshot.modelToken});
+                    CHECK(hit.available);
+                    CHECK(std::find(hit.parts.begin(), hit.parts.end(), head ? "Head" : "Body") != hit.parts.end());
                 }
             }
         }
@@ -426,6 +439,13 @@ int stateTest(LAppDelegate& app)
 
 // 观察真实 Manager 和命中测试路径发出的诊断信息，
 // 不用测试专用实现替换命中决策或动作。
+extern "C" void __real__ZN9LAppModel19SetRandomExpressionEv(LAppModel* model);
+extern "C" void __wrap__ZN9LAppModel19SetRandomExpressionEv(LAppModel* model)
+{
+    ++expressionCalls;
+    __real__ZN9LAppModel19SetRandomExpressionEv(model);
+}
+
 extern "C" void __wrap__ZN7LAppPal10PrintLogLnEPKcz(const char* format, ...)
 {
     va_list args; va_start(args, format);
@@ -525,7 +545,7 @@ int main(int argc, char** argv)
                     disk.values.at("model_output") == beforeDrag.values.at("model_output");
             }
             AwaitModel(app->Models());
-            return hits.size() == 1 && near(hits[0].x, -.1f) && near(hits[0].y, .2f);
+            return expressionCalls >= 2;
         };
         CHECK(app->Run()); // 同时执行真实帧和 GPU 清理路径。
     } else {

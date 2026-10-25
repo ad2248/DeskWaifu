@@ -14,6 +14,7 @@ ModelProcessor::~ModelProcessor() { Stop(); }
 bool ModelProcessor::Start(std::unique_ptr<ModelRenderTarget> target, const ModelRuntimeOptions& options, int width, int height)
 {
     if (_worker || !target) return false;
+    _hits = std::make_shared<ModelHitMailbox>();
     _metadata = {};
     _stoppedCleanly = true;
     {
@@ -44,9 +45,11 @@ bool ModelProcessor::Start(std::unique_ptr<ModelRenderTarget> target, const Mode
                 { std::lock_guard<std::mutex> lock(_mutex); state = _state; }
                 try {
                     auto frame = _runtime->Render(state, *_target);
+                    { std::lock_guard<std::mutex> lock(_hits->mutex); _hits->snapshot = frame->hit; }
                     std::lock_guard<std::mutex> lock(_mutex); _frame = std::move(frame);
                 } catch (const std::exception& error) {
                     std::lock_guard<std::mutex> lock(_mutex); _error = QString::fromUtf8(error.what());
+                    { std::lock_guard<std::mutex> hitLock(_hits->mutex); _hits->active = false; }
                     for (auto* timer : _worker->findChildren<QTimer*>()) timer->stop();
                 }
             });
@@ -61,6 +64,7 @@ bool ModelProcessor::Start(std::unique_ptr<ModelRenderTarget> target, const Mode
 bool ModelProcessor::Stop()
 {
     _running = false;
+    if (_hits) { std::lock_guard<std::mutex> lock(_hits->mutex); _hits->active = false; _hits->snapshot.reset(); }
     if (!_worker) return _stoppedCleanly;
     QMetaObject::invokeMethod(_worker, [this] {
         for (auto* timer : _worker->findChildren<QTimer*>()) timer->stop();
@@ -82,6 +86,12 @@ bool ModelProcessor::Submit(const std::string& json, std::function<void(QJsonObj
 
 bool ModelProcessor::HandleEvent(const ProcessorEvent& event)
 {
+    if (event.type == "model.hit_test.request") {
+        ModelHitTest callback;
+        if (_running && _hits) callback = _hits->Callback(_hits);
+        Send("model.hit_test.ready", event.sender, {{"callback", QVariant::fromValue(callback)}});
+        return true;
+    }
     if (event.type != Operation && event.type != Completed) return false;
     auto operation = event.data.value("operation").value<ModelOperationPtr>();
     if (!operation && event.type == Operation) {
@@ -101,6 +111,10 @@ bool ModelProcessor::HandleEvent(const ProcessorEvent& event)
     } else {
         QMetaObject::invokeMethod(_worker, [this, operation] {
             auto reply = _runtime->Execute(operation->json);
+            const auto command = QJsonDocument::fromJson(QByteArray::fromStdString(operation->json)).object().value("command").toString();
+            if (reply.value("ok").toBool() && (command == "set_model" || command == "next_model" || command == "prev_model" || command == "switch_skin")) {
+                std::lock_guard<std::mutex> lock(_hits->mutex); _hits->snapshot.reset();
+            }
             Send(Completed, this, {{"operation", QVariant::fromValue(operation)}, {"reply", reply},
                 {"metadata", QVariant::fromValue(_runtime->Metadata())}});
         }, Qt::QueuedConnection);

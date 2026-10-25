@@ -15,6 +15,7 @@
 #include <limits.h>
 #include <string>
 #include <utility>
+#include <algorithm>
 #include <GL/glew.h>
 
 #include <Rendering/CubismRenderer.hpp>
@@ -24,9 +25,9 @@
 #include "LAppTextureManager.hpp"
 #include "LAppModel.hpp"
 #include "LAppSprite.hpp"
-#include "ModelProjection.hpp"
-#include "ModelCatalog.hpp"
-#include "ModelRenderer.hpp"
+#include "processor/model/ModelProjection.hpp"
+#include "processor/model/ModelCatalog.hpp"
+#include "processor/model/ModelRenderer.hpp"
 
 using namespace Csm;
 using namespace LAppDefine;
@@ -187,6 +188,40 @@ void LAppLive2DManager::OnTap(csmFloat32 clipX, csmFloat32 clipY, int width, int
             _models[i]->SetRandomExpression();
         }
     }
+}
+
+ModelHitSnapshot LAppLive2DManager::HitSnapshot(int width, int height, ModelTransform transform) const
+{
+    ModelHitSnapshot result; result.width = width; result.height = height;
+    auto* model = GetModel(0);
+    if (!model || width <= 0 || height <= 0) return result;
+    result.modelToken = model->Hotkeys().Token();
+    result.partsEnabled = model->GetOpacity() >= 1;
+    auto projection = BuildModelProjection(model->GetModel()->GetCanvasWidth(), width, height, transform, _viewMatrix);
+    auto* matrix = model->GetModelMatrix();
+    const float x0 = matrix->InvertTransformX(projection.InvertTransformX(-1));
+    const float y0 = matrix->InvertTransformY(projection.InvertTransformY(1));
+    result.xOffset = x0; result.yOffset = y0;
+    result.xScale = (matrix->InvertTransformX(projection.InvertTransformX(1)) - x0) / width;
+    result.yScale = (matrix->InvertTransformY(projection.InvertTransformY(-1)) - y0) / height;
+    result.fallbackYOffset = projection.InvertTransformY(1);
+    result.fallbackYScale = (projection.InvertTransformY(-1) - result.fallbackYOffset) / height;
+    auto* setting = model->GetModelSetting();
+    result.fallback = setting->GetHitAreasCount() == 0;
+    for (int i = 0; i < setting->GetHitAreasCount(); ++i) {
+        const auto index = model->GetModel()->GetDrawableIndex(setting->GetHitAreaId(i));
+        if (index < 0) continue;
+        const auto count = model->GetModel()->GetDrawableVertexCount(index);
+        const auto* vertices = model->GetModel()->GetDrawableVertices(index);
+        if (count <= 0) continue;
+        ModelHitArea area{setting->GetHitAreaName(i), vertices[0], vertices[1], vertices[0], vertices[1]};
+        for (int j = 1; j < count; ++j) {
+            area.left = std::min(area.left, vertices[j * 2]); area.right = std::max(area.right, vertices[j * 2]);
+            area.top = std::min(area.top, vertices[j * 2 + 1]); area.bottom = std::max(area.bottom, vertices[j * 2 + 1]);
+        }
+        result.areas.push_back(std::move(area));
+    }
+    return result;
 }
 
 void LAppLive2DManager::OnUpdate(int width, int height, ModelTransform transform, const ModelFrameInput& input,

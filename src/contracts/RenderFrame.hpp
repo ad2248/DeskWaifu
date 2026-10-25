@@ -1,8 +1,9 @@
 #pragma once
 
 #include "ApplicationService.hpp"
-#include "ModelHotkeys.hpp"
+#include "processor/model/ModelHotkeys.hpp"
 #include "ModelRegion.hpp"
+#include "ModelHitTest.hpp"
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QStringList>
@@ -38,6 +39,7 @@ struct RenderFrame
     bool hidden = false;
     std::vector<unsigned char> rgba; // 自下而上、预乘 alpha 的 RGBA8 数据。
     std::vector<ModelRegion> regions; // 应用显示透明度之前的区域，单位为逻辑输入像素。
+    std::shared_ptr<const ModelHitSnapshot> hit;
 };
 
 struct ModelMetadata

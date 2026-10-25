@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ModelTransform.hpp"
+#include "contracts/ModelTransform.hpp"
 #include "ExternalControlState.hpp"
 #include <cmath>
 #include <string>

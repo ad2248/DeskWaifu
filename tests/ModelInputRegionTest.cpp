@@ -1,4 +1,4 @@
-#include "ModelInputRegion.hpp"
+#include "contracts/ModelInputRegion.hpp"
 #include <iostream>
 
 #define CHECK(condition) do { if (!(condition)) { \

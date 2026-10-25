@@ -1,7 +1,9 @@
 #include "InteractionProcessor.hpp"
+#include "processor/input/InputListener.hpp"
 #include <QJsonDocument>
 #include <chrono>
 #include <iostream>
+#include <algorithm>
 
 namespace {
 uint32_t ClickClock()
@@ -27,6 +29,7 @@ InteractionProcessor::InteractionProcessor(ProcessorEventLoop& loop, DesktopWind
     QObject::connect(&_tapTimer, &QTimer::timeout, this,
         [this] { Send("interaction.tap_timeout", this); });
     QObject::connect(&_mode, &ModelWindowState::InteractionCancelled, this, [this] { Cancel(); });
+    RequestHitTest();
 }
 
 InteractionProcessor::~InteractionProcessor()
@@ -42,6 +45,36 @@ void InteractionProcessor::Stop()
 
 bool InteractionProcessor::HandleEvent(const ProcessorEvent& event)
 {
+    if (event.type == "input.event") {
+        if (_stopped) return true;
+        const auto kind = event.data.value("kind").toString();
+        const double x = event.data.value("x").toDouble(), y = event.data.value("y").toDouble();
+        if (kind == "enter") Enter(x, y);
+        else if (kind == "leave") Leave();
+        else if (kind == "position") Position(x, y);
+        else if (kind == "button") PointerButton(event.data.value("button").toInt(), event.data.value("pressed").toBool(),
+            event.data.contains("time") ? std::optional<uint32_t>{event.data.value("time").toUInt()} : std::nullopt);
+        else if (kind == "scroll") PointerScroll(event.data.value("vertical").toDouble());
+        else if (kind == "key") Key(event.data.value("code").toUInt(), event.data.value("pressed").toBool());
+        else if (kind == "keyboard_reset") ResetKeyboard();
+        return true;
+    }
+    if (event.type == "input.move") {
+        const auto sample = event.data.value("sample").value<InputSamplePtr>();
+        if (sample) {
+            sample->consumed = true;
+            if (!_stopped) {
+                if (sample->cursor) CursorPosition(sample->x, sample->y);
+                else PointerMoved(sample->x, sample->y);
+            }
+        }
+        return true;
+    }
+    if (event.type == "model.hit_test.ready" && event.sender == &_model) {
+        _hitRequested = false;
+        if (!_stopped) _hitTest = event.data.value("callback").value<ModelHitTest>();
+        return true;
+    }
     if (event.type == "interaction.tap_timeout" && event.sender == this) {
         // 已排队的旧超时不能提前派发新一轮单击。
         if (_input.TapExpired(ClickClock())) FlushTap();
@@ -79,9 +112,11 @@ void InteractionProcessor::StartCropGesture()
         handle == CropInteraction::Move ? ModelWindowState::Event::MoveCrop : ModelWindowState::Event::ResizeCrop);
 }
 
-void InteractionProcessor::PointerButton(int button, bool pressed)
+void InteractionProcessor::PointerButton(int button, bool pressed, std::optional<uint32_t> time)
 {
     if (_stopped || !_mode.Running()) return;
+    if (_service.Snapshot().hidden && !_settings.ScreenEditing()) return;
+    const uint32_t now = time.value_or(ClickClock());
     if (!_mode.Normal()) {
         if (button == 0 && _mode.ScreenEditing()) {
             if (pressed) {
@@ -91,7 +126,7 @@ void InteractionProcessor::PointerButton(int button, bool pressed)
             } else {
                 if (!_mode.GestureActive()) return;
                 const bool moveOutput = _settings.LocalScreenEditing() && _crop.DraggingModel();
-                const auto result = _crop.Release(_settings, ClickClock(), int(_x), int(_y));
+                const auto result = _crop.Release(_settings, now, int(_x), int(_y));
                 _mode.Send(ModelWindowState::Event::Release);
                 if (!result.ok) std::cout << "[Crop] Save failed: " << result.error << '\n';
                 if (moveOutput) _moveScreen();
@@ -104,7 +139,7 @@ void InteractionProcessor::PointerButton(int button, bool pressed)
             if (!_mode.Send(ModelWindowState::Event::Press)) return;
             _input.Press(int(_x), int(_y));
         } else if (_mode.Current() == ModelWindowState::State::Pressed) {
-            const auto result = _input.Release(ClickClock(), int(_x), int(_y),
+            const auto result = _input.Release(now, int(_x), int(_y),
                 [this](int x, int y) { Tap(x, y); });
             _mode.Send(ModelWindowState::Event::Release);
             if (result == InputController::ReleaseResult::DoubleClick) {
@@ -116,7 +151,8 @@ void InteractionProcessor::PointerButton(int button, bool pressed)
                 _tapTimer.stop();
                 Operation({{"command", "reset_drag"}});
             } else if (result == InputController::ReleaseResult::TapPending) {
-                _tapTimer.start(ModelDoubleClick::Delay + 1);
+                const uint32_t elapsed = ClickClock() - now;
+                _tapTimer.start(elapsed > ModelDoubleClick::Delay ? 0 : ModelDoubleClick::Delay + 1 - elapsed);
             }
         }
     } else if (button == 1 && !pressed) {
@@ -133,16 +169,64 @@ void InteractionProcessor::FlushTap()
 
 void InteractionProcessor::Tap(int x, int y)
 {
-    const auto transform = _service.Snapshot().transform;
-    Operation({{"command", "tap_model"}, {"mouse_x", x}, {"mouse_y", y},
-        {"width", _window.Width()}, {"height", _window.Height()},
-        {"zoom", transform.scale}, {"x", transform.x}, {"y", transform.y},
-        {"model_token", _metadata().hotkeys.value("model_token")}});
+    const auto hit = HitAt(x, y);
+    if (!hit.available) return;
+    const auto token = _metadata().hotkeys.value("model_token");
+    Operation({{"command", "reset_drag"}});
+    // Head 优先于 Body，与原有点击策略一致；其他自定义部位仍可供交互查询。
+    if (std::find(hit.parts.begin(), hit.parts.end(), "Head") != hit.parts.end())
+        Operation({{"command", "random_expression"}, {"model_token", token}});
+    else if (std::find(hit.parts.begin(), hit.parts.end(), "Body") != hit.parts.end()) {
+        Operation({{"command", "random_motion"}, {"group", "TapBody"}, {"model_token", token}});
+        Operation({{"command", "random_expression"}, {"model_token", token}});
+    }
+}
+
+void InteractionProcessor::RequestHitTest()
+{
+    if (!_stopped && !_hitRequested)
+        _hitRequested = Send("model.hit_test.request", &_model);
+}
+
+ModelHitResult InteractionProcessor::HitAt(double x, double y)
+{
+    if (_stopped || _service.Snapshot().hidden) return {};
+    if (!_hitTest) { RequestHitTest(); return {}; }
+    auto result = _hitTest({x, y, _window.Width(), _window.Height(),
+        _metadata().hotkeys.value("model_token").toString().toStdString()});
+    if (!result.available) { _hitTest = {}; RequestHitTest(); }
+    return result;
+}
+
+ModelHitResult InteractionProcessor::Hover()
+{
+    auto hit = HitAt(_x, _y);
+    if (!_inside) { hit.inside = false; hit.parts.clear(); }
+    return hit;
+}
+
+void InteractionProcessor::PrepareFrame(ModelRenderState& state, bool hoverEnabled, float hoverOpacity, float idleOpacity)
+{
+    state.editing = _settings.Editing();
+    const auto& settings = _settings.Display();
+    state.clip = ResolveModelRegion(settings.cropped, settings.region, state.width, state.height);
+    state.handles.clear();
+    if (_settings.ScreenEditing() && settings.cropped) state.handles = CropInteraction::Handles(settings.region);
+    const auto hit = Hover();
+    state.opacity = hoverEnabled && hit.available && hit.inside && !ModelInputRegionContains(state.handles, _x, _y)
+        ? hoverOpacity : idleOpacity;
+}
+
+std::vector<ModelRegion> InteractionProcessor::InputRegions(const ModelRenderState& state, const std::vector<ModelRegion>& regions) const
+{
+    return state.app.hidden && !_settings.ScreenEditing() ? std::vector<ModelRegion>{}
+        : ModelFrameInputRegions(_settings.ScreenEditing(), state.width, state.height, regions);
 }
 
 void InteractionProcessor::Key(uint32_t code, bool pressed)
 {
     if (_stopped || !_mode.Normal()) return;
+    if (_service.Snapshot().hidden) return;
     const auto metadata = _metadata();
     const auto decision = _input.Key(_window.KeyboardGrabbed(), code, pressed,
         _window.KeyboardGrabbed() ? &metadata.bindings : nullptr);
@@ -175,6 +259,7 @@ void InteractionProcessor::PointerMoved(double x, double y)
 void InteractionProcessor::PointerScroll(double vertical)
 {
     if (_stopped || !_mode.Running() || _window.Height() <= 0) return;
+    if (_service.Snapshot().hidden && !_settings.ScreenEditing()) return;
     const float anchorX = (_x - _window.Width() * .5f) * 2 / _window.Height();
     const float anchorY = -(_y - _window.Height() * .5f) * 2 / _window.Height();
     const auto current = _service.Snapshot().transform;

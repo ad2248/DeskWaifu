@@ -16,8 +16,8 @@
 
 #include "LAppWavFileHandler_Common.hpp"
 #include "LAppModel_Common.hpp"
-#include "ModelHotkeys.hpp"
-#include "ModelFrameInput.hpp"
+#include "processor/model/ModelHotkeys.hpp"
+#include "contracts/ModelFrameInput.hpp"
 #include "LAppTextureManager.hpp"
 
 /**

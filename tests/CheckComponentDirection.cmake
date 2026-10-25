@@ -1,6 +1,7 @@
 foreach(component LAppView LAppLive2DManager LAppModel LAppPal LAppSprite
-    ModelHotkeys ModelInputDispatch ModelScroll)
-  if (component MATCHES "^Model(InputDispatch|Scroll)$")
+    processor/model/ModelHotkeys processor/interaction/ModelInputDispatch
+    processor/interaction/InteractionProcessor processor/interaction/ModelWindowState)
+  if (component MATCHES "ModelInputDispatch$")
     set(required_extension .hpp)
   else ()
     set(required_extension .cpp)

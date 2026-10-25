@@ -5,6 +5,7 @@
  * that can be found at https://www.live2d.com/eula/live2d-open-software-license-agreement_en.html.
  */
 #pragma once
+#include "contracts/ModelHitTest.hpp"
 
 #include <CubismFramework.hpp>
 #include <Math/CubismMatrix44.hpp>
@@ -12,11 +13,11 @@
 #include <functional>
 #include <string>
 #include <vector>
-#include "ModelTransform.hpp"
-#include "ModelFrameInput.hpp"
-#include "ModelCache.hpp"
-#include "ModelSession.hpp"
-#include "ModelLoader.hpp"
+#include "contracts/ModelTransform.hpp"
+#include "contracts/ModelFrameInput.hpp"
+#include "processor/model/ModelCache.hpp"
+#include "processor/model/ModelSession.hpp"
+#include "processor/model/ModelLoader.hpp"
 
 class LAppModel;
 class LAppTextureManager;
@@ -69,6 +70,7 @@ public:
     * @return 模型实例；索引越界时返回 NULL。
     */
     LAppModel* GetModel(Csm::csmUint32 no) const;
+    ModelHitSnapshot HitSnapshot(int width, int height, ModelTransform transform) const;
 
     /**
      * @brief 设置模型离屏渲染尺寸。

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "ModelTransform.hpp"
-#include "ModelInputDispatch.hpp"
+#include "contracts/ModelTransform.hpp"
+#include "processor/interaction/ModelInputDispatch.hpp"
 #include <utility>
 
 // 纯粹的指针到模型交互策略，不依赖 Wayland 或 Delegate。

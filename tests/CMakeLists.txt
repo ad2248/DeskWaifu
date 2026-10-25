@@ -127,7 +127,7 @@ add_executable(render-device-settings-test RenderDeviceSettingsTest.cpp ../src/C
 target_include_directories(render-device-settings-test PRIVATE ../src)
 add_test(NAME render-device-settings COMMAND render-device-settings-test)
 
-add_executable(model-region-render-test ModelRegionRenderTest.cpp ../src/ModelFrameRegion.cpp)
+add_executable(model-region-render-test ModelRegionRenderTest.cpp ../src/processor/model/ModelFrameRegion.cpp)
 target_include_directories(model-region-render-test PRIVATE ../src ${GLEW_PATH}/include)
 target_link_libraries(model-region-render-test PRIVATE Framework glew_s OpenGL::EGL)
 add_test(NAME model-region-render COMMAND model-region-render-test)
@@ -211,12 +211,8 @@ add_executable(cursor-look-test CursorLookTest.cpp)
 target_link_libraries(cursor-look-test PRIVATE deskwaifu_input)
 add_test(NAME cursor-look COMMAND cursor-look-test)
 
-add_executable(model-frame-test ModelFrameTest.cpp)
-target_link_libraries(model-frame-test PRIVATE deskwaifu_input)
-add_test(NAME model-frame COMMAND model-frame-test)
-
 add_executable(model-gaze-test ModelGazeTest.cpp
-  ../src/LAppModel.cpp ../src/ModelHotkeys.cpp ../src/LAppPal.cpp
+  ../src/LAppModel.cpp ../src/processor/model/ModelHotkeys.cpp ../src/LAppPal.cpp
   ../src/LAppDefine.cpp ../src/LAppTextureManager.cpp
   ${COMMON_SRC_PATH}/LAppAllocator_Common.cpp
   ${COMMON_SRC_PATH}/LAppModel_Common.cpp
@@ -260,6 +256,8 @@ add_executable(model-pointer-test ModelPointerTest.cpp ${INPUT_APP_SOURCES})
 add_executable(model-render-thread-test ModelRenderThreadTest.cpp ${INPUT_APP_SOURCES})
 target_include_directories(model-render-thread-test PRIVATE ${DELEGATE_TEST_INCLUDES})
 target_link_libraries(model-render-thread-test PRIVATE ${DELEGATE_TEST_LIBRARIES})
+target_link_options(model-render-thread-test PRIVATE
+  -Wl,--wrap=_ZNK17LAppLive2DManager6OnDragEff -Wl,--wrap=_ZN9LAppModel6UpdateERK15ModelFrameInput)
 target_compile_definitions(model-render-thread-test PRIVATE SDK_RESOURCES="${SDK_ROOT_PATH}/Samples/Resources")
 add_test(NAME model-render-thread COMMAND model-render-thread-test)
 set_tests_properties(model-render-thread PROPERTIES ENVIRONMENT "EGL_PLATFORM=surfaceless" TIMEOUT 30)
@@ -269,7 +267,7 @@ get_target_property(INPUT_APP_LIBRARIES ${APP_NAME} LINK_LIBRARIES)
 target_link_libraries(model-pointer-test PRIVATE ${INPUT_APP_LIBRARIES} OpenGL::EGL)
 target_compile_definitions(model-pointer-test PRIVATE SDK_RESOURCES="${SDK_ROOT_PATH}/Samples/Resources")
 target_link_options(model-pointer-test PRIVATE
-  -Wl,--wrap=_ZN7LAppPal10PrintLogLnEPKcz)
+  -Wl,--wrap=_ZN7LAppPal10PrintLogLnEPKcz -Wl,--wrap=_ZN9LAppModel19SetRandomExpressionEv)
 foreach(scenario release transform drag state)
   add_test(NAME model-pointer-${scenario} COMMAND model-pointer-test ${scenario})
   set_tests_properties(model-pointer-${scenario} PROPERTIES
@@ -354,7 +352,7 @@ add_test(NAME deskwaifu-client COMMAND deskwaifu-client-test)
 
 qt_add_executable(model-hotkeys-test
   ModelHotkeysTest.cpp
-  ../src/ModelHotkeys.cpp
+  ../src/processor/model/ModelHotkeys.cpp
   ${COMMON_SRC_PATH}/LAppAllocator_Common.cpp
 )
 target_include_directories(model-hotkeys-test PRIVATE ../src ${COMMON_SRC_PATH})

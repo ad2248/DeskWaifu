@@ -1,8 +1,8 @@
 #pragma once
 
 #include "processor/Processor.hpp"
-#include "RenderFrame.hpp"
-#include "ModelRenderTarget.hpp"
+#include "contracts/RenderFrame.hpp"
+#include "render/ModelRenderTarget.hpp"
 #include <QThread>
 #include <functional>
 #include <mutex>
@@ -47,4 +47,5 @@ private:
     QString _error;
     std::function<void()> _modelChanged;
     bool _running = false, _stoppedCleanly = true;
+    std::shared_ptr<ModelHitMailbox> _hits;
 };

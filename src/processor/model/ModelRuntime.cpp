@@ -1,6 +1,6 @@
 #include <GL/glew.h>
 #include "ModelRuntime.hpp"
-#include "ModelRenderTarget.hpp"
+#include "render/ModelRenderTarget.hpp"
 #include "LAppDefine.hpp"
 #include "LAppLive2DManager.hpp"
 #include "LAppModel.hpp"
@@ -8,7 +8,7 @@
 #include "LAppTextureManager.hpp"
 #include "LAppView.hpp"
 #include "ModelFrameRegion.hpp"
-#include "ModelInputRegion.hpp"
+#include "contracts/ModelInputRegion.hpp"
 #include "JsonHelpers.hpp"
 #include <algorithm>
 #include <stdexcept>
@@ -117,6 +117,8 @@ try {
         if (index < 0 || index >= count) return Error("invalid index");
         return _manager->ChangeScene(index) ? Ok() : Error("model load failed");
     }
+    const auto token = JsonGetString(request, "model_token");
+    if (!token.empty() && token != model->Hotkeys().Token()) return Error("Model changed; stale operation discarded");
     if (command == "trigger_hotkey") {
         if (JsonGetString(request, "model_token") != model->Hotkeys().Token()) return Error("Model changed; refresh hotkeys before triggering");
         if (!model->Hotkeys().Trigger(JsonGetString(request, "id"), error)) return Error(error.empty() ? "hotkey unavailable" : error);
@@ -140,6 +142,13 @@ try {
     }
     if (command == "switch_skin") { _manager->SwitchSkin(); return Ok(); }
     if (command == "reset_drag") { _manager->OnDrag(0, 0); return Ok(); }
+    if (command == "random_expression") { model->SetRandomExpression(); return Ok(); }
+    if (command == "random_motion") {
+        const auto group = JsonGetString(request, "group");
+        if (group.empty()) return Error("missing motion group");
+        return model->StartRandomMotion(group.c_str(), LAppDefine::PriorityNormal) != Csm::InvalidMotionQueueEntryHandleValue
+            ? Ok() : Error("motion unavailable");
+    }
     if (command == "tap_model") {
         const auto token = JsonGetString(request, "model_token");
         if (!token.empty() && token != model->Hotkeys().Token()) return Error("Model changed; stale tap discarded");
@@ -177,5 +186,9 @@ std::shared_ptr<RenderFrame> ModelRuntime::Render(const ModelRenderState& state,
         if (state.editing) DrawModelEditFrame(state.handles, state.width, state.height);
     }
     if (!target.Read(frame->rgba)) throw std::runtime_error("cannot read render-thread framebuffer");
+    auto hit = std::make_shared<ModelHitSnapshot>(_manager->HitSnapshot(state.width, state.height, state.app.transform));
+    hit->hidden = state.app.hidden;
+    hit->regions = frame->regions;
+    frame->hit = std::move(hit);
     return frame;
 }

@@ -1,13 +1,7 @@
 file(READ "${APP_SOURCE}/LAppDelegate.cpp" delegate)
-string(FIND "${delegate}" "void LAppDelegate::TrackGlobalCursor()" tracking_start)
-string(FIND "${delegate}" "void LAppDelegate::ResizeView" update_start)
-if (tracking_start EQUAL -1 OR update_start EQUAL -1)
-  message(FATAL_ERROR "Global cursor sampling and per-frame gaze must be separate")
-endif ()
-math(EXPR tracking_length "${update_start} - ${tracking_start}")
-string(SUBSTRING "${delegate}" ${tracking_start} ${tracking_length} tracking)
-if (tracking MATCHES "OnMouseCallBack" OR NOT tracking MATCHES "_kwinCursor.LocalPosition" OR
-    NOT tracking MATCHES "_interaction->CursorPosition" OR tracking MATCHES "_interaction->PointerMoved")
+file(READ "${APP_SOURCE}/processor/input/InputListener.cpp" listener)
+if (NOT listener MATCHES "_cursor.LocalPosition" OR NOT listener MATCHES "Move\\(x, y, true\\)" OR
+    NOT listener MATCHES "_cursorTimer.start" OR delegate MATCHES "TrackGlobalCursor")
   message(FATAL_ERROR "Global gaze sampling must not synthesize pointer drag/edit events")
 endif ()
 string(FIND "${delegate}" "_ipc->Poll();" poll)

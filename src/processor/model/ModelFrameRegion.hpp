@@ -1,5 +1,5 @@
 #pragma once
-#include "ModelRegion.hpp"
+#include "contracts/ModelRegion.hpp"
 #include <vector>
 void ClipModelRegion(ModelRegion region, int width, int height);
 std::vector<ModelRegion> ReadModelInputRegion(unsigned int framebuffer, int width, int height,

@@ -1,4 +1,4 @@
-add_library(deskwaifu_catalog STATIC ModelCatalog.cpp)
+add_library(deskwaifu_catalog STATIC processor/model/ModelCatalog.cpp)
 target_include_directories(deskwaifu_catalog PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 add_library(deskwaifu_input STATIC InputController.cpp)
 target_include_directories(deskwaifu_input PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -14,10 +14,10 @@ target_include_directories(deskwaifu_kwin_cursor PUBLIC ${CMAKE_CURRENT_SOURCE_D
 target_link_libraries(deskwaifu_kwin_cursor PUBLIC PkgConfig::SYSTEMD)
 add_library(deskwaifu_ipc STATIC LAppIPC.cpp)
 target_include_directories(deskwaifu_ipc PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-add_library(deskwaifu_loader STATIC ModelLoader.cpp)
+add_library(deskwaifu_loader STATIC processor/model/ModelLoader.cpp)
 target_include_directories(deskwaifu_loader PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${COMMON_SRC_PATH})
 target_link_libraries(deskwaifu_loader PUBLIC deskwaifu_catalog Framework)
-add_library(deskwaifu_renderer STATIC ModelRenderer.cpp)
+add_library(deskwaifu_renderer STATIC processor/model/ModelRenderer.cpp)
 target_include_directories(deskwaifu_renderer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${COMMON_SRC_PATH})
 target_link_libraries(deskwaifu_renderer PUBLIC Framework)
 
@@ -32,12 +32,12 @@ target_link_libraries(deskwaifu_renderer PUBLIC Framework)
       ${CMAKE_CURRENT_SOURCE_DIR}/LAppDelegate.hpp
       ${CMAKE_CURRENT_SOURCE_DIR}/AppCommandHandler.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/LAppIPC.hpp
-      ${CMAKE_CURRENT_SOURCE_DIR}/ModelFrameRegion.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/processor/model/ModelFrameRegion.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/LAppLive2DManager.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/LAppLive2DManager.hpp
       ${CMAKE_CURRENT_SOURCE_DIR}/LAppModel.cpp
-      ${CMAKE_CURRENT_SOURCE_DIR}/ModelHotkeys.cpp
-      ${CMAKE_CURRENT_SOURCE_DIR}/ModelTransform.hpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/processor/model/ModelHotkeys.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/contracts/ModelTransform.hpp
       ${CMAKE_CURRENT_SOURCE_DIR}/LAppModel.hpp
       ${CMAKE_CURRENT_SOURCE_DIR}/LAppPal.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/LAppPal.hpp
@@ -67,12 +67,12 @@ target_link_libraries(${APP_NAME} deskwaifu_ocr_client)
 add_subdirectory(processor)
 target_link_libraries(${APP_NAME} deskwaifu_speech)
 target_link_libraries(${APP_NAME} deskwaifu_processors)
-add_library(deskwaifu_window_state STATIC ModelWindowState.cpp ModelWindowState.hpp)
+add_library(deskwaifu_window_state STATIC processor/interaction/ModelWindowState.cpp processor/interaction/ModelWindowState.hpp)
 set_target_properties(deskwaifu_window_state PROPERTIES AUTOMOC ON)
 target_include_directories(deskwaifu_window_state PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(deskwaifu_window_state PUBLIC Qt6::StateMachine)
 find_package(LayerShellQt 6.6 REQUIRED)
-add_library(deskwaifu_offscreen STATIC OffscreenRenderer.cpp ModelRenderTarget.cpp ReadRgbaFrame.cpp)
+add_library(deskwaifu_offscreen STATIC OffscreenRenderer.cpp render/ModelRenderTarget.cpp ReadRgbaFrame.cpp)
 target_include_directories(deskwaifu_offscreen PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${GLEW_PATH}/include)
 target_link_libraries(deskwaifu_offscreen PUBLIC glew_s OpenGL::OpenGL OpenGL::EGL Qt6::Gui Qt6::OpenGL)
 target_sources(${APP_NAME} PRIVATE QtDesktopWindow.cpp)

@@ -2,8 +2,9 @@
 #include <EGL/egl.h>
 #include "LAppDelegate.hpp"
 #include "LAppDefine.hpp"
-#include "ModelHotkeys.hpp"
+#include "processor/model/ModelHotkeys.hpp"
 #include "ModelProcessorTestHelpers.hpp"
+#include "DispatchedInput.hpp"
 
 #include <QDir>
 #include <QCoreApplication>
@@ -40,7 +41,7 @@ public:
     bool UploadFrame(const RenderFrame&) override { return true; }
     bool Initialize(int, int, IDesktopWindowEvents& receiver) override
     {
-        events = &receiver;
+        input.Set(receiver); events = &input;
         display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
         if (display == EGL_NO_DISPLAY || !eglInitialize(display, nullptr, nullptr)) return false;
         const EGLint attributes[] = {EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
@@ -94,6 +95,7 @@ public:
     OutputId CurrentOutput() const override { return 1; }
     bool SwitchOutput(OutputId id) override { return id == 1; }
 private:
+    DispatchedInput input;
     EGLDisplay display = EGL_NO_DISPLAY;
     EGLSurface surface = EGL_NO_SURFACE;
     EGLContext context = EGL_NO_CONTEXT;

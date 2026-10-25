@@ -1,7 +1,7 @@
 #pragma once
 
-#include "ModelFrameInput.hpp"
-#include "ModelTransform.hpp"
+#include "contracts/ModelFrameInput.hpp"
+#include "contracts/ModelTransform.hpp"
 #include <Math/CubismMatrix44.hpp>
 #include <Type/csmVector.hpp>
 #include <functional>

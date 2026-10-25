@@ -15,9 +15,9 @@
 #include <Rendering/OpenGL/CubismRenderTarget_OpenGLES2.hpp>
 
 #include "LAppView_Common.hpp"
-#include "ModelTransform.hpp"
-#include "ModelFrameInput.hpp"
-#include "ModelOpacityFrame.hpp"
+#include "contracts/ModelTransform.hpp"
+#include "contracts/ModelFrameInput.hpp"
+#include "processor/model/ModelOpacityFrame.hpp"
 
 class TouchManager_Common;
 class LAppSprite;
