@@ -21,17 +21,20 @@ class ParallelReviewTest(unittest.TestCase):
             self.assertIn("types: [opened, reopened, synchronize]", workflow)
             self.assertNotIn("needs:", workflow)
         self.assertNotIn("workflow_run", review)
-        self.assertIn("ref: main", review)
+        self.assertIn("ref: ${{ gitea.event.pull_request.base.sha }}", review)
+        self.assertNotIn("ref: main", review)
+        self.assertNotIn("ref: ${{ gitea.event.pull_request.head.sha }}", review)
+        self.assertIn("run: bash .gitea/scripts/opencode-review.sh", review)
         self.assertIn("REVIEW_PR_NUMBER: ${{ gitea.event.pull_request.number }}", review)
         self.assertIn("REVIEW_HEAD_SHA: ${{ gitea.event.pull_request.head.sha }}", review)
         self.assertNotIn("REVIEW_CI_URL", review)
 
-    def test_prompt_leaves_build_and_tests_to_ci(self):
+    def test_prompt_distinguishes_local_verification_from_ci(self):
         source = SCRIPT.read_text()
-        prompt = source.split("\nprompt='", 1)[1].split("'\n", 1)[0]
-        self.assertIn("构建和自动化测试由独立 CI 流程负责", prompt)
-        self.assertIn("无需且不得执行构建或自动化测试", prompt)
-        self.assertIn("不得声称 CI 已通过", prompt)
+        prompt = source.split('\nprompt="$(cat <<EOF\n', 1)[1].split('\nEOF\n)"', 1)[0]
+        self.assertIn("独立 CI 可能正在并行运行", prompt)
+        self.assertIn("按需执行构建或测试", prompt)
+        self.assertIn("不要将本地验证等同于 CI 通过", prompt)
         self.assertIn("测试覆盖缺口", prompt)
         self.assertNotIn("CI 已成功", source)
         self.assertNotIn("Successful CI", source)
