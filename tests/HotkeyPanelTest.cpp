@@ -2,6 +2,7 @@
 
 #include <QJsonObject>
 #include <QLineEdit>
+#include <QLabel>
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QTableWidget>
@@ -18,6 +19,35 @@ class HotkeyPanelTest : public QObject
     }
 
 private slots:
+    void chineseLabelsAndStates()
+    {
+        HotkeyPanel panel;
+        auto* table = panel.findChild<QTableWidget*>();
+        auto* message = panel.findChild<QLabel*>();
+        QCOMPARE(message->text(), QString("当前模型未配置快捷键。"));
+        const QStringList headers = {"名称", "按键", "动作", "状态", "操作"};
+        for (int i = 0; i < headers.size(); ++i)
+            QCOMPARE(table->horizontalHeaderItem(i)->text(), headers[i]);
+        panel.setConnected(true);
+        auto inactive = binding("原始名称", {"N1"});
+        auto active = binding("active", {"N2"});
+        active["active"] = true;
+        panel.setBindings({inactive, active});
+        QCOMPARE(table->item(0, 0)->text(), QString("原始名称"));
+        QCOMPARE(table->item(0, 1)->text(), QString("N1"));
+        QCOMPARE(table->item(0, 2)->text(), QString("切换表情"));
+        QCOMPARE(table->item(0, 3)->text(), QString("未激活"));
+        QCOMPARE(table->item(1, 3)->text(), QString("已激活"));
+        QCOMPARE(qobject_cast<QPushButton*>(table->cellWidget(0, 4))->text(), QString("切换"));
+        QVERIFY(message->text().contains("活动状态"));
+        inactive["reason"] = "Expression file missing or invalid";
+        panel.setBindings({inactive}, "Invalid VTube Studio hotkey configuration");
+        QCOMPARE(table->item(0, 3)->text(), QString("表情文件缺失或无效"));
+        QCOMPARE(message->text(), QString("VTube Studio 快捷键配置无效"));
+        panel.setConnected(false);
+        QCOMPARE(message->text(), QString("连接已断开，快捷键不可用。"));
+    }
+
     void windowKeysAndTabNavigation()
     {
         QWidget window;

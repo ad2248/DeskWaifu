@@ -80,9 +80,9 @@ void DeskWaifuClient::readResponses()
         const QJsonDocument document = QJsonDocument::fromJson(line, &error);
         if (error.error != QJsonParseError::NoError || !document.isObject())
         {
-            emit protocolError(tr("Invalid JSON response for '%1': %2")
+            emit protocolError(tr("命令“%1”的 JSON 响应无效：%2")
                 .arg(_inFlight.command, error.error == QJsonParseError::NoError
-                    ? tr("Expected a JSON object") : error.errorString()));
+                    ? tr("预期为 JSON 对象") : error.errorString()));
             // 关联关系已不再可信。断开后只重试安全查询，
             // 对已发送的修改操作报告结果未知。
             _socket.abort();
@@ -100,7 +100,7 @@ void DeskWaifuClient::readResponses()
 void DeskWaifuClient::handleConnected()
 {
     _reconnectTimer.stop();
-    emit connectionChanged(true, tr("Connected to %1").arg(socketPath()));
+    emit connectionChanged(true, tr("已连接到 %1").arg(socketPath()));
     sendNext();
 }
 
@@ -129,7 +129,7 @@ void DeskWaifuClient::handleDisconnected()
     }
     if (!unknownCommand.isEmpty()) emit commandOutcomeUnknown(unknownCommand);
     for (const auto& command : cancelled) emit commandCancelled(command);
-    emit connectionChanged(false, tr("Disconnected"));
+    emit connectionChanged(false, tr("连接已断开"));
     _reconnectTimer.start();
 }
 

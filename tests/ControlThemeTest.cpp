@@ -31,6 +31,26 @@ class ControlThemeTest : public QObject
     QFont _originalFont;
 
 private slots:
+    void panelUsesChineseText()
+    {
+        QMainWindow window;
+        Ui::MainWindow ui;
+        ui.setupUi(&window);
+        QCOMPARE(window.windowTitle(), QString("DeskWaifu 控制面板"));
+        const QStringList tabs = {"概览", "模型", "动画", "变换", "注视", "协议日志"};
+        QCOMPARE(ui.tabWidget->count(), tabs.size());
+        for (int i = 0; i < tabs.size(); ++i)
+            QCOMPARE(ui.tabWidget->tabText(i), tabs[i]);
+        for (auto* button : window.findChildren<QPushButton*>())
+            QVERIFY2(button->text().contains(QRegularExpression("[\\x{4e00}-\\x{9fff}]")), qPrintable(button->objectName()));
+        for (auto* group : window.findChildren<QGroupBox*>())
+            QVERIFY2(group->title().contains(QRegularExpression("[\\x{4e00}-\\x{9fff}]")), qPrintable(group->objectName()));
+        QCOMPARE(ui.respawnButton->text(), QString("重启"));
+        QVERIFY(ui.respawnButton->toolTip().contains("重新启动"));
+        QVERIFY(ui.renderDeviceCombo->toolTip().contains("“重启”"));
+        QCOMPARE(ui.responseLog->placeholderText(), QString("IPC 响应将显示在此处。"));
+    }
+
     void init()
     {
         _originalPalette = QApplication::palette();
@@ -50,7 +70,7 @@ private slots:
         ui.setupUi(&window);
 
         QVERIFY(ui.overviewTab->isAncestorOf(ui.spawnButton));
-        QCOMPARE(ui.spawnButton->text(), QString("Spawn"));
+        QCOMPARE(ui.spawnButton->text(), QString("启动"));
         QCOMPARE(ui.tabWidget->currentWidget(), ui.overviewTab);
         QVERIFY(!window.findChild<QLabel*>(QStringLiteral("connectionLabel")));
         QCOMPARE(window.statusBar(), ui.statusBar);

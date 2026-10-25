@@ -17,7 +17,7 @@
    </size>
   </property>
   <property name="windowTitle">
-   <string>DeskWaifu Control</string>
+    <string>DeskWaifu 控制面板</string>
   </property>
   <widget class="QWidget" name="centralWidget">
    <layout class="QVBoxLayout" name="verticalLayout_2">
@@ -28,19 +28,19 @@
       </property>
       <widget class="QWidget" name="overviewTab">
        <attribute name="title">
-        <string>Overview</string>
+         <string>概览</string>
        </attribute>
        <layout class="QVBoxLayout" name="overviewLayout">
         <item>
          <widget class="QGroupBox" name="statusGroup">
           <property name="title">
-           <string>Current status</string>
+            <string>当前状态</string>
           </property>
           <layout class="QGridLayout" name="statusLayout">
            <item row="0" column="0">
             <widget class="QLabel" name="modelCaption">
              <property name="text">
-              <string>Model</string>
+               <string>模型</string>
              </property>
             </widget>
            </item>
@@ -54,7 +54,7 @@
            <item row="1" column="0">
             <widget class="QLabel" name="countCaption">
              <property name="text">
-              <string>Available models</string>
+               <string>可用模型数</string>
              </property>
             </widget>
            </item>
@@ -68,7 +68,7 @@
            <item row="2" column="0">
             <widget class="QLabel" name="visibilityCaption">
              <property name="text">
-              <string>Visibility</string>
+               <string>显示状态</string>
              </property>
             </widget>
            </item>
@@ -85,37 +85,37 @@
         <item>
          <widget class="QGroupBox" name="quickActionsGroup">
           <property name="title">
-           <string>Quick actions</string>
+            <string>快捷操作</string>
           </property>
           <layout class="QHBoxLayout" name="quickActionsLayout">
            <item>
             <widget class="QPushButton" name="spawnButton">
              <property name="text">
-              <string>Spawn</string>
+               <string>启动</string>
              </property>
             </widget>
            </item>
            <item>
             <widget class="QPushButton" name="respawnButton">
               <property name="text">
-               <string>Respawn</string>
+                <string>重启</string>
               </property>
               <property name="toolTip">
-               <string>Gracefully stop and restart the connected DeskWaifu backend.</string>
+                <string>安全停止并重新启动已连接的 DeskWaifu 后端。</string>
               </property>
              </widget>
             </item>
             <item>
             <widget class="QPushButton" name="toggleHiddenButton">
              <property name="text">
-              <string>Toggle visibility</string>
+               <string>显示／隐藏</string>
              </property>
             </widget>
            </item>
            <item>
             <widget class="QPushButton" name="switchSkinButton">
              <property name="text">
-              <string>Switch skin</string>
+               <string>切换皮肤</string>
              </property>
             </widget>
            </item>
@@ -153,7 +153,7 @@
             <item row="0" column="1">
              <widget class="QComboBox" name="renderDeviceCombo">
               <property name="enabled"><bool>false</bool></property>
-              <property name="toolTip"><string>保存后点击 Respawn 重启生效；命令行和环境变量的选择优先于配置。</string></property>
+               <property name="toolTip"><string>保存后点击“重启”生效；命令行和环境变量的选择优先于配置。</string></property>
               <item><property name="text"><string>自动</string></property></item>
              </widget>
             </item>
@@ -184,13 +184,13 @@
       </widget>
       <widget class="QWidget" name="modelTab">
        <attribute name="title">
-        <string>Model</string>
+         <string>模型</string>
        </attribute>
        <layout class="QVBoxLayout" name="modelLayout">
         <item>
          <widget class="QGroupBox" name="modelGroup">
           <property name="title">
-           <string>Model selection</string>
+            <string>模型选择</string>
           </property>
           <layout class="QGridLayout" name="modelGrid">
            <item row="0" column="0" colspan="3">
@@ -199,21 +199,21 @@
            <item row="1" column="0">
             <widget class="QPushButton" name="previousModelButton">
              <property name="text">
-              <string>Previous</string>
+               <string>上一个</string>
              </property>
             </widget>
            </item>
            <item row="1" column="1">
             <widget class="QPushButton" name="setModelButton">
              <property name="text">
-              <string>Load selected</string>
+               <string>加载所选模型</string>
              </property>
             </widget>
            </item>
            <item row="1" column="2">
             <widget class="QPushButton" name="nextModelButton">
              <property name="text">
-              <string>Next</string>
+               <string>下一个</string>
              </property>
             </widget>
            </item>
@@ -223,7 +223,7 @@
         <item>
          <widget class="QGroupBox" name="expressionGroup">
           <property name="title">
-           <string>Expression</string>
+            <string>表情</string>
           </property>
           <layout class="QHBoxLayout" name="expressionLayout">
            <item>
@@ -232,7 +232,7 @@
            <item>
             <widget class="QPushButton" name="setExpressionButton">
              <property name="text">
-              <string>Apply expression</string>
+               <string>应用表情</string>
              </property>
             </widget>
            </item>
@@ -256,13 +256,13 @@
       </widget>
       <widget class="QWidget" name="animationTab">
        <attribute name="title">
-        <string>Animation</string>
+         <string>动画</string>
        </attribute>
        <layout class="QVBoxLayout" name="animationLayout">
         <item>
          <widget class="QGroupBox" name="motionGroup">
           <property name="title">
-           <string>Motion</string>
+            <string>动作</string>
           </property>
           <layout class="QGridLayout" name="motionLayout">
            <item row="0" column="0" colspan="3">
@@ -271,7 +271,7 @@
            <item row="1" column="0">
             <widget class="QLabel" name="priorityLabel">
              <property name="text">
-              <string>Priority</string>
+               <string>优先级</string>
              </property>
             </widget>
            </item>
@@ -291,14 +291,14 @@
            <item row="1" column="2">
             <widget class="QPushButton" name="playMotionButton">
              <property name="text">
-              <string>Play selected</string>
+               <string>播放所选动作</string>
              </property>
             </widget>
            </item>
            <item row="2" column="2">
             <widget class="QPushButton" name="randomMotionButton">
              <property name="text">
-              <string>Random TapBody</string>
+               <string>随机播放 TapBody 动作</string>
              </property>
             </widget>
            </item>
@@ -308,13 +308,13 @@
         <item>
          <widget class="QGroupBox" name="mouthGroup">
           <property name="title">
-           <string>External lip sync</string>
+            <string>外部口型同步</string>
           </property>
           <layout class="QHBoxLayout" name="mouthLayout">
            <item>
             <widget class="QLabel" name="mouthLabel">
              <property name="text">
-              <string>Mouth opening</string>
+               <string>张嘴幅度</string>
              </property>
             </widget>
            </item>
@@ -331,7 +331,7 @@
            <item>
             <widget class="QPushButton" name="mouthButton">
              <property name="text">
-              <string>Apply</string>
+               <string>应用</string>
              </property>
             </widget>
            </item>
@@ -355,7 +355,7 @@
       </widget>
       <widget class="QWidget" name="transformTab">
        <attribute name="title">
-        <string>Transform</string>
+         <string>变换</string>
        </attribute>
        <layout class="QVBoxLayout" name="transformLayout">
         <item>
@@ -372,13 +372,13 @@
         <item>
          <widget class="QGroupBox" name="transformGroup">
           <property name="title">
-           <string>Position and scale</string>
+            <string>位置与缩放</string>
           </property>
            <layout class="QGridLayout" name="horizontalLayout">
             <item row="0" column="0">
             <widget class="QLabel" name="positionXLabel">
              <property name="text">
-              <string>X offset</string>
+               <string>X 偏移</string>
              </property>
             </widget>
            </item>
@@ -398,7 +398,7 @@
             <item row="0" column="2">
              <widget class="QLabel" name="positionYLabel">
              <property name="text">
-              <string>Y offset</string>
+               <string>Y 偏移</string>
              </property>
             </widget>
            </item>
@@ -418,7 +418,7 @@
             <item row="1" column="0">
              <widget class="QLabel" name="zoomLabel">
              <property name="text">
-              <string>Zoom</string>
+               <string>缩放</string>
              </property>
             </widget>
            </item>
@@ -673,7 +673,7 @@
       </widget>
       <widget class="QWidget" name="trackingTab">
        <attribute name="title">
-        <string>Look</string>
+         <string>注视</string>
        </attribute>
         <layout class="QVBoxLayout" name="trackingLayout">
           <item>
@@ -709,13 +709,13 @@
          <item>
          <widget class="QGroupBox" name="lookGroup">
           <property name="title">
-           <string>Look-at override</string>
+            <string>手动指定注视方向</string>
           </property>
           <layout class="QFormLayout" name="lookForm">
            <item row="0" column="0">
             <widget class="QLabel" name="lookXLabel">
              <property name="text">
-              <string>Horizontal (-1 to 1)</string>
+               <string>水平方向（-1 至 1）</string>
              </property>
             </widget>
            </item>
@@ -735,7 +735,7 @@
            <item row="1" column="0">
             <widget class="QLabel" name="lookYLabel">
              <property name="text">
-              <string>Vertical (-1 to 1)</string>
+               <string>垂直方向（-1 至 1）</string>
              </property>
             </widget>
            </item>
@@ -755,14 +755,14 @@
            <item row="2" column="0">
             <widget class="QPushButton" name="resetLookButton">
              <property name="text">
-              <string>Follow cursor</string>
+               <string>跟随鼠标</string>
              </property>
             </widget>
            </item>
            <item row="2" column="1">
             <widget class="QPushButton" name="lookButton">
              <property name="text">
-              <string>Apply direction</string>
+               <string>应用方向</string>
              </property>
             </widget>
            </item>
@@ -786,7 +786,7 @@
       </widget>
       <widget class="QWidget" name="logTab">
        <attribute name="title">
-        <string>Protocol log</string>
+         <string>协议日志</string>
        </attribute>
        <layout class="QVBoxLayout" name="logLayout">
         <item>
@@ -795,7 +795,7 @@
            <bool>true</bool>
           </property>
           <property name="placeholderText">
-           <string>IPC responses appear here.</string>
+            <string>IPC 响应将显示在此处。</string>
           </property>
          </widget>
         </item>

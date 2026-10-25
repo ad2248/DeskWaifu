@@ -119,7 +119,7 @@ private slots:
         QTRY_COMPARE(mutations, 1);
         QTRY_VERIFY(combo->isEnabled());
         QCOMPARE(combo->currentData().toString(), QStringLiteral("0000:00:02.0"));
-        QVERIFY(status->text().contains("Respawn"));
+        QVERIFY(status->text().contains("重启"));
         const auto screenshot = qEnvironmentVariable("DESKWAIFU_RENDER_DEVICE_SCREENSHOT");
         if (!screenshot.isEmpty()) QVERIFY(window.grab().save(screenshot));
         LAppConfig saved;
@@ -194,6 +194,11 @@ private slots:
         });
         MainWindow window(nullptr, directory.path());
         auto* key = window.findChild<QLineEdit*>("minimaxApiKey");
+        auto* tabs = window.findChild<QTabWidget*>("tabWidget");
+        const QStringList titles = {"概览", "模型", "快捷键", "动画", "变换", "注视", "协议日志", "语音"};
+        QCOMPARE(tabs->count(), titles.size());
+        for (int i = 0; i < titles.size(); ++i)
+            QCOMPARE(tabs->tabText(i), titles[i]);
         auto* save = window.findChild<QPushButton*>("saveSpeechKey");
         auto* clear = window.findChild<QPushButton*>("clearSpeechKey");
         auto* status = window.findChild<QLabel*>("speechSettingsStatus");
@@ -232,10 +237,10 @@ private slots:
         MainWindow window(nullptr, directory.path());
         auto* button = window.findChild<QPushButton*>("spawnButton");
         QVERIFY(button);
-        QCOMPARE(button->text(), QStringLiteral("Shutdown"));
+        QCOMPARE(button->text(), QStringLiteral("关闭"));
         QVERIFY(!button->isEnabled());
         QVERIFY(status.remove());
-        QTRY_COMPARE(button->text(), QStringLiteral("Spawn"));
+        QTRY_COMPARE(button->text(), QStringLiteral("启动"));
         QVERIFY(button->isEnabled());
     }
 
@@ -272,11 +277,11 @@ private slots:
         MainWindow window(nullptr, directory.path());
         auto* button = window.findChild<QPushButton*>("spawnButton");
         QVERIFY(button);
-        QTRY_COMPARE(button->text(), QStringLiteral("Shutdown"));
+        QTRY_COMPARE(button->text(), QStringLiteral("关闭"));
         QVERIFY(button->isEnabled());
         button->click();
         QTRY_COMPARE(quitRequests, 1);
-        QTRY_COMPARE(button->text(), QStringLiteral("Spawn"));
+        QTRY_COMPARE(button->text(), QStringLiteral("启动"));
         QVERIFY(button->isEnabled());
     }
 
@@ -406,11 +411,11 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(invalidReplies, 1, 6000);
         QTRY_VERIFY_WITH_TIMEOUT(connections >= 2 && hoverGroup->isEnabled() && lookGroup->isEnabled() && x->isEnabled(), 6000);
         QVERIFY(log->toPlainText().contains(queuedSave ? QString("apply_transform_edit") : failedCommand));
-        QVERIFY(log->toPlainText().contains("Invalid JSON"));
+        QVERIFY(log->toPlainText().contains("JSON 响应无效"));
         if (queuedSave) {
             QCOMPARE(commands.count("apply_transform_edit"), 0);
             QCOMPARE(commands.count("get_transform_save_result"), 0);
-            QVERIFY(log->toPlainText().contains("cancelled before sending"));
+            QVERIFY(log->toPlainText().contains("发送前取消"));
             QVERIFY(window.findChild<QPushButton*>("xformResetButton")->isEnabled());
         } else if (!failedCommand.startsWith("get_")) QCOMPARE(commands.count(failedCommand), 1);
         if (failedCommand == "set_hover_opacity") {
@@ -492,7 +497,7 @@ private slots:
         auto* tabs = window.findChild<QTabWidget*>("tabWidget");
         auto* lookTab = window.findChild<QWidget*>("trackingTab");
         QVERIFY(tabs && lookTab);
-        QCOMPARE(tabs->tabText(tabs->indexOf(lookTab)), QStringLiteral("Look"));
+        QCOMPARE(tabs->tabText(tabs->indexOf(lookTab)), QStringLiteral("注视"));
         tabs->setCurrentWidget(lookTab);
         auto* group = window.findChild<QWidget*>("mouseLookGroup");
         auto* slider = window.findChild<QSlider*>("mouseLookRadiusSlider");
@@ -729,7 +734,7 @@ private slots:
         QVERIFY(mutations.isEmpty()); // 查询不能将读取的配置再次写回。
         QVERIFY(status->text().isEmpty()); // 成功查询不产生虚假的操作反馈。
         const auto connectedText = connectionStatus->text();
-        QVERIFY(connectedText.startsWith("Connected"));
+        QVERIFY(connectedText.startsWith("已连接"));
         window.setStatusMessage("<saved>");
         QCOMPARE(status->text(), QString("<saved>"));
         QCOMPARE(status->textFormat(), Qt::PlainText);
@@ -872,7 +877,7 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(group->isEnabled() && queries > 1, 5000);
         QCOMPARE(slider->value(), 65);
         QCOMPARE(mutations.size(), beforeDisconnect + 1); // 确认丢失时不重放操作。
-        QVERIFY(window.findChild<QPlainTextEdit*>("responseLog")->toPlainText().contains("unknown"));
+        QVERIFY(window.findChild<QPlainTextEdit*>("responseLog")->toPlainText().contains("执行结果未知"));
         idleSupported = false; // 仅支持悬停的后端仍可使用旧控件。
         const int beforeHoverOnly = queries;
         QTRY_VERIFY_WITH_TIMEOUT(queries > beforeHoverOnly && !idleSlider->isEnabled(), 3000);
@@ -955,14 +960,14 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(x->isEnabled(), 2000);
         auto* spawn = window.findChild<QPushButton*>("spawnButton");
         QVERIFY(spawn);
-        QCOMPARE(spawn->text(), QString("Shutdown"));
+        QCOMPARE(spawn->text(), QString("关闭"));
         QVERIFY(!window.findChild<QPushButton*>("refreshButton"));
         auto* connectionStatus = window.findChild<QLabel*>("connectionStatusLabel");
         auto* operationStatus = window.findChild<QLabel*>("operationStatusLabel");
         QVERIFY(connectionStatus && operationStatus);
         const auto connectedText = connectionStatus->text();
         spawn->click(); // 已连接的 GUI 执行关闭，而非启动另一个后端。
-        QVERIFY(operationStatus->text().contains("shutdown"));
+        QVERIFY(operationStatus->text().contains("关闭"));
         QCOMPARE(connectionStatus->text(), connectedText);
         QTRY_VERIFY_WITH_TIMEOUT(!width->isEnabled(), 2000);
         QTest::qWait(100); // 首次用户编辑前，初始查询已经完成。

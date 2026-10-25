@@ -115,7 +115,7 @@ private slots:
     {
         const auto result = DeskWaifuLauncher::spawn(false, app(), proc());
         QCOMPARE(result.state, State::Failed);
-        QVERIFY(result.message.contains("Cannot find"));
+        QVERIFY(result.message.contains("找不到"));
         QCOMPARE(DeskWaifuLauncher::spawn(false, app(), proc() + "/missing").state, State::Failed);
     }
     void invalidExecutableReportsLaunchFailure()
@@ -127,7 +127,7 @@ private slots:
         QVERIFY(file.setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner));
         const auto result = DeskWaifuLauncher::spawn(false, app(), proc());
         QCOMPARE(result.state, State::Failed);
-        QVERIFY(result.message.contains("Failed to start"));
+        QVERIFY(result.message.contains("启动 DeskWaifu 失败"));
     }
     void lockFailureDoesNotSpawn()
     {
@@ -135,7 +135,7 @@ private slots:
         const auto result = DeskWaifuLauncher::spawn(false, app(), proc(), proc() + "/missing");
         QCOMPARE(result.state, State::Failed);
         QCOMPARE(result.pid, 0);
-        QVERIFY(result.message.contains("startup lock"));
+        QVERIFY(result.message.contains("启动锁"));
     }
     void concurrentLaunchersStartOnlyOneBackend()
     {
@@ -145,7 +145,7 @@ private slots:
         if (before.state == State::AlreadyRunning)
             QSKIP("A deskwaifu backend is already running for this user.");
         QCOMPARE(before.state, State::Failed);
-        QVERIFY(before.message.contains("Cannot find"));
+        QVERIFY(before.message.contains("找不到"));
         installBackend(app());
 
         QLockFile gate(proc() + "/deskwaifu-spawn.lock");
