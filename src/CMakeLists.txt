@@ -47,10 +47,9 @@ target_link_libraries(deskwaifu_renderer PUBLIC Framework)
       ${CMAKE_CURRENT_SOURCE_DIR}/processor/model/LAppView.hpp
       ${CMAKE_CURRENT_SOURCE_DIR}/processor/model/ModelRuntime.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/processor/model/ModelProcessor.cpp
-      ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp
   )
 
-target_include_directories(${APP_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/processor/model)
+target_include_directories(${APP_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/processor/model)
 target_link_libraries(${APP_NAME} deskwaifu_loader deskwaifu_renderer deskwaifu_ipc deskwaifu_input deskwaifu_output deskwaifu_compositor deskwaifu_kwin_cursor)
 find_package(Qt6 6.5 REQUIRED COMPONENTS Gui OpenGL WaylandClient StateMachine)
 add_library(deskwaifu_ocr_client STATIC processor/ocr/OcrClient.cpp processor/ocr/OcrClient.hpp)
@@ -71,6 +70,5 @@ find_package(LayerShellQt 6.6 REQUIRED)
 add_library(deskwaifu_offscreen STATIC render/OffscreenRenderer.cpp render/ModelRenderTarget.cpp render/ReadRgbaFrame.cpp)
 target_include_directories(deskwaifu_offscreen PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${GLEW_PATH}/include)
 target_link_libraries(deskwaifu_offscreen PUBLIC glew_s OpenGL::OpenGL OpenGL::EGL Qt6::Gui Qt6::OpenGL)
-target_sources(${APP_NAME} PRIVATE processor/interaction/window/QtDesktopWindow.cpp)
 target_link_libraries(${APP_NAME} deskwaifu_offscreen)
 target_link_libraries(${APP_NAME} Qt6::Gui Qt6::OpenGL Qt6::WaylandClient LayerShellQt::Interface deskwaifu_window_state)

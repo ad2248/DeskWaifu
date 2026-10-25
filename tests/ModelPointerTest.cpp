@@ -9,6 +9,7 @@
 #include "LAppAllocator_Common.hpp"
 #include "ModelProcessorTestHelpers.hpp"
 #include "DispatchedInput.hpp"
+#include "processor/input/KWinCursorTracker.hpp"
 #include <Rendering/OpenGL/CubismRenderer_OpenGLES2.hpp>
 #include <Id/CubismIdManager.hpp>
 #include "TestTemporaryDirectory.hpp"
@@ -23,6 +24,7 @@
 #include <sys/un.h>
 #include <poll.h>
 #include <thread>
+#include <atomic>
 #include <chrono>
 #include <unistd.h>
 #include <QCoreApplication>
@@ -37,6 +39,8 @@ namespace {
 struct Hit { std::string area; float x, y; bool result; };
 std::vector<Hit> hits;
 int expressionCalls = 0;
+bool syntheticCursor = false;
+int cursorStarts = 0, cursorPolls = 0;
 
 class Window : public DesktopWindow
 {
@@ -52,6 +56,7 @@ public:
     bool needsRebind = false;
     std::function<void()> duringSwitch;
     int switches = 0;
+    int runs = 0;
     std::function<bool(const std::function<bool()>&)> script;
     EGLDisplay display = EGL_NO_DISPLAY;
     EGLSurface surface = EGL_NO_SURFACE;
@@ -70,7 +75,7 @@ public:
         context = eglCreateContext(display, config, EGL_NO_CONTEXT, nullptr);
         return surface != EGL_NO_SURFACE && context != EGL_NO_CONTEXT && MakeCurrent();
     }
-    bool Run(const std::function<bool()>& frame) override { return script && script(frame); }
+    bool Run(const std::function<bool()>& frame) override { ++runs; return script && script(frame); }
     bool MakeCurrent() override { return eglMakeCurrent(display, surface, surface, context); }
     void Shutdown() override
     {
@@ -101,6 +106,29 @@ public:
 };
 Window* window = nullptr;
 bool near(float a, float b) { return std::abs(a - b) < .0001f; }
+
+int cursorTest(TestApplication& app)
+{
+    CHECK(cursorStarts == 1); // The production assembly must start the listener.
+    window->events->PointerEntered(300, 200);
+    window->events->PointerButton(0, true);
+    const int before = cursorPolls;
+    ModelRenderState gaze; gaze.width = 800; gaze.height = 600;
+    const auto output = window->outputs.front();
+    QElapsedTimer deadline; deadline.start();
+    while (deadline.elapsed() < 5000) {
+        QCoreApplication::processEvents();
+        app.Interaction().ApplyLook(gaze, &output, .5f, .5f, 1);
+        if (cursorPolls >= before + 2 && gaze.hasLook && gaze.lookX > 0) break;
+        QThread::msleep(1);
+    }
+    if (!(cursorPolls >= before + 2 && gaze.hasLook && gaze.lookX > 0)) {
+        std::cerr << "periodic cursor sampling must progress without presentation frames\n"; return 1;
+    }
+    CHECK(window->runs == 0 && app.Interaction().Captured() && !app.Settings().Editing());
+    app.Interaction().Cancel();
+    return 0;
+}
 
 void click(int x, int y)
 {
@@ -253,7 +281,9 @@ int releaseWithCursor(int x, int y)
     CHECK(bind(server, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == 0);
     CHECK(listen(server, 1) == 0);
     bool queried = false;
+    std::atomic<bool> completed{false};
     std::thread compositor([&] {
+        struct Done { std::atomic<bool>& value; ~Done() { value = true; } } done{completed};
         pollfd ready{server, POLLIN, 0};
         if (poll(&ready, 1, 1000) <= 0) return;
         const int client = accept(server, nullptr, nullptr);
@@ -266,6 +296,9 @@ int releaseWithCursor(int x, int y)
         close(client);
     });
     window->events->PointerButton(0, false);
+    // InputListener now queues native input. Do not block the GUI dispatcher on
+    // the fake compositor thread before the release has actually been handled.
+    while (!completed) { QCoreApplication::processEvents(); QThread::msleep(1); }
     compositor.join();
     close(server); unlink(path.c_str());
     rmdir((directory + "/pointer-test").c_str()); rmdir(directory.c_str());
@@ -466,10 +499,32 @@ std::unique_ptr<DesktopWindow> CreateDesktopWindow()
     return std::move(result);
 }
 
+// Replace only the platform cursor boundary. Production StartCursor, QTimer,
+// PollCursor, event routing and InteractionProcessor remain real.
+extern "C" bool __real__ZN17KWinCursorTracker5StartEv(KWinCursorTracker*);
+extern "C" bool __wrap__ZN17KWinCursorTracker5StartEv(KWinCursorTracker* tracker)
+{
+    if (!syntheticCursor) return __real__ZN17KWinCursorTracker5StartEv(tracker);
+    ++cursorStarts; return true;
+}
+extern "C" void __real__ZN17KWinCursorTracker4PollERKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEE(KWinCursorTracker*, const std::string&);
+extern "C" void __wrap__ZN17KWinCursorTracker4PollERKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEE(KWinCursorTracker* tracker, const std::string& output)
+{
+    if (!syntheticCursor) return __real__ZN17KWinCursorTracker4PollERKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEE(tracker, output);
+    ++cursorPolls;
+}
+extern "C" bool __real__ZNK17KWinCursorTracker13LocalPositionEiiRdS0_(const KWinCursorTracker*, int, int, double&, double&);
+extern "C" bool __wrap__ZNK17KWinCursorTracker13LocalPositionEiiRdS0_(const KWinCursorTracker* tracker, int width, int height, double& x, double& y)
+{
+    if (!syntheticCursor) return __real__ZNK17KWinCursorTracker13LocalPositionEiiRdS0_(tracker, width, height, x, y);
+    x = 700; y = 400; return cursorPolls > 0;
+}
+
 int main(int argc, char** argv)
 {
     QCoreApplication application(argc, argv);
     CHECK(argc == 2);
+    syntheticCursor = std::string(argv[1]) == "cursor";
     const auto directory = MakeTestTemporaryDirectory("deskwaifu-pointer");
     CHECK(!directory.empty());
     setenv("XDG_RUNTIME_DIR", directory.c_str(), 1);
@@ -511,12 +566,13 @@ int main(int argc, char** argv)
     CHECK(configStore.Read(beforeDrag, configError));
     const std::string scenario = argv[1];
     const int result = scenario == "release" ? releaseTest(*app) :
+        scenario == "cursor" ? cursorTest(*app) :
         scenario == "transform" ? transformTest(*app) : scenario == "state" ? stateTest(*app) : dragTest(*app);
     if (result == 0 && scenario == "drag") {
         ConfigStore::Snapshot disk;
         CHECK(configStore.Read(disk, configError) && disk.document == beforeDrag.document);
     }
-    if (result == 0 && scenario != "transform" && scenario != "state") {
+    if (result == 0 && scenario != "transform" && scenario != "state" && scenario != "cursor") {
         window->script = [&](const std::function<bool()>& frame) {
             if (!frame()) return false;
             // 主动跨输出设备重绑定后的第一个真实帧，

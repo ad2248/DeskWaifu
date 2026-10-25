@@ -1,7 +1,6 @@
 #include "processor/ipc/LAppIPC.hpp"
 #include "processor/ipc/IpcSocketPath.hpp"
 #include "processor/interaction/ExternalControlState.hpp"
-#include "support/RuntimeLifecycle.hpp"
 
 #include <cstdlib>
 #include <chrono>
@@ -207,10 +206,6 @@ int main()
         commands.controls.Frame().hasLook) ok = false;
     close(retained);
     if (access(addr.sun_path, F_OK) == 0) ok = false;
-    bool serviceAlive = true, disconnected = false;
-    ReleaseCommandTransport(
-        [&] { if (!serviceAlive) ok = false; disconnected = true; },
-        [&] { if (!disconnected) ok = false; serviceAlive = false; });
 
     // 在流连接仍存在时测试真实传输层析构。传输层销毁后，清理和服务析构
     // 仍正常工作，两者都不需要解引用反向传输接口依赖。
@@ -236,9 +231,8 @@ int main()
     if (write(live, "mouth\n", 6) != 6) ok = false;
     owned->Poll();
     if (read(live, response, sizeof(response)) != 4 || !lifetime->controls.Frame().hasMouth) ok = false;
-    ReleaseCommandTransport(
-        [&] { delete owned; owned = nullptr; transportGone = true; },
-        [&] { delete lifetime; lifetime = nullptr; });
+    delete owned; owned = nullptr; transportGone = true;
+    delete lifetime; lifetime = nullptr;
     close(live);
     if (access(addr.sun_path, F_OK) == 0) ok = false;
     if (previous) setenv("XDG_RUNTIME_DIR", saved.c_str(), 1);

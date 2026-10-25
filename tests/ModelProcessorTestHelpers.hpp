@@ -12,6 +12,7 @@ struct ProcessorTestAccess
     static std::shared_ptr<ModelExchange> Exchange(ModelProcessor& processor) { return processor._exchange; }
     static ModelProcessor& Models(class LAppDelegate& app);
     static class InteractionContext& Context(class LAppDelegate& app);
+    static class InteractionProcessor& Interaction(class LAppDelegate& app);
 };
 
 inline const ModelMetadata& ModelMetadataOf(ModelProcessor& processor) { return ProcessorTestAccess::Metadata(processor); }

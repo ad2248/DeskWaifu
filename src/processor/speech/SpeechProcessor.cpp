@@ -33,7 +33,9 @@ void SpeechProcessor::ConnectPlayer()
         if (_replacement) {
             auto next = std::move(*_replacement);
             _replacement.reset();
-            _loop.Post(std::move(next));
+            // 已接收的替换必须在后续排队请求之前接管状态；重新入队会让
+            // 更新的替换先启动，再被这个旧请求反向覆盖。
+            if (!next.sender || _loop.Contains(next.sender)) HandleEvent(next);
         }
     });
 }

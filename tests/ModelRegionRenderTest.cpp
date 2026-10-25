@@ -2,7 +2,7 @@
 #include <EGL/egl.h>
 #include "processor/model/ModelFrameRegion.hpp"
 #include "processor/model/ModelOpacityFrame.hpp"
-#include "support/HoverOpacity.hpp"
+#include "contracts/ModelInputRegion.hpp"
 #include <cmath>
 #include <iostream>
 #include <vector>
@@ -134,13 +134,8 @@ int main()
     std::vector<unsigned char> scratch;
     {
         ModelOpacityFrame frame;
-        HoverOpacity hover;
-        hover.Enter(4, 4);
-        for (const bool hovering : {true, false})
         for (const float opacity : {1.0f, 0.5f, 0.01f, 0.0f})
         {
-            if (hovering) hover.Enter(4, 4);
-            else hover.Leave();
             glClearColor(0, 0, 0, 0); glClear(GL_COLOR_BUFFER_BIT);
             CHECK(frame.Begin(13, 9));
             // 模型动画和材质的 alpha 为 0.8，不强制设为 1。
@@ -148,10 +143,8 @@ int main()
             const auto modelRegions = ReadModelInputRegion(frame.Framebuffer(), 13, 9, {2, 1, 8, 7}, scratch);
             CHECK(ModelInputRegionContains(modelRegions, 4, 4));
             CHECK(!ModelInputRegionContains(modelRegions, 1, 4));
-            const float resolved = hover.Resolve(hovering, opacity, modelRegions, {}, opacity);
-            CHECK(resolved == opacity);
             bool restored = false;
-            frame.Present(resolved, [&](GLuint texture, float alpha) {
+            frame.Present(opacity, [&](GLuint texture, float alpha) {
                 GLint framebuffer, viewport[4];
                 glGetIntegerv(GL_FRAMEBUFFER_BINDING, &framebuffer);
                 glGetIntegerv(GL_VIEWPORT, viewport);
@@ -181,9 +174,6 @@ int main()
             ClipModelRegion({2, 1, 8, 7}, 13, 9);
             DrawModelEditFrame({{10, 0, 3, 9}}, 13, 9);
             CHECK(!ModelInputRegionContains(modelRegions, 11, 4));
-            hover.Leave();
-            CHECK(hover.Resolve(true, opacity, modelRegions) == 1);
-            hover.Enter(4, 4);
             CHECK(glGetError() == GL_NO_ERROR);
         }
         // 调整尺寸和替换模型不能保留旧帧像素。

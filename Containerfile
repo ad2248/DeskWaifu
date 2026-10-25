@@ -21,6 +21,8 @@ RUN { printf 'Server = %s/$repo/os/$arch\n' "${PACMAN_MIRROR}"; \
         glu \
         libglvnd \
         layer-shell-qt \
+        kwin \
+        libkscreen \
         mesa \
         ninja \
         nodejs \
@@ -33,12 +35,22 @@ RUN { printf 'Server = %s/$repo/os/$arch\n' "${PACMAN_MIRROR}"; \
         qt6-websockets \
         socat \
         systemd-libs \
+        dbus \
         sway \
         unzip \
         wayland \
         wayland-protocols \
         wayland-utils \
     && setcap -r /usr/bin/sway \
+    && pacman -Scc --noconfirm
+
+# Rootless runners cannot execute the distribution binary with file capabilities.
+RUN setcap -r /usr/bin/kwin_wayland
+
+# Arch's base image excludes i18n sources. Required locale regressions must
+# generate their own comma-decimal locale rather than silently skip.
+RUN sed -i 's@usr/share/i18n/\*@!usr/share/i18n/*@g' /etc/pacman.conf \
+    && pacman -S --noconfirm glibc \
     && pacman -Scc --noconfirm
 
 COPY CubismSdkForNative-5-r.5/ /opt/deskwaifu-deps/CubismSdkForNative-5-r.5/

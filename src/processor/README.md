@@ -31,7 +31,7 @@ processor/
 - `src/contracts/`：共享值、CPU 快照、ModelBinding、AppState、ModelExchange、InputSample、ImageFile 资源引用，以及独立 JSON/ConfigStore 协议工具。不依赖任何处理器实现，不含 GL/SDK 对象。
 - `src/render/`：窗口与模型线程共同使用的离屏平台边界，包含 ModelRenderTarget、OffscreenRenderer 和像素读取；不拥有领域状态。
 - `src/app/LAppDelegate` 仅创建依赖并执行 Start/Run/Stop 生命周期，不提供模型、配置、OCR 或交互业务访问器。
-- 原根目录 HoverOpacity、GpuTeardown、RuntimeLifecycle 已确认无生产调用，仅旧测试引用，移至 `tests/support/`，不再伪装成运行时代码。实际悬停/销毁路径由 interaction-processor、model-render-thread 和真实组装测试覆盖。
+- 原根目录 HoverOpacity、GpuTeardown、RuntimeLifecycle 的测试副本在逐断言核对后退役；生产悬停由 `interaction-opacity` 验证，真实 EGL 纹理生命周期由 `model-render-thread` 验证。区域提取、配置解析、纹理租约与真实 IPC 析构断言保留，迁移证据及限制见 `docs/testing.md`。
 
 `ModelFrame.hpp` 和 `ModelScroll.hpp` 已无生产调用，因此在补齐真实路径测试后移除：
 
@@ -122,7 +122,7 @@ IpcProcessor 使用 QSocketNotifier 将 socket 可读/可写转换成事件；�
 
 `processor-event-loop` 验证顺序消费、定向派发、异步/非递归队列、跨线程投递、注销清理及同指针重新注册。
 
-`processor-pipeline` 用合成图片、模拟 OCR 子进程和模拟播报端验证完整流程、取消、故障恢复、临时文件释放；实际语音代理只测试缺少凭据的错误路径，不连接云端或播放声音。另验证无任何渲染帧时 IPC 的读取、缓冲命令继续处理、写回压和断开清理。截图服务继续使用私有 D-Bus 模拟测试。
+`processor-pipeline` 用合成图片、模拟 OCR 子进程和模拟播报端验证完整流程、取消、故障恢复、临时文件释放。`speech-contract-*` 补充真实 SpeechProcessor/SpeechPlayer 的正常完成、取消、连续替换、旧结果过滤、定向终结及朗读状态序列；只替换 source/audio 边界，不连接云端或播放声音。另验证无任何渲染帧时 IPC 的读取、缓冲命令继续处理、写回压和断开清理。截图服务继续使用私有 D-Bus 模拟测试。
 
 `model-render-thread` 使用真实 Cubism 与隔离 EGL，验证线程归属、GUI 不派发时仍持续绘制、最新帧覆盖/不可变性、操作结果、模型切换、失败初始化及有序销毁。`command-processor`/`signal-processor` 验证没有呈现帧时的命令和信号派发；`ipc-bounded-transport` 补充延迟回复、半关闭、其他连接进展及晚到完成测试。原有实际模型点击、热键和跨屏拖动测试保留并改为通过操作事件访问模型。
 

@@ -249,6 +249,7 @@ void LAppLive2DManager::SwitchSkin()
 bool LAppLive2DManager::ChangeScene(Csm::csmInt32 index)
 {
     if (GetModelDirSize() == 0 || index < 0 || index >= GetModelDirSize()) return false;
+    if (index == _session.CurrentIndex() && _session.Current()) return true;
     if (!_session.Select(index, [this](int candidate)
         { return _loader.Load(_descriptors[candidate]); })) return false;
     // 更新显示模型列表。
