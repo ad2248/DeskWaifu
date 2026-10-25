@@ -8,6 +8,8 @@
 #include <QProxyStyle>
 #include <QStyleFactory>
 #include <QStyleOptionComboBox>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QtTest>
 
 // 部分桌面主题让表单字段保持初始建议尺寸，此时内容只有“自动”。
@@ -37,7 +39,7 @@ private slots:
         Ui::MainWindow ui;
         ui.setupUi(&window);
         QCOMPARE(window.windowTitle(), QString("DeskWaifu 控制面板"));
-        const QStringList tabs = {"概览", "模型", "动画", "变换", "注视", "协议日志"};
+        const QStringList tabs = {"系统", "交互", "模型", "日志"};
         QCOMPARE(ui.tabWidget->count(), tabs.size());
         for (int i = 0; i < tabs.size(); ++i)
             QCOMPARE(ui.tabWidget->tabText(i), tabs[i]);
@@ -49,6 +51,65 @@ private slots:
         QVERIFY(ui.respawnButton->toolTip().contains("重新启动"));
         QVERIFY(ui.renderDeviceCombo->toolTip().contains("“重启”"));
         QCOMPARE(ui.responseLog->placeholderText(), QString("IPC 响应将显示在此处。"));
+    }
+
+    void controlsBelongToTheirCategory()
+    {
+        QMainWindow window;
+        Ui::MainWindow ui;
+        ui.setupUi(&window);
+        QCOMPARE(window.findChildren<QTabWidget*>().size(), 1);
+        const QList<QStringList> categories = {
+            {"spawnButton", "respawnButton", "statusGroup", "renderDeviceGroup"},
+            {"mouseLookGroup", "lookGroup", "hoverOpacityGroup", "hotkeyGroup"},
+            {"modelGroup", "toggleHiddenButton", "switchSkinButton", "expressionGroup", "motionGroup",
+                "mouthGroup", "outputCombo", "transformGroup", "positionEdit", "transformActionsLayout", "transformStatusLabel"},
+            {"responseLog"}
+        };
+        for (int tab = 0; tab < categories.size(); ++tab) {
+            for (const auto& name : categories[tab]) {
+                auto* object = window.findChild<QObject*>(name);
+                QVERIFY2(object, qPrintable(name));
+                while (object && object != ui.tabWidget->widget(tab)) object = object->parent();
+                QVERIFY2(object, qPrintable(name));
+            }
+        }
+    }
+
+    void pagesScrollAtMinimumWindowSize_data()
+    {
+        QTest::addColumn<int>("fontSize");
+        QTest::newRow("normal") << 10;
+        QTest::newRow("larger-text") << 13;
+    }
+
+    void pagesScrollAtMinimumWindowSize()
+    {
+        QFETCH(int, fontSize);
+        QFont font = QApplication::font();
+        font.setPointSize(fontSize);
+        QApplication::setFont(font);
+        QMainWindow window;
+        Ui::MainWindow ui;
+        ui.setupUi(&window);
+        window.resize(720, 560);
+        window.show();
+        const QStringList lastControls = {"renderDeviceStatus", "hoverOpacityHintLabel", "transformStatusLabel"};
+        for (int tab = 0; tab < lastControls.size(); ++tab) {
+            ui.tabWidget->setCurrentIndex(tab);
+            QCoreApplication::processEvents();
+            auto* page = ui.tabWidget->widget(tab);
+            auto* scroll = qobject_cast<QScrollArea*>(page);
+            auto* target = page->findChild<QWidget*>(lastControls[tab]);
+            QVERIFY(scroll && target);
+            QVERIFY(scroll->widgetResizable());
+            scroll->ensureWidgetVisible(target);
+            QCoreApplication::processEvents();
+            QCOMPARE(window.size(), QSize(720, 560));
+            QCOMPARE(scroll->horizontalScrollBar()->maximum(), 0);
+            const QRect targetRect(target->mapTo(scroll->viewport(), QPoint()), target->size());
+            QVERIFY2(scroll->viewport()->rect().contains(targetRect), qPrintable(lastControls[tab]));
+        }
     }
 
     void init()
@@ -63,15 +124,15 @@ private slots:
         QApplication::setFont(_originalFont);
     }
 
-    void overviewContainsSpawnWithoutConnectionLabel()
+    void systemContainsSpawnWithoutConnectionLabel()
     {
         QMainWindow window;
         Ui::MainWindow ui;
         ui.setupUi(&window);
 
-        QVERIFY(ui.overviewTab->isAncestorOf(ui.spawnButton));
+        QVERIFY(ui.systemTab->isAncestorOf(ui.spawnButton));
         QCOMPARE(ui.spawnButton->text(), QString("启动"));
-        QCOMPARE(ui.tabWidget->currentWidget(), ui.overviewTab);
+        QCOMPARE(ui.tabWidget->currentWidget(), ui.systemTab);
         QVERIFY(!window.findChild<QLabel*>(QStringLiteral("connectionLabel")));
         QCOMPARE(window.statusBar(), ui.statusBar);
     }
@@ -160,12 +221,12 @@ private slots:
         QTest::newRow("dark") << QColor("#303030") << QColor("#eeeeee");
     }
 
-    void hoverOpacityControlsLiveInTransformTab()
+    void hoverOpacityControlsLiveInInteractionTab()
     {
         QMainWindow window;
         Ui::MainWindow ui;
         ui.setupUi(&window);
-        QVERIFY(ui.transformTab->isAncestorOf(ui.hoverOpacityGroup));
+        QVERIFY(ui.interactionTab->isAncestorOf(ui.hoverOpacityGroup));
         QVERIFY(ui.hoverOpacityGroup->isAncestorOf(ui.hoverOpacityEnabledCheck));
         QVERIFY(ui.hoverOpacityGroup->isAncestorOf(ui.hoverOpacitySlider));
         QVERIFY(!ui.hoverOpacityGroup->isEnabled());
@@ -200,8 +261,8 @@ private slots:
         QMainWindow window;
         Ui::MainWindow ui;
         ui.setupUi(&window);
-        auto* hotkeys = new HotkeyPanel(&window);
-        ui.tabWidget->insertTab(2, hotkeys, "Hotkeys");
+        auto* hotkeys = new HotkeyPanel(ui.hotkeyGroup);
+        ui.hotkeyLayout->addWidget(hotkeys);
         hotkeys->setConnected(true);
         hotkeys->setBindings({QJsonObject{
             {"id", "expression"}, {"name", "Expression"},

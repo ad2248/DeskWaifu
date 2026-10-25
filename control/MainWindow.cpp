@@ -16,6 +16,7 @@
 #include <QMessageBox>
 #include <QVariantMap>
 #include <QFormLayout>
+#include <QGroupBox>
 #include <QLineEdit>
 
 MainWindow::MainWindow(QWidget* parent, const QString& procDirectory)
@@ -40,8 +41,9 @@ MainWindow::MainWindow(QWidget* parent, const QString& procDirectory)
     statusBar()->addPermanentWidget(_operationStatusLabel, 1);
     _statusMessageTimer.setSingleShot(true);
     connect(&_statusMessageTimer, &QTimer::timeout, this, [this] { setStatusMessage(QString()); });
-    _hotkeys = new HotkeyPanel(this);
-    ui->tabWidget->insertTab(2, _hotkeys, tr("快捷键"));
+    _hotkeys = new HotkeyPanel(ui->hotkeyGroup);
+    _hotkeys->setMinimumHeight(200);
+    ui->hotkeyLayout->addWidget(_hotkeys);
     connect(_hotkeys, &HotkeyPanel::triggered, this, [this](const QString& id) {
         if (_client.isConnected() && !_hotkeyModelToken.isEmpty())
             _client.sendCommand(QStringLiteral("trigger_hotkey"), {
@@ -148,18 +150,20 @@ MainWindow::~MainWindow()
 
 void MainWindow::setupSpeechSettings()
 {
-    auto* tab = new QWidget(this);
-    auto* layout = new QFormLayout(tab);
-    _speechKey = new QLineEdit(tab);
+    auto* group = new QGroupBox(tr("语音服务"), ui->systemContents);
+    group->setObjectName(QStringLiteral("speechSettingsGroup"));
+    auto* layout = new QFormLayout(group);
+    layout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    _speechKey = new QLineEdit(group);
     _speechKey->setObjectName(QStringLiteral("minimaxApiKey"));
     _speechKey->setEchoMode(QLineEdit::Password);
     _speechKey->setMaxLength(4096);
     _speechKey->setPlaceholderText(tr("输入新的 MiniMax API Key"));
-    _speechStatus = new QLabel(tr("尚未查询"), tab);
+    _speechStatus = new QLabel(tr("尚未查询"), group);
     _speechStatus->setObjectName(QStringLiteral("speechSettingsStatus"));
-    _speechSave = new QPushButton(tr("保存 API Key"), tab);
+    _speechSave = new QPushButton(tr("保存 API Key"), group);
     _speechSave->setObjectName(QStringLiteral("saveSpeechKey"));
-    _speechClear = new QPushButton(tr("删除已保存的 API Key"), tab);
+    _speechClear = new QPushButton(tr("删除已保存的 API Key"), group);
     _speechClear->setObjectName(QStringLiteral("clearSpeechKey"));
     _speechSave->setEnabled(false);
     _speechClear->setEnabled(false);
@@ -169,7 +173,7 @@ void MainWindow::setupSpeechSettings()
     layout->addRow(_speechClear);
     auto* notice = new QLabel(tr("密钥以明文保存到桌宠配置文件（权限 0600），不会回显。\n"
         "双击模型播报“姐姐，你好喵”；再次双击会打断重播。\n"
-        "播报文本将发送到 MiniMax，可能产生 API 费用。"), tab);
+        "播报文本将发送到 MiniMax，可能产生 API 费用。"), group);
     notice->setWordWrap(true);
     layout->addRow(notice);
     auto save = [this](const QString& key) {
@@ -185,7 +189,7 @@ void MainWindow::setupSpeechSettings()
         if (!_speechKey->text().trimmed().isEmpty()) save(_speechKey->text().trimmed());
     });
     connect(_speechClear, &QPushButton::clicked, this, [save] { save({}); });
-    ui->tabWidget->addTab(tab, tr("语音"));
+    ui->systemLayout->insertWidget(ui->systemLayout->count() - 1, group);
 }
 
 void MainWindow::setStatusMessage(const QString& message, int timeoutMs)
@@ -456,18 +460,18 @@ void MainWindow::handleResponse(const QString& command, const QJsonObject& respo
         const bool mutation = command == QStringLiteral("set_mouse_look");
         if (mutation) _mouseLookSetPending = false;
         else _mouseLookQueryPending = false;
-        if (!mutation && (_mouseLookSetPending || ui->mouseLookRadiusSlider->isSliderDown() ||
-            ui->mouseLookRadiusSpin->hasFocus())) return;
         const auto value = response.value(QStringLiteral("radius"));
         const double radius = value.toDouble(-1);
         const bool valid = value.isDouble() && std::isfinite(radius) && radius >= 0;
+        const bool ok = response.value(QStringLiteral("ok")).toBool() && valid;
+        if (!mutation && (_mouseLookSetPending || (ok && _mouseLookSupported &&
+            (ui->mouseLookRadiusSlider->isSliderDown() || ui->mouseLookRadiusSpin->hasFocus())))) return;
         if (valid) {
             _mouseLookSupported = true;
             _lastMouseLookRadius = radius;
         } else if (!mutation) _mouseLookSupported = false;
         showMouseLook(_lastMouseLookRadius);
         ui->mouseLookGroup->setEnabled(_client.isConnected() && _mouseLookSupported);
-        const bool ok = response.value(QStringLiteral("ok")).toBool() && valid;
         if (ok && mutation) setStatusMessage(tr("已设置并保存"));
         ui->mouseLookGroup->setToolTip(ok ? QString() : response.value(QStringLiteral("error")).toString(tr("后端不支持鼠标注视范围设置")));
         if (!ok && (mutation || valid)) setStatusMessage(ui->mouseLookGroup->toolTip());

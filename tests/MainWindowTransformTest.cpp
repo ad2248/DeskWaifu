@@ -16,6 +16,10 @@
 #include <QPushButton>
 #include <QPlainTextEdit>
 #include <QTabWidget>
+#include <QTabBar>
+#include <QTableWidget>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QStatusBar>
 #include <QJsonDocument>
 #include <QLocalServer>
@@ -41,6 +45,114 @@ class MainWindowTransformTest : public QObject
 {
     Q_OBJECT
 private slots:
+    void fourTabsKeepHotkeysAndScrollReachable()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const int fd = open(QFile::encodeName(directory.path()).constData(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+        QVERIFY(fd >= 0);
+        const auto closeRuntime = qScopeGuard([fd] { close(fd); });
+        const auto previousRuntime = qgetenv("XDG_RUNTIME_DIR");
+        const auto restoreRuntime = qScopeGuard([previousRuntime] { qputenv("XDG_RUNTIME_DIR", previousRuntime); });
+        const QString runtimePath = QStringLiteral("/proc/self/fd/%1").arg(fd);
+        qputenv("XDG_RUNTIME_DIR", runtimePath.toLocal8Bit());
+        const QFont originalFont = QApplication::font();
+        const auto restoreFont = qScopeGuard([originalFont] { QApplication::setFont(originalFont); });
+        QFont font = originalFont;
+        font.setPointSize(13);
+        QApplication::setFont(font);
+        QLocalServer server;
+        QVERIFY(server.listen(runtimePath + "/deskwaifu.sock"));
+        int triggers = 0;
+        connect(&server, &QLocalServer::newConnection, this, [&] {
+            auto* socket = server.nextPendingConnection();
+            connect(socket, &QLocalSocket::readyRead, this, [&, socket] {
+                while (socket->canReadLine()) {
+                    const auto request = QJsonDocument::fromJson(socket->readLine()).object();
+                    const auto command = request.value("command").toString();
+                    QJsonObject reply{{"ok", true}};
+                    if (command == "get_status" || command == "get_current_model") {
+                        reply.insert("model", "测试模型");
+                        reply.insert("model_count", 1);
+                        reply.insert("hidden", false);
+                    } else if (command == "get_available_models") reply.insert("models", QJsonArray{"测试模型"});
+                    else if (command == "get_expressions") reply.insert("expressions", QJsonArray{"smile"});
+                    else if (command == "get_speech_settings") reply.insert("configured", true);
+                    else if (command == "get_render_device") {
+                        reply.insert("device", "auto");
+                        reply.insert("active_device", "auto");
+                        reply.insert("devices", QJsonArray{});
+                        reply.insert("restart_required", false);
+                    } else if (command == "get_mouse_look") reply.insert("radius", .5);
+                    else if (command == "get_hover_opacity") {
+                        reply.insert("enabled", true);
+                        reply.insert("opacity", .5);
+                        reply.insert("idle_opacity", 1.);
+                    } else if (command == "get_transform_settings") {
+                        reply.insert("zoom", 1.);
+                        reply.insert("surface_width", 1920);
+                        reply.insert("surface_height", 1080);
+                        reply.insert("outputs", QJsonArray{QJsonObject{{"name", "eDP-1"}, {"current", true}}});
+                    }
+                    if (command == "get_hotkeys" || command == "trigger_hotkey") {
+                        reply.insert("model_token", "test-model");
+                        reply.insert("hotkeys", QJsonArray{QJsonObject{
+                            {"id", "expression"}, {"name", "测试表情"}, {"keys", QJsonArray{"N1"}},
+                            {"action", "ToggleExpression"}, {"enabled", true}, {"active", false}}});
+                        if (command == "trigger_hotkey") {
+                            QCOMPARE(request.value("id").toString(), QString("expression"));
+                            QCOMPARE(request.value("model_token").toString(), QString("test-model"));
+                            ++triggers;
+                        }
+                    }
+                    socket->write(QJsonDocument(reply).toJson(QJsonDocument::Compact) + '\n');
+                    socket->flush();
+                }
+            });
+        });
+        MainWindow window(nullptr, directory.path());
+        window.resize(720, 560);
+        window.show();
+        window.activateWindow();
+        QVERIFY(QTest::qWaitForWindowActive(&window));
+        auto* tabs = window.findChild<QTabWidget*>("tabWidget");
+        auto* table = window.findChild<QTableWidget*>("hotkeyTable");
+        QTRY_COMPARE(table->rowCount(), 1);
+        const QStringList titles = {"系统", "交互", "模型", "日志"};
+        const QStringList lastControls = {"speechSettingsGroup", "hoverOpacityHintLabel", "transformStatusLabel"};
+        QCOMPARE(tabs->count(), titles.size());
+        for (int tab = 0; tab < tabs->count(); ++tab) {
+            QCOMPARE(tabs->tabText(tab), titles[tab]);
+            tabs->setCurrentIndex(tab);
+            tabs->tabBar()->setFocus();
+            QTest::keyClick(tabs->tabBar(), Qt::Key_1);
+            QTRY_COMPARE(triggers, tab + 1);
+            QTest::keyClick(tabs->tabBar(), Qt::Key_Tab);
+            QCOMPARE(QApplication::focusWidget(), tabs->tabBar());
+            if (tab < lastControls.size()) {
+                auto* scroll = qobject_cast<QScrollArea*>(tabs->widget(tab));
+                auto* target = scroll->findChild<QWidget*>(lastControls[tab]);
+                QVERIFY(target);
+                scroll->ensureWidgetVisible(target);
+                QCoreApplication::processEvents();
+                QCOMPARE(scroll->horizontalScrollBar()->maximum(), 0);
+                QVERIFY(scroll->viewport()->rect().contains(QRect(target->mapTo(scroll->viewport(), QPoint()), target->size())));
+            }
+            QCOMPARE(window.size(), QSize(720, 560));
+            const auto screenshots = qEnvironmentVariable("DESKWAIFU_TABS_SCREENSHOT_DIR");
+            if (!screenshots.isEmpty()) {
+                if (auto* scroll = qobject_cast<QScrollArea*>(tabs->widget(tab))) scroll->verticalScrollBar()->setValue(0);
+                QCoreApplication::processEvents();
+                QVERIFY(window.grab().save(QDir(screenshots).filePath(QStringLiteral("panel-tab-%1.png").arg(tab))));
+            }
+        }
+        auto* toggle = qobject_cast<QPushButton*>(table->cellWidget(0, 4));
+        QVERIFY(toggle && toggle->isEnabled());
+        tabs->setCurrentIndex(1);
+        toggle->click();
+        QTRY_COMPARE(triggers, 5);
+    }
+
     void renderDeviceSelectionPersistsAndRequiresRestart()
     {
         QTemporaryDir directory;
@@ -101,7 +213,7 @@ private slots:
         MainWindow window(nullptr, directory.path());
         auto* combo = window.findChild<QComboBox*>("renderDeviceCombo");
         auto* status = window.findChild<QLabel*>("renderDeviceStatus");
-        auto* overview = window.findChild<QWidget*>("overviewTab");
+        auto* overview = window.findChild<QWidget*>("systemTab");
         QVERIFY(combo && status && overview && overview->isAncestorOf(combo));
         QCOMPARE(combo->currentText(), QStringLiteral("自动"));
         QVERIFY(!combo->isEnabled());
@@ -195,10 +307,14 @@ private slots:
         MainWindow window(nullptr, directory.path());
         auto* key = window.findChild<QLineEdit*>("minimaxApiKey");
         auto* tabs = window.findChild<QTabWidget*>("tabWidget");
-        const QStringList titles = {"概览", "模型", "快捷键", "动画", "变换", "注视", "协议日志", "语音"};
+        const QStringList titles = {"系统", "交互", "模型", "日志"};
         QCOMPARE(tabs->count(), titles.size());
         for (int i = 0; i < titles.size(); ++i)
             QCOMPARE(tabs->tabText(i), titles[i]);
+        QVERIFY(tabs->widget(0)->isAncestorOf(key));
+        QVERIFY(tabs->widget(0)->isAncestorOf(window.findChild<QWidget*>("speechSettingsGroup")));
+        QVERIFY(tabs->widget(1)->isAncestorOf(window.findChild<QWidget*>("hotkeyTable")));
+        QCOMPARE(window.findChildren<QTabWidget*>().size(), 1);
         auto* save = window.findChild<QPushButton*>("saveSpeechKey");
         auto* clear = window.findChild<QPushButton*>("clearSpeechKey");
         auto* status = window.findChild<QLabel*>("speechSettingsStatus");
@@ -495,9 +611,9 @@ private slots:
         MainWindow window;
         window.show(); window.activateWindow();
         auto* tabs = window.findChild<QTabWidget*>("tabWidget");
-        auto* lookTab = window.findChild<QWidget*>("trackingTab");
+        auto* lookTab = window.findChild<QWidget*>("interactionTab");
         QVERIFY(tabs && lookTab);
-        QCOMPARE(tabs->tabText(tabs->indexOf(lookTab)), QStringLiteral("注视"));
+        QCOMPARE(tabs->tabText(tabs->indexOf(lookTab)), QStringLiteral("交互"));
         tabs->setCurrentWidget(lookTab);
         auto* group = window.findChild<QWidget*>("mouseLookGroup");
         auto* slider = window.findChild<QSlider*>("mouseLookRadiusSlider");
@@ -505,7 +621,7 @@ private slots:
         auto* status = window.findChild<QLabel*>("operationStatusLabel");
         QVERIFY(group && slider && spin && status);
         QVERIFY(lookTab->isAncestorOf(group));
-        QVERIFY(!window.findChild<QWidget*>("transformTab")->isAncestorOf(group));
+        QVERIFY(!window.findChild<QWidget*>("modelTab")->isAncestorOf(group));
         QTRY_VERIFY(group->isEnabled());
         QCOMPARE(slider->value(), 50);
         QCOMPARE(spin->value(), .5);
@@ -551,6 +667,20 @@ private slots:
         QCOMPARE(slider->value(), 35);
         const auto screenshot = qEnvironmentVariable("DESKWAIFU_GAZE_SCREENSHOT");
         if (!screenshot.isEmpty()) QVERIFY(window.grab().save(screenshot));
+        // 编辑保护只能阻止有效读数覆盖输入，不能吞掉后端不支持的响应。
+        tabs->tabBar()->setFocus();
+        supported = false;
+        delayedResponse.clear();
+        delayQuery = true;
+        QTRY_VERIFY_WITH_TIMEOUT(!delayedResponse.isEmpty(), 3000);
+        spin->setFocus();
+        QVERIFY(spin->hasFocus());
+        connection->write(delayedResponse);
+        connection->flush();
+        QTRY_VERIFY_WITH_TIMEOUT(!group->isEnabled() && group->toolTip() == "unknown command", 5000);
+        supported = true;
+        connection->abort();
+        QTRY_VERIFY_WITH_TIMEOUT(group->isEnabled() && group->toolTip().isEmpty(), 5000);
         supported = false;
         connection->abort();
         QTRY_VERIFY(!group->isEnabled());
@@ -600,7 +730,7 @@ private slots:
         });
         MainWindow window;
         window.show(); window.activateWindow();
-        window.findChild<QTabWidget*>("tabWidget")->setCurrentWidget(window.findChild<QWidget*>("transformTab"));
+        window.findChild<QTabWidget*>("tabWidget")->setCurrentWidget(window.findChild<QWidget*>("modelTab"));
         auto* combo = window.findChild<QComboBox*>("outputCombo");
         QVERIFY(combo);
         QTRY_VERIFY(combo->isEnabled() && combo->count() == 2);
@@ -713,7 +843,7 @@ private slots:
         auto* respawn = window.findChild<QPushButton*>("respawnButton");
         QVERIFY(respawn);
         window.show(); window.activateWindow();
-        window.findChild<QTabWidget*>("tabWidget")->setCurrentWidget(window.findChild<QWidget*>("transformTab"));
+        window.findChild<QTabWidget*>("tabWidget")->setCurrentWidget(window.findChild<QWidget*>("interactionTab"));
         auto* group = window.findChild<QWidget*>("hoverOpacityGroup");
         auto* slider = window.findChild<QSlider*>("hoverOpacitySlider");
         auto* enabled = window.findChild<QCheckBox*>("hoverOpacityEnabledCheck");
@@ -790,7 +920,7 @@ private slots:
         QCOMPARE(connectionStatus->text(), connectedText);
         window.findChild<QTabWidget*>("tabWidget")->setCurrentIndex(0);
         QVERIFY(status->isVisible());
-        window.findChild<QTabWidget*>("tabWidget")->setCurrentWidget(window.findChild<QWidget*>("transformTab"));
+        window.findChild<QTabWidget*>("tabWidget")->setCurrentWidget(window.findChild<QWidget*>("interactionTab"));
         const int beforeStatusPoll = queries;
         QTRY_VERIFY_WITH_TIMEOUT(queries > beforeStatusPoll, 2500);
         QTest::qWait(50);
@@ -947,7 +1077,7 @@ private slots:
         });
         MainWindow window;
         window.show();
-        window.findChild<QTabWidget*>("tabWidget")->setCurrentWidget(window.findChild<QWidget*>("transformTab"));
+        window.findChild<QTabWidget*>("tabWidget")->setCurrentWidget(window.findChild<QWidget*>("modelTab"));
         auto* x = window.findChild<QDoubleSpinBox*>("positionXSpin");
         auto* zoom = window.findChild<QDoubleSpinBox*>("zoomSpin");
         auto* enabled = window.findChild<QCheckBox*>("cropEnabledCheck");
