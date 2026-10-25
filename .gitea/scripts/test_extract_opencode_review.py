@@ -65,8 +65,8 @@ class ExtractReviewTest(unittest.TestCase):
         script = REVIEW_SCRIPT.read_text(encoding="utf-8")
 
         self.assertIn("--agent build", script)
-        self.assertIn('"steps": 8', script)
-        self.assertIn('"resource": ".gitea/scripts/opencode-review-action.sh *", "effect": "allow"', script)
+        self.assertNotIn('"steps":', script)
+        self.assertIn('.gitea/scripts/opencode-review-action.sh approve', script)
         self.assertIn('cd "$workdir"', script)
         self.assertIn('"${server_args[@]}"', script)
         self.assertIn("last events follow", script)

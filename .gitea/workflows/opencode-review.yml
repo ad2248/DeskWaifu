@@ -19,10 +19,10 @@ jobs:
       contents: read
 
     steps:
-      - name: Check out trusted review workflow
+      - name: Check out PR target branch code and review scripts
         uses: https://git.kals.top/actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ gitea.event.pull_request.base.sha }}
           fetch-depth: 0
 
       - name: Review PR head independently of CI
