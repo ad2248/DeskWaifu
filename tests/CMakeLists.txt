@@ -17,6 +17,9 @@ add_test(NAME command-service-direction-regression
 
 find_package(Threads REQUIRED)
 find_package(Qt6 6.5 REQUIRED COMPONENTS Gui OpenGL WaylandClient StateMachine)
+if(DESKWAIFU_BUILD_SPEECH_PLUGIN)
+  find_package(Qt6 6.5 REQUIRED COMPONENTS WebSockets Multimedia)
+endif()
 find_package(LayerShellQt 6.6 REQUIRED)
 add_executable(offscreen-renderer-test OffscreenRendererTest.cpp)
 target_link_libraries(offscreen-renderer-test PRIVATE deskwaifu_offscreen)
