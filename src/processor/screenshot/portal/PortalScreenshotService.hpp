@@ -1,6 +1,6 @@
 #pragma once
 
-#include "IScreenshotService.hpp"
+#include "processor/screenshot/IScreenshotService.hpp"
 #include <QDBusConnection>
 #include <QDBusMessage>
 #include <QTimer>

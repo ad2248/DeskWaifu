@@ -1,5 +1,5 @@
-#include "screenshot/IScreenshotService.hpp"
-#include "screenshot/PortalScreenshotService.hpp"
+#include "processor/screenshot/IScreenshotService.hpp"
+#include "processor/screenshot/portal/PortalScreenshotService.hpp"
 #include <QCoreApplication>
 #include <QDBusContext>
 #include <QDBusObjectPath>

@@ -6,7 +6,7 @@
 processor/
   image/          GUI 线程读取剪贴板图片，后台编码私有临时 PNG
   ocr/            OCR 进程代理 OcrClient 与事件处理器
-  screenshot/     系统截图服务的事件适配
+  screenshot/     截图事件适配、独立服务接口与 portal/ 后端（见该目录 README）
   speech/         语音播放服务的事件适配
   reading_clip/   剪贴板朗读状态机
   ipc/            Unix socket 就绪事件，不依赖渲染帧

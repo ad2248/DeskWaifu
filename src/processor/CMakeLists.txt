@@ -1,3 +1,5 @@
+add_subdirectory(screenshot)
+
 add_library(deskwaifu_events STATIC
   ../event/ProcessorEvent.hpp ../event/ProcessorEventLoop.hpp ../event/ProcessorEventLoop.cpp)
 target_include_directories(deskwaifu_events PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)

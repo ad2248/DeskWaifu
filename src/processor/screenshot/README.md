@@ -1,18 +1,20 @@
-# 截图服务
+# 截图功能：事件适配、服务接口与 Portal 后端
 
-独立的单次截图模块，不依赖 OCR、推理库、Live2D、窗口渲染或 IPC 命令处理器。
+截图功能集中在本目录，保留三层职责：`ScreenshotProcessor` 只适配业务事件，`IScreenshotService` 定义异步截图契约，`portal/` 实现系统截图。服务目标 `deskwaifu_screenshot` 仍独立构建，不依赖事件处理器、OCR、推理库、Live2D、窗口渲染或 IPC 命令处理器。
 
 ```text
-screenshot/
+processor/screenshot/
+  ScreenshotProcessor.*        事件请求、结果回复和取消适配
   IScreenshotService.hpp       对外接口、类型化错误和默认工厂
-  PortalScreenshotService.*    Linux XDG Desktop Portal 实现
+  portal/                     Linux XDG Desktop Portal 实现
+    PortalScreenshotService.*
   CMakeLists.txt               deskwaifu_screenshot 构建目标
   tests/                      私有 D-Bus 上的模拟 Portal 测试
 ```
 
 ## 对外使用
 
-调用者只需包含 `screenshot/IScreenshotService.hpp`，并链接 `deskwaifu_screenshot`。由上层协调者持有服务对象，生命周期必须覆盖异步请求：
+调用者只需包含 `processor/screenshot/IScreenshotService.hpp`，并链接 `deskwaifu_screenshot`，无需依赖具体 Portal 类或 `ScreenshotProcessor`。由上层协调者持有服务对象，生命周期必须覆盖异步请求：
 
 ```cpp
 auto screenshots = CreateScreenshotService();

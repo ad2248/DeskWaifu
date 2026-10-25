@@ -1,7 +1,7 @@
 #pragma once
 
 #include "processor/Processor.hpp"
-#include "screenshot/IScreenshotService.hpp"
+#include "IScreenshotService.hpp"
 
 class ScreenshotProcessor final : public Processor
 {
