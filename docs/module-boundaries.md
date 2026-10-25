@@ -1,13 +1,15 @@
 # Module responsibilities (#77)
 
-`LAppDelegate` remains the composition root; its window/output port is implemented
-only by `QtDesktopWindow`. Core responsibilities are split
+`app/LAppDelegate` is only the composition/lifecycle root. InteractionProcessor
+owns the window/output/configuration state; its backend is QtDesktopWindow.
+See [processor ownership](../src/processor/README.md) for the current event graph.
+The lower-level model libraries remain split
 as follows; the arrows below are build dependencies, not ownership transfers.
 
 ```text
-App/Delegate (wiring, event loop)
-  ├── deskwaifu_ipc (Unix socket, connection lifecycle, line framing)
-  │     → ICommandService (command port; concrete AppCommandHandler)
+App/Delegate (wiring and lifecycle only)
+  ├── IpcProcessor → deskwaifu_ipc (socket, connection lifecycle, line framing)
+  │     → local ICommandService → events → CommandProcessor → domain events
   ├── deskwaifu_input (pointer-to-model transform and tap policy)
   ├── View → LAppLive2DManager (ModelSession façade: active model, hit handling)
   │     ├── deskwaifu_catalog (stable path IDs, deterministic ordering)
@@ -18,8 +20,8 @@ App/Delegate (wiring, event loop)
 ```
 
 The catalog and input library do not link SDK, GL, Qt or Wayland. The IPC
-transport links none of these either; the application command handler is the
-only module interpreting JSON as model operations. Both transport and handler
+transport links none of these either; CommandProcessor routes protocol requests
+to their actual domain owners. Both transport and its local adapter
 include the small `ICommandService.hpp` contract; the transport does not include
 the concrete handler header. The renderer and loader
 depend on Cubism. The manager keeps cached model pointers private, with
@@ -34,6 +36,6 @@ selects the first sorted match for compatibility.
 and IPC transport tests even when `DESKWAIFU_BUILD_CONTROL=OFF`. The Qt model
 window and its tests remain enabled in that configuration. The Qt client
 and panel tests are gated on the control application only. Configuration
-validation, state mutation invariants and visibility are owned by the future
-ApplicationService (#78); persistent/stream external controls belong to #79;
-platform-specific output selection to #80 and GPU lease accounting to #81.
+validation, transform/visibility mutation and persistent/stream external controls
+belong to the GUI interaction owner. Model state/actions belong to ModelProcessor;
+platform-specific output selection is internal to the GUI owner.

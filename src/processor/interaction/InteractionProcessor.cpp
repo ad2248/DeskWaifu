@@ -1,5 +1,8 @@
 #include "InteractionProcessor.hpp"
-#include "processor/input/InputListener.hpp"
+#include "contracts/InputSample.hpp"
+#include "AppCommandHandler.hpp"
+#include "processor/Events.hpp"
+#include <GL/glew.h>
 #include <QJsonDocument>
 #include <chrono>
 #include <iostream>
@@ -19,10 +22,20 @@ double SettingsClock()
 
 InteractionProcessor::InteractionProcessor(ProcessorEventLoop& loop, DesktopWindow& window,
     ModelWindowState& mode, ApplicationService& service, TransformEditor& settings,
-    IProcessor& model, std::function<ModelMetadata()> metadata,
-    std::function<void()> moveScreen, std::function<void()> greet)
+    IProcessor& model)
     : Processor(loop), _window(window), _mode(mode), _service(service), _settings(settings),
-      _model(model), _metadata(std::move(metadata)), _moveScreen(std::move(moveScreen)), _greet(std::move(greet))
+      _model(model)
+{ ConnectSources(); }
+
+InteractionProcessor::InteractionProcessor(ProcessorEventLoop& loop, IProcessor& model,
+    std::unique_ptr<DesktopWindow> window, LAppConfig config, std::shared_ptr<ModelExchange> exchange)
+    : Processor(loop), _context(new InteractionContext(loop, *this, std::move(window), std::move(config))),
+      _commands(new AppCommandHandler(*_context)), _exchange(std::move(exchange)),
+      _window(*_context->window), _mode(_context->mode), _service(_context->service),
+      _settings(_context->settings), _model(model)
+{ ConnectSources(); }
+
+void InteractionProcessor::ConnectSources()
 {
     _tapTimer.setSingleShot(true);
     _tapTimer.setTimerType(Qt::PreciseTimer);
@@ -39,12 +52,124 @@ InteractionProcessor::~InteractionProcessor()
 
 void InteractionProcessor::Stop()
 {
-    _stopped = true;
     Cancel();
+    _stopped = true;
+    if (_context) _context->AppEnd();
+}
+
+bool InteractionProcessor::Start(int width, int height)
+{
+    if (!_context || !_context->Start(width, height)) return false;
+    ModelRenderState state;
+    state.app = _service.Snapshot(); state.controls = _service.FrameInput();
+    state.width = _window.Width(); state.height = _window.Height();
+    PrepareFrame(state, _context->hover.Enabled(), _context->hover.Opacity(), _context->hover.IdleOpacity());
+    { std::lock_guard<std::mutex> lock(_exchange->mutex); _exchange->state = state; }
+    SyncSpeechSettings();
+    return true;
+}
+
+std::unique_ptr<ModelRenderTarget> InteractionProcessor::RenderTarget(const std::string& device)
+{ return _window.RenderTarget(device); }
+
+void InteractionProcessor::SyncSpeechSettings()
+{
+    const auto key = QString::fromStdString(_context->config.values.minimaxApiKey);
+    if (_speechKey && key == *_speechKey) return;
+    _speechKey = key;
+    Send("speech.configure", nullptr, {{"api_key", key}});
+}
+
+void InteractionProcessor::ShutdownWindow() { if (_context) _context->Stop(); }
+
+bool InteractionProcessor::Run()
+{
+    return _context && _window.Run([this] { return Present(); }) && _renderingOk;
+}
+
+bool InteractionProcessor::Present()
+{
+    if (_stopped || !_mode.Running()) return false;
+    if (_window.OutputNeedsRebind()) _settings.AbortScreenEdit();
+    _window.ReconcileOutputs();
+    if (_context->lastOutput != _window.CurrentOutput()) {
+        _settings.AbortScreenEdit(); _settings.PauseAutosave();
+        _context->lastOutput = _window.CurrentOutput(); _context->PublishWindow();
+    }
+    ModelRenderState state;
+    { std::lock_guard<std::mutex> lock(_exchange->mutex); state = _exchange->state; }
+    const int width = _window.Width(), height = _window.Height();
+    if (_context->frameWidth != width || _context->frameHeight != height) {
+        if (_settings.ScreenEditing()) _settings.AbortScreenEdit();
+        _mode.Send(ModelWindowState::Event::CancelGesture); Cancel();
+        _context->PublishWindow();
+    }
+    _context->frameWidth = width; _context->frameHeight = height;
+    state.width = width; state.height = height;
+    if (Captured() && _settings.Dirty()) _settings.ScheduleSave(SettingsClock(), .5);
+    _settings.Tick(SettingsClock());
+    SyncSpeechSettings();
+    state.app = _service.Snapshot(); state.controls = _service.FrameInput();
+    state.modelToken = _metadata.hotkeys.value("model_token").toString().toStdString();
+    PrepareFrame(state, _context->hover.Enabled(), _context->hover.Opacity(), _context->hover.IdleOpacity());
+    const auto all = _window.Outputs();
+    ApplyLook(state, _context->outputs.Current(all), .5f, .5f, _context->config.values.mouseLookRadius);
+    std::shared_ptr<const RenderFrame> frame;
+    QString error;
+    {
+        std::lock_guard<std::mutex> lock(_exchange->mutex);
+        _exchange->state = state; frame = _exchange->frame; error = _exchange->error;
+    }
+    if (!error.isEmpty()) { std::cerr << "[Render] " << error.toStdString() << '\n'; _renderingOk = false; Stop(); return false; }
+    const bool usable = frame && frame->width == width && frame->height == height &&
+        frame->hidden == state.app.hidden && frame->modelIndex == state.app.modelIndex;
+    glViewport(0, 0, width, height);
+    glClearColor(0, 0, 0, 0); glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    if (usable && (!state.app.hidden || _settings.ScreenEditing()) && !_window.UploadFrame(*frame)) {
+        _renderingOk = false; Stop(); return false;
+    }
+    _window.SetInputRegion(InputRegions(state, usable ? frame->regions : std::vector<ModelRegion>{}));
+    return _mode.Running();
 }
 
 bool InteractionProcessor::HandleEvent(const ProcessorEvent& event)
 {
+    if (event.type == "application.quit") { Stop(); return true; }
+    if (event.type == "interaction.model") {
+        const auto command = QJsonDocument::fromJson(event.data.value("json").toString().toUtf8()).object().value("command").toString();
+        if (_stopped || !_mode.Running())
+            Send("model.result", event.sender, {{"reply", QJsonObject{{"ok", false}, {"error", "window not running"}}}});
+        else if (_settings.Editing() && command != "get_hotkeys")
+            Send("model.result", event.sender, {{"reply", QJsonObject{{"ok", false}, {"error", "Finish transform editing before changing model actions"}}}});
+        else _loop.Post({"model.operation", event.sender, &_model, event.data});
+        return true;
+    }
+    if (event.type == "model.state" && event.sender == &_model) {
+        const auto next = event.data.value("metadata").value<ModelMetadata>();
+        if (next.index != _metadata.index || next.hotkeys.value("model_token") != _metadata.hotkeys.value("model_token")) {
+            _service.ClearControls(); Cancel();
+        }
+        _metadata = next;
+        if (_context) _context->metadata = next;
+        return false; // 状态广播允许其他缓存读取。
+    }
+    if (event.type == "interaction.command" && _commands) {
+        if (_stopped || !_mode.Running()) {
+            Send("interaction.result", event.sender, {{"json", QStringLiteral("{\"ok\":false,\"error\":\"interaction stopped\"}")}});
+            return true;
+        }
+        const auto reply = _commands->Execute(event.data.value("json").toString().toStdString(),
+            event.data.value("connection").toString().toStdString());
+        SyncSpeechSettings();
+        Send("interaction.result", event.sender, {{"json", QString::fromStdString(reply)}});
+        return true;
+    }
+    if (event.type == "command.disconnected" && _commands) {
+        _commands->Disconnected(event.data.value("connection").toString().toStdString());
+        return true;
+    }
+    if (event.type == "signal.toggle") { _service.SetVisibility(_service.Snapshot().hidden); return true; }
+    if (event.type == "signal.focus" && _context) { _context->FocusOutput(); return true; }
     if (event.type == "input.event") {
         if (_stopped) return true;
         const auto kind = event.data.value("kind").toString();
@@ -129,7 +254,10 @@ void InteractionProcessor::PointerButton(int button, bool pressed, std::optional
                 const auto result = _crop.Release(_settings, now, int(_x), int(_y));
                 _mode.Send(ModelWindowState::Event::Release);
                 if (!result.ok) std::cout << "[Crop] Save failed: " << result.error << '\n';
-                if (moveOutput) _moveScreen();
+                if (moveOutput) {
+                    if (_context) _context->MoveScreenDrag();
+                    else Send("interaction.move_screen");
+                }
             }
         }
         return;
@@ -146,7 +274,7 @@ void InteractionProcessor::PointerButton(int button, bool pressed, std::optional
                 _tapTimer.stop();
                 Operation({{"command", "reset_drag"}});
                 _window.SetKeyboardGrab(true);
-                _greet();
+                Send(ProcessorEvents::Speak, nullptr, {{"text", QStringLiteral("姐姐，你好喵")}, {"replace", true}});
             } else if (result == InputController::ReleaseResult::Drag) {
                 _tapTimer.stop();
                 Operation({{"command", "reset_drag"}});
@@ -171,7 +299,7 @@ void InteractionProcessor::Tap(int x, int y)
 {
     const auto hit = HitAt(x, y);
     if (!hit.available) return;
-    const auto token = _metadata().hotkeys.value("model_token");
+    const auto token = _metadata.hotkeys.value("model_token");
     Operation({{"command", "reset_drag"}});
     // Head 优先于 Body，与原有点击策略一致；其他自定义部位仍可供交互查询。
     if (std::find(hit.parts.begin(), hit.parts.end(), "Head") != hit.parts.end())
@@ -193,7 +321,7 @@ ModelHitResult InteractionProcessor::HitAt(double x, double y)
     if (_stopped || _service.Snapshot().hidden) return {};
     if (!_hitTest) { RequestHitTest(); return {}; }
     auto result = _hitTest({x, y, _window.Width(), _window.Height(),
-        _metadata().hotkeys.value("model_token").toString().toStdString()});
+        _metadata.hotkeys.value("model_token").toString().toStdString()});
     if (!result.available) { _hitTest = {}; RequestHitTest(); }
     return result;
 }
@@ -227,7 +355,7 @@ void InteractionProcessor::Key(uint32_t code, bool pressed)
 {
     if (_stopped || !_mode.Normal()) return;
     if (_service.Snapshot().hidden) return;
-    const auto metadata = _metadata();
+    const auto& metadata = _metadata;
     const auto decision = _input.Key(_window.KeyboardGrabbed(), code, pressed,
         _window.KeyboardGrabbed() ? &metadata.bindings : nullptr);
     if (decision.action == ModelKeyDecision::ReleaseGrab) _window.SetKeyboardGrab(false);

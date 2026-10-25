@@ -1,6 +1,6 @@
 #include "contracts/ModelInputRegion.hpp"
-#include "QtWindowInput.hpp"
-#include "ScreenCropInteraction.hpp"
+#include "processor/interaction/window/QtWindowInput.hpp"
+#include "processor/interaction/ScreenCropInteraction.hpp"
 #include "TestTemporaryDirectory.hpp"
 #include <fstream>
 #include <iostream>

@@ -1,7 +1,7 @@
-#include "TextureResidency.hpp"
-#include "GpuTeardown.hpp"
-#include "RuntimeLifecycle.hpp"
-#include "LAppTextureManager.hpp"
+#include "processor/model/TextureResidency.hpp"
+#include "support/GpuTeardown.hpp"
+#include "support/RuntimeLifecycle.hpp"
+#include "processor/model/LAppTextureManager.hpp"
 
 #include <cassert>
 #include <memory>

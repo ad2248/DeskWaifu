@@ -30,7 +30,7 @@ add_test(NAME render-device-startup
     -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckRenderDeviceStartup.cmake)
 add_test(NAME offscreen-renderer COMMAND offscreen-renderer-test)
 set_tests_properties(offscreen-renderer PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 30)
-add_executable(gpu-transfer-test GpuTransferTest.cpp ../src/QtDesktopWindow.cpp)
+add_executable(gpu-transfer-test GpuTransferTest.cpp ../src/processor/interaction/window/QtDesktopWindow.cpp)
 target_link_libraries(gpu-transfer-test PRIVATE deskwaifu_offscreen Qt6::Gui Qt6::OpenGL Qt6::WaylandClient LayerShellQt::Interface ${CMAKE_DL_LIBS})
 target_link_options(gpu-transfer-test PRIVATE -Wl,--export-dynamic-symbol=eglSwapBuffers)
 foreach(target deskwaifu_offscreen offscreen-renderer-test gpu-transfer-test)
@@ -53,7 +53,7 @@ target_include_directories(qt-window-input-test PRIVATE ../src)
 target_link_libraries(qt-window-input-test PRIVATE Qt6::Gui)
 add_test(NAME qt-window-input COMMAND qt-window-input-test)
 
-add_executable(qt-desktop-window-test QtDesktopWindowTest.cpp ../src/QtDesktopWindow.cpp)
+add_executable(qt-desktop-window-test QtDesktopWindowTest.cpp ../src/processor/interaction/window/QtDesktopWindow.cpp)
 target_include_directories(qt-desktop-window-test PRIVATE ../src)
 target_link_libraries(qt-desktop-window-test PRIVATE Qt6::Gui Qt6::OpenGL Qt6::WaylandClient LayerShellQt::Interface OpenGL::EGL ${CMAKE_DL_LIBS})
 target_link_libraries(qt-desktop-window-test PRIVATE deskwaifu_offscreen)
@@ -82,15 +82,15 @@ if (NODE_EXECUTABLE)
       $<TARGET_FILE:kwin-cursor-tracker-test>)
 endif ()
 
-add_executable(json-command-test JsonCommandTest.cpp ../src/ConfigStore.cpp)
+add_executable(json-command-test JsonCommandTest.cpp ../src/contracts/ConfigStore.cpp)
 target_include_directories(json-command-test PRIVATE ../src)
 add_test(NAME json-command COMMAND json-command-test)
 
-add_executable(config-store-test ConfigStoreTest.cpp ../src/ConfigStore.cpp)
+add_executable(config-store-test ConfigStoreTest.cpp ../src/contracts/ConfigStore.cpp)
 target_include_directories(config-store-test PRIVATE ../src)
 add_test(NAME config-store COMMAND config-store-test)
 
-add_executable(transform-editor-test TransformEditorTest.cpp ../src/ConfigStore.cpp ../src/LAppConfig.cpp ../src/InputController.cpp)
+add_executable(transform-editor-test TransformEditorTest.cpp ../src/contracts/ConfigStore.cpp ../src/processor/interaction/config/LAppConfig.cpp ../src/processor/interaction/InputController.cpp)
 target_include_directories(transform-editor-test PRIVATE ../src)
 add_test(NAME transform-editor COMMAND transform-editor-test)
 add_test(NAME config-temp-directory
@@ -100,11 +100,11 @@ add_test(NAME config-temp-directory
     -DEDITOR_TEST=$<TARGET_FILE:transform-editor-test>
     -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckPortableTemporaryDirectory.cmake)
 
-add_executable(lapp-config-test LAppConfigTest.cpp ../src/LAppConfig.cpp ../src/ConfigStore.cpp)
+add_executable(lapp-config-test LAppConfigTest.cpp ../src/processor/interaction/config/LAppConfig.cpp ../src/contracts/ConfigStore.cpp)
 target_include_directories(lapp-config-test PRIVATE ../src)
 add_test(NAME lapp-config COMMAND lapp-config-test)
 
-add_executable(model-region-test ModelRegionTest.cpp ../src/LAppConfig.cpp ../src/ConfigStore.cpp)
+add_executable(model-region-test ModelRegionTest.cpp ../src/processor/interaction/config/LAppConfig.cpp ../src/contracts/ConfigStore.cpp)
 target_include_directories(model-region-test PRIVATE ../src)
 add_test(NAME model-region COMMAND model-region-test)
 
@@ -112,18 +112,18 @@ add_executable(model-input-region-test ModelInputRegionTest.cpp)
 target_include_directories(model-input-region-test PRIVATE ../src)
 add_test(NAME model-input-region COMMAND model-input-region-test)
 
-add_executable(hover-opacity-test HoverOpacityTest.cpp ../src/LAppConfig.cpp ../src/ConfigStore.cpp)
+add_executable(hover-opacity-test HoverOpacityTest.cpp ../src/processor/interaction/config/LAppConfig.cpp ../src/contracts/ConfigStore.cpp)
 target_include_directories(hover-opacity-test PRIVATE ../src)
 add_test(NAME hover-opacity COMMAND hover-opacity-test)
 
-add_executable(hover-opacity-settings-test HoverOpacitySettingsTest.cpp ../src/ConfigStore.cpp ../src/LAppConfig.cpp)
+add_executable(hover-opacity-settings-test HoverOpacitySettingsTest.cpp ../src/contracts/ConfigStore.cpp ../src/processor/interaction/config/LAppConfig.cpp)
 target_include_directories(hover-opacity-settings-test PRIVATE ../src)
 add_test(NAME hover-opacity-settings COMMAND hover-opacity-settings-test)
 
-add_executable(mouse-look-settings-test MouseLookSettingsTest.cpp ../src/ConfigStore.cpp ../src/LAppConfig.cpp)
+add_executable(mouse-look-settings-test MouseLookSettingsTest.cpp ../src/contracts/ConfigStore.cpp ../src/processor/interaction/config/LAppConfig.cpp)
 target_include_directories(mouse-look-settings-test PRIVATE ../src)
 add_test(NAME mouse-look-settings COMMAND mouse-look-settings-test)
-add_executable(render-device-settings-test RenderDeviceSettingsTest.cpp ../src/ConfigStore.cpp ../src/LAppConfig.cpp)
+add_executable(render-device-settings-test RenderDeviceSettingsTest.cpp ../src/contracts/ConfigStore.cpp ../src/processor/interaction/config/LAppConfig.cpp)
 target_include_directories(render-device-settings-test PRIVATE ../src)
 add_test(NAME render-device-settings COMMAND render-device-settings-test)
 
@@ -134,16 +134,16 @@ add_test(NAME model-region-render COMMAND model-region-render-test)
 set_tests_properties(model-region-render PROPERTIES
   ENVIRONMENT "EGL_PLATFORM=surfaceless" SKIP_RETURN_CODE 77)
 
-add_executable(lapp-sprite-test LAppSpriteTest.cpp ../src/LAppSprite.cpp
+add_executable(lapp-sprite-test LAppSpriteTest.cpp ../src/processor/model/LAppSprite.cpp
   ${COMMON_SRC_PATH}/LAppSprite_Common.cpp)
-target_include_directories(lapp-sprite-test PRIVATE ../src ${COMMON_SRC_PATH})
+target_include_directories(lapp-sprite-test PRIVATE ../src ../src/processor/model ${COMMON_SRC_PATH})
 target_link_libraries(lapp-sprite-test PRIVATE Framework glew_s OpenGL::EGL)
 add_test(NAME lapp-sprite COMMAND lapp-sprite-test)
 set_tests_properties(lapp-sprite PROPERTIES
   ENVIRONMENT "EGL_PLATFORM=surfaceless" SKIP_RETURN_CODE 77)
 
 add_executable(edit-input-region-test EditInputRegionTest.cpp
-  ../src/ConfigStore.cpp ../src/LAppConfig.cpp ../src/InputController.cpp)
+  ../src/contracts/ConfigStore.cpp ../src/processor/interaction/config/LAppConfig.cpp ../src/processor/interaction/InputController.cpp)
 target_include_directories(edit-input-region-test PRIVATE ../src)
 target_link_libraries(edit-input-region-test PRIVATE Qt6::Gui)
 add_test(NAME edit-input-region COMMAND edit-input-region-test)
@@ -154,6 +154,7 @@ add_test(NAME failure-diagnostics COMMAND failure-diagnostics-test)
 
 find_package(Python3 COMPONENTS Interpreter)
 if (Python3_Interpreter_FOUND)
+  add_test(NAME processor-boundaries COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_processor_boundaries.py)
   add_test(NAME ctl COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_ctl.py)
   if (DBUS_RUN_SESSION)
     add_test(NAME kwin-cursor-locale
@@ -212,13 +213,13 @@ target_link_libraries(cursor-look-test PRIVATE deskwaifu_input)
 add_test(NAME cursor-look COMMAND cursor-look-test)
 
 add_executable(model-gaze-test ModelGazeTest.cpp
-  ../src/LAppModel.cpp ../src/processor/model/ModelHotkeys.cpp ../src/LAppPal.cpp
-  ../src/LAppDefine.cpp ../src/LAppTextureManager.cpp
+  ../src/processor/model/LAppModel.cpp ../src/processor/model/ModelHotkeys.cpp ../src/processor/model/LAppPal.cpp
+  ../src/processor/model/LAppDefine.cpp ../src/processor/model/LAppTextureManager.cpp
   ${COMMON_SRC_PATH}/LAppAllocator_Common.cpp
   ${COMMON_SRC_PATH}/LAppModel_Common.cpp
   ${COMMON_SRC_PATH}/LAppTextureManager_Common.cpp
   ${COMMON_SRC_PATH}/LAppWavFileHandler_Common.cpp)
-target_include_directories(model-gaze-test PRIVATE ../src ${COMMON_SRC_PATH}
+target_include_directories(model-gaze-test PRIVATE ../src ../src/processor/model ${COMMON_SRC_PATH}
   ${STB_PATH} ${CMAKE_BINARY_DIR}/generated)
 target_link_libraries(model-gaze-test PRIVATE Framework OpenGL::EGL deskwaifu_input)
 target_compile_definitions(model-gaze-test PRIVATE SDK_RESOURCES="${SDK_ROOT_PATH}/Samples/Resources")
@@ -261,7 +262,7 @@ target_link_options(model-render-thread-test PRIVATE
 target_compile_definitions(model-render-thread-test PRIVATE SDK_RESOURCES="${SDK_ROOT_PATH}/Samples/Resources")
 add_test(NAME model-render-thread COMMAND model-render-thread-test)
 set_tests_properties(model-render-thread PROPERTIES ENVIRONMENT "EGL_PLATFORM=surfaceless" TIMEOUT 30)
-target_include_directories(model-pointer-test PRIVATE ../src ${COMMON_SRC_PATH}
+target_include_directories(model-pointer-test PRIVATE ../src ../src/processor/model ${COMMON_SRC_PATH}
   ${STB_PATH} ${CMAKE_BINARY_DIR}/generated)
 get_target_property(INPUT_APP_LIBRARIES ${APP_NAME} LINK_LIBRARIES)
 target_link_libraries(model-pointer-test PRIVATE ${INPUT_APP_LIBRARIES} OpenGL::EGL)
@@ -286,7 +287,7 @@ add_executable(output-controller-test OutputControllerTest.cpp)
 target_link_libraries(output-controller-test PRIVATE deskwaifu_output)
 add_test(NAME output-controller COMMAND output-controller-test)
 
-add_executable(output-settings-test OutputSettingsTest.cpp ../src/ConfigStore.cpp ../src/LAppConfig.cpp ../src/OutputController.cpp)
+add_executable(output-settings-test OutputSettingsTest.cpp ../src/contracts/ConfigStore.cpp ../src/processor/interaction/config/LAppConfig.cpp ../src/processor/interaction/window/OutputController.cpp)
 target_include_directories(output-settings-test PRIVATE ../src)
 target_link_options(output-settings-test PRIVATE -Wl,--wrap=mkstemp)
 add_test(NAME output-settings COMMAND output-settings-test)
@@ -398,7 +399,7 @@ qt_add_executable(main-window-transform-test
   ../control/DeskWaifuLauncher.cpp ../control/DeskWaifuLauncher.hpp
   ../control/DeskWaifuRespawner.cpp ../control/DeskWaifuRespawner.hpp
   ../control/HotkeyPanel.cpp ../control/HotkeyPanel.hpp
-  ../src/ConfigStore.cpp ../src/LAppConfig.cpp ../src/InputController.cpp
+  ../src/contracts/ConfigStore.cpp ../src/processor/interaction/config/LAppConfig.cpp ../src/processor/interaction/InputController.cpp
 )
 target_include_directories(main-window-transform-test PRIVATE ../control ../src)
 target_link_libraries(main-window-transform-test PRIVATE Qt6::Test Qt6::Widgets Qt6::Network)
@@ -406,7 +407,7 @@ set_target_properties(main-window-transform-test PROPERTIES AUTOMOC ON AUTOUIC O
   AUTOUIC_SEARCH_PATHS "${CMAKE_CURRENT_SOURCE_DIR}/../control")
 add_test(NAME main-window-transform COMMAND main-window-transform-test)
 foreach(speech_test SpeechPlayer MiniMaxSpeechSource SpeechSettings AudioPlayer)
-  qt_add_executable(${speech_test}-test ${speech_test}Test.cpp ../src/ConfigStore.cpp ../src/LAppConfig.cpp)
+  qt_add_executable(${speech_test}-test ${speech_test}Test.cpp ../src/contracts/ConfigStore.cpp ../src/processor/interaction/config/LAppConfig.cpp)
   set_target_properties(${speech_test}-test PROPERTIES AUTOMOC ON)
   target_link_libraries(${speech_test}-test PRIVATE deskwaifu_speech Qt6::Test)
   add_test(NAME ${speech_test} COMMAND ${speech_test}-test)

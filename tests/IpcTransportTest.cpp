@@ -1,7 +1,7 @@
-#include "LAppIPC.hpp"
-#include "IpcSocketPath.hpp"
-#include "ExternalControlState.hpp"
-#include "RuntimeLifecycle.hpp"
+#include "processor/ipc/LAppIPC.hpp"
+#include "processor/ipc/IpcSocketPath.hpp"
+#include "processor/interaction/ExternalControlState.hpp"
+#include "support/RuntimeLifecycle.hpp"
 
 #include <cstdlib>
 #include <chrono>

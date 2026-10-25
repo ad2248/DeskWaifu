@@ -1,5 +1,5 @@
-#include "RenderDeviceSettings.hpp"
-#include "MouseLookSettings.hpp"
+#include "processor/interaction/config/RenderDeviceSettings.hpp"
+#include "processor/interaction/config/MouseLookSettings.hpp"
 #include "TestTemporaryDirectory.hpp"
 #include <fstream>
 #include <iostream>

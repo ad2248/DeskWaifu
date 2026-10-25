@@ -1,10 +1,32 @@
 #include "InputListener.hpp"
 #include <chrono>
 
-InputListener::InputListener(ProcessorEventLoop& loop, IProcessor& interaction, DesktopWindow& window)
-    : Processor(loop), _interaction(interaction), _window(window)
+InputListener::InputListener(ProcessorEventLoop& loop, IProcessor& interaction)
+    : Processor(loop), _interaction(interaction)
 {
     QObject::connect(&_cursorTimer, &QTimer::timeout, this, [this] { PollCursor(); });
+}
+
+bool InputListener::HandleEvent(const ProcessorEvent& event)
+{
+    if (event.type == "window.state") {
+        _width = event.data.value("width").toInt(); _height = event.data.value("height").toInt();
+        _output = event.data.value("output").toString().toStdString();
+        return false;
+    }
+    if (event.type == "window.switch") { SetPaused(event.data.value("paused").toBool()); return false; }
+    if (event.type == "input.native_move") {
+        const auto sample = event.data.value("sample").value<InputSamplePtr>();
+        if (sample) { sample->consumed = true; Move(sample->x, sample->y); }
+        return true;
+    }
+    if (event.type == "input.native") {
+        const auto kind = event.data.value("kind").toString();
+        if (kind == "move") Move(event.data.value("x").toDouble(), event.data.value("y").toDouble());
+        else Event(kind, event.data);
+        return true;
+    }
+    return false;
 }
 
 bool InputListener::StartCursor()
@@ -38,11 +60,9 @@ void InputListener::Move(double x, double y, bool cursor)
 void InputListener::PollCursor()
 {
     if (_stopped || _paused) return;
-    const auto outputs = _window.Outputs();
-    const auto* current = OutputController::Find(outputs, _window.CurrentOutput());
-    _cursor.Poll(current ? current->name : "");
+    _cursor.Poll(_output);
     double x = 0, y = 0;
-    if (_cursor.LocalPosition(_window.Width(), _window.Height(), x, y)) Move(x, y, true);
+    if (_cursor.LocalPosition(_width, _height, x, y)) Move(x, y, true);
 }
 
 void InputListener::Stop()

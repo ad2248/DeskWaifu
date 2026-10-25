@@ -1,6 +1,6 @@
 #include <GL/glew.h>
 #include <EGL/egl.h>
-#include "LAppSprite.hpp"
+#include "processor/model/LAppSprite.hpp"
 #include <cmath>
 #include <iostream>
 #include <vector>

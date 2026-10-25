@@ -22,13 +22,13 @@ class QtWindowConfigurationTest(unittest.TestCase):
             assert_keyboard_capability("", expected=False)
 
     def test_screen_edit_uses_tested_frame_input_region(self):
-        self.assertIn("_window->SetInputRegion(_interaction->InputRegions(state, regions))",
-                      (SOURCE / "LAppDelegate.cpp").read_text())
+        self.assertIn("_window.SetInputRegion(InputRegions(state,",
+                      (SOURCE / "processor/interaction/InteractionProcessor.cpp").read_text())
         self.assertIn("ModelFrameInputRegions(_settings.ScreenEditing(), state.width, state.height, regions)",
                       (SOURCE / "processor/interaction/InteractionProcessor.cpp").read_text())
 
     def test_overlay_covers_reserved_panel_area(self):
-        source = (SOURCE / "QtDesktopWindow.cpp").read_text()
+        source = (SOURCE / "processor/interaction/window/QtDesktopWindow.cpp").read_text()
         self.assertIn("layer->setExclusiveZone(-1)", source)
         self.assertIn("layer->setLayer(LayerShellQt::Window::LayerOverlay)", source)
         for edge in ("Top", "Bottom", "Left", "Right"):

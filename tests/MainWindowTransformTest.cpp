@@ -1,10 +1,10 @@
 #include "MainWindow.hpp"
-#include "TransformEditor.hpp"
-#include "ScreenCropInteraction.hpp"
-#include "HoverOpacitySettings.hpp"
-#include "MouseLookSettings.hpp"
-#include "SpeechSettings.hpp"
-#include "RenderDeviceSettings.hpp"
+#include "processor/interaction/TransformEditor.hpp"
+#include "processor/interaction/ScreenCropInteraction.hpp"
+#include "processor/interaction/config/HoverOpacitySettings.hpp"
+#include "processor/interaction/config/MouseLookSettings.hpp"
+#include "processor/interaction/config/SpeechSettings.hpp"
+#include "processor/interaction/config/RenderDeviceSettings.hpp"
 #include <QLineEdit>
 #include <QLabel>
 #include <QCheckBox>

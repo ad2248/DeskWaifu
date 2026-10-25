@@ -1,7 +1,8 @@
 #pragma once
 
-#include "ApplicationService.hpp"
-#include "processor/model/ModelHotkeys.hpp"
+#include "AppState.hpp"
+#include "ModelFrameInput.hpp"
+#include "ModelBinding.hpp"
 #include "ModelRegion.hpp"
 #include "ModelHitTest.hpp"
 #include <QJsonObject>
@@ -48,7 +49,7 @@ struct ModelMetadata
     QStringList names;
     QJsonObject hotkeys;
     QJsonArray expressions, motions;
-    std::vector<ModelHotkeys::Binding> bindings;
+    std::vector<ModelBinding> bindings;
 };
 
 Q_DECLARE_METATYPE(ModelRenderState)

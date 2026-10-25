@@ -1,14 +1,10 @@
 #include "AppCommandHandler.hpp"
-#include "JsonHelpers.hpp"
-#include "LAppDelegate.hpp"
-#include "processor/model/ModelProcessor.hpp"
-#include "LAppDefine.hpp"
-#include "MouseLookSettings.hpp"
-#include "SpeechSettings.hpp"
-#include "RenderDeviceSettings.hpp"
-#include "OffscreenRenderer.hpp"
-#include "OcrClient.hpp"
-#include "processor/ProcessorRuntime.hpp"
+#include "contracts/JsonHelpers.hpp"
+#include "processor/interaction/InteractionContext.hpp"
+#include "processor/interaction/config/MouseLookSettings.hpp"
+#include "processor/interaction/config/SpeechSettings.hpp"
+#include "processor/interaction/config/RenderDeviceSettings.hpp"
+#include "render/OffscreenRenderer.hpp"
 #include <QJsonDocument>
 #include <cstdlib>
 #include <algorithm>
@@ -72,25 +68,8 @@ try
         return "{\"ok\":false,\"error\":\"missing 'command' field\"}";
     }
 
-    if (command == "reading_clip") {
-        return _app.Processors().ReadClipboard() ? "{\"ok\":true,\"queued\":true}" : "{\"ok\":false,\"error\":\"event was not queued\"}";
-    }
-    if (command == "get_reading_clip_status")
-        return QJsonDocument(QJsonObject::fromVariantMap(_app.Processors().Reading().Status())).toJson(QJsonDocument::Compact).toStdString();
-
-    if (command == "get_ocr_status" || command == "ocr_recognize" ||
-        command == "get_ocr_result" || command == "cancel_ocr") {
-        auto& ocr = _app.Ocr();
-        QJsonObject reply;
-        if (command == "get_ocr_status") reply = ocr.Status();
-        else if (command == "ocr_recognize") reply = ocr.Submit(QString::fromStdString(JsonGetString(request, "image")));
-        else if (command == "get_ocr_result") reply = ocr.Result(QString::fromStdString(JsonGetString(request, "job_id")));
-        else reply = ocr.Cancel(QString::fromStdString(JsonGetString(request, "job_id")));
-        return QJsonDocument(reply).toJson(QJsonDocument::Compact).toStdString();
-    }
-
-    LAppDelegate* app = &_app;
-    const auto& metadata = app->Models().Metadata();
+    InteractionContext* app = &_app;
+    const auto& metadata = app->metadata;
     const bool streaming = JsonGetBool(request, "stream_source");
     const std::string source = streaming ? connection : "cli";
     const auto lifetime = streaming ? ExternalControlState::Lifetime::Stream
@@ -98,7 +77,7 @@ try
     if (streaming && connection.empty()) return "{\"ok\":false,\"error\":\"stream requires a connection\"}";
 
     if (command == "get_render_device" || command == "set_render_device") {
-        RenderDeviceSettings settings(LAppConfig::GetInstance());
+        RenderDeviceSettings settings(_app.Config());
         const auto devices = ListRenderDevices();
         AppResult result = AppResult::Success();
         if (command == "set_render_device") {
@@ -125,7 +104,7 @@ try
     }
 
     if (command == "get_speech_settings" || command == "set_speech_settings") {
-        SpeechSettings settings(LAppConfig::GetInstance());
+        SpeechSettings settings(_app.Config());
         const auto result = command == "get_speech_settings" ? settings.Refresh() : settings.Set(request);
         return std::string("{\"ok\":") + (result.ok ? "true" : "false") +
             ",\"configured\":" + (settings.Configured() ? "true" : "false") +
@@ -133,7 +112,7 @@ try
     }
 
     if (command == "get_mouse_look" || command == "set_mouse_look") {
-        MouseLookSettings settings(LAppConfig::GetInstance());
+        MouseLookSettings settings(_app.Config());
         const auto result = command == "get_mouse_look" ? settings.Refresh() : settings.Set(request);
         std::ostringstream out;
         out.imbue(std::locale::classic());
@@ -397,7 +376,6 @@ try
 
     if (command == "quit")
     {
-        app->AppEnd();
         return "{\"ok\":true}";
     }
 
@@ -442,27 +420,4 @@ try
 catch (const std::invalid_argument& error)
 {
     return Reply(AppResult::Failure(error.what()));
-}
-
-void AppCommandHandler::ExecuteAsync(const std::string& json, const std::string& connection,
-    std::function<void(std::string)> complete)
-{
-    ConfigStore::Snapshot request; std::string error;
-    if (!ConfigStore::Parse(json, request, error, false)) { complete(Execute(json, connection)); return; }
-    std::string command;
-    try { command = JsonGetString(request, "command"); }
-    catch (const std::invalid_argument&) { complete(Execute(json, connection)); return; }
-    if (command == "set_model" || command == "next_model" || command == "prev_model" ||
-        command == "get_hotkeys" || command == "trigger_hotkey" || command == "set_expression" || command == "do_motion" || command == "switch_skin") {
-        try {
-            if (JsonGetBool(request, "stream_source") && connection.empty()) {
-                complete("{\"ok\":false,\"error\":\"stream requires a connection\"}"); return;
-            }
-        } catch (const std::invalid_argument& error) { complete(Reply(AppResult::Failure(error.what()))); return; }
-        if (!_app.Models().Submit(json, [complete](QJsonObject reply) {
-            complete(QJsonDocument(reply).toJson(QJsonDocument::Compact).toStdString());
-        })) complete("{\"ok\":false,\"error\":\"model renderer stopped\"}");
-        return;
-    }
-    complete(Execute(json, connection));
 }

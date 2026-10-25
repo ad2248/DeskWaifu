@@ -1,10 +1,10 @@
 #include <GL/glew.h>
 #include <EGL/egl.h>
-#include "LAppModel.hpp"
+#include "processor/model/LAppModel.hpp"
 #include "LAppAllocator_Common.hpp"
-#include "LAppPal.hpp"
-#include "ExternalControlState.hpp"
-#include "CursorLook.hpp"
+#include "processor/model/LAppPal.hpp"
+#include "processor/interaction/ExternalControlState.hpp"
+#include "processor/interaction/CursorLook.hpp"
 #include "TestTemporaryDirectory.hpp"
 #include <Id/CubismIdManager.hpp>
 #include <cmath>

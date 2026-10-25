@@ -1,4 +1,4 @@
-#include "LAppIPC.hpp"
+#include "processor/ipc/LAppIPC.hpp"
 #include "TestTemporaryDirectory.hpp"
 
 #include <algorithm>

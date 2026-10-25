@@ -12,9 +12,21 @@ int main(int argc, char** argv)
     struct sigaction previous{}, old{};
     previous.sa_handler = Previous; sigemptyset(&previous.sa_mask);
     CHECK(sigaction(SIGUSR1, &previous, &old) == 0);
-    int toggles = 0, focuses = 0;
+    class Receiver final : public Processor
     {
-        SignalProcessor processor(loop, [&] { ++toggles; }, [&] { ++focuses; });
+    public:
+        using Processor::Processor;
+        int toggles = 0, focuses = 0;
+        bool HandleEvent(const ProcessorEvent& event) override
+        {
+            if (event.type == "signal.toggle") { ++toggles; return true; }
+            if (event.type == "signal.focus") { ++focuses; return true; }
+            return false;
+        }
+    } receiver(loop);
+    auto& toggles = receiver.toggles; auto& focuses = receiver.focuses;
+    {
+        SignalProcessor processor(loop);
         CHECK(processor.Available());
         CHECK(raise(SIGUSR1) == 0 && raise(SIGUSR2) == 0);
         CHECK(toggles == 0 && focuses == 0);

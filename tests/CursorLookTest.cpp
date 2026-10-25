@@ -1,4 +1,4 @@
-#include "CursorLook.hpp"
+#include "processor/interaction/CursorLook.hpp"
 #include <cmath>
 
 int main()

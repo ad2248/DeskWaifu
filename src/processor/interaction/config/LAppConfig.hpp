@@ -4,7 +4,7 @@
 #include <experimental/optional>
 #include <vector>
 #include "contracts/ModelRegion.hpp"
-#include "ConfigStore.hpp"
+#include "contracts/ConfigStore.hpp"
 
 struct LAppConfig
 {

@@ -1,9 +1,9 @@
 #include <GL/glew.h>
 #include "processor/model/ModelProcessor.hpp"
-#include "LAppModel.hpp"
-#include "LAppLive2DManager.hpp"
+#include "processor/model/LAppModel.hpp"
+#include "processor/model/LAppLive2DManager.hpp"
 #include "ModelProcessorTestHelpers.hpp"
-#include "DesktopWindow.hpp"
+#include "processor/interaction/window/DesktopWindow.hpp"
 #include <QCoreApplication>
 #include <QTemporaryDir>
 #include <QFile>
@@ -114,24 +114,37 @@ int main(int argc, char** argv)
         CHECK(file.write(R"({"Version":3,"FileReferences":{"Moc":"test.moc3"}})") > 0);
     }
     ProcessorEventLoop loop;
-    ModelProcessor processor(loop);
+    ModelProcessor processor(loop, std::make_shared<ModelExchange>());
     Calls calls;
-    int changes = 0;
-    processor.SetModelChanged([&] { ++changes; });
+    class MetadataSink final : public Processor
+    {
+    public:
+        using Processor::Processor;
+        int changes = 0;
+        ModelMetadata metadata;
+        bool HandleEvent(const ProcessorEvent& event) override
+        {
+            if (event.type != "model.state") return false;
+            const auto next = event.data.value("metadata").value<ModelMetadata>();
+            if (metadata.index >= 0 && next.index != metadata.index) ++changes;
+            metadata = next;
+            return false;
+        }
+    } metadata(loop);
     CHECK(processor.Start(std::unique_ptr<ModelRenderTarget>(new TrackedTarget(calls)),
         {"", directory.path().toStdString(), "", {}, -1}, 64, 48));
-    CHECK(processor.Metadata().names.size() == 2 && processor.Metadata().index == 0);
+    CHECK(ModelMetadataOf(processor).names.size() == 2 && ModelMetadataOf(processor).index == 0);
 
     // 刻意不处理 GUI 派发器；模型更新和渲染仍必须继续执行。
     QThread::msleep(150);
-    CHECK(calls.frames >= 2 && processor.Frame() && processor.Frame()->rgba.size() == 64 * 48 * 4);
-    const auto first = processor.Frame();
+    CHECK(calls.frames >= 2 && ModelFrameOf(processor) && ModelFrameOf(processor)->rgba.size() == 64 * 48 * 4);
+    const auto first = ModelFrameOf(processor);
     Receiver hitReceiver(loop);
     CHECK(loop.Post({"model.hit_test.request", &hitReceiver, &processor, {}}));
     QElapsedTimer handshake; handshake.start();
     while (!hitReceiver.hitTest && handshake.elapsed() < 5000) QCoreApplication::processEvents();
     CHECK(hitReceiver.hitTest);
-    const auto originalToken = processor.Metadata().hotkeys.value("model_token").toString().toStdString();
+    const auto originalToken = ModelMetadataOf(processor).hotkeys.value("model_token").toString().toStdString();
     const auto hit = hitReceiver.hitTest({20, 10, 64, 48, originalToken});
     CHECK(hit.available && hit.parts == std::vector<std::string>{"Head"});
     CHECK(!hitReceiver.hitTest({20, 10, 32, 48, originalToken}).available);
@@ -140,7 +153,7 @@ int main(int argc, char** argv)
     ModelRenderState gaze; gaze.width = 64; gaze.height = 48; gaze.clip = {0, 0, 64, 48};
     gaze.modelToken = originalToken; gaze.hasLook = true; gaze.lookX = .5f; gaze.lookY = -.3f;
     gaze.controls = {true, .7f, true, -.8f, .3f};
-    processor.SetState(gaze);
+    SetModelState(processor, gaze);
     CHECK(WaitUntil([&] {
         const auto value = Observed();
         return value.appliedDrag && value.x == .5f && value.y == -.3f && value.input.hasLook &&
@@ -152,19 +165,19 @@ int main(int argc, char** argv)
         const auto value = Observed();
         return value.updates >= gazeUpdates + 3 && value.consecutiveDrags >= 3 && value.x == .5f && value.y == -.3f;
     }));
-    gaze.editing = true; processor.SetState(gaze);
+    gaze.editing = true; SetModelState(processor, gaze);
     CHECK(WaitUntil([&] { const auto value = Observed(); return !value.appliedDrag && value.input.hasLook; }));
-    gaze.editing = false; gaze.controls = {}; processor.SetState(gaze);
+    gaze.editing = false; gaze.controls = {}; SetModelState(processor, gaze);
     CHECK(WaitUntil([&] { const auto value = Observed(); return value.appliedDrag && !value.input.hasLook && !value.input.hasMouth; }));
-    gaze.modelToken = "stale"; gaze.controls = {true, .9f, true, .9f, .9f}; processor.SetState(gaze);
+    gaze.modelToken = "stale"; gaze.controls = {true, .9f, true, .9f, .9f}; SetModelState(processor, gaze);
     const int staleUpdates = Observed().updates;
     CHECK(WaitUntil([&] { const auto value = Observed(); return value.updates > staleUpdates && !value.input.hasLook && !value.input.hasMouth; }));
     const int before = calls.frames;
     ModelRenderState state; state.width = 32; state.height = 24;
     state.clip = {0, 0, 32, 24}; state.app.hidden = true;
-    for (int i = 0; i < 10000; ++i) processor.SetState(state); // 替换状态，不排入一万帧。
+    for (int i = 0; i < 10000; ++i) SetModelState(processor, state); // 替换状态，不排入一万帧。
     QThread::msleep(100);
-    const auto hidden = processor.Frame();
+    const auto hidden = ModelFrameOf(processor);
     CHECK(hidden && hidden->width == 32 && hidden->height == 24 && hidden->regions.empty());
     CHECK(first->width == 64 && first->rgba.size() == 64 * 48 * 4); // 保留帧不可变。
     CHECK(calls.frames > before && calls.frames < before + 50);
@@ -172,30 +185,24 @@ int main(int argc, char** argv)
     const int hiddenUpdates = Observed().updates;
     QThread::msleep(50);
     CHECK(Observed().updates == hiddenUpdates); // 隐藏后仍产出透明帧，但不更新模型。
-    gaze.modelToken = originalToken; gaze.controls = {}; processor.SetState(gaze);
+    gaze.modelToken = originalToken; gaze.controls = {}; SetModelState(processor, gaze);
     CHECK(WaitUntil([&] {
-        const auto frame = processor.Frame();
+        const auto frame = ModelFrameOf(processor);
         const auto value = Observed();
         return frame && !frame->hidden && frame->width == 64 && value.updates > hiddenUpdates && value.appliedDrag;
     }));
 
     CHECK(!AwaitModel(processor, {{"command", "set_model"}, {"index", -1}})["ok"].toBool());
-    CHECK(processor.Metadata().index == 0 && changes == 0);
+    CHECK(ModelMetadataOf(processor).index == 0 && metadata.changes == 0);
     CHECK(AwaitModel(processor, {{"command", "set_model"}, {"index", 0}})["ok"].toBool());
-    CHECK(changes == 0);
+    CHECK(metadata.changes == 0);
     CHECK(AwaitModel(processor, {{"command", "set_model"}, {"index", 1}})["ok"].toBool());
-    CHECK(changes == 1 && processor.Metadata().index == 1);
+    CHECK(metadata.changes == 1 && ModelMetadataOf(processor).index == 1);
     CHECK(!AwaitModel(processor, {{"command", "set_expression"}, {"id", "missing"}})["ok"].toBool());
     CHECK(!AwaitModel(processor, {{"command", "do_motion"}, {"group", "missing"}})["ok"].toBool());
     CHECK(!AwaitModel(processor, {{"command", "trigger_hotkey"}, {"model_token", "stale"}, {"id", "missing"}})["ok"].toBool());
     CHECK(!AwaitModel(processor, {{"command", "random_expression"}, {"model_token", "stale"}})["ok"].toBool());
 
-    bool completedOnGui = false;
-    CHECK(processor.Submit(R"({"command":"reset_drag"})", [&](QJsonObject reply) {
-        completedOnGui = reply["ok"].toBool() && QThread::currentThread() == calls.gui;
-    }));
-    AwaitModel(processor);
-    CHECK(completedOnGui);
     Receiver receiver(loop);
     CHECK(loop.Post({"model.operation", &receiver, &processor, {{"json", R"({"command":"reset_drag"})"}}}));
     AwaitModel(processor);
@@ -204,15 +211,15 @@ int main(int argc, char** argv)
     CHECK(processor.Stop() && processor.Stop());
     CHECK(!hitReceiver.hitTest({20, 10, 64, 48, originalToken}).available);
     CHECK(!calls.wrongThread && calls.destroyedOnGui && calls.shutdowns == 1);
-    CHECK(!processor.Submit(R"({"command":"reset_drag"})"));
+    CHECK(!AwaitModel(processor)["ok"].toBool());
 
     // 初始化失败后必须在同一工作线程清理，并保证 Cubism 可以再次使用。
-    ModelProcessor failed(loop);
+    ModelProcessor failed(loop, std::make_shared<ModelExchange>());
     Calls failedCalls;
     CHECK(!failed.Start(std::unique_ptr<ModelRenderTarget>(new TrackedTarget(failedCalls)),
         {"", "/nonexistent/deskwaifu-test-models", "", {}, -1}, 16, 16));
     CHECK(!failedCalls.wrongThread && failedCalls.destroyedOnGui && failedCalls.shutdowns == 1);
-    ModelProcessor recovered(loop);
+    ModelProcessor recovered(loop, std::make_shared<ModelExchange>());
     Calls recoveredCalls;
     CHECK(recovered.Start(std::unique_ptr<ModelRenderTarget>(new TrackedTarget(recoveredCalls)),
         {"", directory.path().toStdString(), "", {}, -1}, 16, 16));
@@ -222,21 +229,21 @@ int main(int argc, char** argv)
     while (!recoveredReceiver.hitTest && handshake.elapsed() < 5000) QCoreApplication::processEvents();
     CHECK(recoveredReceiver.hitTest);
     const auto oldCallback = recoveredReceiver.hitTest;
-    const auto oldToken = recovered.Metadata().hotkeys.value("model_token").toString().toStdString();
+    const auto oldToken = ModelMetadataOf(recovered).hotkeys.value("model_token").toString().toStdString();
     recoveredCalls.failBind = true;
     QThread::msleep(100);
-    CHECK(!recovered.Error().isEmpty() && !recovered.Submit(R"({"command":"reset_drag"})"));
+    CHECK(!ModelErrorOf(recovered).isEmpty() && !AwaitModel(recovered)["ok"].toBool());
     CHECK(!oldCallback({8, 8, 16, 16, oldToken}).available);
     CHECK(recovered.Stop() && !recoveredCalls.wrongThread && recoveredCalls.shutdowns == 1);
     recoveredCalls.failBind = false;
     CHECK(recovered.Start(std::unique_ptr<ModelRenderTarget>(new TrackedTarget(recoveredCalls)),
         {"", directory.path().toStdString(), "", {}, -1}, 16, 16));
-    CHECK(recovered.Error().isEmpty() && AwaitModel(recovered)["ok"].toBool());
+    CHECK(ModelErrorOf(recovered).isEmpty() && AwaitModel(recovered)["ok"].toBool());
     CHECK(!oldCallback({8, 8, 16, 16, oldToken}).available); // 重启不能复活旧回调。
     recoveredReceiver.hitTest = {};
     CHECK(loop.Post({"model.hit_test.request", &recoveredReceiver, &recovered, {}}));
     handshake.restart();
-    const auto newToken = recovered.Metadata().hotkeys.value("model_token").toString().toStdString();
+    const auto newToken = ModelMetadataOf(recovered).hotkeys.value("model_token").toString().toStdString();
     while (handshake.elapsed() < 5000) {
         QCoreApplication::processEvents();
         if (recoveredReceiver.hitTest && recoveredReceiver.hitTest({8, 8, 16, 16, newToken}).available) break;

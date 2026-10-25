@@ -23,8 +23,7 @@ void ReceiveSignal(int signal)
 }
 }
 
-SignalProcessor::SignalProcessor(ProcessorEventLoop& loop, std::function<void()> toggle, std::function<void()> focus)
-    : Processor(loop), _toggle(std::move(toggle)), _focus(std::move(focus))
+SignalProcessor::SignalProcessor(ProcessorEventLoop& loop) : Processor(loop)
 {
     int descriptors[2];
     if (signalPipe >= 0 || pipe2(descriptors, O_NONBLOCK | O_CLOEXEC) != 0) return;
@@ -45,7 +44,7 @@ SignalProcessor::SignalProcessor(ProcessorEventLoop& loop, std::function<void()>
         // 限制每次通知处理的数量，剩余字节会再次触发就绪通知。
         const auto count = read(_read, actions, sizeof(actions));
         for (ssize_t i = 0; i < count; ++i)
-            Send(actions[i] == 1 ? QStringLiteral("signal.toggle") : QStringLiteral("signal.focus"), this);
+            Send(actions[i] == 1 ? QStringLiteral("signal.toggle") : QStringLiteral("signal.focus"));
     });
 }
 
@@ -65,7 +64,6 @@ SignalProcessor::~SignalProcessor()
 
 bool SignalProcessor::HandleEvent(const ProcessorEvent& event)
 {
-    if (event.type == QStringLiteral("signal.toggle")) { _toggle(); return true; }
-    if (event.type == QStringLiteral("signal.focus")) { _focus(); return true; }
+    (void)event;
     return false;
 }

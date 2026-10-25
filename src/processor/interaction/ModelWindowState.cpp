@@ -68,7 +68,11 @@ ModelWindowState::ModelWindowState()
     }
     transition(idle, Event::Press, pressed);
     transition(pressed, Event::Release, idle);
-    connect(transition(pressed, Event::CancelGesture, idle), &QAbstractTransition::triggered,
+    // 空闲也可能持有待定单击，隐藏时必须同步清除识别器和定时器。
+    for (auto* source : {idle, pressed})
+        connect(transition(source, Event::CancelGesture, idle), &QAbstractTransition::triggered,
+            this, &ModelWindowState::InteractionCancelled);
+    connect(transition(editIdle, Event::CancelGesture, editIdle), &QAbstractTransition::triggered,
         this, &ModelWindowState::InteractionCancelled);
     transition(editIdle, Event::DragModel, drag);
     transition(editIdle, Event::MoveCrop, move);

@@ -1,5 +1,5 @@
 foreach(extension .hpp .cpp)
-  set(source "${APP_SOURCE}/AppCommandHandler${extension}")
+  set(source "${APP_SOURCE}/processor/interaction/AppCommandHandler${extension}")
   if (NOT EXISTS "${source}")
     message(FATAL_ERROR "Command handler source is missing: ${source}")
   endif ()

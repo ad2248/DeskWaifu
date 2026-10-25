@@ -1,4 +1,4 @@
-#include "DesktopWindow.hpp"
+#include "processor/interaction/window/DesktopWindow.hpp"
 #include <QGuiApplication>
 #include <QCloseEvent>
 #include <QKeyEvent>

@@ -1,5 +1,5 @@
-#include "MouseLookSettings.hpp"
-#include "HoverOpacitySettings.hpp"
+#include "processor/interaction/config/MouseLookSettings.hpp"
+#include "processor/interaction/config/HoverOpacitySettings.hpp"
 #include "TestTemporaryDirectory.hpp"
 #include <fstream>
 #include <iostream>

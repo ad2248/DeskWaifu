@@ -54,6 +54,8 @@ public:
     bool HandleEvent(const ProcessorEvent& event) override
     {
         if (event.type == "model.hit_test.request") {
+            ModelMetadata metadata; metadata.hotkeys = {{"model_token", "test-token"}};
+            Send("model.state", nullptr, {{"metadata", QVariant::fromValue(metadata)}});
             ModelHitSnapshot hit; hit.width = 800; hit.height = 600; hit.modelToken = "test-token";
             hit.regions = {{100, 100, 500, 400}}; hit.partsEnabled = true; hit.fallback = true;
             hit.fallbackYScale = -1; hit.fallbackYOffset = 300;
@@ -100,11 +102,21 @@ int main(int argc, char** argv)
             settings.ScreenEditing() ? ModelWindowState::Event::ScreenMode : ModelWindowState::Event::PanelMode);
     });
     ProcessorEventLoop loop; Model model(loop); Window window;
-    int greetings = 0, moves = 0;
+    class Observer final : public Processor
+    {
+    public:
+        using Processor::Processor;
+        int greetings = 0, moves = 0;
+        bool HandleEvent(const ProcessorEvent& event) override
+        {
+            if (event.type == "speech.speak") { ++greetings; return true; }
+            if (event.type == "interaction.move_screen") { ++moves; return true; }
+            return false;
+        }
+    } observer(loop);
+    auto& greetings = observer.greetings; auto& moves = observer.moves;
     auto makeInteraction = [&] {
-        return std::make_unique<InteractionProcessor>(loop, window, mode, service, settings,
-            model, [] { ModelMetadata value; value.hotkeys = {{"model_token", "test-token"}}; return value; },
-            [&] { ++moves; }, [&] { ++greetings; });
+        return std::make_unique<InteractionProcessor>(loop, window, mode, service, settings, model);
     };
     auto interaction = makeInteraction();
     Wait(20); // 初始化请求与回调回复均通过统一队列派发。
@@ -122,6 +134,7 @@ int main(int argc, char** argv)
     Wait(400); CHECK(model.Taps() == 1);
 
     click(300, 200); click(300, 200);
+    Wait(20);
     CHECK(greetings == 1 && window.grabbed);
     Wait(450); CHECK(model.Taps() == 1);
     interaction->Key(1, true); CHECK(!window.grabbed);
@@ -137,6 +150,7 @@ int main(int argc, char** argv)
     interaction->PointerMoved(340, 240);
     CHECK(settings.LocalScreenEditing() && mode.GestureActive());
     interaction->PointerButton(0, false);
+    Wait(20);
     CHECK(moves == 1);
     Wait(450); CHECK(model.Taps() == 3 && greetings == 1);
     CHECK(settings.Cancel(settings.Owner()).ok);
@@ -175,7 +189,7 @@ int main(int argc, char** argv)
     interaction->ApplyLook(state, &output, .5f, .5f, 1); CHECK(!state.hasLook);
 
     // 监听层只投递输入；连续移动合并，但按钮不会越过移动或被合并丢失。
-    InputListener listener(loop, *interaction, window);
+    InputListener listener(loop, *interaction);
     listener.Event("enter", {{"x", 300}, {"y", 200}});
     for (int i = 0; i < 10000; ++i) listener.Move(300, 200);
     CHECK(!interaction->Hover().inside); // 输入尚未派发。

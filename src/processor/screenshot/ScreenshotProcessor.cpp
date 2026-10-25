@@ -21,8 +21,21 @@ ScreenshotProcessor::ScreenshotProcessor(ProcessorEventLoop& loop, std::unique_p
     });
 }
 
+ScreenshotProcessor::~ScreenshotProcessor() { Stop(); }
+void ScreenshotProcessor::Stop()
+{
+    if (!_service) return;
+    _service->disconnect(this);
+    if (!_capture.isEmpty()) _service->Cancel(_capture);
+    _service.reset(); _capture.clear(); _requester = nullptr;
+}
+
 bool ScreenshotProcessor::HandleEvent(const ProcessorEvent& event)
 {
+    if (!_service) {
+        if (event.type != ProcessorEvents::Screenshot) return false;
+        Send(ProcessorEvents::Failed, event.sender, {{"error", "screenshot service stopped"}}); return true;
+    }
     if (event.type == ProcessorEvents::Cancel && !_capture.isEmpty() && event.sender == _requester) {
         _service->Cancel(_capture); return true;
     }

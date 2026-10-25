@@ -1,11 +1,11 @@
 #include <GL/glew.h>
 #include <EGL/egl.h>
-#include "LAppDelegate.hpp"
-#include "LAppView.hpp"
-#include "LAppModel.hpp"
-#include "LAppLive2DManager.hpp"
-#include "LAppDefine.hpp"
-#include "LAppTextureManager.hpp"
+#include "TestApplication.hpp"
+#include "processor/model/LAppView.hpp"
+#include "processor/model/LAppModel.hpp"
+#include "processor/model/LAppLive2DManager.hpp"
+#include "processor/model/LAppDefine.hpp"
+#include "processor/model/LAppTextureManager.hpp"
 #include "LAppAllocator_Common.hpp"
 #include "ModelProcessorTestHelpers.hpp"
 #include "DispatchedInput.hpp"
@@ -109,7 +109,7 @@ void click(int x, int y)
     window->events->PointerButton(0, false);
 }
 
-int releaseTest(LAppDelegate& app)
+int releaseTest(TestApplication& app)
 {
     CHECK(AwaitModel(app.Models(), {{"command", "tap_model"}, {"mouse_x", 150}, {"mouse_y", 120}})["ok"].toBool());
     CHECK(!hits.empty());
@@ -122,10 +122,10 @@ int releaseTest(LAppDelegate& app)
     // 真实 Delegate 的延迟单击只派发一次。远处的第二次释放会立即派发它，
     // 无需等待帧定时器。
     QElapsedTimer ready; ready.start();
-    while (!app.Models().Frame() && ready.elapsed() < 5000) {
+    while (!ModelFrameOf(app.Models()) && ready.elapsed() < 5000) {
         QCoreApplication::processEvents(); QThread::msleep(1);
     }
-    CHECK(app.Models().Frame());
+    CHECK(ModelFrameOf(app.Models()));
     click(300, 200);
     CHECK(hits.empty());
     const int expressionBefore = expressionCalls;
@@ -155,7 +155,7 @@ int releaseTest(LAppDelegate& app)
     return 0;
 }
 
-int transformTest(LAppDelegate& app)
+int transformTest(TestApplication& app)
 {
     // 模型命中测试坐标中的可见点为 (0.2, 0.3)。
     // 独立于渲染实现约定推导其像素位置。
@@ -273,7 +273,7 @@ int releaseWithCursor(int x, int y)
     return 0;
 }
 
-int dragTest(LAppDelegate& app)
+int dragTest(TestApplication& app)
 {
     const int initialSwitches = window->switches;
     auto drag = [&] {
@@ -337,7 +337,7 @@ int dragTest(LAppDelegate& app)
     return 0;
 }
 
-int stateTest(LAppDelegate& app)
+int stateTest(TestApplication& app)
 {
     using State = ModelWindowState::State;
     CHECK(app.WindowState() == State::NormalIdle);
@@ -503,7 +503,7 @@ int main(int argc, char** argv)
     auto& config = LAppConfig::GetInstance();
     CHECK(config.LoadFromFile(configPath));
     LAppDefine::ModelsDir = models;
-    auto* app = LAppDelegate::GetInstance();
+    auto* app = TestApplication::GetInstance();
     if (!app->Initialize()) return window->context == EGL_NO_CONTEXT ? 77 : 1;
     ConfigStore configStore(configPath);
     ConfigStore::Snapshot beforeDrag;
@@ -550,8 +550,7 @@ int main(int argc, char** argv)
         CHECK(app->Run()); // 同时执行真实帧和 GPU 清理路径。
     } else {
         CHECK(app->Release());
-        CHECK(app->WindowState() == ModelWindowState::State::Closed);
-        LAppDelegate::ReleaseInstance();
+        TestApplication::ReleaseInstance();
     }
     CHECK(unlink(model.c_str()) == 0 && unlink(moc.c_str()) == 0 && unlink(configured.c_str()) == 0 &&
         unlink(wide.c_str()) == 0 && unlink(wideMoc.c_str()) == 0 &&

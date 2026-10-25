@@ -1,5 +1,5 @@
 file(MAKE_DIRECTORY "${FIXTURE_SOURCE}")
-file(WRITE "${FIXTURE_SOURCE}/Transport.cpp" "#include \"LAppIPC.hpp\"\n")
+file(WRITE "${FIXTURE_SOURCE}/Transport.cpp" "#include \"processor/ipc/LAppIPC.hpp\"\n")
 execute_process(COMMAND "${CXX_COMPILER}" -std=c++17 "-I${APP_SOURCE}"
   -fsyntax-only -MD -MF "${FIXTURE_SOURCE}/Transport.d" "${FIXTURE_SOURCE}/Transport.cpp"
   RESULT_VARIABLE result ERROR_VARIABLE error)

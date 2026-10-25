@@ -2,23 +2,32 @@
 
 #include "processor/Processor.hpp"
 #include "contracts/RenderFrame.hpp"
+#include "contracts/ModelExchange.hpp"
+#include "InteractionContext.hpp"
 #include "CursorLook.hpp"
-#include "DesktopWindow.hpp"
+#include "processor/interaction/window/DesktopWindow.hpp"
 #include "ModelWindowState.hpp"
 #include "ScreenCropInteraction.hpp"
 #include <QTimer>
 #include <functional>
 #include <optional>
 
-// GUI 线程中的交互策略；窗口操作和编辑事务不进入渲染线程。
-// 注入的窗口、状态、服务和模型必须存活到 Stop 及模型工作线程收尾之后。
+class AppCommandHandler;
+
+// GUI 状态所有者；窗口操作和编辑事务不进入渲染线程。
+// 生产构造器独占 Context；策略测试构造器可借用同域辅助对象。
 class InteractionProcessor final : public Processor
 {
 public:
     InteractionProcessor(ProcessorEventLoop& loop, DesktopWindow& window,
         ModelWindowState& mode, ApplicationService& service, TransformEditor& settings,
-        IProcessor& model, std::function<ModelMetadata()> metadata,
-        std::function<void()> moveScreen, std::function<void()> greet);
+        IProcessor& model);
+    InteractionProcessor(ProcessorEventLoop& loop, IProcessor& model,
+        std::unique_ptr<DesktopWindow> window, LAppConfig config, std::shared_ptr<ModelExchange> exchange);
+    bool Start(int width, int height);
+    bool Run();
+    void ShutdownWindow();
+    std::unique_ptr<ModelRenderTarget> RenderTarget(const std::string& device);
     ~InteractionProcessor() override;
     bool HandleEvent(const ProcessorEvent& event) override;
     void PointerButton(int button, bool pressed, std::optional<uint32_t> time = {});
@@ -42,18 +51,24 @@ public:
     std::vector<ModelRegion> InputRegions(const ModelRenderState& state, const std::vector<ModelRegion>& regions) const;
 
 private:
+    friend struct ProcessorTestAccess;
     void StartCropGesture();
     void FlushTap();
     void Tap(int x, int y);
     void Operation(QJsonObject operation);
     void RequestHitTest();
+    void ConnectSources();
+    bool Present();
+    void SyncSpeechSettings();
+    std::unique_ptr<InteractionContext> _context;
+    std::unique_ptr<AppCommandHandler> _commands;
+    std::shared_ptr<ModelExchange> _exchange;
     DesktopWindow& _window;
     ModelWindowState& _mode;
     ApplicationService& _service;
     TransformEditor& _settings;
     IProcessor& _model;
-    std::function<ModelMetadata()> _metadata;
-    std::function<void()> _moveScreen, _greet;
+    ModelMetadata _metadata;
     InputController _input;
     ScreenCropInteraction _crop;
     CursorLook _cursor;
@@ -62,4 +77,6 @@ private:
     bool _stopped = false;
     bool _inside = false, _hitRequested = false;
     ModelHitTest _hitTest;
+    bool _renderingOk = true;
+    std::optional<QString> _speechKey;
 };

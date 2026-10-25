@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ApplicationService.hpp"
+#include "contracts/AppState.hpp"
 #include "LAppConfig.hpp"
 
 // 凭据在 IPC 中只写不读；GUI 只能查询是否已配置。

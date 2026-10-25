@@ -1,7 +1,7 @@
 #pragma once
 
 #include "processor/Processor.hpp"
-#include "processor/image/ImageFile.hpp"
+#include "contracts/ImageFile.hpp"
 
 class ReadingClipProcessor final : public Processor
 {

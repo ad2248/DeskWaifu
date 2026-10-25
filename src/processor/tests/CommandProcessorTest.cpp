@@ -5,33 +5,60 @@
 
 #define CHECK(c) do { if (!(c)) { std::cerr << __LINE__ << ": " << #c << '\n'; return 1; } } while (false)
 
-struct Commands : ICommandService
+class Domain final : public Processor
 {
+public:
+    using Processor::Processor;
     std::vector<std::string> calls;
-    std::string Execute(const std::string& json, const std::string& connection) override
-    { calls.push_back(connection + ":" + json); return json; }
-    void Disconnected(const std::string& connection) override { calls.push_back(connection + ":disconnected"); }
+    IProcessor* requester = nullptr;
+    bool HandleEvent(const ProcessorEvent& event) override
+    {
+        if (event.type != "interaction.command") return false;
+        calls.push_back(event.data.value("connection").toString().toStdString());
+        requester = event.sender;
+        return true;
+    }
+    void Complete(const QString& reply) { Send("interaction.result", requester, {{"json", reply}}); }
 };
 
 int main(int argc, char** argv)
 {
     QCoreApplication app(argc, argv);
-    ProcessorEventLoop loop;
-    Commands service;
-    std::vector<std::string> replies;
+    ProcessorEventLoop loop; Domain domain(loop);
+    class Caller final : public Processor
     {
-        CommandProcessor processor(loop, service);
-        processor.ExecuteAsync("one", "client", [&](std::string reply) { replies.push_back(reply); });
-        processor.ExecuteAsync("two", "client", [&](std::string reply) { replies.push_back(reply); });
-        processor.Disconnected("client");
-        CHECK(service.calls.empty() && replies.empty()); // 不能绕过有序事件派发。
-        for (int i = 0; i < 8; ++i) QCoreApplication::processEvents();
-        CHECK(service.calls == std::vector<std::string>({"client:one", "client:two", "client:disconnected"}));
-        CHECK(replies == std::vector<std::string>({"one", "two"}));
-        CHECK(!processor.HandleEvent({"unrelated"}));
-        processor.ExecuteAsync("must be purged", "client", [&](std::string reply) { replies.push_back(reply); });
+    public:
+        using Processor::Processor;
+        std::vector<std::string> replies;
+        bool HandleEvent(const ProcessorEvent& event) override
+        {
+            if (event.type != "ipc.command.result") return false;
+            replies.push_back(event.data.value("json").toString().toStdString()); return true;
+        }
+    } caller(loop);
+    auto& replies = caller.replies;
+    {
+        CommandProcessor processor(loop);
+        loop.Post({"command.request", &caller, &processor, {{"json", R"({"command":"get_status"})"}, {"connection", "one"}}});
+        loop.Post({"command.request", &caller, &processor, {{"json", R"({"command":"get_status"})"}, {"connection", "two"}}});
+        CHECK(domain.calls.empty() && replies.empty());
+        for (int i = 0; i < 10; ++i) QCoreApplication::processEvents();
+        CHECK(domain.calls == std::vector<std::string>{"one"} && replies.empty());
+        domain.Complete("first");
+        for (int i = 0; i < 10; ++i) QCoreApplication::processEvents();
+        CHECK(domain.calls == std::vector<std::string>({"one", "two"}));
+        CHECK(replies == std::vector<std::string>{"first"});
+        domain.Complete("second");
+        for (int i = 0; i < 10; ++i) QCoreApplication::processEvents();
+        CHECK(replies == std::vector<std::string>({"first", "second"}));
+        loop.Post({"command.request", &caller, &processor, {{"json", R"({"command":"get_status"})"}, {"connection", "cancelled"}}});
+        for (int i = 0; i < 10; ++i) QCoreApplication::processEvents();
+        processor.Stop();
+        for (int i = 0; i < 10; ++i) QCoreApplication::processEvents();
+        CHECK(replies.size() == 3 && replies.back().find("stopped") != std::string::npos);
     }
-    for (int i = 0; i < 4; ++i) QCoreApplication::processEvents();
-    CHECK(service.calls.size() == 3 && replies.size() == 2);
+    domain.Complete("late");
+    for (int i = 0; i < 10; ++i) QCoreApplication::processEvents();
+    CHECK(replies.size() == 3);
     return 0;
 }

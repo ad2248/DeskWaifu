@@ -1,7 +1,7 @@
 #pragma once
 
 #include "processor/Processor.hpp"
-#include "processor/image/ImageFile.hpp"
+#include "contracts/ImageFile.hpp"
 #include "OcrClient.hpp"
 
 class OcrProcessor final : public Processor
@@ -10,8 +10,8 @@ public:
     explicit OcrProcessor(ProcessorEventLoop& loop);
     OcrProcessor(ProcessorEventLoop& loop, std::unique_ptr<OcrClient> client);
     ~OcrProcessor() override;
+    void Stop();
     bool HandleEvent(const ProcessorEvent& event) override;
-    OcrClient& Client() { return *_client; } // 适配现有外部 OCR API 的兼容入口。
 private:
     IProcessor* _requester = nullptr;
     ImageFilePtr _image, _retiringImage;

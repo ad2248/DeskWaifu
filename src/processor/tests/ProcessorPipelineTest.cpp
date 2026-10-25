@@ -1,6 +1,6 @@
 #include "processor/Events.hpp"
 #include "processor/image/ImageProcessor.hpp"
-#include "processor/image/ImageFile.hpp"
+#include "contracts/ImageFile.hpp"
 #include "processor/ocr/OcrProcessor.hpp"
 #include "processor/reading_clip/ReadingClipProcessor.hpp"
 #include "processor/screenshot/ScreenshotProcessor.hpp"
@@ -177,16 +177,17 @@ try {
         qputenv("DESKWAIFU_OCR_TEST_MODE", mode);
         ProcessorEventLoop loop;
         auto client = std::make_unique<OcrClient>(app.arguments()[1], 1000, 50);
+        auto* observedClient = client.get(); // 注入的边界夹具，不是生产访问端口。
         OcrProcessor ocr(loop, std::move(client)); Sink sink(loop);
         auto image = ImageFile::Create(SyntheticImage()); const auto path = image->Path();
         loop.Post({Recognize, &sink, &ocr, {{"image", QVariant::fromValue(image)}}}); image.clear();
         if (QString::fromLatin1(mode) == "hang") {
-            Wait([&] { return ocr.Client().Status().value("state") == "pending"; });
+            Wait([&] { return observedClient->Status().value("state") == "pending"; });
             loop.Post({Cancel, &sink, &ocr});
         }
         Wait([&] { return sink.received.size() == 1; });
         Check(sink.received[0].sender == &ocr && sink.received[0].type == (QString::fromLatin1(mode).isEmpty() ? Recognized : Failed), "OCR proxy converts wire completion to pointer-routed event");
-        Wait([&] { return !ocr.Client().Status().value("running").toBool(); });
+        Wait([&] { return !observedClient->Status().value("running").toBool(); });
         Check(!QFileInfo::exists(path), "OCR temporary file released after worker use");
     }
     qunsetenv("DESKWAIFU_OCR_TEST_MODE");
@@ -207,7 +208,7 @@ try {
     {
         ProcessorEventLoop loop;
         MiniMaxSpeechSource source(QString{}); AudioPlayer audio; SpeechPlayer player(source, audio);
-        SpeechProcessor speech(loop, player, [] {}); Sink sink(loop);
+        SpeechProcessor speech(loop, player); Sink sink(loop);
         loop.Post({Speak, &sink, &speech, {{"text", "test without credentials"}}});
         Wait([&] { return sink.received.size() == 1; });
         Check(sink.received[0].type == Failed && !sink.received[0].data.value("error").toString().isEmpty(), "speech failure returned as event without cloud or playback");

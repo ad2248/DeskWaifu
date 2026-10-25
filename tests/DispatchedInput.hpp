@@ -1,5 +1,5 @@
 #pragma once
-#include "DesktopWindowEvents.hpp"
+#include "processor/interaction/window/DesktopWindowEvents.hpp"
 #include <QCoreApplication>
 
 // 测试驱动在每次合成输入后让 Qt 派发队列前进，模拟真实窗口事件循环。

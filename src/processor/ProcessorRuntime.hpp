@@ -12,15 +12,15 @@
 class ProcessorRuntime
 {
 public:
-    ProcessorRuntime(SpeechPlayer& speech, std::function<void()> prepareSpeech, std::function<QImage()> clipboard)
+    ProcessorRuntime(const QString& apiKey, std::function<QImage()> clipboard)
         : _images(_loop, std::move(clipboard)), _ocr(_loop), _screenshots(_loop),
-          _speech(_loop, speech, std::move(prepareSpeech)), _reading(_loop, _images, _ocr, _speech) {}
+          _speech(_loop, apiKey), _reading(_loop, _images, _ocr, _speech) {}
+    ~ProcessorRuntime()
+    {
+        // 所有请求者仍注册时，先收尾服务/工作线程；成员析构随后才注销。
+        _images.Stop(); _ocr.Stop(); _screenshots.Stop(); _speech.Stop();
+    }
     ProcessorEventLoop& Loop() { return _loop; }
-    OcrClient& Ocr() { return _ocr.Client(); }
-    ReadingClipProcessor& Reading() { return _reading; }
-    bool ReadClipboard() { return _loop.Post({ProcessorEvents::ReadingClip}); }
-    void SpeakGreeting(const QString& text)
-    { _loop.Post({ProcessorEvents::Speak, nullptr, &_speech, {{"text", text}, {"replace", true}}}); }
 private:
     ProcessorEventLoop _loop; // 比所有处理器和排队指针存活更久。
     ImageProcessor _images;

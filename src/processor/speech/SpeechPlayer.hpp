@@ -20,6 +20,7 @@ public:
     ~SpeechPlayer() override;
     State CurrentState() const { return _state; }
     SpeechId CurrentId() const { return _id; }
+    void SetApiKey(const QString& key);
 
 public slots:
     void Speak(SpeechRequest request);

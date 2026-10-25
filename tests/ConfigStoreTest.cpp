@@ -1,4 +1,4 @@
-#include "ConfigStore.hpp"
+#include "contracts/ConfigStore.hpp"
 #include "TestTemporaryDirectory.hpp"
 #include <cstdio>
 #include <fstream>
