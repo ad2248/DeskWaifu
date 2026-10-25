@@ -13,6 +13,26 @@ spec.loader.exec_module(gate)
 
 
 class TestGateTest(unittest.TestCase):
+    def test_skip_after_ctests_default_output_limit_is_not_hidden(self):
+        with tempfile.TemporaryDirectory(prefix="gate-long-output-") as directory:
+            root = Path(directory)
+            script = root / "long.py"
+            script.write_text('print("x" * 4096)\nprint("SKIP   : T::late() critical protection absent")\n')
+            (root / "CMakeLists.txt").write_text(
+                'cmake_minimum_required(VERSION 3.16)\nproject(fixture NONE)\nenable_testing()\n'
+                f'add_test(NAME fixture COMMAND [=[{sys.executable}]=] [=[{script}]=])\n')
+            build = root / "build"
+            subprocess.run(["cmake", "-S", str(root), "-B", str(build)], capture_output=True, check=True)
+            result = subprocess.run([sys.executable, str(gate.ROOT / "scripts/run-test-gate.py"),
+                                     str(build), "--test", "^fixture$"], capture_output=True, text=True, timeout=15)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("unexpected QTest skip: fixture/T::late", result.stderr)
+
+    def test_truncated_report_is_not_trusted(self):
+        registry = {"tests": [{"name": "critical"}]}
+        report = ET.fromstring('<testsuite><testcase name="critical"><system-out>[This part of the test output was removed since it exceeds the threshold]</system-out></testcase></testsuite>')
+        policy = {"required": ["critical"], "optional_cases": {}, "optional_processes": {}}
+        self.assertIn("truncated output cannot prove internal case coverage: critical", gate.evaluate(registry, report, policy)["errors"])
     def test_reruns_preserve_previous_evidence(self):
         with tempfile.TemporaryDirectory(prefix="gate-report-") as directory:
             root = Path(directory)

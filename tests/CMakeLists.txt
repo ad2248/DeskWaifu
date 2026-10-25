@@ -164,6 +164,15 @@ target_include_directories(failure-diagnostics-test PRIVATE ../src)
 add_test(NAME failure-diagnostics COMMAND failure-diagnostics-test)
 
 find_package(Python3 COMPONENTS Interpreter)
+if (DESKWAIFU_ENABLE_SANITIZERS)
+  if (NOT Python3_Interpreter_FOUND)
+    message(FATAL_ERROR "The sanitizer regression fixture requires Python")
+  endif ()
+  add_executable(sanitizer-failure-fixture SanitizerFailureFixture.cpp)
+  add_test(NAME sanitizer-failure-gate COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_sanitizer_failure.py $<TARGET_FILE:sanitizer-failure-fixture>)
+  set_tests_properties(sanitizer-failure-gate PROPERTIES TIMEOUT 30)
+endif ()
 if (Python3_Interpreter_FOUND)
   foreach(script smoke_isolation test_environment test_gate aur_packaging)
     string(REPLACE "_" "-" test_name ${script})
@@ -275,14 +284,19 @@ target_link_options(model-render-thread-test PRIVATE
   -Wl,--wrap=glGenTextures -Wl,--wrap=glDeleteTextures)
 target_compile_definitions(model-render-thread-test PRIVATE SDK_RESOURCES="${SDK_ROOT_PATH}/Samples/Resources")
 add_test(NAME model-render-thread COMMAND model-render-thread-test)
+add_test(NAME model-shutdown-context COMMAND model-render-thread-test shutdown-context)
+set_tests_properties(model-shutdown-context PROPERTIES ENVIRONMENT "EGL_PLATFORM=surfaceless" TIMEOUT 30)
 set_tests_properties(model-render-thread PROPERTIES ENVIRONMENT "EGL_PLATFORM=surfaceless" TIMEOUT 30)
 target_include_directories(model-pointer-test PRIVATE ../src ../src/processor/model ${COMMON_SRC_PATH}
   ${STB_PATH} ${CMAKE_BINARY_DIR}/generated)
 target_link_libraries(model-pointer-test PRIVATE deskwaifu_application OpenGL::EGL)
 target_compile_definitions(model-pointer-test PRIVATE SDK_RESOURCES="${SDK_ROOT_PATH}/Samples/Resources")
 target_link_options(model-pointer-test PRIVATE
-  -Wl,--wrap=_ZN7LAppPal10PrintLogLnEPKcz -Wl,--wrap=_ZN9LAppModel19SetRandomExpressionEv)
-foreach(scenario release transform drag state)
+  -Wl,--wrap=_ZN7LAppPal10PrintLogLnEPKcz -Wl,--wrap=_ZN9LAppModel19SetRandomExpressionEv
+  -Wl,--wrap=_ZN17KWinCursorTracker5StartEv
+  -Wl,--wrap=_ZN17KWinCursorTracker4PollERKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEE
+  -Wl,--wrap=_ZNK17KWinCursorTracker13LocalPositionEiiRdS0_)
+foreach(scenario release transform drag state cursor)
   add_test(NAME model-pointer-${scenario} COMMAND model-pointer-test ${scenario})
   set_tests_properties(model-pointer-${scenario} PROPERTIES
     ENVIRONMENT "EGL_PLATFORM=surfaceless" SKIP_RETURN_CODE 77 TIMEOUT 30)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Three bounded behavioral mutations in an owned source copy, never the checkout."""
+"""Bounded behavioral mutations in an owned source copy, never the checkout."""
 
 import json
 from pathlib import Path
@@ -20,6 +20,15 @@ MUTATIONS = [
     ("gpu-release", "src/processor/model/ModelProcessor.cpp",
      "_stoppedCleanly = _runtime->Shutdown(_target->MakeCurrent());", "_stoppedCleanly = true;",
      "model-render-thread-test", "model-render-thread", "calls.created == calls.deleted"),
+    ("cursor-timer", "src/processor/input/InputListener.cpp",
+     "_cursorTimer.start(16);", ";",
+     "model-pointer-test", "model-pointer-cursor", "periodic cursor sampling must progress without presentation frames"),
+    ("cursor-assembly", "src/app/LAppDelegate.cpp",
+     "if (!_input->StartCursor())", "if (false)",
+     "model-pointer-test", "model-pointer-cursor", "cursorStarts == 1"),
+    ("gpu-context-guard", "src/processor/model/ModelRuntime.cpp",
+     "if (!contextCurrent && (_view || _manager || _textures))", "if (false)",
+     "model-render-thread-test", "model-shutdown-context", "calls.forbiddenDeletes == 0"),
 ]
 
 

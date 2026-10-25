@@ -243,7 +243,7 @@ private slots:
 int main(int argc, char** argv)
 {
     QCoreApplication application(argc, argv);
-    const auto arguments = application.arguments();
+    auto arguments = application.arguments();
     if (arguments.size() == 5 && arguments[1] == "--contend")
     {
         QTextStream(stdout) << "ready" << Qt::endl;
@@ -257,8 +257,25 @@ int main(int argc, char** argv)
         QTextStream(stdout) << result.pid << Qt::endl;
         return result.state == State::Started ? 0 : 1;
     }
+    const bool privateProc = arguments.removeOne("--private-proc");
+    if (!privateProc && DeskWaifuLauncher::runningPid("/proc") > 0)
+    {
+        // A real desktop companion must neither be stopped nor turn a required
+        // concurrency case into a skip. CI's container already has a private
+        // process view; on a busy host create one for this executable only.
+        QProcess isolated;
+        isolated.setProcessChannelMode(QProcess::ForwardedChannels);
+        isolated.start("unshare", QStringList{"--user", "--map-root-user", "--pid", "--fork", "--mount-proc",
+            QCoreApplication::applicationFilePath(), "--private-proc"} + arguments.mid(1));
+        if (!isolated.waitForStarted() || !isolated.waitForFinished(30000))
+        {
+            isolated.kill(); isolated.waitForFinished();
+            return 1;
+        }
+        return isolated.exitStatus() == QProcess::NormalExit ? isolated.exitCode() : 1;
+    }
     DeskWaifuLauncherTest test;
-    return QTest::qExec(&test, argc, argv);
+    return QTest::qExec(&test, arguments);
 }
 
 #include "DeskWaifuLauncherTest.moc"

@@ -186,6 +186,14 @@ try {
             Check(player.CurrentId() == current && audio.starts.empty() && audio.pcm.isEmpty(), "old results cannot affect the new request");
             finish(current);
             terminal(multiple ? third : second, Spoken);
+        } else if (scenario == "pending-destroy") {
+            auto receiver = std::make_unique<Receiver>(loop, "pending replacement");
+            speech->HandleEvent({Speak, receiver.get(), speech.get(), {{"text", "must not start"}, {"replace", true}}});
+            receiver.reset(); // old Finished has not run yet
+            terminal(first, Failed);
+            first.Fence();
+            Check(source.starts.size() == 1 && audio.starts.empty() && player.CurrentState() == SpeechPlayer::State::Idle,
+                "destroyed pending requester must not start a source/audio task");
         } else if (scenario == "destroy") {
             speech.reset();
             emit source.Ready(old, {}); emit source.AudioReceived(old, "late"); emit source.Completed(old); emit audio.Drained(old);

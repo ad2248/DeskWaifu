@@ -27,6 +27,8 @@ def evaluate(registry, report, policy, pattern=None):
         name = test.attrib["name"]
         seen.add(name)
         output = test.findtext("system-out", "")
+        if "[This part of the test output was removed" in output:
+            errors.append(f"truncated output cannot prove internal case coverage: {name}")
         skipped_cases = re.findall(r"^SKIP\s*:\s*([^\s(]+)\(", output, re.MULTILINE)
         failed = test.find("failure") is not None or test.find("error") is not None
         skipped = test.find("skipped") is not None or test.get("status") in ("notrun", "disabled")
@@ -59,11 +61,15 @@ def main():
     log_root.mkdir(parents=True, exist_ok=True)
     logs = Path(tempfile.mkdtemp(prefix="ctest-", dir=log_root))
     policy = json.loads((ROOT / "tests/gate.json").read_text())
+    if re.search(r"^DESKWAIFU_ENABLE_SANITIZERS:BOOL=ON$", (build / "CMakeCache.txt").read_text(), re.MULTILINE):
+        policy["required"] += policy["sanitizer_required"]
     registry = json.loads(subprocess.check_output(["ctest", "--test-dir", str(build), "--show-only=json-v1"], text=True))
     (logs / "registry.json").write_text(json.dumps(registry, indent=2))
     report = logs / "ctest.xml"
     report.unlink(missing_ok=True)
-    command = ["ctest", "--test-dir", str(build), "--output-on-failure", "--no-tests=error", "--output-junit", str(report)]
+    command = ["ctest", "--test-dir", str(build), "--output-on-failure", "--no-tests=error",
+               "--test-output-size-passed", "10485760", "--test-output-size-failed", "10485760",
+               "--output-junit", str(report)]
     if args.test:
         command += ["-R", args.test]
     started = time.monotonic()

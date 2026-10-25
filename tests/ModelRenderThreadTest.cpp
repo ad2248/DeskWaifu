@@ -74,6 +74,9 @@ struct Calls
     std::set<GLuint> textures;
     int created = 0, deleted = 0;
     bool wrongContext = false;
+    std::atomic<bool> failRestore{false};
+    bool forbidDeletes = false;
+    int forbiddenDeletes = 0;
 };
 thread_local Calls* activeCalls = nullptr;
 
@@ -94,6 +97,7 @@ extern "C" void __wrap_glDeleteTextures(GLsizei count, const GLuint* ids)
 {
     if (activeCalls) {
         auto& calls = *activeCalls;
+        if (calls.forbidDeletes) calls.forbiddenDeletes += count;
         if (eglGetCurrentContext() == EGL_NO_CONTEXT || eglGetCurrentContext() != calls.context) calls.wrongContext = true;
         if (QThread::currentThread() != calls.worker) calls.wrongThread = true;
         for (int i = 0; i < count; ++i) if (calls.textures.erase(ids[i])) ++calls.deleted;
@@ -114,11 +118,25 @@ public:
         _calls.context = eglGetCurrentContext();
         return ready && _calls.failure != Calls::AfterContext;
     }
-    bool MakeCurrent() override { Check(); return _target->MakeCurrent(); }
+    bool MakeCurrent() override {
+        Check();
+        if (_calls.failRestore) {
+            _calls.forbidDeletes = true;
+            eglMakeCurrent(eglGetCurrentDisplay(), EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+            return false;
+        }
+        return _target->MakeCurrent();
+    }
     bool Bind(int w, int h) override { Check(); return !_calls.failBind && _target->Bind(w, h); }
     unsigned Framebuffer() const override { Check(); return _target->Framebuffer(); }
     bool Read(std::vector<unsigned char>& rgba) override { Check(); ++_calls.frames; return _target->Read(rgba); }
-    bool Shutdown() override { Check(); ++_calls.shutdowns; const bool result = _target->Shutdown(); activeCalls = nullptr; return result; }
+    bool Shutdown() override {
+        Check(); ++_calls.shutdowns;
+        // The target can restore its own context independently. Runtime must
+        // not delete model resources before this separate target cleanup.
+        _calls.forbidDeletes = false;
+        const bool result = _target->Shutdown(); activeCalls = nullptr; return result;
+    }
 private:
     void Check() const { if (QThread::currentThread() != _calls.worker || _calls.worker == _calls.gui) _calls.wrongThread = true; }
     Calls& _calls;
@@ -178,6 +196,16 @@ int main(int argc, char** argv)
     CHECK(processor.Start(std::unique_ptr<ModelRenderTarget>(new TrackedTarget(calls)),
         {"", directory.path().toStdString(), "", {}, -1}, 64, 48));
     CHECK(ModelMetadataOf(processor).names.size() == 2 && ModelMetadataOf(processor).index == 0);
+    if (application.arguments().contains("shutdown-context")) {
+        CHECK(WaitUntil([&] { return ModelFrameOf(processor) != nullptr; }));
+        calls.failRestore = true;
+        const bool stopped = processor.Stop();
+        CHECK(calls.forbiddenDeletes == 0);
+        CHECK(!stopped && !calls.wrongContext && !calls.wrongThread && calls.shutdowns == 1);
+        CHECK(calls.created > calls.deleted && !calls.textures.empty()); // explicit process-cleanup contract, not a false clean stop
+        std::cout << "unrestorable runtime context: no forbidden GL deletes; process cleanup required\n";
+        return 0; // Isolated CTest process: never reuse intentionally retired SDK objects.
+    }
 
     // 刻意不处理 GUI 派发器；模型更新和渲染仍必须继续执行。
     CHECK(WaitUntil([&] { return calls.frames >= 2 && ModelFrameOf(processor); }, false));

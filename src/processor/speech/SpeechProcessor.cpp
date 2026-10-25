@@ -35,7 +35,7 @@ void SpeechProcessor::ConnectPlayer()
             _replacement.reset();
             // 已接收的替换必须在后续排队请求之前接管状态；重新入队会让
             // 更新的替换先启动，再被这个旧请求反向覆盖。
-            HandleEvent(next);
+            if (!next.sender || _loop.Contains(next.sender)) HandleEvent(next);
         }
     });
 }

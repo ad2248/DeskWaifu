@@ -99,13 +99,13 @@ jobs:
             -DDESKWAIFU_ENABLE_SANITIZERS=ON -DDESKWAIFU_TEST_GATE=ON
           cmake --build build-sanitize --parallel 16 --target \
             processor-event-loop-test speech-processor-contract-test interaction-processor-test \
-            config-store-test ipc-bounded-transport-test
+            config-store-test ipc-bounded-transport-test sanitizer-failure-fixture
           python3 scripts/test-environment.py python3 scripts/run-test-gate.py build-sanitize \
-            --test '^(processor-event-loop|speech-contract-.*|interaction-opacity|config-store|ipc-bounded-transport)$'
+            --test '^(processor-event-loop|speech-contract-.*|interaction-opacity|config-store|ipc-bounded-transport|sanitizer-failure-gate)$'
 
       - name: Preserve test evidence
         if: always()
-        uses: https://github.com/actions/upload-artifact@v3
+        uses: https://code.forgejo.org/actions/upload-artifact@ff15f0306b3f739f7b6fd43fb5d26cd321bd4de5 # v3
         with:
           name: regression-evidence
           path: |
