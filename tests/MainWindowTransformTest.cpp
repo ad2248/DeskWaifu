@@ -573,16 +573,19 @@ private slots:
         QVERIFY(server.listen(runtimePath + "/deskwaifu.sock"));
         int mutations = 0;
         bool supported = true, disconnectAfterSave = false, delayQuery = false;
+        QStringList journal;
         QByteArray delayedResponse;
         QLocalSocket* connection = nullptr;
         connect(&server, &QLocalServer::newConnection, this, [&] {
             auto* socket = server.nextPendingConnection();
             connection = socket;
+            journal.append(QStringLiteral("connected"));
             connect(socket, &QLocalSocket::readyRead, this, [&, socket] {
                 while (socket->canReadLine()) {
                     const auto json = socket->readLine();
                     const auto input = QJsonDocument::fromJson(json).object();
                     const auto command = input.value("command").toString();
+                    journal.append(command + (supported ? QStringLiteral(":supported") : QStringLiteral(":unsupported")));
                     QJsonObject response{{"ok", true}};
                     if (command == "get_mouse_look" || command == "set_mouse_look") {
                         const bool mutation = command == "set_mouse_look";
@@ -678,13 +681,24 @@ private slots:
         connection->write(delayedResponse);
         connection->flush();
         QTRY_VERIFY_WITH_TIMEOUT(!group->isEnabled() && group->toolTip() == "unknown command", 5000);
+        int connections = journal.count(QStringLiteral("connected"));
         supported = true;
         connection->abort();
+        QTRY_VERIFY_WITH_TIMEOUT(journal.count(QStringLiteral("connected")) > connections, 5000);
         QTRY_VERIFY_WITH_TIMEOUT(group->isEnabled() && group->toolTip().isEmpty(), 5000);
+        // The focused in-flight error path was checked above. This next phase
+        // checks an unsupported backend after reconnect, not editing: explicitly
+        // leave the spin box instead of relying on Qt's focus restoration order.
+        tabs->tabBar()->setFocus();
+        QVERIFY(!spin->hasFocus());
+        connections = journal.count(QStringLiteral("connected"));
         supported = false;
         connection->abort();
+        QTRY_VERIFY_WITH_TIMEOUT(journal.count(QStringLiteral("connected")) > connections, 5000);
         QTRY_VERIFY(!group->isEnabled());
-        QTRY_VERIFY_WITH_TIMEOUT(group->toolTip() == "unknown command", 5000);
+        QTRY_VERIFY2_WITH_TIMEOUT(group->toolTip() == "unknown command",
+            qPrintable(QStringLiteral("tooltip=%1 enabled=%2 focus=%3 events=%4")
+                .arg(group->toolTip()).arg(group->isEnabled()).arg(spin->hasFocus()).arg(journal.join(" | "))), 5000);
         QCOMPARE(mutations, beforeDisconnect + 1); // 重连不能重放修改操作。
     }
 
