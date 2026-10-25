@@ -1,4 +1,4 @@
-#include "support/HoverOpacity.hpp"
+#include "contracts/ModelInputRegion.hpp"
 #include "processor/interaction/config/LAppConfig.hpp"
 #include "TestTemporaryDirectory.hpp"
 #include <fstream>
@@ -31,45 +31,8 @@ int main()
     CHECK(ExtractModelInputRegion(pixels.data(), width, height, {100, 100, 1, 1}).empty());
     CHECK(ExtractModelInputRegion(nullptr, 0, 0, {}).empty());
 
-    HoverOpacity hover;
-    CHECK(hover.Resolve(true, 0.5f, regions) == 1);
-    hover.Enter(3, 4);
-    CHECK(hover.Resolve(true, 0.5f, regions) == 0.5f);
-    CHECK(hover.Resolve(false, 0.5f, regions) == 1);
-    for (const float opacity : {0.0f, 0.01f, 0.5f, 1.0f})
-        for (int frame = 0; frame < 5; ++frame)
-            CHECK(hover.Resolve(true, opacity, regions) == opacity);
-    // 光标静止时，动画、裁剪或模型切换可能使模型离开后再回来。
-    CHECK(hover.Resolve(true, 0.5f, {}) == 1);
-    CHECK(hover.Resolve(true, 0.5f, regions) == 0.5f);
-    hover.Move(15, 15); // 指针捕获期间仍在表面上，但位于模型之外。
-    CHECK(hover.Resolve(true, 0.5f, regions) == 1);
-    hover.Move(3, 4);
-    hover.Leave(); // 也用于指针能力丢失、隐藏和表面替换。
-    CHECK(hover.Resolve(true, 0.5f, regions) == 1);
-    hover.Move(3, 4);
-    CHECK(hover.Resolve(true, 0.5f, regions) == 1); // 仅移动指针不能恢复表面焦点。
-    hover.Enter(3, 4);
-    CHECK(hover.Resolve(true, 0.5f, regions) == 0.5f);
-    const std::vector<ModelRegion> handles{{14, 14, 2, 2}};
-    hover.Move(15, 15);
-    CHECK(ModelInputRegionContains(handles, 15, 15));
-    CHECK(hover.Resolve(true, 0.5f, regions) == 1); // 手柄不是模型区域。
-    hover.Move(3, 4);
-    CHECK(hover.Resolve(true, 0.5f, regions, {{2, 3, 3, 3}}) == 1); // 手柄与模型重叠。
-    CHECK(hover.Resolve(true, 0.5f, regions, handles) == 0.5f);
-    // 空闲和悬停值相互独立，包括空闲时完全透明的情况。
-    for (const float idle : {0.0f, 0.25f, 1.0f}) {
-        hover.Leave();
-        CHECK(hover.Resolve(true, 0.5f, regions, {}, idle) == idle);
-        hover.Enter(3, 4);
-        CHECK(hover.Resolve(true, 0.5f, regions, {}, idle) == 0.5f);
-        CHECK(hover.Resolve(false, 0.5f, regions, {}, idle) == idle);
-        CHECK(hover.Resolve(true, 0.5f, regions, {{2, 3, 3, 3}}, idle) == idle);
-        hover.Move(15, 15);
-        CHECK(hover.Resolve(true, 0.5f, regions, {}, idle) == idle);
-        CHECK(hover.Resolve(true, 0.5f, {}, {}, idle) == idle);
-    }
+    // Hover policy is exercised through InteractionProcessor::PrepareFrame in
+    // interaction-opacity. Keep these production region/config assertions here.
 
     const auto directory = MakeTestTemporaryDirectory("deskwaifu-hover");
     CHECK(!directory.empty());

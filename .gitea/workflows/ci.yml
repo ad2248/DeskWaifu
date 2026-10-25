@@ -52,7 +52,8 @@ jobs:
           cmake -S . -B build-ci -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_TESTING=ON \
-            -DDESKWAIFU_BUILD_CONTROL=ON
+            -DDESKWAIFU_BUILD_CONTROL=ON \
+            -DDESKWAIFU_TEST_GATE=ON
 
       - name: Build
         run: cmake --build build-ci --parallel 16
@@ -78,15 +79,45 @@ jobs:
           done
 
       - name: Test Qt model window, rendering, and IPC client
-        run: ctest --test-dir build-ci --output-on-failure --no-tests=error
+        run: python3 scripts/test-environment.py python3 scripts/run-test-gate.py build-ci
+
+      - name: Verify behavioral mutation interception
+        run: python3 scripts/test-environment.py python3 scripts/check-test-mutations.py build-ci
 
       - name: Test headless Wayland and IPC
         run: bash scripts/headless-smoke-test.sh build-ci
 
+      - name: Test KWin actual click-through, outputs and installed application
+        run: |
+          python3 tests/qt_headless_smoke.py build-ci "$DESKWAIFU_DEPS_DIR/CubismSdkForNative-5-r.5"
+          python3 tests/qt_headless_smoke.py build-ci "$DESKWAIFU_DEPS_DIR/CubismSdkForNative-5-r.5" --scale 1.5 --installed
+
+      - name: Test core contracts with ASan and UBSan
+        run: |
+          cmake -S . -B build-sanitize -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON \
+            -DDESKWAIFU_ENABLE_SANITIZERS=ON -DDESKWAIFU_TEST_GATE=ON
+          cmake --build build-sanitize --parallel 16 --target \
+            processor-event-loop-test speech-processor-contract-test interaction-processor-test \
+            config-store-test ipc-bounded-transport-test
+          python3 scripts/test-environment.py python3 scripts/run-test-gate.py build-sanitize \
+            --test '^(processor-event-loop|speech-contract-.*|interaction-opacity|config-store|ipc-bounded-transport)$'
+
+      - name: Preserve test evidence
+        if: always()
+        uses: https://github.com/actions/upload-artifact@v3
+        with:
+          name: regression-evidence
+          path: |
+            build-ci/test-logs/
+            build-ci/qt-smoke-logs/
+            build-ci/Testing/Temporary/
+            build-sanitize/test-logs/
+          if-no-files-found: warn
+
       - name: Print logs after failure
         if: failure()
         run: |
-          test ! -f build-ci/test-logs/sway.log || cat build-ci/test-logs/sway.log
-          test ! -f build-ci/test-logs/deskwaifu.log || cat build-ci/test-logs/deskwaifu.log
-          test ! -f build-ci/test-logs/deskwaifu-control.log || cat build-ci/test-logs/deskwaifu-control.log
-          test ! -f build-ci/test-logs/qt-window.log || cat build-ci/test-logs/qt-window.log
+          test ! -d build-ci/test-logs || find build-ci/test-logs -type f \
+            \( -name sway.log -o -name deskwaifu.log -o -name deskwaifu-control.log -o -name qt-window.log \) \
+            -exec cat {} \;

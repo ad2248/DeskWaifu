@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ ${DESKWAIFU_TEST_ISOLATED:-} != 1 ]]; then
+    exec python3 "$(dirname "$0")/test-environment.py" bash "$0" "$@"
+fi
 source "$(dirname "$0")/quit-exit-status.sh"
 
 BUILD_DIR=${1:-build-ci}
 DEPS_DIR=${DESKWAIFU_DEPS_DIR:-}
-RUNTIME_DIR=${XDG_RUNTIME_DIR:-/tmp/deskwaifu-runtime}
-LOG_DIR="$BUILD_DIR/test-logs"
+RUNTIME_DIR=$XDG_RUNTIME_DIR
+LOG_DIR=
 SWAY_PID=
 APP_PID=
 CONFIG_DIR=
@@ -37,10 +40,8 @@ if [[ ! -d "$DEPS_DIR/CubismSdkForNative-5-r.5/Samples/Resources" ||
     exit 1
 fi
 
-mkdir -p "$LOG_DIR"
-install -d -m 0700 "$RUNTIME_DIR"
-rm -f "$RUNTIME_DIR"/wayland-* "$RUNTIME_DIR/deskwaifu.sock"
-
+mkdir -p "$BUILD_DIR/test-logs"
+LOG_DIR=$(mktemp -d "$BUILD_DIR/test-logs/sway-XXXXXX")
 export XDG_RUNTIME_DIR="$RUNTIME_DIR"
 CONFIG_DIR=$(mktemp -d "$RUNTIME_DIR/hotkey-config.XXXXXX")
 export XDG_CONFIG_HOME="$CONFIG_DIR"
@@ -51,7 +52,7 @@ export WLR_RENDERER=pixman
 export LIBGL_ALWAYS_SOFTWARE=1
 export GALLIUM_DRIVER=llvmpipe
 export QT_QPA_PLATFORM=wayland
-unset QT_WAYLAND_SHELL_INTEGRATION
+unset QT_WAYLAND_SHELL_INTEGRATION WAYLAND_DISPLAY SWAYSOCK
 
 sway --config containers/sway.config >"$LOG_DIR/sway.log" 2>&1 &
 SWAY_PID=$!

@@ -23,6 +23,7 @@
 #include <sys/un.h>
 #include <poll.h>
 #include <thread>
+#include <atomic>
 #include <chrono>
 #include <unistd.h>
 #include <QCoreApplication>
@@ -253,7 +254,9 @@ int releaseWithCursor(int x, int y)
     CHECK(bind(server, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == 0);
     CHECK(listen(server, 1) == 0);
     bool queried = false;
+    std::atomic<bool> completed{false};
     std::thread compositor([&] {
+        struct Done { std::atomic<bool>& value; ~Done() { value = true; } } done{completed};
         pollfd ready{server, POLLIN, 0};
         if (poll(&ready, 1, 1000) <= 0) return;
         const int client = accept(server, nullptr, nullptr);
@@ -266,6 +269,9 @@ int releaseWithCursor(int x, int y)
         close(client);
     });
     window->events->PointerButton(0, false);
+    // InputListener now queues native input. Do not block the GUI dispatcher on
+    // the fake compositor thread before the release has actually been handled.
+    while (!completed) { QCoreApplication::processEvents(); QThread::msleep(1); }
     compositor.join();
     close(server); unlink(path.c_str());
     rmdir((directory + "/pointer-test").c_str()); rmdir(directory.c_str());

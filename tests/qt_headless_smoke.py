@@ -6,6 +6,7 @@ Logs are retained in BUILD_DIR/qt-smoke-logs. No user's desktop/config is touche
 
 import argparse
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -47,11 +48,15 @@ def main():
     parser.add_argument("build", type=Path)
     parser.add_argument("sdk", type=Path)
     parser.add_argument("--scale", default="1")
+    parser.add_argument("--installed", action="store_true", help="install the application component into a private prefix before running")
     args = parser.parse_args()
+    if os.environ.get("DESKWAIFU_TEST_ISOLATED") != "1":
+        return subprocess.call([sys.executable, str(Path(__file__).resolve().parents[1] / "scripts/test-environment.py"),
+                                sys.executable, str(Path(__file__).resolve()), *sys.argv[1:]])
     for program in ("kwin_wayland", "dbus-run-session"):
         if not shutil.which(program):
             print(f"Missing {program}", file=sys.stderr)
-            return 77
+            return 1
     if not os.environ.get("DESKWAIFU_QT_TEST_DBUS"):
         isolated_env = dict(os.environ, DESKWAIFU_QT_TEST_DBUS="1", DISPLAY="",
                             WAYLAND_DISPLAY="qt-model-test", QT_QPA_PLATFORMTHEME="generic",
@@ -62,11 +67,24 @@ def main():
     build = args.build.resolve()
     resources = args.sdk.resolve() / "Samples/Resources"
     assert (resources / "Haru/Haru.model3.json").is_file(), resources
-    logs = build / "qt-smoke-logs" / args.scale
-    logs.mkdir(parents=True, exist_ok=True)
+    log_root = build / "qt-smoke-logs" / args.scale
+    log_root.mkdir(parents=True, exist_ok=True)
+    logs = Path(tempfile.mkdtemp(prefix="run-", dir=log_root))
     temp_root = "/tmp/opencode" if Path("/tmp/opencode").is_dir() else None
     with tempfile.TemporaryDirectory(prefix="qt-model-", dir=temp_root) as directory:
         root = Path(directory)
+        binaries = build / "bin"
+        cli = Path(__file__).resolve().parents[1] / "deskwaifu-ctl"
+        if args.installed:
+            prefix = root / "prefix"
+            with (logs / "install.log").open("w") as log:
+                subprocess.run(["cmake", "--install", str(build), "--component", "DeskWaifu", "--prefix", str(prefix)],
+                               stdout=log, stderr=subprocess.STDOUT, check=True, timeout=30)
+            binaries = prefix / "bin"
+            cli = binaries / "deskwaifu-ctl"
+            assert (prefix / "share/applications/deskwaifu-control.desktop").is_file()
+            for name in ("deskwaifu", "deskwaifu-control", "deskwaifu-ctl"):
+                assert os.access(binaries / name, os.X_OK), name
         runtime = root / "runtime"
         runtime.mkdir(mode=0o700)
         config = root / "config/deskwaifu"
@@ -128,6 +146,9 @@ def main():
                 with (logs / "thread-transfer.log").open("w") as log:
                     subprocess.run([str(build / "bin/gpu-transfer-test")],
                                    env=dict(client_env, DESKWAIFU_TEST_RENDER_DEVICE="auto"),
+                                    stdout=log, stderr=subprocess.STDOUT, check=True, timeout=30)
+                with (logs / "click-through.log").open("w") as log:
+                    subprocess.run([str(build / "bin/click-through-test")], env=client_env,
                                    stdout=log, stderr=subprocess.STDOUT, check=True, timeout=30)
                 assert_layer_shell(window_log)
                 assert_keyboard_capability(window_log, expected=True)
@@ -153,8 +174,8 @@ def main():
                         populated.discard(match[1])
                 assert empty and nonempty, "Qt did not submit both empty and shaped input regions"
 
-                app = subprocess.Popen([str(build / "bin/deskwaifu"), "--models_dir", str(resources)],
-                                       env=client_env, stdout=model_log, stderr=subprocess.STDOUT)
+                app = subprocess.Popen([str(binaries / "deskwaifu"), "--models_dir", str(resources)],
+                                       env=client_env, cwd=root, stdout=model_log, stderr=subprocess.STDOUT)
                 deadline = time.monotonic() + 20
                 while not (runtime / "deskwaifu.sock").exists():
                     assert app.poll() is None, (logs / "model.log").read_text()[-6000:]
@@ -184,7 +205,6 @@ def main():
                         '{"comm\\u0061nd":"get_status"}',
                     ]:
                         assert raw_request(payload)["ok"], payload
-                    cli = Path(__file__).resolve().parents[1] / "deskwaifu-ctl"
                     available = request("get_available_models")["models"]
                     assert all(name in available for name in unusual_names), available
                     for name in unusual_names:
@@ -198,10 +218,15 @@ def main():
                                             capture_output=True, text=True, timeout=10)
                     assert result.returncode != 0 and json.loads(result.stdout)["ok"] is False
                     request("set_model", name="Haru")
+                    if args.installed:
+                        with (logs / "installed-control.log").open("w") as log:
+                            subprocess.run([str(binaries / "deskwaifu-control"), "--smoke-test"],
+                                           env=client_env, cwd=root, stdout=log, stderr=subprocess.STDOUT, check=True, timeout=30)
                     request("set_mouth_y", value=.4)
                     request("set_look", x=.2, y=.1)
                     request("set_model", name="Haru")
-                    assert request("get_control_status")["mouth"] == .4
+                    controls = request("get_control_status")
+                    assert math.isclose(controls["mouth"], .4, abs_tol=1e-6), controls
                     assert raw_request('{"command":"set_model","index":-1}')["ok"] is False
                     assert request("get_control_status")["has_mouth"] is True
                     request("next_model")

@@ -1,9 +1,12 @@
 #include "processor/interaction/InteractionProcessor.hpp"
 #include "processor/input/InputListener.hpp"
+#include "EventLoopFence.hpp"
 #include <QCoreApplication>
 #include <QEventLoop>
 #include <QJsonDocument>
 #include <QTemporaryDir>
+#include <QElapsedTimer>
+#include <QThread>
 #include <cmath>
 #include <fstream>
 #include <iostream>
@@ -49,17 +52,20 @@ struct Runtime : IApplicationRuntime
 class Model final : public Processor
 {
 public:
-    using Processor::Processor;
+    explicit Model(ProcessorEventLoop& loop) : Processor(loop)
+    {
+        hit->width = 800; hit->height = 600; hit->modelToken = "test-token";
+        hit->regions = {{100, 100, 500, 400}}; hit->partsEnabled = true; hit->fallback = true;
+        hit->fallbackYScale = -1; hit->fallbackYOffset = 300;
+    }
+    std::shared_ptr<ModelHitSnapshot> hit = std::make_shared<ModelHitSnapshot>();
     std::vector<QJsonObject> operations;
     bool HandleEvent(const ProcessorEvent& event) override
     {
         if (event.type == "model.hit_test.request") {
             ModelMetadata metadata; metadata.hotkeys = {{"model_token", "test-token"}};
             Send("model.state", nullptr, {{"metadata", QVariant::fromValue(metadata)}});
-            ModelHitSnapshot hit; hit.width = 800; hit.height = 600; hit.modelToken = "test-token";
-            hit.regions = {{100, 100, 500, 400}}; hit.partsEnabled = true; hit.fallback = true;
-            hit.fallbackYScale = -1; hit.fallbackYOffset = 300;
-            ModelHitTest callback = [hit](const ModelHitQuery& query) { return hit.Test(query); };
+            ModelHitTest callback = [snapshot = hit](const ModelHitQuery& query) { return snapshot->Test(query); };
             Send("model.hit_test.ready", event.sender, {{"callback", QVariant::fromValue(callback)}});
             return true;
         }
@@ -119,7 +125,61 @@ int main(int argc, char** argv)
         return std::make_unique<InteractionProcessor>(loop, window, mode, service, settings, model);
     };
     auto interaction = makeInteraction();
-    Wait(20); // 初始化请求与回调回复均通过统一队列派发。
+    QElapsedTimer initialized; initialized.start();
+    while (!interaction->Hover().available && initialized.elapsed() < 5000) {
+        QCoreApplication::processEvents(); QThread::msleep(1);
+    }
+    CHECK(interaction->Hover().available); // 真实队列完成命中回调握手。
+    if (app.arguments().contains("opacity")) {
+        ModelRenderState frame; frame.width = 800; frame.height = 600;
+        // Global gaze sampling must not synthesize pointer movement or drag.
+        InputListener listener(loop, *interaction);
+        interaction->Enter(300, 200); interaction->PointerButton(0, true);
+        listener.Move(700, 550, true);
+        CHECK(AwaitProcessorEvents(loop));
+        CHECK(!settings.Editing() && interaction->Captured());
+        CHECK(interaction->Hover().inside);
+        const auto output = window.Outputs().front();
+        interaction->ApplyLook(frame, &output, .5f, .5f, 1);
+        CHECK(frame.hasLook && frame.lookX > 0);
+        interaction->Cancel();
+        for (float idle : {0.f, .25f, 1.f}) {
+            for (float hovered : {0.f, .01f, .5f, 1.f}) {
+                interaction->Leave(); interaction->PrepareFrame(frame, true, hovered, idle);
+                CHECK(frame.opacity == idle);
+                interaction->Enter(300, 200);
+                for (int i = 0; i < 5; ++i) {
+                    interaction->PrepareFrame(frame, true, hovered, idle); CHECK(frame.opacity == hovered);
+                }
+                interaction->PrepareFrame(frame, false, hovered, idle); CHECK(frame.opacity == idle);
+                interaction->Position(700, 550);
+                interaction->PrepareFrame(frame, true, hovered, idle); CHECK(frame.opacity == idle);
+                interaction->Position(300, 200);
+                model.hit->regions.clear(); // 动画/裁剪改变区域，无需新光标事件。
+                interaction->PrepareFrame(frame, true, hovered, idle); CHECK(frame.opacity == idle);
+                model.hit->regions = {{100, 100, 500, 400}};
+                interaction->PrepareFrame(frame, true, hovered, idle); CHECK(frame.opacity == hovered);
+                interaction->Leave(); interaction->Position(300, 200);
+                interaction->PrepareFrame(frame, true, hovered, idle); CHECK(frame.opacity == idle);
+            }
+        }
+        CHECK(settings.Begin("opacity", true, 800, 600).ok);
+        auto cropped = settings.Display(); cropped.cropped = true; cropped.region = {100, 100, 500, 400};
+        CHECK(settings.Update("opacity", cropped).ok);
+        interaction->Enter(100, 100);
+        interaction->PrepareFrame(frame, true, .4f, .8f);
+        CHECK(!frame.handles.empty() && frame.opacity == .8f); // 重叠手柄不是悬停模型。
+        interaction->Position(300, 200);
+        interaction->PrepareFrame(frame, true, .4f, .8f); CHECK(frame.opacity == .4f);
+        CHECK(settings.Cancel("opacity").ok);
+        CHECK(service.SetVisibility(false).ok);
+        interaction->PrepareFrame(frame, true, .4f, .8f); CHECK(frame.opacity == .8f);
+        CHECK(service.SetVisibility(true).ok);
+        model.hit->modelToken = "new-model";
+        interaction->PrepareFrame(frame, true, .4f, .8f); CHECK(frame.opacity == .8f);
+        std::cout << "Production hover policy: focus, regions, idle/disabled, handles, hidden and stale model passed\n";
+        return 0;
+    }
     auto click = [&](int x, int y) {
         interaction->PointerMoved(x, y);
         interaction->PointerButton(0, true); interaction->PointerButton(0, false);

@@ -23,6 +23,23 @@ include(GNUInstallDirs)
 
 include(CTest)
 option(DESKWAIFU_BUILD_CONTROL "Build the Qt control application" ON)
+option(DESKWAIFU_TEST_GATE "Require the complete ordinary regression gate" OFF)
+option(DESKWAIFU_ENABLE_SANITIZERS "Instrument source builds with AddressSanitizer and UBSan" OFF)
+if (DESKWAIFU_ENABLE_SANITIZERS)
+  add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
+  add_link_options(-fsanitize=address,undefined)
+endif ()
+if (DESKWAIFU_TEST_GATE)
+  if (NOT BUILD_TESTING OR NOT DESKWAIFU_BUILD_CONTROL)
+    message(FATAL_ERROR "The regression gate requires BUILD_TESTING and DESKWAIFU_BUILD_CONTROL")
+  endif ()
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  find_program(DBUS_RUN_SESSION dbus-run-session)
+  find_program(NODE_EXECUTABLE NAMES node nodejs)
+  if (NOT DBUS_RUN_SESSION OR NOT NODE_EXECUTABLE)
+    message(FATAL_ERROR "The regression gate requires dbus-run-session and node")
+  endif ()
+endif ()
 
 # 设置输出目录。
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin)
@@ -72,17 +89,13 @@ target_link_libraries(Framework Live2DCubismCore glew_s)
 find_package(PkgConfig REQUIRED)
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/generated)
 
-# 创建应用可执行文件。
-add_executable(${APP_NAME})
+# 生产组装与集成测试复用同一个核心目标；窗口和进程入口单独链接。
+set(APP_NAME deskwaifu_application)
+add_library(${APP_NAME} STATIC)
 # 添加 SDK 通用源文件。
 add_subdirectory(${COMMON_SRC_PATH} ${CMAKE_CURRENT_BINARY_DIR}/src/Common)
 # 添加 ./src 中的项目源文件。
 add_subdirectory(src)
-
-install(TARGETS ${APP_NAME}
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT DeskWaifu)
-install(PROGRAMS deskwaifu-ctl
-  DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT DeskWaifu)
 
 # 为应用链接依赖库。
 target_link_libraries(${APP_NAME}
@@ -90,8 +103,9 @@ target_link_libraries(${APP_NAME}
   ${OPENGL_LIBRARIES}
 )
 # 指定头文件目录。
-target_include_directories(${APP_NAME} PRIVATE 
+target_include_directories(${APP_NAME} PUBLIC
   ${STB_PATH}
+  ${COMMON_SRC_PATH}
 )
 
 # 配置阶段生成内嵌着色器头文件。
@@ -102,7 +116,15 @@ execute_process(
     ${SAMPLE_SHADER_PATH}
     ${EMBEDDED_SHADERS_HEADER}
 )
-target_include_directories(${APP_NAME} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
+target_include_directories(${APP_NAME} PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/generated)
+
+set(APP_NAME deskwaifu)
+add_executable(${APP_NAME} src/main.cpp src/processor/interaction/window/QtDesktopWindow.cpp)
+target_link_libraries(${APP_NAME} PRIVATE deskwaifu_application)
+install(TARGETS ${APP_NAME}
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT DeskWaifu)
+install(PROGRAMS deskwaifu-ctl
+  DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT DeskWaifu)
 
 if (DESKWAIFU_BUILD_CONTROL)
   add_subdirectory(control)

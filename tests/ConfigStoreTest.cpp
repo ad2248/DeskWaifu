@@ -5,6 +5,16 @@
 #include <iostream>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <cerrno>
+#include <dirent.h>
+
+namespace { bool failRename = false; }
+extern "C" int __real_rename(const char*, const char*);
+extern "C" int __wrap_rename(const char* from, const char* to)
+{
+    if (failRename) { errno = EIO; return -1; }
+    return __real_rename(from, to);
+}
 
 #define CHECK(condition) do { if (!(condition)) { std::cerr << __LINE__ << ": " << #condition << '\n'; return 1; } } while (false)
 
@@ -56,6 +66,20 @@ int main()
     CHECK(store.Commit("{\"model_x\":5}", saved, parsed, error));
     CHECK(store.Commit("{\"model_x\":6}", saved, saved, error, true));
     CHECK(saved.values.at("model_x") == "6");
+    // A real filesystem commit failure must not report success, change the
+    // output snapshot, replace disk content or leak its temporary file.
+    auto unchanged = saved;
+    const auto document = saved.document;
+    failRename = true;
+    CHECK(!store.Commit("{\"model_x\":99}", saved, unchanged, error));
+    failRename = false;
+    CHECK(!error.empty() && unchanged.document == document && unchanged.values == saved.values);
+    CHECK(store.Read(parsed, error) && parsed.document == document);
+    DIR* entries = opendir(directory.c_str()); CHECK(entries);
+    bool leaked = false;
+    while (const auto* entry = readdir(entries)) if (std::string(entry->d_name).find(".deskwaifu-config-") == 0) leaked = true;
+    closedir(entries); CHECK(!leaked);
+    CHECK(store.Commit("{\"model_x\":6}", saved, saved, error)); // retry succeeds after the boundary recovers.
     CHECK(!store.Commit("{broken", saved, parsed, error));
     CHECK(store.Read(parsed, error) && parsed.values == saved.values);
     write("{broken");

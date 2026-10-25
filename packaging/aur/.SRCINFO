@@ -1,7 +1,7 @@
 pkgbase = deskwaifu-git
 	pkgdesc = Qt Live2D desktop characters for Wayland with a control panel
-	pkgver = r52.g1ddfd09
-	pkgrel = 2
+	pkgver = r262.g508b9ab
+	pkgrel = 1
 	url = https://github.com/ad2248/DeskWaifu
 	arch = x86_64
 	license = LicenseRef-Live2D-Open-Software

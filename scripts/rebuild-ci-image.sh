@@ -37,6 +37,9 @@ podman run --rm "$IMAGE" bash -ceu '
     ninja --version
     wayland-scanner --version
     sway --version
+    QT_QPA_PLATFORM=offscreen kwin_wayland --version
+    QT_QPA_PLATFORM=offscreen kscreen-doctor --help >/dev/null
+    dbus-run-session -- true
     pkgconf --modversion Qt6Core Qt6Widgets Qt6OpenGL Qt6WaylandClient Qt6StateMachine Qt6WebSockets Qt6Multimedia
     test -f /usr/lib/cmake/LayerShellQt/LayerShellQtConfig.cmake
     test -f /opt/deskwaifu-deps/CubismSdkForNative-5-r.5/Core/include/Live2DCubismCore.h

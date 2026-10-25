@@ -1,0 +1,27 @@
+{
+  "required": [
+    "screenshot-service", "processor-event-loop", "processor-pipeline", "processor-ownership",
+    "interaction-processor", "interaction-opacity",
+    "speech-contract-normal", "speech-contract-cancel", "speech-contract-cancel-playing", "speech-contract-cancel-draining", "speech-contract-replace",
+    "speech-contract-repeat-replace", "speech-contract-queued-replace", "speech-contract-destroy", "speech-contract-receiver-destroy",
+    "speech-contract-reading-cancel", "speech-contract-reading-complete",
+    "kwin-cursor-tracker", "kwin-cursor-script", "kwin-cursor-locale",
+    "config-store", "transform-editor", "ipc-transport", "ipc-bounded-transport",
+    "model-region-render", "lapp-sprite", "model-gaze", "model-render-thread",
+    "model-pointer-release", "model-pointer-transform", "model-pointer-drag", "model-pointer-state",
+    "texture-residency", "SpeechPlayer", "MiniMaxSpeechSource", "AudioPlayer",
+    "main-window-transform", "aur-packaging", "ocr-client", "smoke-isolation",
+    "test-environment", "test-gate"
+  ],
+  "optional_processes": {
+    "offscreen-renderer": "Requires an explicitly selected PCI render device; auto is not evidence of PCI coverage"
+  },
+  "optional_cases": {
+    "AudioPlayerTest::waitsForEndOfInputAndDrains": "Authorized audio device test; device-independent policy tracked in #230",
+    "AudioPlayerTest::stopAndReplacementDiscardBufferedAudio": "Authorized audio device test; device-independent policy tracked in #230",
+    "AudioPlayerTest::rejectsPartialFramesAndOverflow": "Current device-dependent test; device-independent coverage tracked in #230",
+    "AudioPlayerTest::liveSpeechPipeline": "Requires explicit cloud credentials and audible playback authorization",
+    "MiniMaxSpeechSourceTest::liveSynthesis": "Requires explicit cloud credentials/paid API authorization",
+    "ModelHotkeysTest::importsLocalModelWhenProvided": "Requires explicitly supplied private local model assets"
+  }
+}

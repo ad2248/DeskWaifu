@@ -21,6 +21,8 @@ RUN { printf 'Server = %s/$repo/os/$arch\n' "${PACMAN_MIRROR}"; \
         glu \
         libglvnd \
         layer-shell-qt \
+        kwin \
+        libkscreen \
         mesa \
         ninja \
         nodejs \
@@ -33,6 +35,7 @@ RUN { printf 'Server = %s/$repo/os/$arch\n' "${PACMAN_MIRROR}"; \
         qt6-websockets \
         socat \
         systemd-libs \
+        dbus \
         sway \
         unzip \
         wayland \
@@ -40,6 +43,9 @@ RUN { printf 'Server = %s/$repo/os/$arch\n' "${PACMAN_MIRROR}"; \
         wayland-utils \
     && setcap -r /usr/bin/sway \
     && pacman -Scc --noconfirm
+
+# Rootless runners cannot execute the distribution binary with file capabilities.
+RUN setcap -r /usr/bin/kwin_wayland
 
 COPY CubismSdkForNative-5-r.5/ /opt/deskwaifu-deps/CubismSdkForNative-5-r.5/
 COPY thirdParty/glew/ /opt/deskwaifu-deps/glew/

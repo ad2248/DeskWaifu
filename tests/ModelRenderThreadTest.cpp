@@ -1,4 +1,5 @@
 #include <GL/glew.h>
+#include <EGL/egl.h>
 #include "processor/model/ModelProcessor.hpp"
 #include "processor/model/LAppModel.hpp"
 #include "processor/model/LAppLive2DManager.hpp"
@@ -8,8 +9,10 @@
 #include <QTemporaryDir>
 #include <QFile>
 #include <QDir>
+#include <QImage>
 #include <atomic>
 #include <iostream>
+#include <set>
 
 #define CHECK(c) do { if (!(c)) { std::cerr << __LINE__ << ": " << #c << '\n'; return 1; } } while (false)
 
@@ -30,10 +33,13 @@ Observation Observed()
 {
     std::lock_guard<std::mutex> lock(observationMutex); return observation;
 }
-bool WaitUntil(const std::function<bool()>& ready)
+bool WaitUntil(const std::function<bool()>& ready, bool dispatchGui = true)
 {
     QElapsedTimer deadline; deadline.start();
-    while (!ready() && deadline.elapsed() < 5000) { QCoreApplication::processEvents(); QThread::msleep(1); }
+    while (!ready() && deadline.elapsed() < 5000) {
+        if (dispatchGui) QCoreApplication::processEvents();
+        QThread::msleep(1);
+    }
     return ready();
 }
 }
@@ -58,25 +64,61 @@ extern "C" void __wrap__ZN9LAppModel6UpdateERK15ModelFrameInput(LAppModel* model
 
 struct Calls
 {
+    enum Failure { None, Prepare, BeforeContext, AfterContext } failure = None;
     QThread* gui = QThread::currentThread();
     QThread* worker = nullptr;
     std::atomic<int> frames{0}, shutdowns{0};
     std::atomic<bool> wrongThread{false}, destroyedOnGui{false};
     std::atomic<bool> failBind{false};
+    EGLContext context = EGL_NO_CONTEXT;
+    std::set<GLuint> textures;
+    int created = 0, deleted = 0;
+    bool wrongContext = false;
 };
+thread_local Calls* activeCalls = nullptr;
+
+// Observe actual GL resource operations, not a copy of teardown policy. Wrapping
+// is restricted to this executable; the real driver still performs every call.
+extern "C" void __real_glGenTextures(GLsizei, GLuint*);
+extern "C" void __wrap_glGenTextures(GLsizei count, GLuint* ids)
+{
+    __real_glGenTextures(count, ids);
+    if (!activeCalls) return;
+    auto& calls = *activeCalls;
+    if (eglGetCurrentContext() == EGL_NO_CONTEXT || (calls.context != EGL_NO_CONTEXT && eglGetCurrentContext() != calls.context)) calls.wrongContext = true;
+    if (QThread::currentThread() != calls.worker) calls.wrongThread = true;
+    for (int i = 0; i < count; ++i) if (ids[i]) { calls.textures.insert(ids[i]); ++calls.created; }
+}
+extern "C" void __real_glDeleteTextures(GLsizei, const GLuint*);
+extern "C" void __wrap_glDeleteTextures(GLsizei count, const GLuint* ids)
+{
+    if (activeCalls) {
+        auto& calls = *activeCalls;
+        if (eglGetCurrentContext() == EGL_NO_CONTEXT || eglGetCurrentContext() != calls.context) calls.wrongContext = true;
+        if (QThread::currentThread() != calls.worker) calls.wrongThread = true;
+        for (int i = 0; i < count; ++i) if (calls.textures.erase(ids[i])) ++calls.deleted;
+    }
+    __real_glDeleteTextures(count, ids);
+}
 
 class TrackedTarget final : public ModelRenderTarget
 {
 public:
     explicit TrackedTarget(Calls& calls) : _calls(calls), _target(CreateEglModelRenderTarget("auto")) {}
     ~TrackedTarget() override { _calls.destroyedOnGui = QThread::currentThread() == _calls.gui; }
-    bool Prepare(QThread* thread) override { _calls.worker = thread; return _target->Prepare(thread); }
-    bool Initialize() override { Check(); return _target->Initialize(); }
+    bool Prepare(QThread* thread) override { _calls.worker = thread; return _calls.failure != Calls::Prepare && _target->Prepare(thread); }
+    bool Initialize() override {
+        Check(); activeCalls = &_calls;
+        if (_calls.failure == Calls::BeforeContext) return false;
+        const bool ready = _target->Initialize();
+        _calls.context = eglGetCurrentContext();
+        return ready && _calls.failure != Calls::AfterContext;
+    }
     bool MakeCurrent() override { Check(); return _target->MakeCurrent(); }
     bool Bind(int w, int h) override { Check(); return !_calls.failBind && _target->Bind(w, h); }
     unsigned Framebuffer() const override { Check(); return _target->Framebuffer(); }
     bool Read(std::vector<unsigned char>& rgba) override { Check(); ++_calls.frames; return _target->Read(rgba); }
-    bool Shutdown() override { Check(); ++_calls.shutdowns; return _target->Shutdown(); }
+    bool Shutdown() override { Check(); ++_calls.shutdowns; const bool result = _target->Shutdown(); activeCalls = nullptr; return result; }
 private:
     void Check() const { if (QThread::currentThread() != _calls.worker || _calls.worker == _calls.gui) _calls.wrongThread = true; }
     Calls& _calls;
@@ -108,10 +150,12 @@ int main(int argc, char** argv)
     QTemporaryDir directory;
     CHECK(directory.isValid() && QDir(directory.path()).mkdir("model"));
     CHECK(QFile::link(QStringLiteral(SDK_RESOURCES "/Haru/Haru.moc3"), directory.path() + "/model/test.moc3"));
+    QImage texture(2, 2, QImage::Format_RGBA8888); texture.fill(Qt::white);
+    CHECK(texture.save(directory.path() + "/model/texture.png"));
     for (const auto* name : {"test", "z-other"}) {
         QFile file(directory.path() + "/model/" + name + ".model3.json");
         CHECK(file.open(QIODevice::WriteOnly));
-        CHECK(file.write(R"({"Version":3,"FileReferences":{"Moc":"test.moc3"}})") > 0);
+        CHECK(file.write(R"({"Version":3,"FileReferences":{"Moc":"test.moc3","Textures":["texture.png","texture.png"]}})") > 0);
     }
     ProcessorEventLoop loop;
     ModelProcessor processor(loop, std::make_shared<ModelExchange>());
@@ -136,8 +180,8 @@ int main(int argc, char** argv)
     CHECK(ModelMetadataOf(processor).names.size() == 2 && ModelMetadataOf(processor).index == 0);
 
     // 刻意不处理 GUI 派发器；模型更新和渲染仍必须继续执行。
-    QThread::msleep(150);
-    CHECK(calls.frames >= 2 && ModelFrameOf(processor) && ModelFrameOf(processor)->rgba.size() == 64 * 48 * 4);
+    CHECK(WaitUntil([&] { return calls.frames >= 2 && ModelFrameOf(processor); }, false));
+    CHECK(ModelFrameOf(processor)->rgba.size() == 64 * 48 * 4);
     const auto first = ModelFrameOf(processor);
     Receiver hitReceiver(loop);
     CHECK(loop.Post({"model.hit_test.request", &hitReceiver, &processor, {}}));
@@ -176,14 +220,15 @@ int main(int argc, char** argv)
     ModelRenderState state; state.width = 32; state.height = 24;
     state.clip = {0, 0, 32, 24}; state.app.hidden = true;
     for (int i = 0; i < 10000; ++i) SetModelState(processor, state); // 替换状态，不排入一万帧。
-    QThread::msleep(100);
+    CHECK(WaitUntil([&] { const auto frame = ModelFrameOf(processor); return frame && frame->hidden && frame->width == 32 && frame->height == 24; }));
     const auto hidden = ModelFrameOf(processor);
     CHECK(hidden && hidden->width == 32 && hidden->height == 24 && hidden->regions.empty());
     CHECK(first->width == 64 && first->rgba.size() == 64 * 48 * 4); // 保留帧不可变。
-    CHECK(calls.frames > before && calls.frames < before + 50);
+    CHECK(calls.frames > before); // 正确性不规定吞吐上限或机器速度。
     for (auto byte : hidden->rgba) CHECK(byte == 0);
     const int hiddenUpdates = Observed().updates;
-    QThread::msleep(50);
+    const int hiddenFrames = calls.frames;
+    CHECK(WaitUntil([&] { return calls.frames >= hiddenFrames + 3; })); // 三个实际透明帧作为负向检查屏障。
     CHECK(Observed().updates == hiddenUpdates); // 隐藏后仍产出透明帧，但不更新模型。
     gaze.modelToken = originalToken; gaze.controls = {}; SetModelState(processor, gaze);
     CHECK(WaitUntil([&] {
@@ -196,6 +241,7 @@ int main(int argc, char** argv)
     CHECK(ModelMetadataOf(processor).index == 0 && metadata.changes == 0);
     CHECK(AwaitModel(processor, {{"command", "set_model"}, {"index", 0}})["ok"].toBool());
     CHECK(metadata.changes == 0);
+    CHECK(ModelMetadataOf(processor).hotkeys.value("model_token").toString().toStdString() == originalToken);
     CHECK(AwaitModel(processor, {{"command", "set_model"}, {"index", 1}})["ok"].toBool());
     CHECK(metadata.changes == 1 && ModelMetadataOf(processor).index == 1);
     CHECK(!AwaitModel(processor, {{"command", "set_expression"}, {"id", "missing"}})["ok"].toBool());
@@ -206,19 +252,29 @@ int main(int argc, char** argv)
     Receiver receiver(loop);
     CHECK(loop.Post({"model.operation", &receiver, &processor, {{"json", R"({"command":"reset_drag"})"}}}));
     AwaitModel(processor);
-    for (int i = 0; i < 4; ++i) QCoreApplication::processEvents();
+    CHECK(WaitUntil([&] { return receiver.received; }));
     CHECK(receiver.received && receiver.sender == &processor);
     CHECK(processor.Stop() && processor.Stop());
     CHECK(!hitReceiver.hitTest({20, 10, 64, 48, originalToken}).available);
     CHECK(!calls.wrongThread && calls.destroyedOnGui && calls.shutdowns == 1);
+    CHECK(!calls.wrongContext && calls.created > 0 && calls.created == calls.deleted && calls.textures.empty());
     CHECK(!AwaitModel(processor)["ok"].toBool());
 
-    // 初始化失败后必须在同一工作线程清理，并保证 Cubism 可以再次使用。
+    // 准备失败、尚未创建上下文及创建上下文后的失败分别清理自身资源。
+    for (auto stage : {Calls::Prepare, Calls::BeforeContext, Calls::AfterContext}) {
+        ModelProcessor partial(loop, std::make_shared<ModelExchange>()); Calls partialCalls; partialCalls.failure = stage;
+        CHECK(!partial.Start(std::unique_ptr<ModelRenderTarget>(new TrackedTarget(partialCalls)),
+            {"", directory.path().toStdString(), "", {}, -1}, 16, 16));
+        CHECK(partial.Stop() && partialCalls.destroyedOnGui && !partialCalls.wrongThread && !partialCalls.wrongContext);
+        CHECK(partialCalls.shutdowns == (stage == Calls::Prepare ? 0 : 1) && partialCalls.textures.empty());
+    }
+    // 模型初始化失败后必须在同一工作线程清理，并保证 Cubism 可以再次使用。
     ModelProcessor failed(loop, std::make_shared<ModelExchange>());
     Calls failedCalls;
     CHECK(!failed.Start(std::unique_ptr<ModelRenderTarget>(new TrackedTarget(failedCalls)),
         {"", "/nonexistent/deskwaifu-test-models", "", {}, -1}, 16, 16));
     CHECK(!failedCalls.wrongThread && failedCalls.destroyedOnGui && failedCalls.shutdowns == 1);
+    CHECK(!failedCalls.wrongContext && failedCalls.textures.empty());
     ModelProcessor recovered(loop, std::make_shared<ModelExchange>());
     Calls recoveredCalls;
     CHECK(recovered.Start(std::unique_ptr<ModelRenderTarget>(new TrackedTarget(recoveredCalls)),
@@ -231,10 +287,11 @@ int main(int argc, char** argv)
     const auto oldCallback = recoveredReceiver.hitTest;
     const auto oldToken = ModelMetadataOf(recovered).hotkeys.value("model_token").toString().toStdString();
     recoveredCalls.failBind = true;
-    QThread::msleep(100);
-    CHECK(!ModelErrorOf(recovered).isEmpty() && !AwaitModel(recovered)["ok"].toBool());
+    CHECK(WaitUntil([&] { return !ModelErrorOf(recovered).isEmpty(); }));
+    CHECK(!AwaitModel(recovered)["ok"].toBool());
     CHECK(!oldCallback({8, 8, 16, 16, oldToken}).available);
     CHECK(recovered.Stop() && !recoveredCalls.wrongThread && recoveredCalls.shutdowns == 1);
+    CHECK(!recoveredCalls.wrongContext && recoveredCalls.created == recoveredCalls.deleted && recoveredCalls.textures.empty());
     recoveredCalls.failBind = false;
     CHECK(recovered.Start(std::unique_ptr<ModelRenderTarget>(new TrackedTarget(recoveredCalls)),
         {"", directory.path().toStdString(), "", {}, -1}, 16, 16));
@@ -251,5 +308,6 @@ int main(int argc, char** argv)
     }
     CHECK(recoveredReceiver.hitTest && recoveredReceiver.hitTest({8, 8, 16, 16, newToken}).available);
     CHECK(recovered.Stop() && recoveredCalls.shutdowns == 2);
+    CHECK(!recoveredCalls.wrongContext && recoveredCalls.created == recoveredCalls.deleted && recoveredCalls.textures.empty());
     return 0;
 }

@@ -8,6 +8,7 @@
 #include "processor/ipc/IpcProcessor.hpp"
 #include "processor/speech/source/MiniMaxSpeechSource.hpp"
 #include "processor/speech/audio/AudioPlayer.hpp"
+#include "EventLoopFence.hpp"
 #include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QFileInfo>
@@ -26,7 +27,7 @@ void Wait(const std::function<bool()>& predicate)
     while (!predicate() && timer.elapsed() < 3000) { QCoreApplication::processEvents(); QThread::msleep(1); }
     Check(predicate(), "event-loop wait timed out");
 }
-void Drain() { for (int i = 0; i < 30; ++i) QCoreApplication::processEvents(); }
+void Drain(ProcessorEventLoop& loop) { Check(AwaitProcessorEvents(loop), "processor FIFO fence timed out"); }
 QImage SyntheticImage()
 {
     QImage image(7, 5, QImage::Format_ARGB32); image.fill(Qt::blue); return image;
@@ -101,7 +102,7 @@ try {
         Wait([&] { return speech.requests == 1; });
         Check(!QFileInfo::exists(path), "temporary PNG is released after recognition");
         Check(speech.last.sender == &reading && speech.last.data.value("text") == "姐姐，你好", "speech request uses pointer reply route");
-        loop.Post({Failed, &speech, nullptr, {{"error", "unrelated originless speech notification"}}}); Drain();
+        loop.Post({Failed, &speech, nullptr, {{"error", "unrelated originless speech notification"}}}); Drain(loop);
         Check(reading.CurrentState() == ReadingClipProcessor::State::WaitingSpeech, "broadcast notifications must not complete a directed operation");
         loop.Post({Spoken, &speech, &reading});
         Wait([&] { return reading.CurrentState() == ReadingClipProcessor::State::Idle; });
@@ -112,10 +113,10 @@ try {
         Capability images(loop, ReadImage), ocr(loop, Recognize), speech(loop, Speak);
         ReadingClipProcessor reading(loop, images, ocr, speech);
         loop.Post({ReadingClip, nullptr, &reading}); Wait([&] { return images.requests == 1; });
-        loop.Post({Failed, &ocr, &reading, {{"error", "unrelated"}}}); Drain();
+        loop.Post({Failed, &ocr, &reading, {{"error", "unrelated"}}}); Drain(loop);
         Check(reading.CurrentState() == ReadingClipProcessor::State::WaitingImage, "ignore results from a different capability");
         loop.Post({ReadingClip, nullptr, &reading}); Wait([&] { return images.cancels == 1; });
-        loop.Post({ReadingClip, nullptr, &reading}); Drain();
+        loop.Post({ReadingClip, nullptr, &reading}); Drain(loop);
         Check(reading.CurrentState() == ReadingClipProcessor::State::Cancelling && images.requests == 1 && images.cancels == 1, "wait for cancellation drain without starting another flow");
         loop.Post({ImageReady, &images, &reading, {{"image", QVariant::fromValue(ImageFile::Create(SyntheticImage()))}}});
         Wait([&] { return reading.CurrentState() == ReadingClipProcessor::State::Idle; });
@@ -136,7 +137,7 @@ try {
         auto file = qvariant_cast<ImageFilePtr>(sink.received[0].data.value("image"));
         const auto path = file->Path();
         Check(QFileInfo::exists(path), "private PNG exists while referenced");
-        sink.received.clear(); file.clear(); Drain();
+        sink.received.clear(); file.clear(); Drain(loop);
         Check(!QFileInfo::exists(path), "private PNG is cleaned up by resource lifetime");
     }
     for (bool duringSpeech : {false, true}) {
@@ -159,7 +160,8 @@ try {
         Wait([&] { return reading.CurrentState() == ReadingClipProcessor::State::Idle; });
         Check(reading.LastError() == "reading cancelled" && speech.requests == (duringSpeech ? 1 : 0), "late completion cannot resume cancelled reading");
         loop.Post({ReadingClip}); Wait([&] { return images.requests == 2; });
-        loop.Post({Failed, &images, &reading, {{"error", "finish retry"}}}); Drain();
+        loop.Post({Failed, &images, &reading, {{"error", "finish retry"}}});
+        Wait([&] { return reading.CurrentState() == ReadingClipProcessor::State::Idle; });
     }
     {
         ProcessorEventLoop loop;
@@ -221,7 +223,7 @@ try {
         Check(socket.waitForConnected(1000), "connect private IPC client");
         ipcEvents.SetPaused(true);
         QByteArray requests; for (int i = 0; i < 40; ++i) requests += "{}\n";
-        socket.write(requests); socket.flush(); Drain();
+        socket.write(requests); socket.flush(); Drain(loop);
         Check(commands.count == 0, "paused IPC must not run inside output replacement");
         ipcEvents.SetPaused(false);
         Wait([&] { return commands.count == 40; });
