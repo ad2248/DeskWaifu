@@ -667,6 +667,20 @@ private slots:
         QCOMPARE(slider->value(), 35);
         const auto screenshot = qEnvironmentVariable("DESKWAIFU_GAZE_SCREENSHOT");
         if (!screenshot.isEmpty()) QVERIFY(window.grab().save(screenshot));
+        // 编辑保护只能阻止有效读数覆盖输入，不能吞掉后端不支持的响应。
+        tabs->tabBar()->setFocus();
+        supported = false;
+        delayedResponse.clear();
+        delayQuery = true;
+        QTRY_VERIFY_WITH_TIMEOUT(!delayedResponse.isEmpty(), 3000);
+        spin->setFocus();
+        QVERIFY(spin->hasFocus());
+        connection->write(delayedResponse);
+        connection->flush();
+        QTRY_VERIFY_WITH_TIMEOUT(!group->isEnabled() && group->toolTip() == "unknown command", 5000);
+        supported = true;
+        connection->abort();
+        QTRY_VERIFY_WITH_TIMEOUT(group->isEnabled() && group->toolTip().isEmpty(), 5000);
         supported = false;
         connection->abort();
         QTRY_VERIFY(!group->isEnabled());

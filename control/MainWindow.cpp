@@ -460,18 +460,18 @@ void MainWindow::handleResponse(const QString& command, const QJsonObject& respo
         const bool mutation = command == QStringLiteral("set_mouse_look");
         if (mutation) _mouseLookSetPending = false;
         else _mouseLookQueryPending = false;
-        if (!mutation && (_mouseLookSetPending || ui->mouseLookRadiusSlider->isSliderDown() ||
-            ui->mouseLookRadiusSpin->hasFocus())) return;
         const auto value = response.value(QStringLiteral("radius"));
         const double radius = value.toDouble(-1);
         const bool valid = value.isDouble() && std::isfinite(radius) && radius >= 0;
+        const bool ok = response.value(QStringLiteral("ok")).toBool() && valid;
+        if (!mutation && (_mouseLookSetPending || (ok && _mouseLookSupported &&
+            (ui->mouseLookRadiusSlider->isSliderDown() || ui->mouseLookRadiusSpin->hasFocus())))) return;
         if (valid) {
             _mouseLookSupported = true;
             _lastMouseLookRadius = radius;
         } else if (!mutation) _mouseLookSupported = false;
         showMouseLook(_lastMouseLookRadius);
         ui->mouseLookGroup->setEnabled(_client.isConnected() && _mouseLookSupported);
-        const bool ok = response.value(QStringLiteral("ok")).toBool() && valid;
         if (ok && mutation) setStatusMessage(tr("已设置并保存"));
         ui->mouseLookGroup->setToolTip(ok ? QString() : response.value(QStringLiteral("error")).toString(tr("后端不支持鼠标注视范围设置")));
         if (!ok && (mutation || valid)) setStatusMessage(ui->mouseLookGroup->toolTip());
