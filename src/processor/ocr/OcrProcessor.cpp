@@ -1,6 +1,7 @@
 #include "OcrProcessor.hpp"
 #include "processor/Events.hpp"
 #include <QJsonArray>
+#include <QJsonDocument>
 
 OcrProcessor::OcrProcessor(ProcessorEventLoop& loop)
     : OcrProcessor(loop, std::unique_ptr<OcrClient>(new OcrClient(OcrClient::DefaultExecutable()))) {}
@@ -26,13 +27,35 @@ OcrProcessor::OcrProcessor(ProcessorEventLoop& loop, std::unique_ptr<OcrClient> 
 }
 
 OcrProcessor::~OcrProcessor()
+{ Stop(); }
+
+void OcrProcessor::Stop()
 {
+    if (!_client) return;
     _client->disconnect(this);
     if (!_transportRequest.isEmpty()) _client->Cancel(_transportRequest);
+    _client.reset(); // kill/join 后再释放被 helper 借用的文件。
+    _image.clear(); _retiringImage.clear(); _transportRequest.clear(); _requester = nullptr;
 }
 
 bool OcrProcessor::HandleEvent(const ProcessorEvent& event)
 {
+    if (!_client) {
+        if (event.type == "ocr.command") Send("ocr.result", event.sender, {{"json", QStringLiteral("{\"ok\":false,\"error\":\"OCR stopped\"}")}});
+        else if (event.type == ProcessorEvents::Recognize) Send(ProcessorEvents::Failed, event.sender, {{"error", "OCR stopped"}});
+        return event.type == "ocr.command" || event.type == ProcessorEvents::Recognize;
+    }
+    if (event.type == "ocr.command") {
+        const auto request = QJsonDocument::fromJson(event.data.value("json").toString().toUtf8()).object();
+        const auto command = request.value("command").toString();
+        QJsonObject reply;
+        if (command == "get_ocr_status") reply = _client->Status();
+        else if (command == "ocr_recognize") reply = _client->Submit(request.value("image").toString());
+        else if (command == "get_ocr_result") reply = _client->Result(request.value("job_id").toString());
+        else reply = _client->Cancel(request.value("job_id").toString());
+        Send("ocr.result", event.sender, {{"json", QString::fromUtf8(QJsonDocument(reply).toJson(QJsonDocument::Compact))}});
+        return true;
+    }
     if (event.type == ProcessorEvents::Cancel && !_transportRequest.isEmpty() && event.sender == _requester) {
         _client->Cancel(_transportRequest); return true;
     }

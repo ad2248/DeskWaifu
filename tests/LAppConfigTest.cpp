@@ -1,4 +1,4 @@
-#include "LAppConfig.hpp"
+#include "processor/interaction/config/LAppConfig.hpp"
 #include "TestTemporaryDirectory.hpp"
 #include <cstdio>
 #include <fstream>

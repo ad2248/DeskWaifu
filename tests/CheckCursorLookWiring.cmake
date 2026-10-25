@@ -1,4 +1,4 @@
-file(READ "${APP_SOURCE}/LAppDelegate.cpp" delegate)
+file(READ "${APP_SOURCE}/app/LAppDelegate.cpp" delegate)
 file(READ "${APP_SOURCE}/processor/input/InputListener.cpp" listener)
 if (NOT listener MATCHES "_cursor.LocalPosition" OR NOT listener MATCHES "Move\\(x, y, true\\)" OR
     NOT listener MATCHES "_cursorTimer.start" OR delegate MATCHES "TrackGlobalCursor")
@@ -13,7 +13,7 @@ string(FIND "${runtime}" "_manager->OnDrag(state.lookX, state.lookY);" update)
 string(FIND "${runtime}" "_view->Render(state.app.transform," render)
 file(READ "${APP_SOURCE}/processor/interaction/InteractionProcessor.cpp" interaction)
 file(READ "${APP_SOURCE}/processor/interaction/InteractionProcessor.hpp" interaction_header)
-if (update EQUAL -1 OR render LESS update OR NOT delegate MATCHES "_interaction->ApplyLook" OR
+if (update EQUAL -1 OR render LESS update OR NOT interaction MATCHES "ApplyLook\\(state," OR
     NOT interaction MATCHES "_cursor.LookAt" OR NOT interaction_header MATCHES "_cursor.LocalPosition")
   message(FATAL_ERROR "Apply cached gaze every frame before rendering")
 endif ()

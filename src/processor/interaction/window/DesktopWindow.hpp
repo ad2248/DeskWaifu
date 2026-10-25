@@ -1,6 +1,6 @@
 #pragma once
 
-#include "window/ModelKeyboardGrab.hpp"
+#include "ModelKeyboardGrab.hpp"
 #include "contracts/ModelRegion.hpp"
 #include "OutputController.hpp"
 #include "DesktopWindowEvents.hpp"

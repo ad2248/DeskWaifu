@@ -6,6 +6,8 @@
 class ScreenshotProcessor final : public Processor
 {
 public:
+    ~ScreenshotProcessor() override;
+    void Stop();
     explicit ScreenshotProcessor(ProcessorEventLoop& loop);
     ScreenshotProcessor(ProcessorEventLoop& loop, std::unique_ptr<IScreenshotService> service);
     bool HandleEvent(const ProcessorEvent& event) override;

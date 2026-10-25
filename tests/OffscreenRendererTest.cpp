@@ -1,7 +1,7 @@
 #include <GL/glew.h>
 #include <EGL/egl.h>
-#include "OffscreenRenderer.hpp"
-#include "RenderDevice.hpp"
+#include "render/OffscreenRenderer.hpp"
+#include "contracts/RenderDevice.hpp"
 #include <cstdlib>
 #include <iostream>
 

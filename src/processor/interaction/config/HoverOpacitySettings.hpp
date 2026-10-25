@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ApplicationService.hpp"
+#include "contracts/AppState.hpp"
 #include "LAppConfig.hpp"
 
 // 悬停配置独立于变换编辑事务保存。

@@ -7,7 +7,7 @@ qt_add_executable(deskwaifu-control
   MainWindow.ui
   DeskWaifuClient.cpp
   DeskWaifuClient.hpp
-  ../src/IpcSocketPath.hpp
+  ../src/processor/ipc/IpcSocketPath.hpp
   DeskWaifuLauncher.cpp
   DeskWaifuLauncher.hpp
   DeskWaifuRespawner.cpp

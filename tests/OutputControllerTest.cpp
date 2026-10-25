@@ -1,5 +1,5 @@
-#include "OutputController.hpp"
-#include "DesktopWindowEvents.hpp"
+#include "processor/interaction/window/OutputController.hpp"
+#include "processor/interaction/window/DesktopWindowEvents.hpp"
 #include <vector>
 
 struct FakeBackend : IOutputBackend

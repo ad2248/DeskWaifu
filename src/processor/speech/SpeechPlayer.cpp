@@ -124,3 +124,4 @@ void SpeechPlayer::End(FinishReason reason)
     _audio.Stop(id);
     emit Finished(id, reason);
 }
+void SpeechPlayer::SetApiKey(const QString& key) { _source.SetApiKey(key); }

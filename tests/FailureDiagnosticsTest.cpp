@@ -1,4 +1,4 @@
-#include "FailureDiagnostics.hpp"
+#include "processor/model/FailureDiagnostics.hpp"
 
 int main()
 {

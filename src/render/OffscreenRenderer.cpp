@@ -1,5 +1,5 @@
 #include "OffscreenRenderer.hpp"
-#include "RenderDevice.hpp"
+#include "contracts/RenderDevice.hpp"
 #include "ReadRgbaFrame.hpp"
 #include <GL/glew.h>
 #include <EGL/egl.h>

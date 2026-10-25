@@ -1,7 +1,7 @@
 #include <GL/glew.h>
 #include <EGL/egl.h>
-#include "LAppDelegate.hpp"
-#include "LAppDefine.hpp"
+#include "TestApplication.hpp"
+#include "processor/model/LAppDefine.hpp"
 #include "processor/model/ModelHotkeys.hpp"
 #include "ModelProcessorTestHelpers.hpp"
 #include "DispatchedInput.hpp"
@@ -153,7 +153,7 @@ int main(int argc, char** argv)
     auto& config = LAppConfig::GetInstance();
     config.sourcePath = (directory.path() + "/config.json").toStdString();
     config.values.modelOutput = "test";
-    auto* app = LAppDelegate::GetInstance();
+    auto* app = TestApplication::GetInstance();
     CHECK(app->Initialize());
     CHECK(events);
 
@@ -190,7 +190,7 @@ int main(int argc, char** argv)
     std::cout.rdbuf(previous);
     CHECK(triggerCalls == 1);
     CHECK(logs.str().find("injected action failure") != std::string::npos);
-    CHECK(triggered && !app->Models().Metadata().hotkeys["hotkeys"].toArray()[0].toObject()["active"].toBool());
+    CHECK(triggered && !ModelMetadataOf(app->Models()).hotkeys["hotkeys"].toArray()[0].toObject()["active"].toBool());
     events->KeyboardKey(KEY_A, true);
     CHECK(triggerCalls == 1); // 在真实 Delegate 路径上抑制重复按键。
     events->KeyboardKey(KEY_A, false);
@@ -200,18 +200,18 @@ int main(int argc, char** argv)
     events->KeyboardKey(KEY_A, true);
     AwaitModel(app->Models());
     std::cout.rdbuf(previous);
-    CHECK(triggerCalls == 2 && app->Models().Metadata().hotkeys["hotkeys"].toArray()[0].toObject()["active"].toBool());
+    CHECK(triggerCalls == 2 && ModelMetadataOf(app->Models()).hotkeys["hotkeys"].toArray()[0].toObject()["active"].toBool());
     CHECK(logs.str().find("Trigger failed") == std::string::npos);
     events->KeyboardKey(KEY_ESC, true);
     CHECK(!app->GetWindow()->KeyboardGrabbed());
 
     // 真实 IPC 到命令适配器再到服务：模型令牌变化必须阻止旧动作，
     // 不可用的重复 ID 不能报告为活动状态。
-    const auto oldToken = app->Models().Metadata().hotkeys["model_token"].toString().toStdString();
+    const auto oldToken = ModelMetadataOf(app->Models()).hotkeys["model_token"].toString().toStdString();
     CHECK(AwaitModel(app->Models(), {{"command", "set_model"}, {"index", 1}})["ok"].toBool());
     CHECK(AwaitModel(app->Models(), {{"command", "set_model"}, {"index", 0}})["ok"].toBool());
-    const auto token = app->Models().Metadata().hotkeys["model_token"].toString().toStdString();
-    CHECK(token != oldToken && !app->Models().Metadata().hotkeys["hotkeys"].toArray()[0].toObject()["active"].toBool());
+    const auto token = ModelMetadataOf(app->Models()).hotkeys["model_token"].toString().toStdString();
+    CHECK(token != oldToken && !ModelMetadataOf(app->Models()).hotkeys["hotkeys"].toArray()[0].toObject()["active"].toBool());
     const int fd = socket(AF_UNIX, SOCK_STREAM, 0);
     CHECK(fd >= 0);
     sockaddr_un address{};
@@ -255,7 +255,8 @@ int main(int argc, char** argv)
     CHECK(!unavailable["ok"].toBool(true) && unavailable["error"].toString().contains("unavailable"));
     CHECK(unavailable["device"] == "auto");
     CHECK(QJsonDocument::fromJson(lines[5]).object()["ok"].toBool());
-    CHECK(config.values.renderDevice == "auto");
+    LAppConfig savedConfig;
+    CHECK(savedConfig.LoadFromFile(config.sourcePath) && savedConfig.values.renderDevice == "auto");
     CHECK(QJsonDocument::fromJson(lines[6]).object()["ok"].toBool());
     return 0;
 }

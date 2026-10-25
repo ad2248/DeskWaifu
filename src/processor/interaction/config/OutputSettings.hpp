@@ -1,7 +1,7 @@
 #pragma once
 
-#include "OutputController.hpp"
-#include "TransformEditor.hpp"
+#include "processor/interaction/window/OutputController.hpp"
+#include "processor/interaction/TransformEditor.hpp"
 
 // 与 Wayland 注册表 ID 不同，显示器名称在重新连接后仍可使用。
 class OutputSettings

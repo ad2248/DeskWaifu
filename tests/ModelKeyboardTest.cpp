@@ -1,6 +1,6 @@
 #include "processor/interaction/ModelKeyboard.hpp"
 #include "processor/interaction/ModelInputDispatch.hpp"
-#include "window/ModelKeyboardGrab.hpp"
+#include "processor/interaction/window/ModelKeyboardGrab.hpp"
 #include "processor/model/ModelHotkeys.hpp"
 
 #include <QtTest>

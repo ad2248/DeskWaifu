@@ -5,11 +5,11 @@
  * that can be found at https://www.live2d.com/eula/live2d-open-software-license-agreement_en.html.
  */
 
-#include "LAppDelegate.hpp"
-#include "KWinCursorTracker.hpp"
-#include "LAppDefine.hpp"
-#include "LAppConfig.hpp"
-#include "RenderDevice.hpp"
+#include "app/LAppDelegate.hpp"
+#include "processor/input/KWinCursorTracker.hpp"
+#include "processor/model/LAppDefine.hpp"
+#include "processor/interaction/config/LAppConfig.hpp"
+#include "contracts/RenderDevice.hpp"
 #include <cstdlib>
 #include <unistd.h>
 #include <sys/types.h>
@@ -130,7 +130,7 @@ int main(int argc, char* argv[])
     application.setApplicationName("deskwaifu");
     application.setQuitOnLastWindowClosed(false);
     // 创建应用实例。
-    if (LAppDelegate::GetInstance()->Initialize() == GL_FALSE)
+    if (!LAppDelegate::GetInstance()->Initialize())
     {
         if (!LAppDelegate::GetInstance()->Release())
             fprintf(stderr, "[APP]Failed to bind GPU context for teardown\n");

@@ -1,5 +1,5 @@
 #include "contracts/ModelRegion.hpp"
-#include "LAppConfig.hpp"
+#include "processor/interaction/config/LAppConfig.hpp"
 #include <climits>
 #include <cstdio>
 #include <fstream>

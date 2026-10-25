@@ -1,4 +1,4 @@
-#include "QtWindowInput.hpp"
+#include "processor/interaction/window/QtWindowInput.hpp"
 #include <cstdlib>
 #include <iostream>
 

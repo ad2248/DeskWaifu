@@ -1,5 +1,5 @@
-#include "HoverOpacity.hpp"
-#include "LAppConfig.hpp"
+#include "support/HoverOpacity.hpp"
+#include "processor/interaction/config/LAppConfig.hpp"
 #include "TestTemporaryDirectory.hpp"
 #include <fstream>
 #include <iostream>

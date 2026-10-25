@@ -1,5 +1,7 @@
 #include "ReadingClipProcessor.hpp"
 #include "processor/Events.hpp"
+#include <QJsonDocument>
+#include <QJsonObject>
 
 ReadingClipProcessor::ReadingClipProcessor(ProcessorEventLoop& loop, IProcessor& images, IProcessor& ocr, IProcessor& speech)
     : Processor(loop), _images(images), _ocr(ocr), _speech(speech) {}
@@ -27,6 +29,14 @@ void ReadingClipProcessor::Finish(QString error)
 bool ReadingClipProcessor::HandleEvent(const ProcessorEvent& event)
 {
     using namespace ProcessorEvents;
+    if (event.type == "reading.command") {
+        const auto command = QJsonDocument::fromJson(event.data.value("json").toString().toUtf8()).object().value("command").toString();
+        if (command == "reading_clip") {
+            Send(ReadingClip, this);
+            Send("reading.result", event.sender, {{"json", QStringLiteral("{\"ok\":true,\"queued\":true}")}});
+        } else Send("reading.result", event.sender, {{"json", QString::fromUtf8(QJsonDocument(QJsonObject::fromVariantMap(Status())).toJson(QJsonDocument::Compact))}});
+        return true;
+    }
     if (event.type == ReadingClip) {
         if (_state == State::Idle) {
             _error.clear();

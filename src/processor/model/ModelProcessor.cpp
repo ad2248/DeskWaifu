@@ -5,10 +5,11 @@
 
 namespace {
 const QString Operation = QStringLiteral("model.operation");
-const QString Completed = QStringLiteral("model.completed");
+const QString Completed = QStringLiteral("model.state");
 }
 
-ModelProcessor::ModelProcessor(ProcessorEventLoop& loop) : Processor(loop) {}
+ModelProcessor::ModelProcessor(ProcessorEventLoop& loop, std::shared_ptr<ModelExchange> exchange)
+    : Processor(loop), _exchange(std::move(exchange)) {}
 ModelProcessor::~ModelProcessor() { Stop(); }
 
 bool ModelProcessor::Start(std::unique_ptr<ModelRenderTarget> target, const ModelRuntimeOptions& options, int width, int height)
@@ -18,8 +19,8 @@ bool ModelProcessor::Start(std::unique_ptr<ModelRenderTarget> target, const Mode
     _metadata = {};
     _stoppedCleanly = true;
     {
-        std::lock_guard<std::mutex> lock(_mutex);
-        _state = {}; _frame.reset(); _error.clear();
+        std::lock_guard<std::mutex> lock(_exchange->mutex);
+        _exchange->frame.reset(); _exchange->error.clear();
     }
     _target = std::move(target);
     if (!_target->Prepare(&_thread)) { _target.reset(); return false; }
@@ -34,21 +35,24 @@ bool ModelProcessor::Start(std::unique_ptr<ModelRenderTarget> target, const Mode
         initialized = _target->Initialize() && _runtime->Initialize(options, width, height);
         if (initialized) {
             _metadata = _runtime->Metadata(); // 启动同步屏障；GUI 此时尚未派发事件。
-            _state.width = width; _state.height = height;
-            _state.app.modelIndex = _metadata.index;
-            _state.modelToken = _metadata.hotkeys.value("model_token").toString().toStdString();
-            _state.clip = {0, 0, width, height};
+            {
+                std::lock_guard<std::mutex> lock(_exchange->mutex);
+                _exchange->state.width = width; _exchange->state.height = height;
+                _exchange->state.app.modelIndex = _metadata.index;
+                _exchange->state.modelToken = _metadata.hotkeys.value("model_token").toString().toStdString();
+                _exchange->state.clip = {0, 0, width, height};
+            }
             auto* timer = new QTimer(_worker);
             timer->setTimerType(Qt::PreciseTimer);
             connect(timer, &QTimer::timeout, _worker, [this] {
                 ModelRenderState state;
-                { std::lock_guard<std::mutex> lock(_mutex); state = _state; }
+                { std::lock_guard<std::mutex> lock(_exchange->mutex); state = _exchange->state; }
                 try {
                     auto frame = _runtime->Render(state, *_target);
                     { std::lock_guard<std::mutex> lock(_hits->mutex); _hits->snapshot = frame->hit; }
-                    std::lock_guard<std::mutex> lock(_mutex); _frame = std::move(frame);
+                    std::lock_guard<std::mutex> lock(_exchange->mutex); _exchange->frame = std::move(frame);
                 } catch (const std::exception& error) {
-                    std::lock_guard<std::mutex> lock(_mutex); _error = QString::fromUtf8(error.what());
+                    std::lock_guard<std::mutex> lock(_exchange->mutex); _exchange->error = QString::fromUtf8(error.what());
                     { std::lock_guard<std::mutex> hitLock(_hits->mutex); _hits->active = false; }
                     for (auto* timer : _worker->findChildren<QTimer*>()) timer->stop();
                 }
@@ -57,6 +61,7 @@ bool ModelProcessor::Start(std::unique_ptr<ModelRenderTarget> target, const Mode
         }
     }, Qt::BlockingQueuedConnection);
     _running = initialized;
+    if (initialized) Send("model.state", nullptr, {{"metadata", QVariant::fromValue(_metadata)}});
     if (!initialized) Stop();
     return initialized;
 }
@@ -78,12 +83,6 @@ bool ModelProcessor::Stop()
     return _stoppedCleanly;
 }
 
-bool ModelProcessor::Submit(const std::string& json, std::function<void(QJsonObject)> complete)
-{
-    if (!_running || !Error().isEmpty()) return false;
-    return Send(Operation, this, {{"operation", QVariant::fromValue(std::make_shared<ModelOperation>(ModelOperation{json, std::move(complete)}))}});
-}
-
 bool ModelProcessor::HandleEvent(const ProcessorEvent& event)
 {
     if (event.type == "model.hit_test.request") {
@@ -93,38 +92,28 @@ bool ModelProcessor::HandleEvent(const ProcessorEvent& event)
         return true;
     }
     if (event.type != Operation && event.type != Completed) return false;
-    auto operation = event.data.value("operation").value<ModelOperationPtr>();
-    if (!operation && event.type == Operation) {
-        IProcessor* requester = event.sender;
-        operation = std::make_shared<ModelOperation>(ModelOperation{
-            event.data.value("json").toString().toStdString(),
-            [this, requester](QJsonObject reply) { Send(QStringLiteral("model.result"), requester, {{"reply", reply}}); }});
-    }
-    if (!operation) return true;
     if (event.type == Completed) {
-        const int previous = _metadata.index;
+        if (event.sender != this) return false;
         _metadata = event.data.value("metadata").value<ModelMetadata>();
-        if (previous != _metadata.index && _modelChanged) _modelChanged();
-        if (operation->complete) operation->complete(event.data.value("reply").toJsonObject());
-    } else if (!_running || !Error().isEmpty()) {
-        if (operation->complete) operation->complete({{"ok", false}, {"error", "model renderer stopped"}});
+        return false;
     } else {
-        QMetaObject::invokeMethod(_worker, [this, operation] {
-            auto reply = _runtime->Execute(operation->json);
-            const auto command = QJsonDocument::fromJson(QByteArray::fromStdString(operation->json)).object().value("command").toString();
+        bool failed;
+        { std::lock_guard<std::mutex> lock(_exchange->mutex); failed = !_exchange->error.isEmpty(); }
+        if (!_running || failed) {
+            Send("model.result", event.sender, {{"reply", QJsonObject{{"ok", false}, {"error", "model renderer stopped"}}}});
+            return true;
+        }
+        const auto json = event.data.value("json").toString();
+        IProcessor* requester = event.sender;
+        QMetaObject::invokeMethod(_worker, [this, json, requester] {
+            auto reply = _runtime->Execute(json.toStdString());
+            const auto command = QJsonDocument::fromJson(json.toUtf8()).object().value("command").toString();
             if (reply.value("ok").toBool() && (command == "set_model" || command == "next_model" || command == "prev_model" || command == "switch_skin")) {
                 std::lock_guard<std::mutex> lock(_hits->mutex); _hits->snapshot.reset();
             }
-            Send(Completed, this, {{"operation", QVariant::fromValue(operation)}, {"reply", reply},
-                {"metadata", QVariant::fromValue(_runtime->Metadata())}});
+            Send(Completed, nullptr, {{"metadata", QVariant::fromValue(_runtime->Metadata())}});
+            Send("model.result", requester, {{"reply", reply}});
         }, Qt::QueuedConnection);
     }
     return true;
 }
-
-void ModelProcessor::SetState(ModelRenderState state)
-{ std::lock_guard<std::mutex> lock(_mutex); _state = std::move(state); }
-std::shared_ptr<const RenderFrame> ModelProcessor::Frame() const
-{ std::lock_guard<std::mutex> lock(_mutex); return _frame; }
-QString ModelProcessor::Error() const
-{ std::lock_guard<std::mutex> lock(_mutex); return _error; }

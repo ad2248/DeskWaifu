@@ -1,4 +1,4 @@
-#include "KWinCursorTracker.hpp"
+#include "processor/input/KWinCursorTracker.hpp"
 
 #include <atomic>
 #include <clocale>

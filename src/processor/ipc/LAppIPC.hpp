@@ -12,7 +12,7 @@
 #include <sys/types.h>
 #include <vector>
 #include <memory>
-#include "ICommandService.hpp"
+#include "contracts/ICommandService.hpp"
 
 class LAppIPC
 {

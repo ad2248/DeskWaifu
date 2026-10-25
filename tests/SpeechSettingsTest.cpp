@@ -1,5 +1,5 @@
-#include "SpeechSettings.hpp"
-#include "MouseLookSettings.hpp"
+#include "processor/interaction/config/SpeechSettings.hpp"
+#include "processor/interaction/config/MouseLookSettings.hpp"
 #include <QFile>
 #include <QTemporaryDir>
 #include <QtTest>

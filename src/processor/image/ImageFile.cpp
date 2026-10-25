@@ -1,4 +1,4 @@
-#include "ImageFile.hpp"
+#include "contracts/ImageFile.hpp"
 
 ImageFilePtr ImageFile::Create(const QImage& image)
 {

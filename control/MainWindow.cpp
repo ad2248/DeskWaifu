@@ -2,7 +2,7 @@
 #include "ui_MainWindow.h"
 #include "HotkeyPanel.hpp"
 #include "DeskWaifuLauncher.hpp"
-#include "RenderDevice.hpp"
+#include "contracts/RenderDevice.hpp"
 #include <QCoreApplication>
 #include <QTimer>
 #include <QUuid>

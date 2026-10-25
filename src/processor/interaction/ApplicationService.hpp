@@ -1,25 +1,10 @@
 #pragma once
 
 #include "contracts/ModelTransform.hpp"
+#include "contracts/AppState.hpp"
 #include "ExternalControlState.hpp"
 #include <cmath>
 #include <string>
-
-struct AppResult
-{
-    bool ok;
-    std::string error;
-    static AppResult Success() { return {true, {}}; }
-    static AppResult Failure(std::string message) { return {false, message}; }
-};
-
-struct AppSnapshot
-{
-    ModelTransform transform{1.0f, 0.0f, 0.0f};
-    bool hidden = false;
-    int modelIndex = -1;
-    int modelCount = 0;
-};
 
 // 平台和 SDK 接口：服务持有状态，仅在对应的运行时操作成功后提交变更。
 class IApplicationRuntime

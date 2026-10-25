@@ -1,5 +1,5 @@
 #include "LAppConfig.hpp"
-#include "RenderDevice.hpp"
+#include "contracts/RenderDevice.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>

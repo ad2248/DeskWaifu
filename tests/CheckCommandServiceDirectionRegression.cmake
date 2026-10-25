@@ -1,7 +1,7 @@
-file(MAKE_DIRECTORY "${FIXTURE_SOURCE}")
-file(WRITE "${FIXTURE_SOURCE}/AppCommandHandler.cpp" "// Commands only\n")
+file(MAKE_DIRECTORY "${FIXTURE_SOURCE}/processor/interaction")
+file(WRITE "${FIXTURE_SOURCE}/processor/interaction/AppCommandHandler.cpp" "// Commands only\n")
 foreach(dependency "IExternalControlPort& port;" "LAppIPC* transport;" "auto port = app.GetIPC();")
-  file(WRITE "${FIXTURE_SOURCE}/AppCommandHandler.hpp" "${dependency}\n")
+  file(WRITE "${FIXTURE_SOURCE}/processor/interaction/AppCommandHandler.hpp" "${dependency}\n")
   execute_process(COMMAND "${CMAKE_COMMAND}" "-DAPP_SOURCE=${FIXTURE_SOURCE}"
     -P "${CMAKE_CURRENT_LIST_DIR}/CheckCommandServiceDirection.cmake"
     RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE error)

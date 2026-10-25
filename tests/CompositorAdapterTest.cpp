@@ -1,4 +1,4 @@
-#include "CompositorAdapter.hpp"
+#include "processor/interaction/window/CompositorAdapter.hpp"
 #include <chrono>
 #include <csignal>
 #include <cerrno>

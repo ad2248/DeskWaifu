@@ -1,6 +1,6 @@
 #include <GL/glew.h>
 #include <EGL/egl.h>
-#include "DesktopWindow.hpp"
+#include "processor/interaction/window/DesktopWindow.hpp"
 #include "contracts/RenderFrame.hpp"
 #include <QThread>
 #include <QGuiApplication>

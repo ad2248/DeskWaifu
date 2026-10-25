@@ -1,11 +1,23 @@
 #include "ImageProcessor.hpp"
-#include "ImageFile.hpp"
+#include "contracts/ImageFile.hpp"
 #include "processor/Events.hpp"
 #include <QFutureWatcher>
 #include <QtConcurrent/QtConcurrentRun>
 
 ImageProcessor::ImageProcessor(ProcessorEventLoop& loop, std::function<QImage()> clipboard)
     : Processor(loop), _clipboard(std::move(clipboard)) {}
+
+ImageProcessor::~ImageProcessor() { Stop(); }
+void ImageProcessor::Stop()
+{
+    _stopped = true;
+    for (auto* watcher : findChildren<QFutureWatcherBase*>()) {
+        watcher->disconnect(this);
+        watcher->waitForFinished();
+        delete watcher;
+    }
+    _busy = false; _requester = nullptr;
+}
 
 bool ImageProcessor::HandleEvent(const ProcessorEvent& event)
 {
@@ -14,6 +26,7 @@ bool ImageProcessor::HandleEvent(const ProcessorEvent& event)
         _cancelled = true; return true;
     }
     if (event.type != ReadImage) return false;
+    if (_stopped) { Send(Failed, event.sender, {{"error", "image service stopped"}}); return true; }
     if (_busy) { Send(Failed, event.sender, {{"error", "image service is busy"}}); return true; }
     // GUI 线程访问剪贴板，工作线程负责 PNG 编码。
     const auto image = event.data.contains("image") ? qvariant_cast<QImage>(event.data.value("image")) : _clipboard();

@@ -1,5 +1,5 @@
-#include "ResourcePath.hpp"
-#include "RuntimeLifecycle.hpp"
+#include "processor/model/ResourcePath.hpp"
+#include "support/RuntimeLifecycle.hpp"
 
 #include <iostream>
 #include <vector>

@@ -1,6 +1,6 @@
-#include "TransformEditor.hpp"
-#include "CropInteraction.hpp"
-#include "ScreenCropInteraction.hpp"
+#include "processor/interaction/TransformEditor.hpp"
+#include "processor/interaction/CropInteraction.hpp"
+#include "processor/interaction/ScreenCropInteraction.hpp"
 #include "TestTemporaryDirectory.hpp"
 #include <fstream>
 #include <iostream>

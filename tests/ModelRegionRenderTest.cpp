@@ -2,7 +2,7 @@
 #include <EGL/egl.h>
 #include "processor/model/ModelFrameRegion.hpp"
 #include "processor/model/ModelOpacityFrame.hpp"
-#include "HoverOpacity.hpp"
+#include "support/HoverOpacity.hpp"
 #include <cmath>
 #include <iostream>
 #include <vector>

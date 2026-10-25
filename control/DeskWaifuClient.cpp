@@ -1,5 +1,5 @@
 #include "DeskWaifuClient.hpp"
-#include "IpcSocketPath.hpp"
+#include "processor/ipc/IpcSocketPath.hpp"
 
 #include <QJsonDocument>
 #include <QStringList>

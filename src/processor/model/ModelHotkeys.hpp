@@ -2,6 +2,7 @@
 
 #include <string>
 #include <vector>
+#include "contracts/ModelBinding.hpp"
 
 namespace Live2D { namespace Cubism { namespace Framework { class CubismModel; } } }
 
@@ -17,14 +18,7 @@ public:
         bool active = false;
         float weight = 0, fade = 0.5f, remaining = -1;
     };
-    struct Binding
-    {
-        std::string id, name, action, file, reason;
-        std::vector<std::string> keys;
-        bool enabled = true;
-        float fade = 0.5f, duration = -1;
-        int expression = -1;
-    };
+    using Binding = ModelBinding;
 
     void Load(const std::string& directory, const std::string& modelFile);
     void Reset();
