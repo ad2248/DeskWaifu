@@ -181,7 +181,7 @@ not migrated automatically:
 
 ### Streaming speech
 
-In the control panel's **语音** tab, enter and save a MiniMax API Key. The backend
+In the control panel's **系统 → 语音服务** section, enter and save a MiniMax API Key. The backend
 stores it as `minimax_api_key` in its active JSON configuration file and restricts
 that file to owner read/write (`0600`). The key is stored in plaintext, not encrypted;
 do not share or commit this configuration. The GUI only queries whether a key is
@@ -280,7 +280,18 @@ The control window exposes the same model, expression, motion, lip-sync,
 transform, visibility, skin, and look-at commands as `deskwaifu-ctl`. Its page
 layout is stored in `control/MainWindow.ui` and can be edited with Qt Designer.
 
-In **Overview → Quick actions**, **Spawn** starts `deskwaifu` only when the
+The four top-level tabs are:
+
+- **系统**: status, process controls, rendering GPU and speech service settings.
+- **交互**: model hotkeys, cursor tracking, look-at overrides and opacity behavior.
+- **模型**: model selection, visibility, skins, expressions, motions, lip sync,
+  target monitor, position, zoom and crop.
+- **日志**: raw IPC responses and diagnostic messages.
+
+Settings pages scroll vertically on smaller windows; connection and operation
+feedback remain in the shared status bar.
+
+In **系统 → 进程控制**, **启动** starts `deskwaifu` only when the
 control window is disconnected and no `deskwaifu` process owned by the current
 user is found. It looks beside the control executable first, then in `PATH`,
 and launches with the default backend settings. Existing processes are left
@@ -360,7 +371,7 @@ editor handles do not count as model hover. The silhouette follows the existing
 values reject the configuration with a diagnostic. The feature is disabled by
 default, with no extra offscreen rendering while disabled.
 
-The **Transform** tab also provides a **鼠标悬停透明度** section. Toggle
+The **交互** tab provides a **模型透明度** section. Toggle
 **启用悬停半透明** to enable or disable the effect. Drag the opacity slider from
 `0%` to `100%`: the percentage updates while dragging, and releasing applies and
 saves the value immediately, without **Apply and save** or a restart. Keyboard
@@ -393,7 +404,7 @@ Malformed rectangles reject the configuration file with a diagnostic.
 
 ### Editing position, zoom and crop in the control panel
 
-The **Transform** tab edits model position, zoom and the crop rectangle together.
+The **模型** tab edits model position, zoom and the crop rectangle together.
 Its **显示器** selector immediately switches and saves the display. Switching centers
 the model at `(0, 0)`, preserves zoom, and clears the crop. Finish or cancel an active
 transform edit before switching. Restarting restores the selected display and saved
@@ -469,7 +480,7 @@ never their intersections with a smaller output.
 
 ### Model hotkeys in the control panel
 
-The **Hotkeys** tab lists all entries from the current model's matching
+The **交互 → 模型快捷键** section lists all entries from the current model's matching
 `.vtube.json` file (for example, `桃小奈.model3.json` and `桃小奈.vtube.json`).
 Each row shows the name, keys, action, current state and a **Toggle** button.
 Empty names fall back to the expression filename. Missing files, disabled
