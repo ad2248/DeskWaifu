@@ -1,4 +1,7 @@
+#include <GL/glew.h>
 #include "processor/model/ModelProcessor.hpp"
+#include "LAppModel.hpp"
+#include "LAppLive2DManager.hpp"
 #include "ModelProcessorTestHelpers.hpp"
 #include "DesktopWindow.hpp"
 #include <QCoreApplication>
@@ -12,6 +15,46 @@
 
 // 此工作线程集成测试不使用所链接的应用组装入口。
 std::unique_ptr<DesktopWindow> CreateDesktopWindow() { return {}; }
+
+namespace {
+struct Observation
+{
+    int updates = 0, consecutiveDrags = 0;
+    bool pendingDrag = false, appliedDrag = false;
+    float x = 0, y = 0;
+    ModelFrameInput input;
+};
+std::mutex observationMutex;
+Observation observation;
+Observation Observed()
+{
+    std::lock_guard<std::mutex> lock(observationMutex); return observation;
+}
+bool WaitUntil(const std::function<bool()>& ready)
+{
+    QElapsedTimer deadline; deadline.start();
+    while (!ready() && deadline.elapsed() < 5000) { QCoreApplication::processEvents(); QThread::msleep(1); }
+    return ready();
+}
+}
+
+// 只观察真实入口，仍调用正式实现；不在测试中复制帧调度或输入转发逻辑。
+extern "C" void __real__ZNK17LAppLive2DManager6OnDragEff(const LAppLive2DManager*, float, float);
+extern "C" void __wrap__ZNK17LAppLive2DManager6OnDragEff(const LAppLive2DManager* manager, float x, float y)
+{
+    __real__ZNK17LAppLive2DManager6OnDragEff(manager, x, y);
+    std::lock_guard<std::mutex> lock(observationMutex);
+    observation.pendingDrag = true; observation.x = x; observation.y = y;
+}
+extern "C" void __real__ZN9LAppModel6UpdateERK15ModelFrameInput(LAppModel*, const ModelFrameInput&);
+extern "C" void __wrap__ZN9LAppModel6UpdateERK15ModelFrameInput(LAppModel* model, const ModelFrameInput& input)
+{
+    __real__ZN9LAppModel6UpdateERK15ModelFrameInput(model, input);
+    std::lock_guard<std::mutex> lock(observationMutex);
+    ++observation.updates; observation.input = input;
+    observation.appliedDrag = observation.pendingDrag; observation.pendingDrag = false;
+    observation.consecutiveDrags = observation.appliedDrag ? observation.consecutiveDrags + 1 : 0;
+}
 
 struct Calls
 {
@@ -93,6 +136,29 @@ int main(int argc, char** argv)
     CHECK(hit.available && hit.parts == std::vector<std::string>{"Head"});
     CHECK(!hitReceiver.hitTest({20, 10, 32, 48, originalToken}).available);
     CHECK(!hitReceiver.hitTest({20, 10, 64, 48, "stale"}).available);
+    // 直接覆盖生产 ModelRuntime::Render：每帧重施视线、编辑抑制、外部输入转发。
+    ModelRenderState gaze; gaze.width = 64; gaze.height = 48; gaze.clip = {0, 0, 64, 48};
+    gaze.modelToken = originalToken; gaze.hasLook = true; gaze.lookX = .5f; gaze.lookY = -.3f;
+    gaze.controls = {true, .7f, true, -.8f, .3f};
+    processor.SetState(gaze);
+    CHECK(WaitUntil([&] {
+        const auto value = Observed();
+        return value.appliedDrag && value.x == .5f && value.y == -.3f && value.input.hasLook &&
+            value.input.lookX == -.8f && value.input.lookY == .3f && value.input.hasMouth && value.input.mouth == .7f;
+    }));
+    const int gazeUpdates = Observed().updates;
+    CHECK(AwaitModel(processor)["ok"].toBool()); // reset_drag 后，静止光标仍须在后续帧恢复。
+    CHECK(WaitUntil([&] {
+        const auto value = Observed();
+        return value.updates >= gazeUpdates + 3 && value.consecutiveDrags >= 3 && value.x == .5f && value.y == -.3f;
+    }));
+    gaze.editing = true; processor.SetState(gaze);
+    CHECK(WaitUntil([&] { const auto value = Observed(); return !value.appliedDrag && value.input.hasLook; }));
+    gaze.editing = false; gaze.controls = {}; processor.SetState(gaze);
+    CHECK(WaitUntil([&] { const auto value = Observed(); return value.appliedDrag && !value.input.hasLook && !value.input.hasMouth; }));
+    gaze.modelToken = "stale"; gaze.controls = {true, .9f, true, .9f, .9f}; processor.SetState(gaze);
+    const int staleUpdates = Observed().updates;
+    CHECK(WaitUntil([&] { const auto value = Observed(); return value.updates > staleUpdates && !value.input.hasLook && !value.input.hasMouth; }));
     const int before = calls.frames;
     ModelRenderState state; state.width = 32; state.height = 24;
     state.clip = {0, 0, 32, 24}; state.app.hidden = true;
@@ -103,6 +169,15 @@ int main(int argc, char** argv)
     CHECK(first->width == 64 && first->rgba.size() == 64 * 48 * 4); // 保留帧不可变。
     CHECK(calls.frames > before && calls.frames < before + 50);
     for (auto byte : hidden->rgba) CHECK(byte == 0);
+    const int hiddenUpdates = Observed().updates;
+    QThread::msleep(50);
+    CHECK(Observed().updates == hiddenUpdates); // 隐藏后仍产出透明帧，但不更新模型。
+    gaze.modelToken = originalToken; gaze.controls = {}; processor.SetState(gaze);
+    CHECK(WaitUntil([&] {
+        const auto frame = processor.Frame();
+        const auto value = Observed();
+        return frame && !frame->hidden && frame->width == 64 && value.updates > hiddenUpdates && value.appliedDrag;
+    }));
 
     CHECK(!AwaitModel(processor, {{"command", "set_model"}, {"index", -1}})["ok"].toBool());
     CHECK(processor.Metadata().index == 0 && changes == 0);

@@ -1,4 +1,4 @@
-#include "ModelRegion.hpp"
+#include "contracts/ModelRegion.hpp"
 #include "LAppConfig.hpp"
 #include <climits>
 #include <cstdio>

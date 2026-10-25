@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ModelInputRegion.hpp"
+#include "contracts/ModelInputRegion.hpp"
 
 class HoverOpacity
 {

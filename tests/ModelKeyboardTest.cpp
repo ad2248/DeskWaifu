@@ -1,7 +1,7 @@
-#include "ModelKeyboard.hpp"
-#include "ModelInputDispatch.hpp"
-#include "ModelKeyboardGrab.hpp"
-#include "ModelHotkeys.hpp"
+#include "processor/interaction/ModelKeyboard.hpp"
+#include "processor/interaction/ModelInputDispatch.hpp"
+#include "window/ModelKeyboardGrab.hpp"
+#include "processor/model/ModelHotkeys.hpp"
 
 #include <QtTest>
 

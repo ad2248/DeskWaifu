@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ApplicationService.hpp"
-#include "ModelHotkeys.hpp"
+#include "processor/model/ModelHotkeys.hpp"
 #include "ModelRegion.hpp"
 #include "ModelHitTest.hpp"
 #include <QJsonObject>

@@ -3,7 +3,7 @@
 #include <string>
 #include <experimental/optional>
 #include <vector>
-#include "ModelRegion.hpp"
+#include "contracts/ModelRegion.hpp"
 #include "ConfigStore.hpp"
 
 struct LAppConfig

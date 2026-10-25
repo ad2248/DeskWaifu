@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ModelTransform.hpp"
+#include "contracts/ModelTransform.hpp"
 #include <cstdint>
 #include <string>
 #include <vector>

@@ -1,7 +1,7 @@
 #include <GL/glew.h>
 #include <EGL/egl.h>
-#include "ModelFrameRegion.hpp"
-#include "ModelOpacityFrame.hpp"
+#include "processor/model/ModelFrameRegion.hpp"
+#include "processor/model/ModelOpacityFrame.hpp"
 #include "HoverOpacity.hpp"
 #include <cmath>
 #include <iostream>

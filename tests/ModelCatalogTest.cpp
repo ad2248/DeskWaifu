@@ -1,4 +1,4 @@
-#include "ModelCatalog.hpp"
+#include "processor/model/ModelCatalog.hpp"
 
 #include <cstdlib>
 #include <fstream>

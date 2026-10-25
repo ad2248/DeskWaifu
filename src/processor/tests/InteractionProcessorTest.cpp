@@ -25,8 +25,9 @@ public:
     bool MakeCurrent() override { return true; }
     void Shutdown() override {}
     bool Available() const override { return true; }
-    int Width() const override { return 800; }
-    int Height() const override { return 600; }
+    int width = 800, height = 600;
+    int Width() const override { return width; }
+    int Height() const override { return height; }
     unsigned Framebuffer() const override { return 0; }
     std::unique_ptr<ModelRenderTarget> RenderTarget(const std::string&) override { return {}; }
     bool SetInputRegion(const std::vector<ModelRegion>&) override { return true; }
@@ -164,6 +165,12 @@ int main(int argc, char** argv)
     state.app.transform.x = 0; state.width = 1200;
     interaction->ApplyLook(state, &output, .5f, .5f, 1);
     CHECK(state.lookX == 0);
+    state.width = 800;
+    interaction->Position(700, 400);
+    interaction->ApplyLook(state, &output, .5f, .5f, 1);
+    CHECK(state.lookX != 0 && state.lookY != 0);
+    interaction->ApplyLook(state, &output, .5f, .5f, 0);
+    CHECK(state.lookX == 0 && state.lookY == 0);
     state.editing = true;
     interaction->ApplyLook(state, &output, .5f, .5f, 1); CHECK(!state.hasLook);
 
@@ -203,6 +210,28 @@ int main(int argc, char** argv)
     Wait(20); CHECK(!interaction->Captured());
     CHECK(service.SetVisibility(true).ok);
     listener.Stop();
+
+    // 测试实际 PointerScroll 的屏幕坐标转换，不再调用旧 View 适配器。
+    CHECK(service.SetTransform({1, .3f, -.2f}).ok);
+    interaction->Position(640, 450);
+    const auto beforeScroll = service.Snapshot().transform;
+    const float modelX = .8f / beforeScroll.scale - beforeScroll.x;
+    const float modelY = -.5f / beforeScroll.scale - beforeScroll.y;
+    interaction->PointerScroll(1);
+    const auto afterScroll = service.Snapshot().transform;
+    CHECK(std::abs(afterScroll.scale - 1.1f) < .00001f);
+    CHECK(std::abs(afterScroll.scale * (modelX + afterScroll.x) - .8f) < .00001f);
+    CHECK(std::abs(afterScroll.scale * (modelY + afterScroll.y) + .5f) < .00001f);
+    window.height = 0;
+    interaction->PointerScroll(1);
+    CHECK(service.Snapshot().transform.scale == afterScroll.scale);
+    CHECK(service.Snapshot().transform.x == afterScroll.x && service.Snapshot().transform.y == afterScroll.y);
+    window.height = 600;
+    CHECK(settings.Begin("panel", false, 800, 600).ok);
+    const auto panelTransform = service.Snapshot().transform;
+    interaction->PointerScroll(1);
+    CHECK(service.Snapshot().transform.scale == panelTransform.scale);
+    CHECK(settings.Cancel("panel").ok);
 
     // 排队延迟不能把物理时间上分离的两次单击误判为双击。
     const auto now = static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::milliseconds>(

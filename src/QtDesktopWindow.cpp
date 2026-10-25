@@ -1,6 +1,6 @@
 #include "DesktopWindow.hpp"
 #include "QtWindowInput.hpp"
-#include "processor/model/RenderFrame.hpp"
+#include "contracts/RenderFrame.hpp"
 #include <QEventLoop>
 #include <QGuiApplication>
 #include <QKeyEvent>

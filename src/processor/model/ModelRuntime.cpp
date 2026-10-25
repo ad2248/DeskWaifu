@@ -1,6 +1,6 @@
 #include <GL/glew.h>
 #include "ModelRuntime.hpp"
-#include "ModelRenderTarget.hpp"
+#include "render/ModelRenderTarget.hpp"
 #include "LAppDefine.hpp"
 #include "LAppLive2DManager.hpp"
 #include "LAppModel.hpp"
@@ -8,7 +8,7 @@
 #include "LAppTextureManager.hpp"
 #include "LAppView.hpp"
 #include "ModelFrameRegion.hpp"
-#include "ModelInputRegion.hpp"
+#include "contracts/ModelInputRegion.hpp"
 #include "JsonHelpers.hpp"
 #include <algorithm>
 #include <stdexcept>

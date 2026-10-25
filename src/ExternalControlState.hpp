@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ModelFrameInput.hpp"
+#include "contracts/ModelFrameInput.hpp"
 #include <cmath>
 #include <cstdint>
 #include <map>

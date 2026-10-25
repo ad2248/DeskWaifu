@@ -1,7 +1,7 @@
 #pragma once
 
 #include "processor/Processor.hpp"
-#include "processor/model/RenderFrame.hpp"
+#include "contracts/RenderFrame.hpp"
 #include "CursorLook.hpp"
 #include "DesktopWindow.hpp"
 #include "ModelWindowState.hpp"

@@ -25,9 +25,9 @@
 #include "LAppTextureManager.hpp"
 #include "LAppModel.hpp"
 #include "LAppSprite.hpp"
-#include "ModelProjection.hpp"
-#include "ModelCatalog.hpp"
-#include "ModelRenderer.hpp"
+#include "processor/model/ModelProjection.hpp"
+#include "processor/model/ModelCatalog.hpp"
+#include "processor/model/ModelRenderer.hpp"
 
 using namespace Csm;
 using namespace LAppDefine;

@@ -13,7 +13,7 @@
 #include "HoverOpacitySettings.hpp"
 #include "ApplicationService.hpp"
 #include "TransformEditor.hpp"
-#include "ModelWindowState.hpp"
+#include "processor/interaction/ModelWindowState.hpp"
 #include "OutputSettings.hpp"
 #include <memory>
 #include "CompositorAdapter.hpp"

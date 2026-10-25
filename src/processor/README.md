@@ -20,6 +20,22 @@ processor/
   ProcessorRuntime.hpp  组装与依赖注入，不编写业务流程
 ```
 
+## 辅助文件归属与迁移遗留
+
+辅助类按职责收纳，不要求继承 Processor：
+
+- `src/processor/model/`：ModelCatalog、ModelLoader、ModelCache、ModelSession、ModelRenderer、ModelProjection、ModelOpacityFrame、ModelFrameRegion、ModelHotkeys。原有 catalog/loader/renderer 构建目标保持独立。
+- `src/processor/interaction/`：ModelKeyboard、ModelInputDispatch、ModelWindowState，负责按键/双击识别、绑定决策和交互状态机。
+- `src/contracts/`：ModelTransform、ModelRegion、ModelFrameInput、ModelInputRegion、RenderFrame、ModelHitTest，供交互、模型和窗口共享的值、快照及纯 CPU 区域算法，不含 GL/SDK 对象。
+- `src/render/ModelRenderTarget.*`：窗口与模型线程之间的渲染目标接口/实现，仍由独立 deskwaifu_offscreen 目标构建。
+- `src/window/ModelKeyboardGrab.hpp`：窗口侧键盘捕获状态。
+
+`ModelFrame.hpp` 和 `ModelScroll.hpp` 已无生产调用，因此在补齐真实路径测试后移除：
+
+- 原 `model-frame` 测试只运行旧 RenderModelFrame 和模拟模型。其帧调度/输入转发断言迁入 `model-render-thread`，观察真实 ModelRuntime → Manager → Model 的调用并保留正式实现：每帧恢复视线、编辑抑制、外部输入转发/清除、旧模型输入拒绝、隐藏时不更新模型但继续产出透明帧，以及重新显示后恢复更新。旧 ModelFrameTest 与构建目标一并移除。
+- 原 ModelScroll 测试仅验证旧 View 适配器。替换为 `interaction-processor` 直接测试 PointerScroll：屏幕坐标转换、缩放锚点不变性、无效视口及面板编辑抑制。生产路径已不借用 View，旧 null-View 用例不再适用。
+- `model-transform` 保留生产使用的变换数学、投影组合及边界测试；`model-gaze` 保留真实 SDK 眼球/嘴部参数和外部覆盖值测试；静止光标对变换、视口、半径与零半径变化的响应由 `interaction-processor` 验证。
+
 ## 统一事件模型
 
 ```cpp

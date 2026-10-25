@@ -1,4 +1,4 @@
-#include "processor/model/ModelHitTest.hpp"
+#include "contracts/ModelHitTest.hpp"
 #include <atomic>
 #include <iostream>
 #include <thread>

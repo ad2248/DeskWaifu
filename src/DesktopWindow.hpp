@@ -1,12 +1,12 @@
 #pragma once
 
-#include "ModelKeyboardGrab.hpp"
-#include "ModelRegion.hpp"
+#include "window/ModelKeyboardGrab.hpp"
+#include "contracts/ModelRegion.hpp"
 #include "OutputController.hpp"
 #include "DesktopWindowEvents.hpp"
 #include <functional>
 #include <memory>
-#include "ModelRenderTarget.hpp"
+#include "render/ModelRenderTarget.hpp"
 struct RenderFrame;
 
 // 向应用暴露的坐标为输出设备局部逻辑像素。

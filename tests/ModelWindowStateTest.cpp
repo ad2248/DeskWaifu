@@ -1,4 +1,4 @@
-#include "ModelWindowState.hpp"
+#include "processor/interaction/ModelWindowState.hpp"
 #include <QCoreApplication>
 #include <QTimer>
 #include <iostream>

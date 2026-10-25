@@ -29,7 +29,7 @@
 #include <GL/glew.h>
 
 #include "LAppPal.hpp"
-#include "ModelInputRegion.hpp"
+#include "contracts/ModelInputRegion.hpp"
 #include "LAppDefine.hpp"
 #include "LAppConfig.hpp"
 #include "LAppIPC.hpp"

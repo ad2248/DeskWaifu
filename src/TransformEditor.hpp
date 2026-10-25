@@ -4,7 +4,7 @@
 #include "ConfigStore.hpp"
 #include "InputController.hpp"
 #include "LAppConfig.hpp"
-#include "ModelRegion.hpp"
+#include "contracts/ModelRegion.hpp"
 #include <limits>
 #include <functional>
 

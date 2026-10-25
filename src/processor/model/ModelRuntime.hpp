@@ -1,6 +1,6 @@
 #pragma once
 
-#include "RenderFrame.hpp"
+#include "contracts/RenderFrame.hpp"
 #include "LAppAllocator_Common.hpp"
 #include <CubismFramework.hpp>
 

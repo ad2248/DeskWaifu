@@ -993,7 +993,9 @@ deskwaifu/
 │   ├── main.cpp            # Entry point, CLI argument parsing
 │   ├── LAppConfig.*        # JSON config file reader (singleton)
 │   ├── QtDesktopWindow.*   # Qt window, GL context, layer-shell and input masking
-│   ├── ModelFrameRegion.* # GL clipping, model alpha sampling and editor frames
+│   ├── contracts/         # Shared values, frame snapshots and CPU hit-test contracts
+│   ├── render/            # Render-target interface and Qt/EGL implementations
+│   ├── window/            # Window-side keyboard capture state
 │   ├── LAppDelegate.*      # Main app controller, render loop, input handling
 │   ├── LAppLive2DManager.* # Model lifecycle management
 │   ├── LAppView.*          # View/projection matrices, rendering coordination
@@ -1001,6 +1003,9 @@ deskwaifu/
 │   ├── LAppIPC.*           # IPC socket server for external control
 │   ├── event/              # Pointer-routed, queued event dispatch on the Qt main thread
 │   ├── processor/          # Stateful processors, one subdirectory per responsibility
+│   │   ├── input/          # Input sampling and event production
+│   │   ├── interaction/    # Gesture, hover and crop policy
+│   │   ├── model/          # Model runtime, assets and rendering helpers
 │   │   ├── screenshot/     # Event adapter, service interface and portal/ backend
 │   │   └── speech/         # Speech events/coordinator, audio/ playback and source/ backend
 │   └── LAppDefine.*        # Global constants and configuration
@@ -1011,7 +1016,7 @@ deskwaifu/
 
 ### Key design decisions
 
-- **Event processors (staged migration)** — image reading, OCR, screenshots, speech, clipboard reading and socket readiness use [stateful processors](src/processor/README.md). Internal events carry sender/receiver pointers and stop propagation when consumed; IPC no longer polls on the rendering clock. Dedicated model rendering-thread migration is still pending.
+- **Event processors** — input sampling, interaction policy, model operations, image reading, OCR, screenshots, speech, clipboard reading and socket readiness use [stateful processors](src/processor/README.md). Internal events carry sender/receiver pointers and stop propagation when consumed; IPC and model updates do not depend on the presentation clock. Cubism resources and rendering belong to a dedicated model-render thread.
 - **Qt-only windowing** — `QWindow` and LayerShellQt own the overlay window, input and screen lifecycle; the application does not manage raw Wayland surfaces.
 - **OpenGL rendering** — Cubism draws into a Qt-managed context. Qt's Wayland platform plugin may use EGL internally; the application does not create or swap EGL window surfaces.
 - **Layer-shell overlay** — the application renders as a Wayland layer surface, sitting above normal windows.

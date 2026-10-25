@@ -2,7 +2,7 @@
 #include <EGL/egl.h>
 #include "LAppDelegate.hpp"
 #include "LAppDefine.hpp"
-#include "ModelHotkeys.hpp"
+#include "processor/model/ModelHotkeys.hpp"
 #include "ModelProcessorTestHelpers.hpp"
 #include "DispatchedInput.hpp"
 

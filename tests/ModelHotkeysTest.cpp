@@ -1,4 +1,4 @@
-#include "ModelHotkeys.hpp"
+#include "processor/model/ModelHotkeys.hpp"
 #include "LAppAllocator_Common.hpp"
 
 #include <QDir>
