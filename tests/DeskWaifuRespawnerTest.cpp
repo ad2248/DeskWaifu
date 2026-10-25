@@ -65,7 +65,7 @@ private slots:
         respawner.start();
         QCOMPARE(finished.size(), 1);
         QVERIFY(!finished[0][0].toBool());
-        QVERIFY(finished[0][1].toString().contains("not stopped"));
+        QVERIFY(finished[0][1].toString().contains("未停止"));
         QTest::qWait(100);
         QVERIFY(!socket->canReadLine());
     }
@@ -116,7 +116,7 @@ private slots:
         QVERIFY(oldBackend.waitForFinished());
         QTRY_COMPARE_WITH_TIMEOUT(finished.size(), 1, 3000);
         const QString message = finished[0][1].toString();
-        const qint64 newPid = message.section("PID ", 1).section(')', 0, 0).toLongLong();
+        const qint64 newPid = message.section("PID ", 1).section(QChar(0xff09), 0, 0).toLongLong();
         const auto stopNew = qScopeGuard([&] {
             if (newPid > 0) kill(newPid, SIGKILL);
         });
@@ -174,7 +174,7 @@ private slots:
         socket->disconnectFromServer();
         QTRY_COMPARE(finished.size(), 1);
         QVERIFY(!finished[0][0].toBool());
-        QVERIFY(finished[0][1].toString().contains("timed out"));
+        QVERIFY(finished[0][1].toString().contains("超时"));
         QVERIFY(!respawner.isRunning());
     }
     void timeoutCancelsQueuedQuit()
@@ -191,7 +191,7 @@ private slots:
         respawner.start(proc(), directory.path(), 200);
         QTRY_COMPARE(finished.size(), 1);
         QVERIFY(!finished[0][0].toBool());
-        QVERIFY(finished[0][1].toString().contains("timed out"));
+        QVERIFY(finished[0][1].toString().contains("超时"));
         QTRY_VERIFY(socket->canReadLine());
         socket->readLine();
         socket->write("{\"ok\":true}\n");

@@ -12,7 +12,7 @@ DeskWaifuRespawner::DeskWaifuRespawner(DeskWaifuClient& client, const QString& a
     connect(&_client, &DeskWaifuClient::responseReceived, this,
         [this](const QString& command, const QJsonObject& response) {
             if (isRunning() && command == QStringLiteral("quit") && !response.value("ok").toBool())
-                finish(false, tr("Respawn failed: quit was rejected: %1").arg(response.value("error").toString()));
+                finish(false, tr("重启失败，退出请求被拒绝：%1").arg(response.value("error").toString()));
         });
 }
 
@@ -25,11 +25,11 @@ void DeskWaifuRespawner::start(const QString& procDirectory, const QString& lock
 {
     if (isRunning()) return;
     if (!_client.isConnected()) {
-        emit finished(false, tr("Respawn requires a connected DeskWaifu; use Spawn to start it."));
+        emit finished(false, tr("重启需要先连接 DeskWaifu，请使用“启动”按钮启动。"));
         return;
     }
     if (DeskWaifuLauncher::executablePath(_applicationDirectory).isEmpty()) {
-        emit finished(false, tr("Cannot find deskwaifu next to the GUI or in PATH; the running backend was not stopped."));
+        emit finished(false, tr("在控制面板所在目录或 PATH 中找不到 deskwaifu，未停止正在运行的后端。"));
         return;
     }
     _disconnected = false;
@@ -37,7 +37,7 @@ void DeskWaifuRespawner::start(const QString& procDirectory, const QString& lock
     disconnect(&_timer, nullptr, this, nullptr);
     connect(&_timer, &QTimer::timeout, this, [this, procDirectory, lockDirectory, timeoutMs] {
         if (_elapsed.elapsed() >= timeoutMs) {
-            finish(false, tr("Respawn timed out waiting for DeskWaifu to exit; no replacement was started."));
+            finish(false, tr("重启超时：等待 DeskWaifu 退出超时，未启动新进程。"));
             return;
         }
         if (!_disconnected) return;

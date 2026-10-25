@@ -41,7 +41,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& procDirectory)
     _statusMessageTimer.setSingleShot(true);
     connect(&_statusMessageTimer, &QTimer::timeout, this, [this] { setStatusMessage(QString()); });
     _hotkeys = new HotkeyPanel(this);
-    ui->tabWidget->insertTab(2, _hotkeys, tr("Hotkeys"));
+    ui->tabWidget->insertTab(2, _hotkeys, tr("快捷键"));
     connect(_hotkeys, &HotkeyPanel::triggered, this, [this](const QString& id) {
         if (_client.isConnected() && !_hotkeyModelToken.isEmpty())
             _client.sendCommand(QStringLiteral("trigger_hotkey"), {
@@ -122,7 +122,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& procDirectory)
         });
     connect(&_client, &DeskWaifuClient::commandOutcomeUnknown, this,
         [this](const QString& command) {
-            const QString message = tr("Connection lost: outcome of '%1' is unknown; command was not retried.")
+            const QString message = tr("连接断开：命令“%1”的执行结果未知，未重试该命令。")
                 .arg(command);
             ui->responseLog->appendPlainText(message);
             setStatusMessage(message, 8000);
@@ -132,7 +132,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& procDirectory)
             if (command == QStringLiteral("apply_transform_edit") ||
                 command == QStringLiteral("reset_transform_settings") ||
                 command == QStringLiteral("retry_transform_save")) _transformSaveRequest.clear();
-            const QString message = tr("Connection lost: queued command '%1' was cancelled before sending.")
+            const QString message = tr("连接断开：排队中的命令“%1”已在发送前取消。")
                 .arg(command);
             ui->responseLog->appendPlainText(message);
             setStatusMessage(message, 8000);
@@ -200,10 +200,10 @@ void MainWindow::updateSpawnButton()
 {
     const bool connected = _client.isConnected();
     const bool running = connected || DeskWaifuLauncher::runningPid(_procDirectory) > 0;
-    ui->spawnButton->setText(running ? tr("Shutdown") : tr("Spawn"));
+    ui->spawnButton->setText(running ? tr("关闭") : tr("启动"));
     ui->spawnButton->setEnabled(!_respawner.isRunning() && (!running || connected));
     ui->spawnButton->setToolTip(running && !connected
-        ? tr("Waiting for a connection to shut down DeskWaifu safely.") : QString());
+        ? tr("正在等待连接，以安全关闭 DeskWaifu。") : QString());
 }
 
 void MainWindow::bindControls()
@@ -237,7 +237,7 @@ void MainWindow::bindControls()
     connect(&_respawner, &DeskWaifuRespawner::runningChanged, this, [this](bool running) {
         updateSpawnButton();
         ui->respawnButton->setEnabled(!running && _client.isConnected());
-        if (running) setStatusMessage(tr("Respawning DeskWaifu; waiting for the old process to exit…"));
+        if (running) setStatusMessage(tr("正在重启 DeskWaifu，等待旧进程退出…"));
     });
     connect(&_respawner, &DeskWaifuRespawner::finished, this, [this](bool, const QString& message) {
         setStatusMessage(message, 8000);
@@ -247,7 +247,7 @@ void MainWindow::bindControls()
     connect(ui->spawnButton, &QPushButton::clicked, this, [this] {
         if (_client.isConnected()) {
             _client.sendCommand(QStringLiteral("quit"));
-            setStatusMessage(tr("Requested DeskWaifu shutdown."), 8000);
+            setStatusMessage(tr("已请求关闭 DeskWaifu。"), 8000);
             return;
         }
         const auto result = DeskWaifuLauncher::spawn(_client.isConnected(), QCoreApplication::applicationDirPath(), _procDirectory);
@@ -337,7 +337,7 @@ void MainWindow::bindControls()
     ui->positionXSpin->setRange(-1.e30, 1.e30);
     ui->positionYSpin->setRange(-1.e30, 1.e30);
     for (auto* spin : {ui->cropBox_x, ui->cropBox_y, ui->cropBox_w, ui->cropBox_h}) {
-        spin->setSuffix(tr(" px"));
+        spin->setSuffix(tr(" 像素"));
         spin->setKeyboardTracking(false);
         connect(spin, &QSpinBox::valueChanged, this, [this] { queueTransformPreview(); });
     }
@@ -435,7 +435,7 @@ void MainWindow::handleResponse(const QString& command, const QJsonObject& respo
         ui->renderDeviceCombo->setEnabled(_client.isConnected() && (valid || (mutation && !_lastRenderDeviceResponse.isEmpty())));
         const bool ok = response.value(QStringLiteral("ok")).toBool() && valid;
         if (!ok) ui->renderDeviceStatus->setText(response.value(QStringLiteral("error")).toString(tr("后端不支持渲染设备设置")));
-        if (mutation) setStatusMessage(ok ? tr("渲染设备已保存；点击 Respawn 重启生效。") : ui->renderDeviceStatus->text(), 8000);
+        if (mutation) setStatusMessage(ok ? tr("渲染设备已保存；点击“重启”生效。") : ui->renderDeviceStatus->text(), 8000);
         if (mutation || !ok) logResponse(command, response);
         return;
     }
@@ -576,7 +576,7 @@ void MainWindow::handleResponse(const QString& command, const QJsonObject& respo
     {
         ui->currentModelLabel->setText(response.value(QStringLiteral("model")).toString());
         ui->modelCountLabel->setText(QString::number(response.value(QStringLiteral("model_count")).toInt()));
-        ui->visibilityLabel->setText(response.value(QStringLiteral("hidden")).toBool() ? tr("Hidden") : tr("Visible"));
+        ui->visibilityLabel->setText(response.value(QStringLiteral("hidden")).toBool() ? tr("已隐藏") : tr("已显示"));
         if (!_backendReadyEmitted)
         {
             _backendReadyEmitted = true;
@@ -626,7 +626,7 @@ void MainWindow::handleResponse(const QString& command, const QJsonObject& respo
     }
     else if (command == QStringLiteral("toggle_hidden"))
     {
-        ui->visibilityLabel->setText(response.value(QStringLiteral("hidden")).toBool() ? tr("Hidden") : tr("Visible"));
+        ui->visibilityLabel->setText(response.value(QStringLiteral("hidden")).toBool() ? tr("已隐藏") : tr("已显示"));
     }
 
     if (command == QStringLiteral("set_model") || command == QStringLiteral("next_model")
@@ -674,7 +674,7 @@ void MainWindow::showRenderDevice(const QJsonObject& response)
     ui->renderDeviceCombo->setCurrentIndex(ui->renderDeviceCombo->findData(saved));
     const auto active = response.value(QStringLiteral("active_device")).toString();
     ui->renderDeviceStatus->setText(response.value(QStringLiteral("restart_required")).toBool()
-        ? tr("已保存，需点击 Respawn 重启生效。当前启动选择：%1").arg(active == QStringLiteral("auto") ? tr("自动") : active)
+        ? tr("已保存，需点击“重启”生效。当前启动选择：%1").arg(active == QStringLiteral("auto") ? tr("自动") : active)
         : tr("已保存；更改渲染设备后需重启生效。"));
 }
 

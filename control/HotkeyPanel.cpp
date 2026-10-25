@@ -17,12 +17,12 @@
 HotkeyPanel::HotkeyPanel(QWidget* parent) : QWidget(parent)
 {
     auto* layout = new QVBoxLayout(this);
-    _message = new QLabel(tr("No model hotkeys configured."), this);
+    _message = new QLabel(tr("当前模型未配置快捷键。"), this);
     _message->setWordWrap(true);
     layout->addWidget(_message);
     _table = new QTableWidget(0, 5, this);
     _table->setObjectName(QStringLiteral("hotkeyTable"));
-    _table->setHorizontalHeaderLabels({tr("Name"), tr("Keys"), tr("Action"), tr("State"), tr("Operation")});
+    _table->setHorizontalHeaderLabels({tr("名称"), tr("按键"), tr("动作"), tr("状态"), tr("操作")});
     _table->setEditTriggers(QAbstractItemView::NoEditTriggers);
     _table->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
     _table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
@@ -72,7 +72,7 @@ void HotkeyPanel::setConnected(bool connected)
         _bindings.clear();
         _pressed.clear();
         _table->setRowCount(0);
-        _message->setText(tr("Disconnected. Hotkeys are unavailable."));
+        _message->setText(tr("连接已断开，快捷键不可用。"));
     }
 }
 
@@ -80,22 +80,31 @@ void HotkeyPanel::setBindings(const QJsonArray& bindings, const QString& warning
 {
     _bindings.clear();
     _table->setRowCount(bindings.size());
-    _message->setText(!warning.isEmpty() ? warning : bindings.isEmpty()
-        ? tr("No model hotkeys configured.") : tr("Hotkeys respond only while this control window is active."));
+    const QString message = warning == QStringLiteral("Invalid VTube Studio hotkey configuration")
+        ? tr("VTube Studio 快捷键配置无效") : warning;
+    _message->setText(!message.isEmpty() ? message : bindings.isEmpty()
+        ? tr("当前模型未配置快捷键。") : tr("快捷键仅在此控制窗口处于活动状态时生效。"));
     QStringList reasons;
     QList<bool> keyboardSupported;
+    const QHash<QString, QString> translatedReasons = {
+        {QStringLiteral("Missing or duplicate hotkey ID"), tr("快捷键 ID 缺失或重复")},
+        {QStringLiteral("Unsupported action"), tr("不支持的动作")},
+        {QStringLiteral("Release-to-deactivate is not supported"), tr("不支持松开按键后取消激活")},
+        {QStringLiteral("Expression file missing or invalid"), tr("表情文件缺失或无效")}
+    };
     for (const auto& value : bindings)
     {
         const auto object = value.toObject();
         Binding binding{object["id"].toString(), {}, object["enabled"].toBool() && object["reason"].toString().isEmpty()};
         QString reason = object["reason"].toString();
+        reason = translatedReasons.value(reason, reason);
         for (const auto& key : object["keys"].toArray())
         {
             int code = keyCode(key.toString());
-            if (!code) reason = tr("Unsupported key: %1").arg(key.toString());
+            if (!code) reason = tr("不支持的按键：%1").arg(key.toString());
             else binding.keys.insert(code);
         }
-        if (!object["enabled"].toBool()) reason = tr("Disabled in model configuration");
+        if (!object["enabled"].toBool()) reason = tr("已在模型配置中禁用");
         reasons.append(reason);
         keyboardSupported.append(binding.usable && reason.isEmpty() && !binding.keys.isEmpty());
         _bindings.append(binding);
@@ -106,7 +115,7 @@ void HotkeyPanel::setBindings(const QJsonArray& bindings, const QString& warning
         for (int other = 0; other < _bindings.size(); ++other)
             if (row != other && keyboardSupported[row] && keyboardSupported[other]
                 && binding.keys == _bindings[other].keys)
-                reasons[row] = tr("Conflicting key binding");
+                reasons[row] = tr("快捷键绑定冲突");
     }
     for (int row = 0; row < _bindings.size(); ++row)
     {
@@ -114,8 +123,10 @@ void HotkeyPanel::setBindings(const QJsonArray& bindings, const QString& warning
         auto& binding = _bindings[row];
         QStringList keys;
         for (const auto& key : object["keys"].toArray()) keys.append(key.toString());
-        const QString state = object["active"].toBool() ? tr("Active") : tr("Inactive");
-        const QStringList cells = {object["name"].toString(), keys.join(" + "), object["action"].toString(),
+        const QString state = object["active"].toBool() ? tr("已激活") : tr("未激活");
+        const QString action = object["action"].toString() == QStringLiteral("ToggleExpression")
+            ? tr("切换表情") : object["action"].toString();
+        const QStringList cells = {object["name"].toString(), keys.join(" + "), action,
             reasons[row].isEmpty() ? state : reasons[row]};
         for (int column = 0; column < cells.size(); ++column)
         {
@@ -123,7 +134,7 @@ void HotkeyPanel::setBindings(const QJsonArray& bindings, const QString& warning
             item->setToolTip(cells[column]);
             _table->setItem(row, column, item);
         }
-        auto* button = new QPushButton(tr("Toggle"), _table);
+        auto* button = new QPushButton(tr("切换"), _table);
         button->setEnabled(binding.usable);
         connect(button, &QPushButton::clicked, this, [this, id = binding.id] {
             if (_connected) emit triggered(id);
