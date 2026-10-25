@@ -23,6 +23,7 @@ include(GNUInstallDirs)
 
 include(CTest)
 option(DESKWAIFU_BUILD_CONTROL "Build the Qt control application" ON)
+option(DESKWAIFU_BUILD_SPEECH_PLUGIN "Build the optional speech plugin and its tests" ON)
 option(DESKWAIFU_TEST_GATE "Require the complete ordinary regression gate" OFF)
 option(DESKWAIFU_ENABLE_SANITIZERS "Instrument source builds with AddressSanitizer and UBSan" OFF)
 if (DESKWAIFU_ENABLE_SANITIZERS)
@@ -121,6 +122,7 @@ target_include_directories(${APP_NAME} PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/genera
 set(APP_NAME deskwaifu)
 add_executable(${APP_NAME} src/main.cpp src/processor/interaction/window/QtDesktopWindow.cpp)
 target_link_libraries(${APP_NAME} PRIVATE deskwaifu_application)
+set_target_properties(${APP_NAME} PROPERTIES INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
 install(TARGETS ${APP_NAME}
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT DeskWaifu)
 install(PROGRAMS deskwaifu-ctl

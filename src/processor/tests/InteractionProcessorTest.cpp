@@ -1,4 +1,5 @@
 #include "processor/interaction/InteractionProcessor.hpp"
+#include "processor/interaction/AppCommandHandler.hpp"
 #include "processor/input/InputListener.hpp"
 #include "EventLoopFence.hpp"
 #include <QCoreApplication>
@@ -108,19 +109,37 @@ int main(int argc, char** argv)
             settings.ScreenEditing() ? ModelWindowState::Event::ScreenMode : ModelWindowState::Event::PanelMode);
     });
     ProcessorEventLoop loop; Model model(loop); Window window;
+    {
+        // 语音配置命令仅由插件提供，宿主交互命令不能再处理或保存凭据。
+        InteractionContext context(loop, model, std::make_unique<Window>(), config);
+        AppCommandHandler commands(context);
+        for (const auto* request : {R"({"command":"get_speech_settings"})",
+            R"({"command":"set_speech_settings","api_key":"not-a-host-setting"})"}) {
+            const auto reply = QJsonDocument::fromJson(QByteArray::fromStdString(commands.Execute(request, "test"))).object();
+            CHECK(!reply.value("ok").toBool() && reply.value("error") == "unknown command");
+        }
+        ConfigStore::Snapshot disk; std::string error;
+        CHECK(ConfigStore(config.sourcePath).Read(disk, error));
+        CHECK(disk.values.size() == 1 && disk.values.at("model_scale") == "1");
+    }
     class Observer final : public Processor
     {
     public:
         using Processor::Processor;
-        int greetings = 0, moves = 0;
+        int doubleClicks = 0, moves = 0;
+        QVariantMap doubleClickData;
         bool HandleEvent(const ProcessorEvent& event) override
         {
-            if (event.type == "speech.speak") { ++greetings; return true; }
             if (event.type == "interaction.move_screen") { ++moves; return true; }
             return false;
         }
     } observer(loop);
-    auto& greetings = observer.greetings; auto& moves = observer.moves;
+    auto notifications = loop.CreateEndpoint("test-interaction-notifications", [&](const EventDelivery& delivery) {
+        ++observer.doubleClicks;
+        observer.doubleClickData = delivery.payload->data;
+    });
+    CHECK(notifications && notifications->Subscribe("interaction.double_click/v1"));
+    auto& doubleClicks = observer.doubleClicks; auto& moves = observer.moves;
     auto makeInteraction = [&] {
         return std::make_unique<InteractionProcessor>(loop, window, mode, service, settings, model);
     };
@@ -195,7 +214,7 @@ int main(int argc, char** argv)
 
     click(300, 200); click(300, 200);
     Wait(20);
-    CHECK(greetings == 1 && window.grabbed);
+    CHECK(doubleClicks == 1 && observer.doubleClickData.empty() && window.grabbed);
     Wait(450); CHECK(model.Taps() == 1);
     interaction->Key(1, true); CHECK(!window.grabbed);
 
@@ -204,7 +223,7 @@ int main(int argc, char** argv)
     Wait(20); CHECK(model.Taps() == 2);
     Wait(450); CHECK(model.Taps() == 3);
 
-    // 拖动进入编辑模式，取消旧单击，不重复触发模型点击或问候。
+    // 拖动进入编辑模式，取消旧单击，不重复触发模型点击或双击通知。
     click(300, 200);
     interaction->PointerButton(0, true);
     interaction->PointerMoved(340, 240);
@@ -212,7 +231,7 @@ int main(int argc, char** argv)
     interaction->PointerButton(0, false);
     Wait(20);
     CHECK(moves == 1);
-    Wait(450); CHECK(model.Taps() == 3 && greetings == 1);
+    Wait(450); CHECK(model.Taps() == 3 && doubleClicks == 1);
     CHECK(settings.Cancel(settings.Owner()).ok);
 
     // 面板编辑、输出切换、关闭均撤销待处理单击。
@@ -317,7 +336,7 @@ int main(int argc, char** argv)
     interaction->PointerButton(0, true, now - 500);
     interaction->PointerButton(0, false, now - 500);
     Wait(20);
-    CHECK(model.Taps() == beforeDelayed + 2 && greetings == 1);
+    CHECK(model.Taps() == beforeDelayed + 2 && doubleClicks == 1);
     model.operations.clear(); // 下列生命周期检查重新从零开始计数。
 
     // 已排队的旧超时不能抢先派发取消后新一轮的单击。
@@ -328,7 +347,7 @@ int main(int argc, char** argv)
     interaction->Stop();
     const auto scale = service.Snapshot().transform.scale;
     click(300, 200); interaction->PointerScroll(1);
-    CHECK(service.Snapshot().transform.scale == scale && greetings == 1);
+    CHECK(service.Snapshot().transform.scale == scale && doubleClicks == 1);
     Wait(450); CHECK(model.Taps() == 0);
     interaction.reset();
 

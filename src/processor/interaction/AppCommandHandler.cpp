@@ -2,7 +2,6 @@
 #include "contracts/JsonHelpers.hpp"
 #include "processor/interaction/InteractionContext.hpp"
 #include "processor/interaction/config/MouseLookSettings.hpp"
-#include "processor/interaction/config/SpeechSettings.hpp"
 #include "processor/interaction/config/RenderDeviceSettings.hpp"
 #include "render/OffscreenRenderer.hpp"
 #include <QJsonDocument>
@@ -101,14 +100,6 @@ try
             reply += "{\"id\":\"" + JsonEscape(devices[i].pciAddress) + "\",\"name\":\"" + JsonEscape(devices[i].name) + "\"}";
         }
         return reply + "]}";
-    }
-
-    if (command == "get_speech_settings" || command == "set_speech_settings") {
-        SpeechSettings settings(_app.Config());
-        const auto result = command == "get_speech_settings" ? settings.Refresh() : settings.Set(request);
-        return std::string("{\"ok\":") + (result.ok ? "true" : "false") +
-            ",\"configured\":" + (settings.Configured() ? "true" : "false") +
-            ",\"error\":\"" + JsonEscape(result.error) + "\"}";
     }
 
     if (command == "get_mouse_look" || command == "set_mouse_look") {

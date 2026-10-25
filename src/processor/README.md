@@ -1,6 +1,8 @@
 # 有状态事件处理器与独立模型渲染线程
 
-所有具体处理器在 `src/processor/` 的不同子目录中；Qt 负责等待与唤醒，`src/event/ProcessorEventLoop` 负责处理器注册、注销和派发，不再实现另一套 `exec()`。
+具体处理器实现在 `src/processor/` 的不同子目录中；语音和朗读编排只由
+`src/plugins/` 中的动态模块组装，不链接进主程序。Qt 负责等待与唤醒，
+共享的 `src/event/ProcessorEventLoop` 同时承载插件端点和迁移中的 Legacy 处理器。
 
 ```text
 processor/
@@ -45,6 +47,7 @@ processor/
 
 ```cpp
 struct ProcessorEvent {
+    virtual ~ProcessorEvent() = default;
     QString type;
     IProcessor* sender = nullptr;
     IProcessor* receiver = nullptr;
@@ -54,7 +57,9 @@ struct ProcessorEvent {
 bool IProcessor::HandleEvent(const ProcessorEvent& event);
 ```
 
-没有事件 ID、流程 ID 或请求/响应/通知的不同派发通道。
+以上是保留的 Legacy 值封装；现在具有虚析构，并可通过共享基类指针保留派生事件。
+插件使用显式订阅通知、能力请求与关联 RequestId，仍共享同一条 FIFO，详见
+[插件 SDK](../plugin/README.md)。以下指针路由规则只适用于 Legacy：
 
 - `receiver == nullptr`：按注册顺序调用，返回 true 即停止；需要继续传播的观察者返回 false。
 - 指定接收者：只调用该处理器，即使返回 false 也不会转交给其他接收者。
@@ -62,10 +67,10 @@ bool IProcessor::HandleEvent(const ProcessorEvent& event);
 - 新事件始终入队，不递归派发。每次唤醒处理一条；处理器内部即使运行嵌套 Qt 消息泵，也不会重入业务派发。
 - 在派发中注销后面的处理器，后者不会再收到当前事件；新注册（包括同地址重新注册）的处理器从下一条事件起参与。
 - 注册/注销和业务回调限主线程；Post 可由后台线程调用，但后台生产者必须遵守对象生命周期约定。
-- 注销会清除队列中包含该发送者/接收者的事件。指针不会延长对象寿命；动态销毁前必须取消并收尾关联任务，停止后台投递，然后注销。**不能依靠地址比较区分销毁后同地址的新对象。**
+- 注销使已排队的发送/接收注册令牌失效，派发时跳过。指针不会延长对象寿命；动态销毁前必须取消并收尾关联任务，停止后台投递，然后注销。新的端点请求使用不可复用身份，不把裸指针作为跨插件身份。
 - 回调不得抛异常或同步等待耗时子系统。排队数据使用值或共享资源引用，不持有事件自身的引用。
 
-`OcrClient` 的既有 helper wire 协议/外部 CLI 仍保留兼容用 job_id；截图 Portal 句柄和音频流标识也仍在对应后端内部。它们不参与内部朗读流程关联。CLI 请求/结果 JSON 原样保留外部 job_id。已有 IPC connection 来源只保留在 IPC/Command 边界及 GUI 流控制/编辑事务中，不向模型/OCR/朗读领域传播，不新增任何内部关联编号。
+`OcrClient` 的 helper wire 协议/外部 CLI 仍保留兼容用 job_id；截图 Portal 句柄和音频流标识仍在对应后端内部。它们不作为跨插件请求身份。CLI 请求/结果 JSON 保留外部 job_id；插件总线独立分配 RequestId。
 
 ## 剪贴板图片朗读
 
@@ -77,11 +82,15 @@ Idle → WaitingImage → WaitingOcr → WaitingSpeech → Idle
       重复触发 → Cancelling → 等待当前服务终结事件 → Idle
 ```
 
-图像、OCR 和语音请求明确指定接收者，服务完成后直接回复原 sender。协调器依据当前状态与服务指针识别结果，一次只允许一个流程，不在取消完成前开始下一次。
+生产朗读插件通过 `image.read/v1`、`ocr.recognize/v1`、`speech.speak/v1` 请求能力，
+不持有其他插件的具体处理器；通过 RequestId 匹配终态。取消是逻辑终态，提供者仍须
+收尾实际工作并持有其资源，未收尾时的新请求可以明确返回 busy。旧的依赖注入构造
+暂供既有 Legacy 契约测试使用，不由主程序组装。
 
 ImageProcessor 在 GUI 线程取得剪贴板 QImage 快照，再用 QtConcurrent 编码 PNG。ImageFile 使用独占临时目录和共享所有权，保证排队事件与 OCR 使用期间文件有效，最后一个引用释放后自动清理。取消图片编码会等待任务收尾；取消 OCR 会终止 worker，并在必要时保留文件直到 worker 回收。
 
-OcrClient 通过异步完成信号通知 OcrProcessor，后者投递事件，无状态查询轮询。语音处理器也通过服务回调投递完成/失败事件。模型双击问候已经改为语音事件；显式替换会先停止当前播报，再启动最近一次替换请求。
+OcrClient 通过异步完成信号通知 OcrProcessor，无状态查询轮询。交互层只发布双击通知；
+语音插件决定问候文本和替换策略。显式替换先停止当前播报，再启动最近一次替换请求。
 
 入口暂时复用已有 Unix socket，不增加另一条 FIFO：
 

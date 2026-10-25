@@ -14,6 +14,7 @@ bool SameSettings(const LAppConfig::Values& a, const LAppConfig::Values& b)
         && a.emotionTimeout == b.emotionTimeout && a.modelScale == b.modelScale
         && a.modelX == b.modelX && a.modelY == b.modelY
         && a.renderDevice == b.renderDevice
+        && a.pluginDir == b.pluginDir && a.unknownFields == b.unknownFields
         && a.windowWidth == b.windowWidth && a.windowHeight == b.windowHeight
         && a.hoverOpacityEnabled == b.hoverOpacityEnabled && a.hoverOpacity == b.hoverOpacity
         && a.idleOpacity == b.idleOpacity && a.mouseLookRadius == b.mouseLookRadius
@@ -38,6 +39,11 @@ int main()
     CHECK(load("{}"));
     CHECK(SameSettings(config, defaults));
     CHECK(application.sourcePath == path);
+#ifdef DESKWAIFU_PLUGIN_DIR
+    CHECK(config.pluginDir == DESKWAIFU_PLUGIN_DIR);
+#else
+    CHECK(config.pluginDir == "/usr/lib/deskwaifu/plugins");
+#endif
 
     const std::string configured = R"({"additional_model_dirs":["/models"],"default_model":"sample",
         "emotion_timeout":9,"model_scale":2,"model_x":3,"model_y":4,
@@ -74,7 +80,7 @@ int main()
     CHECK(LAppConfig::Serialize(config, document, error));
     ConfigStore::Snapshot snapshot;
     CHECK(ConfigStore::Parse(document, snapshot, error));
-    CHECK(snapshot.values.size() == 13 && !snapshot.values.count("sourcePath"));
+    CHECK(snapshot.values.size() == 14 && !snapshot.values.count("sourcePath"));
     CHECK(load(document));
     CHECK(SameSettings(config, previous));
 
@@ -93,7 +99,7 @@ int main()
     CHECK(config.defaultModel == "夕颜😀" && config.additionalModelDirs[0] == "~/models");
     CHECK(LAppConfig::Serialize(defaults, document, error));
     CHECK(ConfigStore::Parse(document, snapshot, error));
-    CHECK(snapshot.values.size() == 12 && !snapshot.values.count("model_region"));
+    CHECK(snapshot.values.size() == 13 && !snapshot.values.count("model_region"));
     CHECK(load(document) && SameSettings(config, defaults));
     CHECK(load(R"({"render_device":"0000:00:02.0"})"));
     CHECK(config.renderDevice == "0000:00:02.0");
@@ -107,4 +113,36 @@ int main()
     { std::ofstream file(path); file << R"({"render_device":false})"; }
     CHECK(!application.LoadFromFile(path, &error));
     CHECK(error.find("render_device") != std::string::npos);
+
+    CHECK(load(R"({"plugin_dir":"/opt/插件 \"quoted\""})"));
+    CHECK(config.pluginDir == "/opt/插件 \"quoted\"");
+    CHECK(LAppConfig::Serialize(config, document, error));
+    CHECK(load(document) && config.pluginDir == "/opt/插件 \"quoted\"");
+    const auto pluginConfig = config;
+    for (const auto value : {"null", "42", "true", "[]", "{}"}) {
+        CHECK(!load("{\"plugin_dir\":" + std::string(value) + "}"));
+        CHECK(SameSettings(config, pluginConfig));
+    }
+    CHECK(!load(R"({"plugin_dir":"first","plugin_dir":"second"})"));
+    CHECK(!load(R"({"plugin_dir":"/trusted\u0000/unexpected"})"));
+    CHECK(SameSettings(config, pluginConfig));
+    CHECK(load("{}") && config.pluginDir == defaults.pluginDir);
+
+    // 旧语音字段只是未知 JSON：不再校验凭据，也不在新配置中生成该字段。
+    CHECK(LAppConfig::Serialize(config, document, error));
+    CHECK(ConfigStore::Parse(document, snapshot, error));
+    CHECK(!snapshot.values.count("minimax_api_key"));
+    for (const auto value : {R"("legacy\nkey")", "42", "null", R"({"opaque":true})"}) {
+        CHECK(load("{\"minimax_api_key\":" + std::string(value) + ",\"extension\":{\"enabled\":true}}"));
+        CHECK(config.unknownFields.at("minimax_api_key") == value);
+        const auto opaque = config;
+        CHECK(LAppConfig::Serialize(config, document, error));
+        CHECK(load(document) && SameSettings(config, opaque));
+        CHECK(config.unknownFields.at("extension") == R"({"enabled":true})");
+    }
+    // 保留未知值不会绕过完整 JSON 的重复键和语法校验。
+    CHECK(!load(R"({"minimax_api_key":{"same":1,"same":2}})"));
+    CHECK(!load(R"({"minimax_api_key":NaN})"));
+    config.unknownFields["invalid"] = "not JSON";
+    CHECK(!LAppConfig::Serialize(config, document, error));
 }

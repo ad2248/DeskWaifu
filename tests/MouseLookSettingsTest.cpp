@@ -45,6 +45,15 @@ int main()
     CHECK(config.values.idleOpacity == .75f);
     LAppConfig restarted; CHECK(restarted.LoadFromFile(path));
     CHECK(restarted.values.mouseLookRadius == .3f && restarted.values.idleOpacity == .75f);
+    // 插件目录和宿主不再解释的旧字段不会被其他设置保存擦除。
+    { std::ofstream file(path); file << R"({"plugin_dir":"/opt/plugins","minimax_api_key":{"legacy":true},"extension":[1,2]})"; }
+    CHECK(settings.Refresh().ok);
+    CHECK(settings.Set(R"({"radius":0.3})").ok);
+    CHECK(hover.Set(R"({"idle_opacity":0.75})").ok);
+    CHECK(restarted.LoadFromFile(path));
+    CHECK(restarted.values.pluginDir == "/opt/plugins");
+    CHECK(restarted.values.unknownFields.at("minimax_api_key") == R"({"legacy":true})");
+    CHECK(restarted.values.unknownFields.at("extension") == "[1,2]");
     // 文档无效或写入失败时，不能应用未保存的值。
     { std::ofstream file(path); file << "{invalid"; }
     CHECK(!settings.Refresh().ok && !settings.Set(R"({"radius":0.8})").ok);

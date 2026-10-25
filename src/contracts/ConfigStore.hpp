@@ -16,7 +16,9 @@ public:
         std::map<std::string, std::string> values;
     };
 
-    explicit ConfigStore(std::string path) : _path(std::move(path)) {}
+    // 私有配置在每次写入时强制 0600，默认仍保留已有文件权限。
+    explicit ConfigStore(std::string path, bool privatePermissions = false)
+        : _path(std::move(path)), _privatePermissions(privatePermissions) {}
     const std::string& Path() const { return _path; }
     bool Read(Snapshot& snapshot, std::string& error) const;
     bool Commit(const std::string& document, const Snapshot& expected, Snapshot& saved,
@@ -27,4 +29,5 @@ public:
 
 private:
     std::string _path;
+    bool _privatePermissions;
 };

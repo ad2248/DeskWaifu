@@ -58,8 +58,8 @@ private:
     void Operation(QJsonObject operation);
     void RequestHitTest();
     void ConnectSources();
+    std::unique_ptr<EventEndpoint> _notifications;
     bool Present();
-    void SyncSpeechSettings();
     std::unique_ptr<InteractionContext> _context;
     std::unique_ptr<AppCommandHandler> _commands;
     std::shared_ptr<ModelExchange> _exchange;
@@ -78,5 +78,4 @@ private:
     bool _inside = false, _hitRequested = false;
     ModelHitTest _hitTest;
     bool _renderingOk = true;
-    std::optional<QString> _speechKey;
 };

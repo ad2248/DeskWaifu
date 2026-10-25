@@ -13,6 +13,10 @@ public:
     void Stop();
     bool HandleEvent(const ProcessorEvent& event) override;
 private:
+    bool Recognize(const ProcessorEvent& event, RequestId request);
+    void Complete(const QString& type, IProcessor* receiver, RequestId request, QVariantMap data = {});
+    std::unique_ptr<EventEndpoint> _endpoint;
+    RequestId _request = 0;
     IProcessor* _requester = nullptr;
     ImageFilePtr _image, _retiringImage;
     QString _transportRequest;

@@ -1,6 +1,5 @@
 #include "LAppConfig.hpp"
 #include "contracts/RenderDevice.hpp"
-#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -11,6 +10,10 @@
 #include <pwd.h>
 #include <sstream>
 #include <unistd.h>
+
+#ifndef DESKWAIFU_PLUGIN_DIR
+#define DESKWAIFU_PLUGIN_DIR "/usr/lib/deskwaifu/plugins"
+#endif
 
 namespace {
 std::string Quote(const std::string& text)
@@ -32,6 +35,11 @@ static LAppConfig s_config;
 LAppConfig& LAppConfig::GetInstance()
 {
     return s_config;
+}
+
+std::string LAppConfig::GetDefaultPluginDir()
+{
+    return DESKWAIFU_PLUGIN_DIR;
 }
 
 std::string LAppConfig::GetDefaultConfigPath()
@@ -94,10 +102,8 @@ bool LAppConfig::Decode(const ConfigStore::Snapshot& snapshot, Values& values, s
     if (!string("render_device", next.renderDevice) || !ValidRenderDevice(next.renderDevice)) {
         error = "Invalid render_device: expected a PCI address string or auto"; return false;
     }
-    if (!string("minimax_api_key", next.minimaxApiKey) || next.minimaxApiKey.size() > 4096 ||
-        std::any_of(next.minimaxApiKey.begin(), next.minimaxApiKey.end(),
-            [](unsigned char c) { return c < 0x20 || c == 0x7f; })) {
-        error = "Invalid minimax_api_key"; return false;
+    if (!string("plugin_dir", next.pluginDir) || next.pluginDir.find('\0') != std::string::npos) {
+        error = "Invalid plugin_dir: expected a directory path string"; return false;
     }
     // 旧版数值字段缺失或无法转换时，保留构造时的默认值。
     const auto number = [&](const char* key, auto& destination) {
@@ -161,6 +167,11 @@ bool LAppConfig::Decode(const ConfigStore::Snapshot& snapshot, Values& values, s
         }
         next.modelRegion = parsed;
     }
+    next.unknownFields = snapshot.values;
+    for (const auto* key : {"additional_model_dirs", "default_model", "model_output", "render_device", "plugin_dir",
+        "emotion_timeout", "model_scale", "model_x", "model_y", "window_width", "window_height",
+        "hover_opacity_enabled", "hover_opacity", "idle_opacity", "mouse_look_radius", "model_region"})
+        next.unknownFields.erase(key);
     values = std::move(next); error.clear(); return true;
 }
 
@@ -174,6 +185,7 @@ bool LAppConfig::Serialize(const Values& values, std::string& document, std::str
         out << Quote(values.additionalModelDirs[i]);
     }
     out << "],\n  \"default_model\": " << Quote(values.defaultModel)
+        << ",\n  \"plugin_dir\": " << Quote(values.pluginDir)
         << ",\n  \"emotion_timeout\": " << values.emotionTimeout
         << ",\n  \"model_scale\": " << values.modelScale
         << ",\n  \"model_x\": " << values.modelX
@@ -186,12 +198,13 @@ bool LAppConfig::Serialize(const Values& values, std::string& document, std::str
         << ",\n  \"mouse_look_radius\": " << values.mouseLookRadius;
     if (!values.modelOutput.empty()) out << ",\n  \"model_output\": " << Quote(values.modelOutput);
     if (!values.renderDevice.empty()) out << ",\n  \"render_device\": " << Quote(values.renderDevice);
-    if (!values.minimaxApiKey.empty()) out << ",\n  \"minimax_api_key\": " << Quote(values.minimaxApiKey);
     if (values.modelRegion) {
         const auto& r = *values.modelRegion;
         out << ",\n  \"model_region\": {\"x\": " << r.x << ", \"y\": " << r.y
             << ", \"width\": " << r.width << ", \"height\": " << r.height << '}';
     }
+    for (const auto& field : values.unknownFields)
+        out << ",\n  " << Quote(field.first) << ": " << field.second;
     out << "\n}\n";
     ConfigStore::Snapshot snapshot; Values check;
     const std::string result = out.str();

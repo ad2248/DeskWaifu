@@ -10,6 +10,7 @@ class InputListener;
 class CommandProcessor;
 class IpcProcessor;
 class SignalProcessor;
+class PluginManager;
 
 // 组装与生命周期入口；不暴露处理器，不拥有领域状态，不转发业务。
 class LAppDelegate
@@ -25,6 +26,7 @@ private:
     LAppDelegate() = default;
     ~LAppDelegate();
     std::unique_ptr<ProcessorRuntime> _processors;
+    std::unique_ptr<PluginManager> _plugins;
     std::shared_ptr<ModelExchange> _exchange;
     std::unique_ptr<ModelProcessor> _models;
     std::unique_ptr<InteractionProcessor> _interaction;

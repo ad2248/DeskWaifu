@@ -36,7 +36,7 @@ https://github.com/user-attachments/assets/95dfdedc-4957-4bb7-b79f-f3addd97a6db
 - **Multi-compositor support** — works on any Wayland compositor supporting `wlr-layer-shell` (Hyprland, Sway, river, etc.)
 - **Multi-output support** — choose and remember a monitor from the control panel
 - **Interactive** — responds to mouse drag, tap, and scroll input
-- **Streaming speech** — double-click the model to say “姐姐，你好喵” through MiniMax's bidirectional WebSocket API; another double-click interrupts and restarts speech
+- **Optional speech plugin** — double-click the model to say “姐姐，你好喵” through MiniMax's bidirectional WebSocket API; another double-click interrupts and restarts speech
 - **Motion & expression** — supports idle animations, lip-sync, eye-blink, physics, and expressions
 - **Configurable model directory** — load models from any path via CLI flag or XDG config
 - **JSON configuration** — customize behavior via `config.json` (default model, emotion timeout, additional model dirs, scale/position, window size)
@@ -181,11 +181,19 @@ not migrated automatically:
 
 ### Streaming speech
 
-In the control panel's **系统 → 语音服务** section, enter and save a MiniMax API Key. The backend
-stores it as `minimax_api_key` in its active JSON configuration file and restricts
-that file to owner read/write (`0600`). The key is stored in plaintext, not encrypted;
+Speech is provided by an optional dynamically loaded plugin. The host discovers
+`<plugin_dir>/<name>/<name>.so` on startup, without a manifest. Set `plugin_dir` in
+the main configuration to use a development or custom installation directory.
+See [plugin boundaries and migration](docs/plugin-architecture.md).
+
+With the speech plugin installed, enter and save a MiniMax API Key in the control
+panel's **系统 → 语音服务** section. The plugin stores its configuration under
+`plugin/speech/` next to the main configuration and restricts
+the credentials file to owner read/write (`0600`). The key is stored in plaintext, not encrypted;
 do not share or commit this configuration. The GUI only queries whether a key is
 configured, never its value. Use the delete button to remove it.
+Keys in the old main configuration are not automatically imported: re-enter the
+key through the control panel, then remove the old `minimax_api_key` field yourself.
 
 Double-click the model to stream “姐姐，你好喵”. This retains the existing keyboard
 focus behavior; another double-click cancels the previous speech and starts again.
@@ -1027,7 +1035,7 @@ deskwaifu/
 
 ### Key design decisions
 
-- **Event processors** — input sampling, interaction policy, model operations, image reading, OCR, screenshots, speech, clipboard reading and socket readiness use [stateful processors](src/processor/README.md). Internal events carry sender/receiver pointers and stop propagation when consumed; IPC and model updates do not depend on the presentation clock. Cubism resources and rendering belong to a dedicated model-render thread.
+- **Event processors** — input sampling, interaction policy, model operations, image reading, OCR, screenshots and socket readiness use [stateful processors](src/processor/README.md). Speech and clipboard-reading orchestration are plugin-owned. The shared event runtime supports explicit notifications and capability requests alongside the legacy processor routing; IPC and model updates do not depend on the presentation clock. Cubism resources and rendering belong to a dedicated model-render thread.
 - **Qt-only windowing** — `QWindow` and LayerShellQt own the overlay window, input and screen lifecycle; the application does not manage raw Wayland surfaces.
 - **OpenGL rendering** — Cubism draws into a Qt-managed context. Qt's Wayland platform plugin may use EGL internally; the application does not create or swap EGL window surfaces.
 - **Layer-shell overlay** — the application renders as a Wayland layer surface, sitting above normal windows.

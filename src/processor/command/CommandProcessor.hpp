@@ -13,11 +13,16 @@
 class CommandProcessor final : public Processor
 {
 public:
-    explicit CommandProcessor(ProcessorEventLoop& loop) : Processor(loop) {}
+    explicit CommandProcessor(ProcessorEventLoop& loop) : Processor(loop),
+        _endpoint(loop.CreateEndpoint("command-gateway", [](const EventDelivery&) {})) {}
     ~CommandProcessor() override { Stop(); }
     void Stop()
     {
         _stopped = true;
+        if (_endpoint) _endpoint->Invalidate();
+        auto dynamic = std::move(_dynamicPending);
+        for (const auto& request : dynamic)
+            Reply(request.second, R"({"ok":false,"error":"command processor stopped"})");
         auto pending = std::move(_pending);
         for (const auto& queue : pending) for (const auto& request : queue.second)
             Reply(request, R"({"ok":false,"error":"command processor stopped"})");
@@ -33,7 +38,6 @@ public:
         if (event.type == "model.result") domain = "interaction.model";
         else if (event.type == "interaction.result") domain = "interaction.command";
         else if (event.type == "ocr.result") domain = "ocr.command";
-        else if (event.type == "reading.result") domain = "reading.command";
         else return false;
         if (event.receiver != this) return false;
         auto& queue = _pending[domain];
@@ -72,13 +76,34 @@ private:
         } catch (const std::invalid_argument&) {
             Reply(request, R"({"ok":false,"error":"invalid command fields"})"); return;
         }
+        auto payload = std::make_shared<ProcessorEvent>("command.invoke", nullptr, nullptr,
+            QVariantMap{{"json", QString::fromStdString(request.json)},
+                        {"connection", QString::fromStdString(request.connection)}});
+        const auto id = _endpoint ? _endpoint->Request("command." + QString::fromStdString(command) + "/v1", payload,
+            [this, request, command](const RequestResult& result) {
+                _dynamicPending.erase(result.requestId);
+                if (result.status == RequestStatus::NoProvider) { EnqueueLegacy(request, command); return; }
+                const auto response = result.payload ? result.payload->data.value("json") : QVariant{};
+                ConfigStore::Snapshot parsed; std::string error;
+                if (result.status == RequestStatus::Replied && response.metaType().id() == QMetaType::QString &&
+                    ConfigStore::Parse(response.toString().toStdString(), parsed, error, false))
+                    Reply(request, QJsonDocument::fromJson(response.toString().toUtf8()).toJson(QJsonDocument::Compact).toStdString());
+                else Reply(request, QJsonDocument(QJsonObject{{"ok", false}, {"error", result.status == RequestStatus::Replied
+                    ? QStringLiteral("invalid command provider response")
+                    : QString::fromLatin1(RequestStatusName(result.status))}}).toJson(QJsonDocument::Compact).toStdString());
+            }) : 0;
+        if (id) _dynamicPending.emplace(id, std::move(request));
+        else Reply(request, R"({"ok":false,"error":"command gateway unavailable"})");
+    }
+    void EnqueueLegacy(Request request, const std::string& command)
+    {
+        // Only unmigrated domains use this transitional static routing.
         QString domain = "interaction.command";
         if (command == "set_model" || command == "next_model" || command == "prev_model" || command == "get_hotkeys" ||
             command == "trigger_hotkey" || command == "set_expression" || command == "do_motion" || command == "switch_skin")
             domain = "interaction.model";
         else if (command == "get_ocr_status" || command == "ocr_recognize" || command == "get_ocr_result" || command == "cancel_ocr")
             domain = "ocr.command";
-        else if (command == "reading_clip" || command == "get_reading_clip_status") domain = "reading.command";
         auto& queue = _pending[domain]; queue.push_back(std::move(request));
         if (queue.size() == 1) Dispatch(domain);
     }
@@ -90,5 +115,7 @@ private:
         Send(domain, nullptr, std::move(data));
     }
     std::map<QString, std::deque<Request>> _pending;
+    std::unique_ptr<EventEndpoint> _endpoint;
+    std::map<RequestId, Request> _dynamicPending;
     bool _stopped = false;
 };

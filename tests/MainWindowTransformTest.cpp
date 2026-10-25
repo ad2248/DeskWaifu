@@ -3,7 +3,6 @@
 #include "processor/interaction/ScreenCropInteraction.hpp"
 #include "processor/interaction/config/HoverOpacitySettings.hpp"
 #include "processor/interaction/config/MouseLookSettings.hpp"
-#include "processor/interaction/config/SpeechSettings.hpp"
 #include "processor/interaction/config/RenderDeviceSettings.hpp"
 #include <QLineEdit>
 #include <QLabel>
@@ -277,9 +276,8 @@ private slots:
         const auto restoreRuntime = qScopeGuard([previousRuntime] { qputenv("XDG_RUNTIME_DIR", previousRuntime); });
         const QString runtimePath = QStringLiteral("/proc/self/fd/%1").arg(fd);
         qputenv("XDG_RUNTIME_DIR", runtimePath.toLocal8Bit());
-        LAppConfig config;
-        config.sourcePath = (directory.path() + "/config.json").toStdString();
-        SpeechSettings settings(config);
+        // 此处模拟插件的 IPC 边界，控制端不应依赖宿主的配置实现。
+        const QString credentialsPath = directory.path() + "/speech.json";
         QLocalServer server;
         QVERIFY(server.listen(runtimePath + "/deskwaifu.sock"));
         int saves = 0;
@@ -292,12 +290,21 @@ private slots:
                     const auto command = request.value("command").toString();
                     QJsonObject reply{{"ok", true}};
                     if (command == "set_speech_settings" || command == "get_speech_settings") {
-                        ConfigStore::Snapshot parsed;
-                        std::string error;
-                        QVERIFY(ConfigStore::Parse(line.toStdString(), parsed, error));
-                        const auto result = command == "set_speech_settings" ? settings.Set(parsed) : settings.Refresh();
-                        if (command == "set_speech_settings") ++saves;
-                        reply = {{"ok", result.ok}, {"configured", settings.Configured()}};
+                        QFile credentials(credentialsPath);
+                        if (command == "set_speech_settings") {
+                            QVERIFY(request.value("api_key").isString());
+                            QVERIFY(credentials.open(QIODevice::WriteOnly));
+                            const auto document = QJsonDocument(QJsonObject{{"api_key", request.value("api_key")}}).toJson();
+                            QCOMPARE(credentials.write(document), document.size());
+                            credentials.close();
+                            ++saves;
+                        }
+                        QString storedKey;
+                        if (credentials.exists()) {
+                            QVERIFY(credentials.open(QIODevice::ReadOnly));
+                            storedKey = QJsonDocument::fromJson(credentials.readAll()).object().value("api_key").toString();
+                        }
+                        reply = {{"ok", true}, {"configured", !storedKey.isEmpty()}};
                     }
                     socket->write(QJsonDocument(reply).toJson(QJsonDocument::Compact) + '\n');
                     socket->flush();
@@ -326,16 +333,17 @@ private slots:
         QTRY_COMPARE(saves, 1);
         QTRY_VERIFY(clear->isEnabled());
         QVERIFY(key->text().isEmpty());
-        LAppConfig loaded;
-        QVERIFY(loaded.LoadFromFile(config.sourcePath));
-        QCOMPARE(loaded.values.minimaxApiKey, std::string("test-gui-secret"));
+        QFile credentials(credentialsPath);
+        QVERIFY(credentials.open(QIODevice::ReadOnly));
+        QCOMPARE(QJsonDocument::fromJson(credentials.readAll()).object().value("api_key").toString(), QString("test-gui-secret"));
+        credentials.close();
         QVERIFY(!status->text().contains("test-gui-secret"));
         QVERIFY(!window.findChild<QPlainTextEdit*>("responseLog")->toPlainText().contains("test-gui-secret"));
         clear->click();
         QTRY_COMPARE(saves, 2);
         QTRY_VERIFY(!clear->isEnabled());
-        QVERIFY(loaded.LoadFromFile(config.sourcePath));
-        QVERIFY(loaded.values.minimaxApiKey.empty());
+        QVERIFY(credentials.open(QIODevice::ReadOnly));
+        QVERIFY(QJsonDocument::fromJson(credentials.readAll()).object().value("api_key").toString().isEmpty());
     }
 
     void runningBackendWithoutConnectionShowsDisabledShutdown()
@@ -946,8 +954,8 @@ private slots:
         ConfigStore::Snapshot disk; std::string error;
         QVERIFY(store.Read(disk, error));
         QCOMPARE(disk.values.at("model_x"), std::string("2.5"));
-        QVERIFY(!disk.values.count("extra"));
-        QCOMPARE(disk.values.size(), size_t(12));
+        QCOMPARE(disk.values.at("extra"), std::string("\"keep\""));
+        QCOMPARE(disk.values.size(), size_t(14));
         QTest::keyClick(slider, Qt::Key_Home);
         QTRY_VERIFY_WITH_TIMEOUT(settings.Opacity() == 0 && group->isEnabled(), 2000);
         QTest::keyClick(slider, Qt::Key_End);
@@ -1139,7 +1147,7 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(service.Snapshot().transform.x, 0.f, 2000);
         QTRY_VERIFY_WITH_TIMEOUT(!enabled->isChecked(), 2000);
         QCOMPARE(service.Snapshot().transform.scale, 1.f);
-        QVERIFY(store.Read(disk, error)); QCOMPARE(disk.values.size(), size_t(12));
+        QVERIFY(store.Read(disk, error)); QCOMPARE(disk.values.size(), size_t(13));
         QVERIFY(!disk.values.count("model_region"));
         QCOMPARE(disk.values.at("model_x"), std::string("0"));
         QCOMPARE(disk.values.at("model_y"), std::string("0"));
