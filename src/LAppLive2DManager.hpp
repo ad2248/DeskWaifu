@@ -5,6 +5,7 @@
  * that can be found at https://www.live2d.com/eula/live2d-open-software-license-agreement_en.html.
  */
 #pragma once
+#include "processor/model/ModelHitTest.hpp"
 
 #include <CubismFramework.hpp>
 #include <Math/CubismMatrix44.hpp>
@@ -69,6 +70,7 @@ public:
     * @return 模型实例；索引越界时返回 NULL。
     */
     LAppModel* GetModel(Csm::csmUint32 no) const;
+    ModelHitSnapshot HitSnapshot(int width, int height, ModelTransform transform) const;
 
     /**
      * @brief 设置模型离屏渲染尺寸。

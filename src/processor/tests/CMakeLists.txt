@@ -19,3 +19,6 @@ add_executable(interaction-processor-test InteractionProcessorTest.cpp ../../Con
 target_link_libraries(interaction-processor-test PRIVATE deskwaifu_processors)
 add_test(NAME interaction-processor COMMAND interaction-processor-test)
 set_tests_properties(interaction-processor PROPERTIES TIMEOUT 30)
+add_executable(model-hit-test-test ModelHitTestTest.cpp)
+target_link_libraries(model-hit-test-test PRIVATE deskwaifu_events Threads::Threads)
+add_test(NAME model-hit-test COMMAND model-hit-test-test)

@@ -6,6 +6,7 @@
  */
 
 #include "LAppDelegate.hpp"
+#include "KWinCursorTracker.hpp"
 #include "LAppDefine.hpp"
 #include "LAppConfig.hpp"
 #include "RenderDevice.hpp"

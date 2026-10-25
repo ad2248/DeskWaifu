@@ -8,6 +8,7 @@
 #include "ScreenCropInteraction.hpp"
 #include <QTimer>
 #include <functional>
+#include <optional>
 
 // GUI 线程中的交互策略；窗口操作和编辑事务不进入渲染线程。
 // 注入的窗口、状态、服务和模型必须存活到 Stop 及模型工作线程收尾之后。
@@ -20,10 +21,12 @@ public:
         std::function<void()> moveScreen, std::function<void()> greet);
     ~InteractionProcessor() override;
     bool HandleEvent(const ProcessorEvent& event) override;
-    void PointerButton(int button, bool pressed);
+    void PointerButton(int button, bool pressed, std::optional<uint32_t> time = {});
     void PointerMoved(double x, double y);
     void PointerScroll(double vertical);
     void Position(double x, double y);
+    void Enter(double x, double y) { _inside = true; Position(x, y); }
+    void Leave() { _inside = false; }
     void CursorPosition(double x, double y) { _cursor.LocalPosition(x, y); }
     void Key(uint32_t code, bool pressed);
     void ResetKeyboard() { _input.ResetKeyboard(); }
@@ -33,12 +36,17 @@ public:
     // 每次用当前布局重新计算，静止光标也能响应变换、缩放和配置变化。
     void ApplyLook(ModelRenderState& state, const OutputSnapshot* output,
         float centerX, float centerY, float radius) const;
+    ModelHitResult HitAt(double x, double y);
+    ModelHitResult Hover();
+    void PrepareFrame(ModelRenderState& state, bool hoverEnabled, float hoverOpacity, float idleOpacity);
+    std::vector<ModelRegion> InputRegions(const ModelRenderState& state, const std::vector<ModelRegion>& regions) const;
 
 private:
     void StartCropGesture();
     void FlushTap();
     void Tap(int x, int y);
     void Operation(QJsonObject operation);
+    void RequestHitTest();
     DesktopWindow& _window;
     ModelWindowState& _mode;
     ApplicationService& _service;
@@ -52,4 +60,6 @@ private:
     QTimer _tapTimer;
     float _x = 0, _y = 0;
     bool _stopped = false;
+    bool _inside = false, _hitRequested = false;
+    ModelHitTest _hitTest;
 };

@@ -46,8 +46,12 @@ public:
     using Processor::Processor;
     bool received = false;
     IProcessor* sender = nullptr;
+    ModelHitTest hitTest;
     bool HandleEvent(const ProcessorEvent& event) override
     {
+        if (event.type == "model.hit_test.ready") {
+            hitTest = event.data.value("callback").value<ModelHitTest>(); return true;
+        }
         if (event.type != "model.result") return false;
         received = event.receiver == this && event.data.value("reply").toJsonObject()["ok"].toBool();
         sender = event.sender;
@@ -79,6 +83,16 @@ int main(int argc, char** argv)
     QThread::msleep(150);
     CHECK(calls.frames >= 2 && processor.Frame() && processor.Frame()->rgba.size() == 64 * 48 * 4);
     const auto first = processor.Frame();
+    Receiver hitReceiver(loop);
+    CHECK(loop.Post({"model.hit_test.request", &hitReceiver, &processor, {}}));
+    QElapsedTimer handshake; handshake.start();
+    while (!hitReceiver.hitTest && handshake.elapsed() < 5000) QCoreApplication::processEvents();
+    CHECK(hitReceiver.hitTest);
+    const auto originalToken = processor.Metadata().hotkeys.value("model_token").toString().toStdString();
+    const auto hit = hitReceiver.hitTest({20, 10, 64, 48, originalToken});
+    CHECK(hit.available && hit.parts == std::vector<std::string>{"Head"});
+    CHECK(!hitReceiver.hitTest({20, 10, 32, 48, originalToken}).available);
+    CHECK(!hitReceiver.hitTest({20, 10, 64, 48, "stale"}).available);
     const int before = calls.frames;
     ModelRenderState state; state.width = 32; state.height = 24;
     state.clip = {0, 0, 32, 24}; state.app.hidden = true;
@@ -99,6 +113,7 @@ int main(int argc, char** argv)
     CHECK(!AwaitModel(processor, {{"command", "set_expression"}, {"id", "missing"}})["ok"].toBool());
     CHECK(!AwaitModel(processor, {{"command", "do_motion"}, {"group", "missing"}})["ok"].toBool());
     CHECK(!AwaitModel(processor, {{"command", "trigger_hotkey"}, {"model_token", "stale"}, {"id", "missing"}})["ok"].toBool());
+    CHECK(!AwaitModel(processor, {{"command", "random_expression"}, {"model_token", "stale"}})["ok"].toBool());
 
     bool completedOnGui = false;
     CHECK(processor.Submit(R"({"command":"reset_drag"})", [&](QJsonObject reply) {
@@ -112,6 +127,7 @@ int main(int argc, char** argv)
     for (int i = 0; i < 4; ++i) QCoreApplication::processEvents();
     CHECK(receiver.received && receiver.sender == &processor);
     CHECK(processor.Stop() && processor.Stop());
+    CHECK(!hitReceiver.hitTest({20, 10, 64, 48, originalToken}).available);
     CHECK(!calls.wrongThread && calls.destroyedOnGui && calls.shutdowns == 1);
     CHECK(!processor.Submit(R"({"command":"reset_drag"})"));
 
@@ -125,14 +141,33 @@ int main(int argc, char** argv)
     Calls recoveredCalls;
     CHECK(recovered.Start(std::unique_ptr<ModelRenderTarget>(new TrackedTarget(recoveredCalls)),
         {"", directory.path().toStdString(), "", {}, -1}, 16, 16));
+    Receiver recoveredReceiver(loop);
+    CHECK(loop.Post({"model.hit_test.request", &recoveredReceiver, &recovered, {}}));
+    handshake.restart();
+    while (!recoveredReceiver.hitTest && handshake.elapsed() < 5000) QCoreApplication::processEvents();
+    CHECK(recoveredReceiver.hitTest);
+    const auto oldCallback = recoveredReceiver.hitTest;
+    const auto oldToken = recovered.Metadata().hotkeys.value("model_token").toString().toStdString();
     recoveredCalls.failBind = true;
     QThread::msleep(100);
     CHECK(!recovered.Error().isEmpty() && !recovered.Submit(R"({"command":"reset_drag"})"));
+    CHECK(!oldCallback({8, 8, 16, 16, oldToken}).available);
     CHECK(recovered.Stop() && !recoveredCalls.wrongThread && recoveredCalls.shutdowns == 1);
     recoveredCalls.failBind = false;
     CHECK(recovered.Start(std::unique_ptr<ModelRenderTarget>(new TrackedTarget(recoveredCalls)),
         {"", directory.path().toStdString(), "", {}, -1}, 16, 16));
     CHECK(recovered.Error().isEmpty() && AwaitModel(recovered)["ok"].toBool());
+    CHECK(!oldCallback({8, 8, 16, 16, oldToken}).available); // 重启不能复活旧回调。
+    recoveredReceiver.hitTest = {};
+    CHECK(loop.Post({"model.hit_test.request", &recoveredReceiver, &recovered, {}}));
+    handshake.restart();
+    const auto newToken = recovered.Metadata().hotkeys.value("model_token").toString().toStdString();
+    while (handshake.elapsed() < 5000) {
+        QCoreApplication::processEvents();
+        if (recoveredReceiver.hitTest && recoveredReceiver.hitTest({8, 8, 16, 16, newToken}).available) break;
+        QThread::msleep(1);
+    }
+    CHECK(recoveredReceiver.hitTest && recoveredReceiver.hitTest({8, 8, 16, 16, newToken}).available);
     CHECK(recovered.Stop() && recoveredCalls.shutdowns == 2);
     return 0;
 }

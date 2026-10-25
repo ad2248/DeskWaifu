@@ -1,4 +1,5 @@
 #include "processor/interaction/InteractionProcessor.hpp"
+#include "processor/input/InputListener.hpp"
 #include <QCoreApplication>
 #include <QEventLoop>
 #include <QJsonDocument>
@@ -6,6 +7,7 @@
 #include <cmath>
 #include <fstream>
 #include <iostream>
+#include <chrono>
 
 #define CHECK(condition) do { if (!(condition)) { std::cerr << __LINE__ << ": " << #condition << '\n'; return 1; } } while (false)
 
@@ -50,6 +52,14 @@ public:
     std::vector<QJsonObject> operations;
     bool HandleEvent(const ProcessorEvent& event) override
     {
+        if (event.type == "model.hit_test.request") {
+            ModelHitSnapshot hit; hit.width = 800; hit.height = 600; hit.modelToken = "test-token";
+            hit.regions = {{100, 100, 500, 400}}; hit.partsEnabled = true; hit.fallback = true;
+            hit.fallbackYScale = -1; hit.fallbackYOffset = 300;
+            ModelHitTest callback = [hit](const ModelHitQuery& query) { return hit.Test(query); };
+            Send("model.hit_test.ready", event.sender, {{"callback", QVariant::fromValue(callback)}});
+            return true;
+        }
         if (event.type != "model.operation") return false;
         operations.push_back(QJsonDocument::fromJson(event.data.value("json").toString().toUtf8()).object());
         Send("model.result", event.sender, {{"reply", QJsonObject{{"ok", true}}}});
@@ -58,7 +68,7 @@ public:
     int Taps() const
     {
         int count = 0;
-        for (const auto& operation : operations) if (operation.value("command") == "tap_model") ++count;
+        for (const auto& operation : operations) if (operation.value("command") == "random_expression") ++count;
         return count;
     }
 };
@@ -96,6 +106,7 @@ int main(int argc, char** argv)
             [&] { ++moves; }, [&] { ++greetings; });
     };
     auto interaction = makeInteraction();
+    Wait(20); // 初始化请求与回调回复均通过统一队列派发。
     auto click = [&](int x, int y) {
         interaction->PointerMoved(x, y);
         interaction->PointerButton(0, true); interaction->PointerButton(0, false);
@@ -106,8 +117,7 @@ int main(int argc, char** argv)
     CHECK(model.Taps() == 0);
     Wait(450);
     CHECK(model.Taps() == 1);
-    CHECK(model.operations[0].value("mouse_x") == 300);
-    CHECK(model.operations[0].value("model_token") == "test-token");
+    CHECK(model.operations.back().value("model_token") == "test-token");
     Wait(400); CHECK(model.Taps() == 1);
 
     click(300, 200); click(300, 200);
@@ -157,16 +167,66 @@ int main(int argc, char** argv)
     state.editing = true;
     interaction->ApplyLook(state, &output, .5f, .5f, 1); CHECK(!state.hasLook);
 
+    // 监听层只投递输入；连续移动合并，但按钮不会越过移动或被合并丢失。
+    InputListener listener(loop, *interaction, window);
+    listener.Event("enter", {{"x", 300}, {"y", 200}});
+    for (int i = 0; i < 10000; ++i) listener.Move(300, 200);
+    CHECK(!interaction->Hover().inside); // 输入尚未派发。
+    Wait(20);
+    auto hover = interaction->Hover();
+    CHECK(hover.available && hover.inside && hover.parts == std::vector<std::string>{"Head"});
+    state.width = 800; state.height = 600;
+    interaction->PrepareFrame(state, true, .4f, .8f); CHECK(state.opacity == .4f);
+    CHECK(interaction->InputRegions(state, {{100, 100, 30, 30}}).size() == 1);
+    state.app.hidden = true;
+    CHECK(interaction->InputRegions(state, {{100, 100, 30, 30}}).empty());
+    state.app.hidden = false;
+    listener.Event("leave"); Wait(20);
+    interaction->PrepareFrame(state, true, .4f, .8f); CHECK(state.opacity == .8f);
+    listener.Move(300, 200);
+    listener.Event("button", {{"button", 0}, {"pressed", true}});
+    listener.Move(340, 240);
+    listener.Event("button", {{"button", 0}, {"pressed", false}});
+    Wait(20); CHECK(settings.LocalScreenEditing());
+    interaction->PrepareFrame(state, true, .4f, .8f);
+    CHECK(state.editing && !state.handles.empty());
+    const auto editRegions = interaction->InputRegions(state, {});
+    CHECK(editRegions.size() == 1 && editRegions[0].width == 800 && editRegions[0].height == 600);
+    CHECK(settings.Cancel(settings.Owner()).ok);
+    listener.Event("button", {{"button", 0}, {"pressed", true}});
+    listener.SetPaused(true);
+    listener.Event("button", {{"button", 0}, {"pressed", true}});
+    listener.SetPaused(false); Wait(20);
+    CHECK(!interaction->Captured());
+    listener.Event("button", {{"button", 0}, {"pressed", true}});
+    CHECK(service.SetVisibility(false).ok);
+    Wait(20); CHECK(!interaction->Captured());
+    CHECK(service.SetVisibility(true).ok);
+    listener.Stop();
+
+    // 排队延迟不能把物理时间上分离的两次单击误判为双击。
+    const auto now = static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count());
+    interaction->Position(300, 200);
+    const int beforeDelayed = model.Taps();
+    interaction->PointerButton(0, true, now - 1000);
+    interaction->PointerButton(0, false, now - 1000);
+    interaction->PointerButton(0, true, now - 500);
+    interaction->PointerButton(0, false, now - 500);
+    Wait(20);
+    CHECK(model.Taps() == beforeDelayed + 2 && greetings == 1);
+    model.operations.clear(); // 下列生命周期检查重新从零开始计数。
+
     // 已排队的旧超时不能抢先派发取消后新一轮的单击。
     CHECK(loop.Post({"interaction.tap_timeout", interaction.get(), interaction.get(), {}}));
     interaction->Cancel();
     click(300, 200);
-    Wait(20); CHECK(model.Taps() == 3);
+    Wait(20); CHECK(model.Taps() == 0);
     interaction->Stop();
     const auto scale = service.Snapshot().transform.scale;
     click(300, 200); interaction->PointerScroll(1);
     CHECK(service.Snapshot().transform.scale == scale && greetings == 1);
-    Wait(450); CHECK(model.Taps() == 3);
+    Wait(450); CHECK(model.Taps() == 0);
     interaction.reset();
 
     // 定时器仍活跃时销毁，且清除尚未派发的自身事件。
@@ -174,12 +234,12 @@ int main(int argc, char** argv)
     click(300, 200);
     CHECK(loop.Post({"interaction.tap_timeout", interaction.get(), interaction.get(), {}}));
     interaction.reset();
-    Wait(450); CHECK(model.Taps() == 3);
+    Wait(450); CHECK(model.Taps() == 0);
 
     interaction = makeInteraction();
     click(300, 200);
     mode.Send(ModelWindowState::Event::Close);
-    Wait(450); CHECK(model.Taps() == 3);
+    Wait(450); CHECK(model.Taps() == 0);
     mode.Send(ModelWindowState::Event::Released);
     interaction.reset();
     return 0;

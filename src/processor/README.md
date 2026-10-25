@@ -13,6 +13,7 @@ processor/
   command/        配置、窗口控制及兼容 CLI 命令的有序事件入口
   model/          模型操作代理、worker-only Cubism 生命周期与帧状态
   interaction/    GUI 侧视线、点击/双击、拖拽、滚轮与模型热键策略
+  input/          窗口输入与全局光标监听，只将采样转换为事件
   signal/         SIGUSR1/SIGUSR2 自管道就绪事件，不依赖渲染帧
   Processor.hpp   注册/注销生命周期基类
   Events.hpp      本阶段业务事件类型名称
@@ -83,7 +84,11 @@ IpcProcessor 使用 QSocketNotifier 将 socket 可读/可写转换成事件；�
 - `CommandProcessor` 将所有 Unix socket 命令/断开通知排入统一事件队列；配置、窗口和外部控制状态留在 GUI 线程，模型操作再交给 `ModelProcessor`。外部命令只在操作完成后返回真实结果，不以“已入队”假装执行成功。
 - 每个 IPC 连接最多等待一个异步回复，保留命令/回复顺序、写回压和半关闭语义；等待的连接不阻塞其他连接。完成回调只持有弱引用的回复槽，断线或 transport 销毁后不会访问旧连接或复用的 fd。
 - 点击、延迟单击、滚轮、模型热键及皮肤/模型切换不再访问主线程的模型对象。滚轮只在 GUI 线程计算逻辑投影；实际命中测试在 worker 上执行。模型切换成功且索引实际改变后才清空控制来源、待处理手势和旧键盘状态；失败或选中原模型不会误清空。
-- `InteractionProcessor` 持有 CursorLook、InputController 和 ScreenCropInteraction；窗口输入回调在 GUI 线程同步交给它识别，语义模型操作通过指针定向的 `model.operation` 排队，`model.result` 返回该处理器。单击等待由独立 Qt 单次定时器唤醒，不依赖呈现帧。模式退出、输出切换、模型切换、隐藏和关闭会取消手势及待处理单击；编辑事务仍由 TransformEditor 持有，跨屏窗口重绑定仍由组装入口协调。
+- `InputListener` 在 GUI 线程接收窗口输入并持有全局光标监听器，用独立 Qt 定时器采样全局光标，不依赖呈现帧；只投递定向 `input.event` / `input.move`。连续同来源移动合并为最新采样；离散事件和来源切换形成顺序屏障，不合并掉按下/释放。按钮携带采样时的单调时钟时间，排队延迟不改变双击判定。窗口表面替换期间暂停采集并清除旧输入，停止时注销源以清除未派发事件。
+- `InteractionProcessor` 持有 CursorLook、InputController 和 ScreenCropInteraction；通过输入事件识别手势，语义模型操作通过指针定向的 `model.operation` 排队，`model.result` 返回该处理器。单击等待由独立 Qt 单次定时器唤醒，不依赖呈现帧。模式退出、输出切换、模型切换、隐藏和关闭会取消手势及待处理单击；编辑事务仍由 TransformEditor 持有，跨屏窗口重绑定仍由组装入口协调。
+- 交互初始化时发送 `model.hit_test.request`，模型处理器用 `model.hit_test.ready` 回复 `data.callback`（ModelHitTest）。缺少或失效时重新请求，同时最多保留一个待回复请求。回调只弱引用线程安全交换槽，查询最新完成渲染帧的不可变 CPU 命中快照；不访问 SDK/GL，不借用处理器。停止、析构、渲染错误或模型/视口不匹配时返回 unavailable，区别于有效的未命中。
+- 命中快照同时提供 alpha 轮廓与具名 HitAreas 包围矩形（与 SDK IsHit 一致，并非逐三角形测试），无 HitAreas 时保留旧版 Head/Body 上下半区回退。轮廓命中与部位命中相互独立。交互处理器自行决定 Head/Body 点击反应、悬停透明度、裁剪区域、编辑框和窗口输入区域，渲染端只执行动作或绘制给定状态。旧 `tap_model` 操作保留为兼容入口，新交互路径不调用它。
+- 当前刻意不绑定“最后成功呈现帧”，命中数据可能领先用户看到的画面，快速运动时允许轻微偏差；几何、轮廓、尺寸和模型实例标识仍来自同一个完成帧，不能混用不同模型或视口的数据。
 - 高频光标与拖动只更新当前交互状态/编辑草稿，不为每次移动排入模型操作。呈现采样时用当前模型变换、视口、视线中心和半径重新计算缓存光标，沿用 ModelProcessor 的有界最新状态槽；全局视线采样不合成拖动事件。
 - GUI 线程只持有窗口/Wayland surface、呈现 GL context、状态及只读模型元数据。自动设备使用在 GUI 线程创建 surface、再将独立 Qt context 移至 worker 的路径；指定 PCI 设备使用独立 device-platform EGL context。GL 对象名不跨线程/设备共享。
 - 帧经最多一个“最新状态”和一个“最新不可变 RGBA 帧”槽传递；慢呈现不会积压帧。主线程上传 CPU 像素后呈现，输入区域来自 worker 在应用透明度前采样的轮廓。尺寸、隐藏状态或模型索引不匹配的旧帧不会上传。现有 backend model token 仅用于拒绝旧模型的输入状态/热键，不用于事件路由。
@@ -98,7 +103,7 @@ IpcProcessor 使用 QSocketNotifier 将 socket 可读/可写转换成事件；�
 
 `model-render-thread` 使用真实 Cubism 与隔离 EGL，验证线程归属、GUI 不派发时仍持续绘制、最新帧覆盖/不可变性、操作结果、模型切换、失败初始化及有序销毁。`command-processor`/`signal-processor` 验证没有呈现帧时的命令和信号派发；`ipc-bounded-transport` 补充延迟回复、半关闭、其他连接进展及晚到完成测试。原有实际模型点击、热键和跨屏拖动测试保留并改为通过操作事件访问模型。
 
-`interaction-processor` 不创建 GL 上下文、不读取真实桌面输入、不访问语音服务，验证无渲染帧时延迟单击、双击/拖拽互斥、模式取消、静止光标重算和处理器销毁；`model-pointer-release` 另外使用真实模型验证无呈现帧时的定时单击。
+`interaction-processor` 不创建 GL 上下文、不读取真实桌面输入、不访问语音服务，验证无渲染帧时延迟单击、双击/拖拽互斥、模式取消、静止光标重算、输入合并顺序、hover 策略、原始输入时间与处理器销毁。`model-hit-test` 验证快照轮廓/部位独立性、多部位重叠、失效及并发查询；`model-render-thread` 验证真实模型回调握手和停止失效。`model-pointer-transform` 将快照与实际 SDK 命中测试对照（含变换、竖屏、视图矩阵与配置区域），`model-pointer-release` 使用真实模型验证无呈现帧时的定时单击。
 
 **仍保留的边界：**
 

@@ -10,8 +10,6 @@
 #include <string>
 #include <GL/glew.h>
 #include "DesktopWindow.hpp"
-#include "KWinCursorTracker.hpp"
-#include "HoverOpacity.hpp"
 #include "HoverOpacitySettings.hpp"
 #include "ApplicationService.hpp"
 #include "TransformEditor.hpp"
@@ -32,6 +30,7 @@ class ModelProcessor;
 class CommandProcessor;
 class SignalProcessor;
 class InteractionProcessor;
+class InputListener;
 
 /**
 * @brief 应用类。
@@ -139,8 +138,8 @@ public:
     int GetWindowHeight() { return _windowHeight; }
 
 private:
-    void PointerEntered(double x, double y) override { _hoverOpacity.Enter(x, y); SetMousePosition(x, y); }
-    void PointerLeft() override { _hoverOpacity.Leave(); }
+    void PointerEntered(double x, double y) override;
+    void PointerLeft() override;
     void PointerMoved(double x, double y) override;
     void PointerButton(int button, bool pressed) override;
     void PointerScroll(double vertical) override;
@@ -180,10 +179,8 @@ private:
     OutputId _lastOutput = 0;
     void ResizeView(int width, int height);
     void MoveScreenDrag();
-    void TrackGlobalCursor();
     std::unique_ptr<InteractionProcessor> _interaction;
-    KWinCursorTracker _kwinCursor;
-    HoverOpacity _hoverOpacity;
+    std::unique_ptr<InputListener> _inputListener;
     ModelWindowState _windowState;
     std::unique_ptr<MiniMaxSpeechSource> _speechSource;
     std::unique_ptr<AudioPlayer> _audioPlayer;

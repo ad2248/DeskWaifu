@@ -269,7 +269,7 @@ get_target_property(INPUT_APP_LIBRARIES ${APP_NAME} LINK_LIBRARIES)
 target_link_libraries(model-pointer-test PRIVATE ${INPUT_APP_LIBRARIES} OpenGL::EGL)
 target_compile_definitions(model-pointer-test PRIVATE SDK_RESOURCES="${SDK_ROOT_PATH}/Samples/Resources")
 target_link_options(model-pointer-test PRIVATE
-  -Wl,--wrap=_ZN7LAppPal10PrintLogLnEPKcz)
+  -Wl,--wrap=_ZN7LAppPal10PrintLogLnEPKcz -Wl,--wrap=_ZN9LAppModel19SetRandomExpressionEv)
 foreach(scenario release transform drag state)
   add_test(NAME model-pointer-${scenario} COMMAND model-pointer-test ${scenario})
   set_tests_properties(model-pointer-${scenario} PROPERTIES

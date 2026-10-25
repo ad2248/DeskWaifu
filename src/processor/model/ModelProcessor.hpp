@@ -47,4 +47,5 @@ private:
     QString _error;
     std::function<void()> _modelChanged;
     bool _running = false, _stoppedCleanly = true;
+    std::shared_ptr<ModelHitMailbox> _hits;
 };

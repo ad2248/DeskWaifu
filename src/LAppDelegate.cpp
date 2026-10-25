@@ -16,6 +16,7 @@
 #include "processor/command/CommandProcessor.hpp"
 #include "processor/signal/SignalProcessor.hpp"
 #include "processor/interaction/InteractionProcessor.hpp"
+#include "processor/input/InputListener.hpp"
 #include <QClipboard>
 #include <QGuiApplication>
 #include <cmath>
@@ -120,9 +121,6 @@ bool LAppDelegate::InitializeRuntime()
     _windowWidth = _window->Width();
     _windowHeight = _window->Height();
     _lastOutput = _window->CurrentOutput();
-    if (!_kwinCursor.Start())
-        LAppPal::PrintLogLn("[KWin] Global cursor unavailable: %s; using surface events", _kwinCursor.Error().c_str());
-    else LAppPal::PrintLogLn("[KWin] Transient global cursor script loaded");
     auto modelDirs = values.additionalModelDirs;
     for (auto& dir : modelDirs) dir = LAppConfig::ExpandTilde(dir);
     _models.reset(new ModelProcessor(_processors->Loop()));
@@ -135,6 +133,10 @@ bool LAppDelegate::InitializeRuntime()
         _service, *_settings, *_models, [this] { return _models->Metadata(); },
         [this] { MoveScreenDrag(); },
         [this] { _processors->SpeakGreeting(QStringLiteral("姐姐，你好喵")); }));
+    _inputListener.reset(new InputListener(_processors->Loop(), *_interaction, *_window));
+    if (!_inputListener->StartCursor())
+        LAppPal::PrintLogLn("[KWin] Global cursor unavailable: %s; using surface events", _inputListener->CursorError().c_str());
+    else LAppPal::PrintLogLn("[KWin] Transient global cursor script loaded");
 
     _signals.reset(new SignalProcessor(_processors->Loop(),
         [this] { _service.SetVisibility(_service.Snapshot().hidden); },
@@ -172,6 +174,7 @@ OcrClient& LAppDelegate::Ocr() { return _processors->Ocr(); }
 void LAppDelegate::AppEnd()
 {
     // 关闭前停止交互生产者，不在退出命令的回复前继续排入模型操作。
+    if (_inputListener) _inputListener->Stop();
     if (_interaction) _interaction->Stop();
     _windowState.Send(ModelWindowState::Event::Close);
 }
@@ -181,6 +184,7 @@ bool LAppDelegate::Release()
     AppEnd();
     _signals.reset();
     _ipcProcessor.reset();
+    _inputListener.reset();
     const bool released = !_models || _models->Stop();
     _interaction.reset(); // AppEnd 已停止交互生产；模型线程收尾后再注销请求者。
     _models.reset(); // 销毁命令服务前，清除待派发的操作完成事件。
@@ -191,7 +195,6 @@ bool LAppDelegate::Release()
     _speechPlayer.reset();
     _audioPlayer.reset();
     _speechSource.reset();
-    _kwinCursor.Stop();
     _window->Shutdown();
     if (released) _windowState.Send(ModelWindowState::Event::Released);
     return released;
@@ -221,7 +224,6 @@ bool LAppDelegate::Run()
 
         glViewport(0, 0, _windowWidth, _windowHeight);
 
-        TrackGlobalCursor();
         _lastOutput = _window->CurrentOutput();
 
         if (_interaction->Captured() && _settings->Dirty()) _settings->ScheduleSave(SettingsClock(), .5);
@@ -236,10 +238,7 @@ bool LAppDelegate::Run()
         state.app = _service.Snapshot(); state.controls = _service.FrameInput();
         state.modelToken = _models->Metadata().hotkeys.value("model_token").toString().toStdString();
         state.width = _windowWidth; state.height = _windowHeight;
-        state.editing = _settings->Editing();
-        const auto& settings = _settings->Display();
-        state.clip = ResolveModelRegion(settings.cropped, settings.region, _windowWidth, _windowHeight);
-        if (_settings->ScreenEditing() && settings.cropped) state.handles = CropInteraction::Handles(settings.region);
+        _interaction->PrepareFrame(state, _hoverSettings->Enabled(), _hoverSettings->Opacity(), _hoverSettings->IdleOpacity());
         const auto outputs = _window->Outputs();
         const auto* current = _outputController.Current(outputs);
         _interaction->ApplyLook(state, current, _lookCenterX, _lookCenterY,
@@ -248,15 +247,12 @@ bool LAppDelegate::Run()
         const bool usable = frame && frame->width == _windowWidth && frame->height == _windowHeight
             && frame->hidden == state.app.hidden && frame->modelIndex == state.app.modelIndex;
         const auto regions = usable ? frame->regions : std::vector<ModelRegion>{};
-        state.opacity = _hoverOpacity.Resolve(_hoverSettings->Enabled(), _hoverSettings->Opacity(),
-            regions, state.handles, _hoverSettings->IdleOpacity());
         _models->SetState(state);
         glClearColor(0, 0, 0, 0); glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         if (usable && (!state.app.hidden || _settings->ScreenEditing()) && !_window->UploadFrame(*frame)) {
             renderingOk = false; AppEnd(); return false;
         }
-        _window->SetInputRegion(state.app.hidden && !_settings->ScreenEditing() ? std::vector<ModelRegion>{}
-            : ModelFrameInputRegions(_settings->ScreenEditing(), _windowWidth, _windowHeight, regions));
+        _window->SetInputRegion(_interaction->InputRegions(state, regions));
         return _windowState.Running();
     });
     const bool released = Release();
@@ -284,16 +280,6 @@ LAppDelegate::LAppDelegate():
 LAppDelegate::~LAppDelegate()
 {
 
-}
-
-void LAppDelegate::TrackGlobalCursor()
-{
-    const auto outputs = _window->Outputs();
-    const auto* current = _outputController.Current(outputs);
-    _kwinCursor.Poll(current ? current->name : "");
-    double x = 0, y = 0;
-    if (_interaction && _kwinCursor.LocalPosition(_windowWidth, _windowHeight, x, y))
-        _interaction->CursorPosition(x, y);
 }
 
 void LAppDelegate::ResizeView(int width, int height)
@@ -344,6 +330,7 @@ void LAppDelegate::SyncInteractionMode()
 
 void LAppDelegate::OutputSwitchStarted()
 {
+    if (_inputListener) _inputListener->SetPaused(true);
     if (_ipcProcessor) _ipcProcessor->SetPaused(true);
     _windowState.Send(ModelWindowState::Event::SwitchOutput);
     if (_settings && _window->OutputNeedsRebind()) _settings->AbortScreenEdit();
@@ -353,40 +340,48 @@ void LAppDelegate::OutputSwitchFinished()
 {
     _windowState.Send(ModelWindowState::Event::OutputReady);
     SyncInteractionMode();
+    if (_inputListener) _inputListener->SetPaused(false);
     if (_ipcProcessor) _ipcProcessor->SetPaused(false);
 }
 
 void LAppDelegate::PointerButton(int button, bool pressed)
 {
-    if (_interaction) _interaction->PointerButton(button, pressed);
+    if (_inputListener) _inputListener->Event("button", {{"button", button}, {"pressed", pressed}});
 }
 
 void LAppDelegate::ResetKeyboardState()
 {
-    if (_interaction) _interaction->ResetKeyboard();
+    if (_inputListener) _inputListener->Event("keyboard_reset");
 }
 
 void LAppDelegate::OnModelKey(uint32_t code, bool pressed)
 {
-    if (_interaction) _interaction->Key(code, pressed);
+    if (_inputListener) _inputListener->Event("key", {{"code", code}, {"pressed", pressed}});
 }
 
 void LAppDelegate::PointerMoved(double x, double y)
 {
-    SetMousePosition(x, y);
-
-    if (_interaction) _interaction->PointerMoved(x, y);
+    if (_inputListener) _inputListener->Move(x, y);
 }
 
 void LAppDelegate::SetMousePosition(double x, double y)
 {
-    _hoverOpacity.Move(x, y);
-    if (_interaction) _interaction->Position(x, y);
+    if (_inputListener) _inputListener->Event("position", {{"x", x}, {"y", y}});
 }
 
 void LAppDelegate::PointerScroll(double vertical)
 {
-    if (_interaction) _interaction->PointerScroll(vertical);
+    if (_inputListener) _inputListener->Event("scroll", {{"vertical", vertical}});
+}
+
+void LAppDelegate::PointerEntered(double x, double y)
+{
+    if (_inputListener) _inputListener->Event("enter", {{"x", x}, {"y", y}});
+}
+
+void LAppDelegate::PointerLeft()
+{
+    if (_inputListener) _inputListener->Event("leave");
 }
 
 int LAppDelegate::ModelIndex() const { return _models ? _models->Metadata().index : -1; }
@@ -398,7 +393,7 @@ bool LAppDelegate::SetHidden(bool hidden)
         if (!_window->SetInputRegion({})) return false;
         _windowState.Send(ModelWindowState::Event::CancelGesture);
         CancelInteraction();
-        _hoverOpacity.Leave();
+        if (_interaction) _interaction->Leave();
         _window->SetKeyboardGrab(false);
         ResetKeyboardState();
         return true;
