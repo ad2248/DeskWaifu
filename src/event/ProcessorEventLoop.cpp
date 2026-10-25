@@ -324,9 +324,9 @@ bool ProcessorEventLoop::event(QEvent* wake)
     {
         std::lock_guard<std::mutex> lock(_mutex);
         _dispatching = false;
-        ArmTimerLocked();
-        WakeLocked();
     }
+    // A busy FIFO must not keep rearming an already-expired deadline forever.
+    ExpireRequests();
     return true;
 }
 

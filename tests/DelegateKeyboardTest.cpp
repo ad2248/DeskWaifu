@@ -132,6 +132,8 @@ int main(int argc, char** argv)
     QCoreApplication application(argc, argv);
     QTemporaryDir directory;
     CHECK(directory.isValid());
+    CHECK(argc == 1 || argc == 2);
+    const bool withPlugin = argc == 2;
     CHECK(QDir(directory.path()).mkdir("model"));
     const auto modelDir = directory.path() + "/model/";
     CHECK(QFile::link(QStringLiteral(SDK_RESOURCES "/Haru/Haru.moc3"), modelDir + "Haru.moc3"));
@@ -144,7 +146,12 @@ int main(int argc, char** argv)
         {"HotkeyID":"binding-42","Action":"ToggleExpression","File":"test.exp3.json"}]})"));
     CHECK(Write(modelDir + "test.exp3.json", R"({"Parameters":[{"Id":"ParamAngleX","Value":1
 }]})"));
-    CHECK(Write(directory.path() + "/config.json", "{}"));
+    const auto pluginDir = directory.path() + "/plugins";
+    if (withPlugin) {
+        CHECK(QDir().mkpath(pluginDir + "/speech"));
+        CHECK(QFile::copy(QString::fromLocal8Bit(argv[1]), pluginDir + "/speech/speech.so"));
+    }
+    CHECK(Write(directory.path() + "/config.json", QJsonDocument(QJsonObject{{"plugin_dir", pluginDir}}).toJson()));
     // 不连接用户的 IPC 端点，也不修改其 KWin 脚本。
     qputenv("XDG_RUNTIME_DIR", directory.path().toUtf8());
     qputenv("DESKWAIFU_RENDER_DEVICE", "auto");
@@ -153,25 +160,29 @@ int main(int argc, char** argv)
     auto& config = LAppConfig::GetInstance();
     config.sourcePath = (directory.path() + "/config.json").toStdString();
     config.values.modelOutput = "test";
+    config.values.pluginDir = pluginDir.toStdString();
     auto* app = TestApplication::GetInstance();
     CHECK(app->Initialize());
     CHECK(events);
 
-    // 在不提供凭据、不联网的情况下测试正式双击路径。
-    std::ostringstream speechLogs;
-    auto* speechPrevious = std::cout.rdbuf(speechLogs.rdbuf());
+    // 无论可选语音插件是否安装，正式双击路径都抓取键盘并发布通用通知。
+    // 播报策略由插件加载/端点测试验证，不再以宿主日志充当语音执行证据。
+    int doubleClicks = 0;
+    auto notifications = ProcessorTestAccess::Loop(app->Models()).CreateEndpoint("keyboard-test-notifications",
+        [&](const EventDelivery&) { ++doubleClicks; });
+    CHECK(notifications && notifications->Subscribe("interaction.double_click/v1"));
     events->PointerMoved(8, 8);
     events->PointerButton(0, true);
     events->PointerButton(0, false);
-    QCoreApplication::processEvents();
-    const bool singleClickSilent = speechLogs.str().find("[Speech]") == std::string::npos;
+    for (int i = 0; i < 20; ++i) QCoreApplication::processEvents();
+    CHECK(doubleClicks == 0);
     events->PointerButton(0, true);
     events->PointerButton(0, false);
-    for (int i = 0; i < 4; ++i) QCoreApplication::processEvents();
-    std::cout.rdbuf(speechPrevious);
-    CHECK(singleClickSilent);
-    CHECK(speechLogs.str().find("[Speech]") != std::string::npos);
-    CHECK(speechLogs.str().find("MiniMax API Key") != std::string::npos);
+    QElapsedTimer notificationWait; notificationWait.start();
+    while (!doubleClicks && notificationWait.elapsed() < 5000) {
+        QCoreApplication::processEvents(); QThread::msleep(1);
+    }
+    CHECK(doubleClicks == 1);
     CHECK(app->GetWindow()->KeyboardGrabbed());
     app->GetWindow()->SetKeyboardGrab(false);
 
@@ -220,13 +231,19 @@ int main(int argc, char** argv)
     CHECK(path.size() < sizeof(address.sun_path));
     std::strcpy(address.sun_path, path.c_str());
     CHECK(connect(fd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == 0);
-    const std::string requests = "{\"command\":\"trigger_hotkey\",\"id\":\"binding-42\",\"model_token\":\"" + oldToken + "\"}\n" +
+    std::string requests = "{\"command\":\"trigger_hotkey\",\"id\":\"binding-42\",\"model_token\":\"" + oldToken + "\"}\n" +
         "{\"command\":\"trigger_hotkey\",\"id\":\"binding-42\",\"model_token\":\"" + token + "\"}\n" +
         "{\"command\":\"get_hotkeys\"}\n" +
         "{\"command\":\"get_render_device\"}\n" +
         "{\"command\":\"set_render_device\",\"device\":\"ffff:ff:1f.7\"}\n" +
-        "{\"command\":\"set_render_device\",\"device\":\"auto\"}\n" +
-        "{\"command\":\"quit\"}\n";
+        "{\"command\":\"set_render_device\",\"device\":\"auto\"}\n";
+    if (withPlugin) requests +=
+        "{\"command\":\"get_speech_settings\"}\n"
+        "{\"command\":\"set_speech_settings\",\"api_key\":\"offline-plugin-secret\"}\n"
+        "{\"command\":\"get_speech_settings\"}\n"
+        "{\"command\":\"set_speech_settings\",\"api_key\":\"\"}\n"
+        "{\"command\":\"get_speech_settings\"}\n";
+    requests += "{\"command\":\"quit\"}\n";
     CHECK(send(fd, requests.data(), requests.size(), MSG_NOSIGNAL) == static_cast<ssize_t>(requests.size()));
     CHECK(app->Run()); // 套接字事件处理命令，quit 关闭窗口循环。
     CHECK(triggerCalls == 3);
@@ -237,8 +254,9 @@ int main(int argc, char** argv)
     close(fd);
     CHECK(count == 0);
     const auto lines = response.split('\n');
-    if (lines.size() != 8) std::cerr << "Unexpected IPC response: " << response.toStdString() << '\n';
-    CHECK(lines.size() == 8 && lines.back().isEmpty());
+    const int expectedLines = withPlugin ? 13 : 8;
+    if (lines.size() != expectedLines) std::cerr << "Unexpected IPC response: " << response.toStdString() << '\n';
+    CHECK(lines.size() == expectedLines && lines.back().isEmpty());
     const auto stale = QJsonDocument::fromJson(lines[0]).object();
     CHECK(!stale["ok"].toBool(true) && stale["error"].toString().contains("Model changed"));
     CHECK(QJsonDocument::fromJson(lines[1]).object()["ok"].toBool());
@@ -257,6 +275,18 @@ int main(int argc, char** argv)
     CHECK(QJsonDocument::fromJson(lines[5]).object()["ok"].toBool());
     LAppConfig savedConfig;
     CHECK(savedConfig.LoadFromFile(config.sourcePath) && savedConfig.values.renderDevice == "auto");
-    CHECK(QJsonDocument::fromJson(lines[6]).object()["ok"].toBool());
+    if (withPlugin) {
+        const bool configured[] = {false, true, true, false, false};
+        for (int i = 0; i < 5; ++i) {
+            const auto settings = QJsonDocument::fromJson(lines[6 + i]).object();
+            CHECK(settings.value("ok").toBool() && settings.value("configured").toBool() == configured[i]);
+        }
+        CHECK(!response.contains("offline-plugin-secret") && !response.contains("api_key"));
+        QFile privateConfig(directory.path() + "/plugin/speech/config.json");
+        CHECK(privateConfig.open(QIODevice::ReadOnly));
+        CHECK(QJsonDocument::fromJson(privateConfig.readAll()).object().value("api_key") == "");
+        CHECK(!savedConfig.values.unknownFields.count("api_key") && !savedConfig.values.unknownFields.count("minimax_api_key"));
+    }
+    CHECK(QJsonDocument::fromJson(lines[lines.size() - 2]).object()["ok"].toBool());
     return 0;
 }

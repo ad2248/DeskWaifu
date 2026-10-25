@@ -112,6 +112,7 @@ try {
     Check(speech.status == RequestStatus::Replied && speech.payload->type == "operation.failed", "corrupt settings cannot use stale cached credentials");
     manager.Stop(); Drain();
     Check(!manager.Start(&error) && !error.isEmpty() && Read(path) == corrupt, "corrupt startup rolls back without repairing or deleting private data");
+    manager.Stop(); // A failed Start may retain healthy plugins; close that lifecycle first.
     Write(path, "{\"api_key\":\"\"}\n");
     Check(manager.Start(&error), "restart after explicit config repair has no leaked endpoint registrations");
 

@@ -24,7 +24,7 @@ void Clear(const QString& path) { QFile file(path); Check(file.open(QIODevice::W
 int main(int argc, char** argv)
 try {
     QCoreApplication app(argc, argv);
-    Check(argc == 8, "expected fixture paths");
+    Check(argc == 9, "expected fixture paths");
     ProcessorEventLoop loop;
     QTemporaryDir directory;
     Check(directory.isValid(), "temporary directory");

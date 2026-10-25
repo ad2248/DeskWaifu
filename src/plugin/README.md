@@ -23,7 +23,7 @@ ctest --test-dir /tmp/opencode/plugin-sdk-build --output-on-failure
 
 `Start` 依次创建并 Initialize 各实例，随后激活成功初始化的端点，最后逐个 Start。初始化阶段禁止发送消息。某个入口/ABI/工厂/初始化/Start 失败，只失效并 Stop/destroy 失败实例，其他健康插件继续工作。返回 false 和汇总诊断表示存在失败项，不表示健康插件已停止；调用者仍须 Stop。**Stop 必须支持部分初始化，并且 noexcept。** 配置文件是持久数据，不随失败回滚删除。启动完成后再次 Start 会报错；Stop 幂等，Stop 后允许重新创建实例，但不会卸载或重新载入库代码。插件之间按运行时能力协作，首版不解析硬依赖图；依赖不可用由请求结果报告。
 
-库设置 `QLibrary::PreventUnloadHint`，即便入口不兼容、启动失败或 Stop，也保持映射到进程退出。这样插件事件、Qt 元类型、延迟释放对象仍可执行其代码；不是热卸载方案。描述符在工厂调用前检查结构大小、SDK 版本、精确 Qt 版本、平台 ABI、编译器、C++ 标准及标准库 ABI。SDK 接口布局改变时必须提升 `DeskWaifuPluginAbiVersion` 和共享库 SOVERSION；所有组件需以相同工具链/Qt/标准构建。这些检查不能使恶意或损坏的 `.so` 变安全。
+库设置 `QLibrary::PreventUnloadHint`，即便入口不兼容、启动失败或 Stop，也保持映射到进程退出。这样插件事件、Qt 元类型、延迟释放对象仍可执行其代码；不是热卸载方案。描述符在工厂调用前检查结构大小、SDK 版本、精确 Qt 版本、平台 ABI、编译器、C++ 标准及标准库 ABI（含 libstdc++ debug 模式）。SDK 接口布局改变时必须提升 `DeskWaifuPluginAbiVersion` 和共享库 SOVERSION；所有组件需以相同工具链/Qt/标准构建。这些检查不能使恶意或损坏的 `.so` 变安全。
 
 ## 最小插件
 

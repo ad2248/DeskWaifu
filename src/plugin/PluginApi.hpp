@@ -34,6 +34,11 @@ static inline const char* DeskWaifuPluginBuildAbi()
 #ifdef _GLIBCXX_USE_CXX11_ABI
         + ";stringabi=" + QByteArray::number(_GLIBCXX_USE_CXX11_ABI)
 #endif
+#ifdef _GLIBCXX_DEBUG
+        + ";glibcxx_debug=1"
+#else
+        + ";glibcxx_debug=0"
+#endif
 #ifdef _LIBCPP_VERSION
         + ";libcxx=" + QByteArray::number(_LIBCPP_VERSION)
 #endif
