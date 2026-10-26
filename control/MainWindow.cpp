@@ -80,8 +80,6 @@ MainWindow::MainWindow(QWidget* parent, const QString& procDirectory)
             emit backendReady();
         }
     });
-    connect(&_client, &DeskWaifuClient::protocolError, this,
-        [this](const QString& message) { setStatusMessage(message, 5000); });
     _plugins.reset(new GuiPluginManager(PluginDirectory(), *_services, *ui->tabWidget));
     QString error;
     if (!_plugins->Start(&error)) {
@@ -96,6 +94,8 @@ MainWindow::~MainWindow()
 {
     _plugins->Stop();
 }
+
+GuiHostServices& MainWindow::hostServices() const { return *_services; }
 
 void MainWindow::setStatusMessage(const QString& message, int timeoutMs)
 {

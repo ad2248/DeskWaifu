@@ -62,6 +62,33 @@ private slots:
         QVERIFY(window.findChild<QLabel*>("connectionStatusLabel"));
     }
 
+    void transportDiagnosticsDoNotDependOnLogPlugin()
+    {
+        const auto previous = qgetenv("DESKWAIFU_CONTROL_PLUGIN_DIR");
+        const auto restore = qScopeGuard([previous] { qputenv("DESKWAIFU_CONTROL_PLUGIN_DIR", previous); });
+        qputenv("DESKWAIFU_CONTROL_PLUGIN_DIR", "");
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const auto runtime = qgetenv("XDG_RUNTIME_DIR");
+        const auto restoreRuntime = qScopeGuard([runtime] { qputenv("XDG_RUNTIME_DIR", runtime); });
+        qputenv("XDG_RUNTIME_DIR", directory.path().toLocal8Bit());
+        MainWindow window(nullptr, directory.path());
+        auto& services = window.hostServices();
+        QSignalSpy logs(&services, &GuiHostServices::logMessage);
+        auto* feedback = window.findChild<QLabel*>("operationStatusLabel");
+        QVERIFY(feedback);
+        emit services.protocolError(QStringLiteral("fixture protocol failure"));
+        QCOMPARE(feedback->text(), QStringLiteral("fixture protocol failure"));
+        emit services.commandOutcomeUnknown(QStringLiteral("set_model"));
+        QVERIFY(feedback->text().contains(QStringLiteral("执行结果未知")));
+        emit services.commandCancelled(QStringLiteral("set_model"));
+        QVERIFY(feedback->text().contains(QStringLiteral("发送前取消")));
+        QCOMPARE(logs.count(), 3);
+        emit services.responseReceived(QStringLiteral("set_speech_settings"), {{"api_key", "must-not-log"}});
+        QCOMPARE(logs.count(), 3); // The host must not become a raw JSON logger.
+        QVERIFY(!window.findChild<QWidget*>("responseLog"));
+    }
+
     void pluginTabsKeepHotkeysAndScrollReachable()
     {
         QTemporaryDir directory;

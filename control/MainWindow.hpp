@@ -19,6 +19,7 @@ public:
         const QString& procDirectory = QStringLiteral("/proc"));
     ~MainWindow() override;
     void setStatusMessage(const QString& message, int timeoutMs = 0);
+    GuiHostServices& hostServices() const;
 
 signals:
     void backendReady();

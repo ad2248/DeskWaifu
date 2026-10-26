@@ -49,6 +49,19 @@ class GuiTabsTest : public QObject
 {
     Q_OBJECT
 private slots:
+    void logViewOnlyDisplaysPublishedLogs()
+    {
+        Services services;
+        LogTab log(services);
+        emit services.protocolError(QStringLiteral("transport failure"));
+        emit services.commandOutcomeUnknown(QStringLiteral("set_model"));
+        emit services.commandCancelled(QStringLiteral("set_model"));
+        auto* view = widget<QPlainTextEdit>(log, "responseLog");
+        QVERIFY(view->toPlainText().isEmpty());
+        services.publishLog(QStringLiteral("host diagnostic"));
+        QCOMPARE(view->toPlainText(), QStringLiteral("host diagnostic"));
+    }
+
     void systemRestartUsesSharedRespawner()
     {
         QTemporaryDir directory;

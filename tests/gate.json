@@ -1,7 +1,7 @@
 {
   "required": [
     "plugin-events", "plugin-timeout-flood", "plugin-manager", "speech-plugin-load", "speech-endpoint", "reading-plugin", "plugin-no-speech-configure",
-    "plugin-boundaries", "plugin-host-link", "gui-plugin-manager", "gui-plugin-shutdown", "gui-tabs", "control-theme", "delegate-plugin-commands", "command-processor", "SpeechSettings",
+    "plugin-boundaries", "plugin-host-link", "gui-plugin-manager", "gui-plugin-shutdown", "gui-tabs", "control-smoke-probe", "control-theme", "delegate-plugin-commands", "command-processor", "SpeechSettings",
     "screenshot-service", "processor-event-loop", "processor-pipeline", "processor-ownership",
     "interaction-processor", "interaction-opacity",
     "speech-contract-normal", "speech-contract-cancel", "speech-contract-cancel-playing", "speech-contract-cancel-draining", "speech-contract-replace",
