@@ -36,6 +36,23 @@ class PluginBoundaries(unittest.TestCase):
             for link in links:
                 self.assertNotIn("deskwaifu_speech", link)
 
+    def test_control_shell_has_no_page_business(self):
+        text = (ROOT / "control/MainWindow.cpp").read_text()
+        for command in ("get_status", "get_speech_settings", "get_hotkeys",
+                        "get_transform_settings", "get_render_device",
+                        "set_mouse_look", "set_hover_opacity"):
+            with self.subTest(command=command):
+                self.assertNotIn('"' + command + '"', text)
+        for widget in ("speechSettingsGroup", "hotkeyGroup", "modelGroup",
+                       "renderDeviceGroup", "responseLog"):
+            self.assertNotIn(widget, (ROOT / "control/MainWindow.ui").read_text())
+
+    def test_gui_pages_do_not_reach_into_shell(self):
+        for path in (ROOT / "control/tabs").glob("*"):
+            if path.suffix in (".hpp", ".cpp"):
+                with self.subTest(path=path):
+                    self.assertNotRegex(path.read_text(), r'#include\s+"(?:ui_)?MainWindow')
+
 
 if __name__ == "__main__":
     unittest.main()

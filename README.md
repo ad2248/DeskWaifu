@@ -179,6 +179,14 @@ not migrated automatically:
 
 ## Usage
 
+### GUI plugins
+
+The control panel loads its system, interaction, model and log tabs from GUI
+plugins. A plugin may export a backend entry, a GUI entry, or both from the same
+`.so`; the speech plugin provides both. See [GUI plugin architecture](docs/gui-plugins.md).
+The control panel uses `plugin_dir` from the main configuration. For a build-tree
+run, set `DESKWAIFU_CONTROL_PLUGIN_DIR=/absolute/path/to/build/plugins`.
+
 ### Streaming speech
 
 Speech is provided by an optional dynamically loaded plugin. The host discovers
@@ -187,7 +195,7 @@ the main configuration to use a development or custom installation directory.
 See [plugin boundaries and migration](docs/plugin-architecture.md).
 
 With the speech plugin installed, enter and save a MiniMax API Key in the control
-panel's **系统 → 语音服务** section. The plugin stores its configuration under
+panel's **语音** tab. The plugin stores its configuration under
 `plugin/speech/` next to the main configuration and restricts
 the credentials file to owner read/write (`0600`). The key is stored in plaintext, not encrypted;
 do not share or commit this configuration. The GUI only queries whether a key is

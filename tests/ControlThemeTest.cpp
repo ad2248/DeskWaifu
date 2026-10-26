@@ -1,4 +1,4 @@
-#include "ui_MainWindow.h"
+#include "ControlTestWindow.hpp"
 #include "HotkeyPanel.hpp"
 
 #include <QApplication>
@@ -31,15 +31,29 @@ class ControlThemeTest : public QObject
 
     QPalette _originalPalette;
     QFont _originalFont;
+    QTemporaryDir _runtime{QStringLiteral("/tmp/opencode/gui-theme-XXXXXX")};
+    QByteArray _previousRuntime;
 
 private slots:
+    void initTestCase()
+    {
+        QVERIFY(_runtime.isValid());
+        _previousRuntime = qgetenv("XDG_RUNTIME_DIR");
+        qputenv("XDG_RUNTIME_DIR", _runtime.path().toLocal8Bit());
+    }
+
+    void cleanupTestCase()
+    {
+        qputenv("XDG_RUNTIME_DIR", _previousRuntime);
+    }
+
     void panelUsesChineseText()
     {
-        QMainWindow window;
-        Ui::MainWindow ui;
+        ControlTestWindow window;
+        ControlTestWidgets ui;
         ui.setupUi(&window);
         QCOMPARE(window.windowTitle(), QString("DeskWaifu 控制面板"));
-        const QStringList tabs = {"系统", "交互", "模型", "日志"};
+        const QStringList tabs = {"系统", "交互", "模型", "语音", "日志"};
         QCOMPARE(ui.tabWidget->count(), tabs.size());
         for (int i = 0; i < tabs.size(); ++i)
             QCOMPARE(ui.tabWidget->tabText(i), tabs[i]);
@@ -55,8 +69,8 @@ private slots:
 
     void controlsBelongToTheirCategory()
     {
-        QMainWindow window;
-        Ui::MainWindow ui;
+        ControlTestWindow window;
+        ControlTestWidgets ui;
         ui.setupUi(&window);
         QCOMPARE(window.findChildren<QTabWidget*>().size(), 1);
         const QList<QStringList> categories = {
@@ -64,6 +78,7 @@ private slots:
             {"mouseLookGroup", "lookGroup", "hoverOpacityGroup", "hotkeyGroup"},
             {"modelGroup", "toggleHiddenButton", "switchSkinButton", "expressionGroup", "motionGroup",
                 "mouthGroup", "outputCombo", "transformGroup", "positionEdit", "transformActionsLayout", "transformStatusLabel"},
+            {"speechSettingsGroup"},
             {"responseLog"}
         };
         for (int tab = 0; tab < categories.size(); ++tab) {
@@ -89,8 +104,8 @@ private slots:
         QFont font = QApplication::font();
         font.setPointSize(fontSize);
         QApplication::setFont(font);
-        QMainWindow window;
-        Ui::MainWindow ui;
+        ControlTestWindow window;
+        ControlTestWidgets ui;
         ui.setupUi(&window);
         window.resize(720, 560);
         window.show();
@@ -126,8 +141,8 @@ private slots:
 
     void systemContainsSpawnWithoutConnectionLabel()
     {
-        QMainWindow window;
-        Ui::MainWindow ui;
+        ControlTestWindow window;
+        ControlTestWidgets ui;
         ui.setupUi(&window);
 
         QVERIFY(ui.systemTab->isAncestorOf(ui.spawnButton));
@@ -139,8 +154,8 @@ private slots:
 
     void cropControlsUseIntegerSurfaceCoordinates()
     {
-        QMainWindow window;
-        Ui::MainWindow ui;
+        ControlTestWindow window;
+        ControlTestWidgets ui;
         ui.setupUi(&window);
 
         for (auto* coordinate : {ui.cropBox_x, ui.cropBox_y})
@@ -176,8 +191,8 @@ private slots:
         font.setPointSize(fontSize);
         QApplication::setFont(font);
         CompactFormStyle style;
-        QMainWindow window;
-        Ui::MainWindow ui;
+        ControlTestWindow window;
+        ControlTestWidgets ui;
         ui.setupUi(&window);
         ui.renderDeviceGroup->setStyle(&style);
         ui.renderDeviceCombo->setStyle(&style);
@@ -223,8 +238,8 @@ private slots:
 
     void hoverOpacityControlsLiveInInteractionTab()
     {
-        QMainWindow window;
-        Ui::MainWindow ui;
+        ControlTestWindow window;
+        ControlTestWidgets ui;
         ui.setupUi(&window);
         QVERIFY(ui.interactionTab->isAncestorOf(ui.hoverOpacityGroup));
         QVERIFY(ui.hoverOpacityGroup->isAncestorOf(ui.hoverOpacityEnabledCheck));
@@ -258,11 +273,12 @@ private slots:
         QApplication::setPalette(palette);
         QApplication::setFont(font);
 
-        QMainWindow window;
-        Ui::MainWindow ui;
+        ControlTestWindow window;
+        ControlTestWidgets ui;
         ui.setupUi(&window);
+        // Test this widget's active-row palette without casting a plugin-owned
+        // class across the DSO boundary. Loaded widgets are checked below too.
         auto* hotkeys = new HotkeyPanel(ui.hotkeyGroup);
-        ui.hotkeyLayout->addWidget(hotkeys);
         hotkeys->setConnected(true);
         hotkeys->setBindings({QJsonObject{
             {"id", "expression"}, {"name", "Expression"},

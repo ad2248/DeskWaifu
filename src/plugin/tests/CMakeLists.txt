@@ -33,3 +33,29 @@ add_test(NAME plugin-manager COMMAND plugin-manager-test
   $<TARGET_FILE:plugin-fixture-bad_entry>
   $<TARGET_FILE:plugin-fixture-bad_debug_abi>)
 set_tests_properties(plugin-events plugin-legacy-events plugin-manager PROPERTIES TIMEOUT 30)
+
+if(DESKWAIFU_BUILD_GUI_PLUGIN_SDK)
+  foreach(kind good dual backend_only init_fail start_fail init_throw start_throw duplicate bad_abi bad_build bad_qt factory_throw validation)
+    add_library(gui-plugin-fixture-${kind} MODULE GuiFixture.cpp)
+    target_link_libraries(gui-plugin-fixture-${kind} PRIVATE deskwaifu_gui_plugin_sdk)
+    target_compile_definitions(gui-plugin-fixture-${kind} PRIVATE FIXTURE_${kind})
+    set_target_properties(gui-plugin-fixture-${kind} PROPERTIES PREFIX "" OUTPUT_NAME "gui_${kind}")
+  endforeach()
+  add_executable(gui-plugin-manager-test GuiManagerTest.cpp)
+  target_link_libraries(gui-plugin-manager-test PRIVATE deskwaifu_gui_plugin_sdk deskwaifu_plugin_host Threads::Threads)
+  add_test(NAME gui-plugin-manager COMMAND gui-plugin-manager-test
+    $<TARGET_FILE:gui-plugin-fixture-good>
+    $<TARGET_FILE:gui-plugin-fixture-dual>
+    $<TARGET_FILE:gui-plugin-fixture-backend_only>
+    $<TARGET_FILE:gui-plugin-fixture-init_fail>
+    $<TARGET_FILE:gui-plugin-fixture-start_fail>
+    $<TARGET_FILE:gui-plugin-fixture-init_throw>
+    $<TARGET_FILE:gui-plugin-fixture-start_throw>
+    $<TARGET_FILE:gui-plugin-fixture-duplicate>
+    $<TARGET_FILE:gui-plugin-fixture-bad_abi>
+    $<TARGET_FILE:gui-plugin-fixture-bad_build>
+    $<TARGET_FILE:gui-plugin-fixture-bad_qt>
+    $<TARGET_FILE:gui-plugin-fixture-factory_throw>
+    $<TARGET_FILE:gui-plugin-fixture-validation>)
+  set_tests_properties(gui-plugin-manager PROPERTIES TIMEOUT 30 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endif()

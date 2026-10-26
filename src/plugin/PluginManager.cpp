@@ -45,7 +45,7 @@ bool PluginManager::Start(QString* error)
         library.setLoadHints(QLibrary::ResolveAllSymbolsHint | QLibrary::PreventUnloadHint);
         if (!library.load()) { failures.append(path + ": " + library.errorString()); continue; }
         const auto entry = reinterpret_cast<PluginEntry>(library.resolve(DeskWaifuPluginEntrySymbol));
-        if (!entry) { failures.append(path + ": missing " + DeskWaifuPluginEntrySymbol); continue; }
+        if (!entry) continue; // GUI-only modules are normal in the shared plugin directory.
         const PluginApi* api = nullptr;
         try { api = entry(); } catch (...) { failures.append(path + ": plugin entry threw"); continue; }
         if (!api || api->size != sizeof(PluginApi) || api->version != DeskWaifuPluginAbiVersion ||

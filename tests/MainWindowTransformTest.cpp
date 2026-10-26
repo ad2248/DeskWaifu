@@ -44,7 +44,24 @@ class MainWindowTransformTest : public QObject
 {
     Q_OBJECT
 private slots:
-    void fourTabsKeepHotkeysAndScrollReachable()
+    void disabledPluginsLeaveOnlyTheShell()
+    {
+        const auto previous = qgetenv("DESKWAIFU_CONTROL_PLUGIN_DIR");
+        const auto restore = qScopeGuard([previous] { qputenv("DESKWAIFU_CONTROL_PLUGIN_DIR", previous); });
+        qputenv("DESKWAIFU_CONTROL_PLUGIN_DIR", "");
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const auto runtime = qgetenv("XDG_RUNTIME_DIR");
+        const auto restoreRuntime = qScopeGuard([runtime] { qputenv("XDG_RUNTIME_DIR", runtime); });
+        qputenv("XDG_RUNTIME_DIR", directory.path().toLocal8Bit());
+        MainWindow window(nullptr, directory.path());
+        QCOMPARE(window.findChild<QTabWidget*>("tabWidget")->count(), 0);
+        QVERIFY(!window.findChild<QWidget*>("modelGroup"));
+        QVERIFY(!window.findChild<QWidget*>("speechSettingsGroup"));
+        QVERIFY(window.findChild<QLabel*>("connectionStatusLabel"));
+    }
+
+    void pluginTabsKeepHotkeysAndScrollReachable()
     {
         QTemporaryDir directory;
         QVERIFY(directory.isValid());
@@ -117,8 +134,8 @@ private slots:
         auto* tabs = window.findChild<QTabWidget*>("tabWidget");
         auto* table = window.findChild<QTableWidget*>("hotkeyTable");
         QTRY_COMPARE(table->rowCount(), 1);
-        const QStringList titles = {"系统", "交互", "模型", "日志"};
-        const QStringList lastControls = {"speechSettingsGroup", "hoverOpacityHintLabel", "transformStatusLabel"};
+        const QStringList titles = {"系统", "交互", "模型", "语音", "日志"};
+        const QStringList lastControls = {"renderDeviceStatus", "hoverOpacityHintLabel", "transformStatusLabel"};
         QCOMPARE(tabs->count(), titles.size());
         for (int tab = 0; tab < tabs->count(); ++tab) {
             QCOMPARE(tabs->tabText(tab), titles[tab]);
@@ -314,12 +331,12 @@ private slots:
         MainWindow window(nullptr, directory.path());
         auto* key = window.findChild<QLineEdit*>("minimaxApiKey");
         auto* tabs = window.findChild<QTabWidget*>("tabWidget");
-        const QStringList titles = {"系统", "交互", "模型", "日志"};
+        const QStringList titles = {"系统", "交互", "模型", "语音", "日志"};
         QCOMPARE(tabs->count(), titles.size());
         for (int i = 0; i < titles.size(); ++i)
             QCOMPARE(tabs->tabText(i), titles[i]);
-        QVERIFY(tabs->widget(0)->isAncestorOf(key));
-        QVERIFY(tabs->widget(0)->isAncestorOf(window.findChild<QWidget*>("speechSettingsGroup")));
+        QVERIFY(tabs->widget(3)->isAncestorOf(key));
+        QVERIFY(tabs->widget(3)->isAncestorOf(window.findChild<QWidget*>("speechSettingsGroup")));
         QVERIFY(tabs->widget(1)->isAncestorOf(window.findChild<QWidget*>("hotkeyTable")));
         QCOMPARE(window.findChildren<QTabWidget*>().size(), 1);
         auto* save = window.findChild<QPushButton*>("saveSpeechKey");
