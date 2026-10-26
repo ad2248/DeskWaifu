@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.16)
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   project(DeskWaifuGuiTabsTests LANGUAGES CXX)
   set(CMAKE_CXX_STANDARD 14)
@@ -14,6 +14,7 @@ add_executable(gui_tabs_test
     ../LogTab.cpp ../LogTab.hpp ../LogTab.ui
     ../SpeechTab.cpp ../SpeechTab.hpp ../SpeechTab.ui
     ${ROOT}/control/DeskWaifuLauncher.cpp
+    ${ROOT}/control/DeskWaifuRespawner.cpp ${ROOT}/control/DeskWaifuRespawner.hpp
     ${ROOT}/control/HotkeyPanel.cpp ${ROOT}/control/HotkeyPanel.hpp)
 set_target_properties(gui_tabs_test PROPERTIES AUTOMOC ON AUTOUIC ON)
 if(TARGET deskwaifu_plugin_sdk)

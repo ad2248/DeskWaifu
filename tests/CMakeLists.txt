@@ -359,7 +359,7 @@ qt_add_executable(deskwaifu-respawner-test
   ../control/DeskWaifuClient.cpp ../control/DeskWaifuClient.hpp
   ../control/DeskWaifuLauncher.cpp)
 target_include_directories(deskwaifu-respawner-test PRIVATE ../control ../src)
-target_link_libraries(deskwaifu-respawner-test PRIVATE Qt6::Test Qt6::Network)
+target_link_libraries(deskwaifu-respawner-test PRIVATE Qt6::Test Qt6::Network deskwaifu_plugin_sdk)
 target_compile_definitions(deskwaifu-respawner-test PRIVATE
   SPAWN_BACKEND_FIXTURE="$<TARGET_FILE:spawn-backend-fixture>")
 add_dependencies(deskwaifu-respawner-test spawn-backend-fixture)
@@ -380,6 +380,7 @@ target_include_directories(deskwaifu-client-test PRIVATE
 target_link_libraries(deskwaifu-client-test PRIVATE
   Qt6::Test
   Qt6::Network
+  deskwaifu_plugin_sdk
 )
 
 set_target_properties(deskwaifu-client-test PROPERTIES AUTOMOC ON)
@@ -422,6 +423,7 @@ qt_add_executable(control-theme-test
 target_include_directories(control-theme-test PRIVATE ../control)
 target_link_libraries(control-theme-test PRIVATE Qt6::Test deskwaifu_control_shell)
 add_dependencies(control-theme-test deskwaifu_control_plugins)
+target_compile_definitions(control-theme-test PRIVATE DESKWAIFU_TEST_SPEECH_PLUGIN=$<BOOL:${DESKWAIFU_BUILD_SPEECH_PLUGIN}>)
 set_target_properties(control-theme-test PROPERTIES AUTOMOC ON AUTOUIC ON
   AUTOUIC_SEARCH_PATHS "${CMAKE_CURRENT_SOURCE_DIR}/../control")
 add_test(NAME control-theme COMMAND control-theme-test)
@@ -434,6 +436,7 @@ qt_add_executable(main-window-transform-test
 target_include_directories(main-window-transform-test PRIVATE ../control ../src)
 target_link_libraries(main-window-transform-test PRIVATE Qt6::Test deskwaifu_control_shell)
 add_dependencies(main-window-transform-test deskwaifu_control_plugins)
+target_compile_definitions(main-window-transform-test PRIVATE DESKWAIFU_TEST_SPEECH_PLUGIN=$<BOOL:${DESKWAIFU_BUILD_SPEECH_PLUGIN}>)
 set_target_properties(main-window-transform-test PROPERTIES AUTOMOC ON AUTOUIC ON
   AUTOUIC_SEARCH_PATHS "${CMAKE_CURRENT_SOURCE_DIR}/../control")
 add_test(NAME main-window-transform COMMAND main-window-transform-test)

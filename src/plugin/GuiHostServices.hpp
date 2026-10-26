@@ -5,8 +5,10 @@
 
 // Domain-independent bridge, implemented by the application. All calls and
 // signals run on the GUI thread. Plugins receive a context-scoped facade, not
-// this process-owned object. Connect callbacks with a QObject receiver (the
-// context or an owned widget), never an unscoped functor connection.
+// this process-owned object. Connect callbacks with the context, a registered
+// page or one of its descendants as receiver, never an unscoped functor. These
+// receivers have pending queued calls removed before Stop; arbitrary external
+// receivers are not covered by the plugin lifecycle.
 class GuiHostServices : public QObject
 {
     Q_OBJECT
@@ -25,7 +27,9 @@ signals:
     void connectionChanged(bool connected, const QString& message);
     void responseReceived(const QString& command, const QJsonObject& response);
     void protocolError(const QString& message);
+    // A sent mutation lost its connection and must not be retried.
     void commandOutcomeUnknown(const QString& command);
+    // A queued mutation was cancelled before it was sent.
     void commandCancelled(const QString& command);
     void logMessage(const QString& message);
     void backendReady();

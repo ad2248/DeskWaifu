@@ -1,13 +1,14 @@
 #pragma once
 
-#include "DeskWaifuClient.hpp"
+#include "plugin/GuiHostServices.hpp"
 #include <QElapsedTimer>
+#include <QTimer>
 
 class DeskWaifuRespawner : public QObject
 {
     Q_OBJECT
 public:
-    explicit DeskWaifuRespawner(DeskWaifuClient& client, const QString& applicationDirectory,
+    explicit DeskWaifuRespawner(GuiHostServices& client, const QString& applicationDirectory,
                                QObject* parent = nullptr);
     ~DeskWaifuRespawner() override;
     bool isRunning() const { return _timer.isActive(); }
@@ -21,7 +22,7 @@ signals:
 
 private:
     void finish(bool success, const QString& message);
-    DeskWaifuClient& _client;
+    GuiHostServices& _client;
     QString _applicationDirectory;
     QTimer _timer;
     QElapsedTimer _elapsed;

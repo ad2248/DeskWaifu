@@ -2,7 +2,7 @@
 #include <QScrollArea>
 #include <QJsonObject>
 #include <QTimer>
-#include <QElapsedTimer>
+#include "DeskWaifuRespawner.hpp"
 
 class GuiHostServices;
 namespace Ui { class SystemTab; }
@@ -16,8 +16,6 @@ public:
 private:
     void refreshAll();
     void updateSpawnButton();
-    void startRespawn();
-    void finishRespawn(const QString& message);
     void handleResponse(const QString& command, const QJsonObject& response);
     void requestRenderDevice();
     void showRenderDevice(const QJsonObject& response);
@@ -26,9 +24,7 @@ private:
     Ui::SystemTab* ui;
     GuiHostServices& _client;
     QString _procDirectory;
-    QTimer _respawnTimer;
-    QElapsedTimer _respawnElapsed;
-    bool _respawnDisconnected = false;
+    DeskWaifuRespawner _respawner;
     bool _renderDeviceQueryPending = false;
     bool _renderDeviceSetPending = false;
     QJsonObject _lastRenderDeviceResponse;

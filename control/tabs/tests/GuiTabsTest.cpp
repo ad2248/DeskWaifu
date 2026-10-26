@@ -15,6 +15,8 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSignalSpy>
+#include <QScopeGuard>
+#include <QFile>
 #include <QSlider>
 #include <QTemporaryDir>
 #include <QtTest>
@@ -47,6 +49,33 @@ class GuiTabsTest : public QObject
 {
     Q_OBJECT
 private slots:
+    void systemRestartUsesSharedRespawner()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        QFile executable(directory.path() + "/deskwaifu");
+        QVERIFY(executable.open(QIODevice::WriteOnly));
+        executable.write("#!/bin/sh\nexit 99\n");
+        executable.close();
+        QVERIFY(executable.setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner));
+        const auto path = qgetenv("PATH");
+        const auto restorePath = qScopeGuard([path] { qputenv("PATH", path); });
+        qputenv("PATH", directory.path().toLocal8Bit());
+        Services services;
+        services.setProperty("procDirectory", directory.path());
+        SystemTab system(services);
+        LogTab log(services);
+        auto* restart = widget<QPushButton>(system, "respawnButton");
+        QVERIFY(restart->isEnabled());
+        restart->click();
+        restart->click();
+        QCOMPARE(services.count(QStringLiteral("quit")), 1);
+        QVERIFY(!restart->isEnabled());
+        services.reply(QStringLiteral("quit"), {{"ok", false}, {"error", "fixture refused"}});
+        QVERIFY(restart->isEnabled());
+        QVERIFY(widget<QPlainTextEdit>(log, "responseLog")->toPlainText().contains(QStringLiteral("重启失败")));
+    }
+
     void statusReadinessAndProcessDirectory()
     {
         Services services;

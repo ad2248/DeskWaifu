@@ -1,4 +1,5 @@
 #include "DeskWaifuRespawner.hpp"
+#include "DeskWaifuClient.hpp"
 
 #include <QDir>
 #include <QFile>

@@ -1,4 +1,5 @@
 #include "MainWindow.hpp"
+#include "ControlTabTitles.hpp"
 #include "processor/interaction/TransformEditor.hpp"
 #include "processor/interaction/ScreenCropInteraction.hpp"
 #include "processor/interaction/config/HoverOpacitySettings.hpp"
@@ -134,7 +135,7 @@ private slots:
         auto* tabs = window.findChild<QTabWidget*>("tabWidget");
         auto* table = window.findChild<QTableWidget*>("hotkeyTable");
         QTRY_COMPARE(table->rowCount(), 1);
-        const QStringList titles = {"系统", "交互", "模型", "语音", "日志"};
+        const auto titles = ExpectedControlTabs();
         const QStringList lastControls = {"renderDeviceStatus", "hoverOpacityHintLabel", "transformStatusLabel"};
         QCOMPARE(tabs->count(), titles.size());
         for (int tab = 0; tab < tabs->count(); ++tab) {
@@ -282,6 +283,7 @@ private slots:
         QCOMPARE(mutations, 3);
     }
 
+#if DESKWAIFU_TEST_SPEECH_PLUGIN
     void speechKeyIsWriteOnlyAndSavedThroughBackend()
     {
         QTemporaryDir directory;
@@ -331,7 +333,7 @@ private slots:
         MainWindow window(nullptr, directory.path());
         auto* key = window.findChild<QLineEdit*>("minimaxApiKey");
         auto* tabs = window.findChild<QTabWidget*>("tabWidget");
-        const QStringList titles = {"系统", "交互", "模型", "语音", "日志"};
+        const auto titles = ExpectedControlTabs();
         QCOMPARE(tabs->count(), titles.size());
         for (int i = 0; i < titles.size(); ++i)
             QCOMPARE(tabs->tabText(i), titles[i]);
@@ -363,6 +365,7 @@ private slots:
         QVERIFY(QJsonDocument::fromJson(credentials.readAll()).object().value("api_key").toString().isEmpty());
     }
 
+#endif
     void runningBackendWithoutConnectionShowsDisabledShutdown()
     {
         QTemporaryDir directory;

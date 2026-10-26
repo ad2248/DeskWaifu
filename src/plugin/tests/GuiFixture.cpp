@@ -1,6 +1,7 @@
 #include "plugin/GuiPluginApi.hpp"
 #include "plugin/GuiPluginContext.hpp"
 #include <QFile>
+#include <QCoreApplication>
 #include <stdexcept>
 
 namespace {
@@ -39,6 +40,11 @@ public:
         QObject::connect(services, &GuiHostServices::activationChanged, &context,
             [name](bool) { Log(name + ":activation"); });
         _page = new Page(name);
+        QObject::connect(services, &GuiHostServices::responseReceived, _page,
+            [name](const QString&, const QJsonObject&) { Log(name + ":queued-page-response"); }, Qt::QueuedConnection);
+        auto* queuedChild = new QObject(_page);
+        QObject::connect(services, &GuiHostServices::responseReceived, queuedChild,
+            [name](const QString&, const QJsonObject&) { Log(name + ":queued-child-response"); }, Qt::QueuedConnection);
         const QString id = "first";
         if (!context.RegisterTab({id, "First", 10}, _page, error)) { delete _page; _page = nullptr; return false; }
 #ifdef FIXTURE_validation
@@ -95,6 +101,7 @@ public:
     void Stop() noexcept override
     {
         Log(_context->Name() + ":stop");
+        QCoreApplication::processEvents(); // Exercise reentrant teardown after invalidation.
         if (_context->IsValid() || _context->Services()->isConnected()) Log("bad-stop-active");
         _context->Services()->sendCommand("bad-after-stop");
         _context->Services()->cancelQueuedCommand("bad-after-stop");

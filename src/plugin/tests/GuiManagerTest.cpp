@@ -70,6 +70,8 @@ try {
     Check(tabs.count() == 0 && manager.LoadedPlugins().isEmpty(), "stop removes pages");
     const auto stopped = Read(log);
     Check(!stopped.contains("bad-") && !stopped.contains("queued-response"), "invalidation disables services and queued context callbacks before Stop");
+    Check(!stopped.contains("queued-page-response") && !stopped.contains("queued-child-response"),
+          "queued page and descendant callbacks cannot run even when Stop processes events");
     Check(stopped.count("a-good:response") == 1 && host.commands == commands && host.statuses == statuses, "no callback or command after invalidation");
     Check(stopped.indexOf("a-good:stop") < stopped.indexOf("a-good:page-destroy") &&
           stopped.lastIndexOf("a-good:page-destroy") < stopped.indexOf("a-good:destroy"), "Stop then pages then plugin, context outlives plugin");

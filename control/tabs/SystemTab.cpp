@@ -9,7 +9,8 @@
 #include <QSignalBlocker>
 
 SystemTab::SystemTab(GuiHostServices& services)
-    : ui(new Ui::SystemTab), _client(services)
+    : ui(new Ui::SystemTab), _client(services),
+      _respawner(services, QCoreApplication::applicationDirPath(), this)
 {
     ui->setupUi(this);
     _procDirectory = services.property("procDirectory").toString();
@@ -35,18 +36,14 @@ SystemTab::SystemTab(GuiHostServices& services)
         _client.publishLog(result.message);
         if (result.state != DeskWaifuLauncher::State::Failed && !_client.isConnected()) _client.connectToServer();
     });
-    connect(ui->respawnButton, &QPushButton::clicked, this, &SystemTab::startRespawn);
-    _respawnTimer.setInterval(100);
-    connect(&_respawnTimer, &QTimer::timeout, this, [this] {
-        if (_respawnElapsed.elapsed() >= 10000) {
-            finishRespawn(tr("重启超时：等待 DeskWaifu 退出超时，未启动新进程。"));
-            return;
-        }
-        if (!_respawnDisconnected) return;
-        const auto result = DeskWaifuLauncher::spawn(false, QCoreApplication::applicationDirPath(), _procDirectory);
-        if (result.state == DeskWaifuLauncher::State::AlreadyRunning) return;
-        finishRespawn(result.message);
-        if (result.state == DeskWaifuLauncher::State::Started) _client.connectToServer();
+    connect(ui->respawnButton, &QPushButton::clicked, this, [this] { _respawner.start(_procDirectory); });
+    connect(&_respawner, &DeskWaifuRespawner::runningChanged, this, [this](bool running) {
+        updateSpawnButton();
+        if (running) setStatusMessage(tr("正在重启 DeskWaifu，等待旧进程退出…"));
+    });
+    connect(&_respawner, &DeskWaifuRespawner::finished, this, [this](bool, const QString& message) {
+        setStatusMessage(message, 8000);
+        _client.publishLog(message);
     });
     auto* processTimer = new QTimer(this);
     processTimer->setInterval(1000);
@@ -54,7 +51,6 @@ SystemTab::SystemTab(GuiHostServices& services)
     processTimer->start();
     connect(&_client, &GuiHostServices::connectionChanged, this, [this](bool connected, const QString&) {
         if (!connected) {
-            if (_respawnTimer.isActive()) _respawnDisconnected = true;
             _renderDeviceQueryPending = _renderDeviceSetPending = false;
             ui->renderDeviceCombo->setEnabled(false);
             ui->renderDeviceStatus->setText(tr("连接断开；重新连接后将查询实际保存结果。"));
@@ -70,7 +66,6 @@ void SystemTab::start() { if (_client.isConnected()) refreshAll(); }
 
 SystemTab::~SystemTab()
 {
-    if (_respawnTimer.isActive()) _client.cancelQueuedCommand(QStringLiteral("quit"));
     delete ui;
 }
 
@@ -85,37 +80,9 @@ void SystemTab::updateSpawnButton()
     const bool connected = _client.isConnected();
     const bool running = connected || DeskWaifuLauncher::runningPid(_procDirectory) > 0;
     ui->spawnButton->setText(running ? tr("关闭") : tr("启动"));
-    ui->spawnButton->setEnabled(!_respawnTimer.isActive() && (!running || connected));
+    ui->spawnButton->setEnabled(!_respawner.isRunning() && (!running || connected));
     ui->spawnButton->setToolTip(running && !connected ? tr("正在等待连接，以安全关闭 DeskWaifu。") : QString());
-    ui->respawnButton->setEnabled(connected && !_respawnTimer.isActive());
-}
-
-void SystemTab::startRespawn()
-{
-    if (_respawnTimer.isActive()) return;
-    if (!_client.isConnected()) {
-        finishRespawn(tr("重启需要先连接 DeskWaifu，请使用“启动”按钮启动。"));
-        return;
-    }
-    if (DeskWaifuLauncher::executablePath(QCoreApplication::applicationDirPath()).isEmpty()) {
-        finishRespawn(tr("在控制面板所在目录或 PATH 中找不到 deskwaifu，未停止正在运行的后端。"));
-        return;
-    }
-    _respawnDisconnected = false;
-    _respawnElapsed.start();
-    _respawnTimer.start();
-    updateSpawnButton();
-    setStatusMessage(tr("正在重启 DeskWaifu，等待旧进程退出…"));
-    _client.sendCommand(QStringLiteral("quit"));
-}
-
-void SystemTab::finishRespawn(const QString& message)
-{
-    _respawnTimer.stop();
-    _client.cancelQueuedCommand(QStringLiteral("quit"));
-    updateSpawnButton();
-    setStatusMessage(message, 8000);
-    _client.publishLog(message);
+    ui->respawnButton->setEnabled(connected && !_respawner.isRunning());
 }
 
 void SystemTab::refreshAll()
@@ -148,8 +115,6 @@ void SystemTab::handleResponse(const QString& command, const QJsonObject& respon
     }
     if (command == QStringLiteral("quit")) {
         logResponse(command, response);
-        if (_respawnTimer.isActive() && !response.value("ok").toBool())
-            finishRespawn(tr("重启失败，退出请求被拒绝：%1").arg(response.value("error").toString()));
         return;
     }
     const bool modelChanged = command == QStringLiteral("set_model") || command == QStringLiteral("next_model") || command == QStringLiteral("prev_model");

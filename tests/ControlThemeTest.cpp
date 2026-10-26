@@ -1,4 +1,5 @@
 #include "ControlTestWindow.hpp"
+#include "ControlTabTitles.hpp"
 #include "HotkeyPanel.hpp"
 
 #include <QApplication>
@@ -31,7 +32,7 @@ class ControlThemeTest : public QObject
 
     QPalette _originalPalette;
     QFont _originalFont;
-    QTemporaryDir _runtime{QStringLiteral("/tmp/opencode/gui-theme-XXXXXX")};
+    QTemporaryDir _runtime;
     QByteArray _previousRuntime;
 
 private slots:
@@ -53,7 +54,7 @@ private slots:
         ControlTestWidgets ui;
         ui.setupUi(&window);
         QCOMPARE(window.windowTitle(), QString("DeskWaifu 控制面板"));
-        const QStringList tabs = {"系统", "交互", "模型", "语音", "日志"};
+        const auto tabs = ExpectedControlTabs();
         QCOMPARE(ui.tabWidget->count(), tabs.size());
         for (int i = 0; i < tabs.size(); ++i)
             QCOMPARE(ui.tabWidget->tabText(i), tabs[i]);
@@ -78,7 +79,9 @@ private slots:
             {"mouseLookGroup", "lookGroup", "hoverOpacityGroup", "hotkeyGroup"},
             {"modelGroup", "toggleHiddenButton", "switchSkinButton", "expressionGroup", "motionGroup",
                 "mouthGroup", "outputCombo", "transformGroup", "positionEdit", "transformActionsLayout", "transformStatusLabel"},
+#if DESKWAIFU_TEST_SPEECH_PLUGIN
             {"speechSettingsGroup"},
+#endif
             {"responseLog"}
         };
         for (int tab = 0; tab < categories.size(); ++tab) {

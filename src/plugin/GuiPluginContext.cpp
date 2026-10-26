@@ -92,6 +92,14 @@ void GuiPluginContext::Invalidate()
     _valid = false;
     static_cast<ScopedServices*>(_services.get())->Invalidate();
     QCoreApplication::removePostedEvents(this, QEvent::MetaCall);
+    // Disconnect does not retract queued calls already posted to a receiver.
+    // Stop may itself process events, so fence every supported page receiver
+    // before entering plugin teardown, not only the context and facade.
+    for (const auto& tab : _pages) if (tab.page) {
+        QCoreApplication::removePostedEvents(tab.page, QEvent::MetaCall);
+        for (auto* child : tab.page->findChildren<QObject*>())
+            QCoreApplication::removePostedEvents(child, QEvent::MetaCall);
+    }
 }
 
 void GuiPluginContext::DestroyPages()

@@ -43,7 +43,7 @@ function(deskwaifu_add_gui_tab name type)
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/deskwaifu/plugins/${name} COMPONENT DeskWaifu)
 endfunction()
 
-deskwaifu_add_gui_tab(system System DeskWaifuLauncher.cpp)
+deskwaifu_add_gui_tab(system System DeskWaifuLauncher.cpp DeskWaifuRespawner.cpp DeskWaifuRespawner.hpp)
 deskwaifu_add_gui_tab(interaction Interaction HotkeyPanel.cpp HotkeyPanel.hpp)
 deskwaifu_add_gui_tab(model Model)
 deskwaifu_add_gui_tab(log Log)

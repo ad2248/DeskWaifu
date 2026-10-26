@@ -2,11 +2,11 @@
 
 #include <QJsonObject>
 #include <QLocalSocket>
-#include <QObject>
+#include "plugin/GuiHostServices.hpp"
 #include <QQueue>
 #include <QTimer>
 
-class DeskWaifuClient : public QObject
+class DeskWaifuClient : public GuiHostServices
 {
     Q_OBJECT
 
@@ -14,20 +14,11 @@ public:
     explicit DeskWaifuClient(QObject* parent = nullptr);
     ~DeskWaifuClient() override;
 
-    void connectToServer();
-    void sendCommand(const QString& command, const QJsonObject& parameters = {});
-    void cancelQueuedCommand(const QString& command);
-    bool isConnected() const;
+    void connectToServer() override;
+    void sendCommand(const QString& command, const QJsonObject& parameters = {}) override;
+    void cancelQueuedCommand(const QString& command) override;
+    bool isConnected() const override;
     QString socketPath() const;
-
-signals:
-    void connectionChanged(bool connected, const QString& message);
-    void responseReceived(const QString& command, const QJsonObject& response);
-    // 修改操作发出后连接丢失，不能重试。
-    void commandOutcomeUnknown(const QString& command);
-    // 排队的修改操作尚未发出时连接丢失。
-    void commandCancelled(const QString& command);
-    void protocolError(const QString& message);
 
 private slots:
     void readResponses();

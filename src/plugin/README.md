@@ -49,9 +49,9 @@ bool Initialize(GuiPluginContext& context, QString* error) override {
 }
 ```
 
-一个插件可注册多个 tab；本地 ID 非空且不能含 `/`，全局 ID 为 `<plugin>/<local>`，按 `order` 再按全局 ID 排序。重复 ID、重复 page、空 page、已有 parent 的 page 均拒绝。只有注册成功才转移 page 所有权；插件此后不得删除 page。所有 Initialize 完成后激活命令发送，所有 Start 完成后才发布成功实例的页面。失败实例单独回滚。退出顺序为：失效所有 context → Stop 所有插件 → 销毁注册页面 → destroy 插件 → 销毁 context。插件不能在 Stop/析构中再访问页面。
+一个插件可注册多个 tab；本地 ID 非空且不能含 `/`，全局 ID 为 `<plugin>/<local>`，按 `order` 再按全局 ID 排序。重复 ID、重复 page、空 page、已有 parent 的 page 均拒绝。只有注册成功才转移 page 所有权；插件此后不得删除 page。所有 Initialize 完成后激活命令发送，所有 Start 完成后才发布成功实例的页面。失败实例单独回滚。退出顺序为：失效所有 context → Stop 所有插件 → 销毁注册页面 → destroy 插件 → 销毁 context。Stop 期间页面仍有效，可用于停止页面定时器；插件析构时页面已销毁，不能再访问。
 
-`context.Services()` 是 context 所有的转发 facade：命令、取消及 connectToServer 在激活前不转发，context 失效后所有调用无效、所有转发连接断开。回调必须绑定 context 或注册页面作为 QObject receiver，禁止无 receiver 的捕获插件指针连接；已排队的 context 回调在失效时移除。通用信号提供连接状态、命令响应/取消/结果未知、协议错误、日志、backendReady 和进程级 activationChanged。领域命令及响应解释留在插件中；命令响应按 command 标识，不增加独立请求 ID 协议。`setStatusMessage(message, timeoutMs)`、`publishLog(message)`、`notifyBackendReady()` 转发到进程宿主，不通过 facade 自身信号回送，避免日志递归。宿主动态属性在创建 facade 时复制一次，可用于注入进程级只读元数据。
+`context.Services()` 是 context 所有的转发 facade：命令、取消及 connectToServer 在激活前不转发，context 失效后所有调用无效、所有转发连接断开。回调必须绑定 context、注册页面或页面子对象作为 QObject receiver，禁止无 receiver 的捕获插件指针连接；这些接收者上已排队的调用在失效时移除，不支持任意外部接收者的生命周期。通用信号提供连接状态、命令响应/取消/结果未知、协议错误、日志、backendReady 和进程级 activationChanged。领域命令及响应解释留在插件中；命令响应按 command 标识，不增加独立请求 ID 协议。`setStatusMessage(message, timeoutMs)`、`publishLog(message)`、`notifyBackendReady()` 转发到进程宿主，不通过 facade 自身信号回送，避免日志递归。宿主动态属性在创建 facade 时复制一次，可用于注入进程级只读元数据。
 
 领域契约应放在宿主和消费者都能包含的普通头文件，不放进通用总线。事件继承 `ProcessorEvent`，允许直接包含强类型字段，不必使用 QVariantMap：
 
