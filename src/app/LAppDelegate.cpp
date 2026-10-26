@@ -8,9 +8,11 @@
 #include "processor/command/CommandProcessor.hpp"
 #include "processor/ipc/IpcProcessor.hpp"
 #include "processor/signal/SignalProcessor.hpp"
+#include "plugin/PluginManager.hpp"
 #include <QClipboard>
 #include <QCoreApplication>
 #include <QGuiApplication>
+#include <QFileInfo>
 #include <cstdio>
 
 namespace { LAppDelegate* instance = nullptr; }
@@ -21,8 +23,7 @@ LAppDelegate::~LAppDelegate() { Release(); }
 bool LAppDelegate::Initialize()
 {
     const auto config = LAppConfig::GetInstance();
-    _processors.reset(new ProcessorRuntime(QString::fromStdString(config.values.minimaxApiKey),
-        [] { return QGuiApplication::clipboard()->image(); }));
+    _processors.reset(new ProcessorRuntime([] { return QGuiApplication::clipboard()->image(); }));
     auto& loop = _processors->Loop();
     _exchange = std::make_shared<ModelExchange>();
     _models.reset(new ModelProcessor(loop, _exchange));
@@ -41,6 +42,11 @@ bool LAppDelegate::Initialize()
         std::fprintf(stderr, "[KWin] Global cursor unavailable: %s; using surface events\n", _input->CursorError().c_str());
     _signals.reset(new SignalProcessor(loop));
     if (!_signals->Available()) return false;
+    const auto configPath = config.sourcePath.empty() ? LAppConfig::GetDefaultConfigPath() : config.sourcePath;
+    _plugins.reset(new PluginManager(loop, QString::fromStdString(LAppConfig::ExpandTilde(config.values.pluginDir)),
+        QFileInfo(QString::fromStdString(configPath)).absolutePath()));
+    QString pluginError;
+    if (!_plugins->Start(&pluginError)) std::fprintf(stderr, "[Plugins] %s\n", qPrintable(pluginError));
     _ipcProcessor.reset(new IpcProcessor(loop, std::unique_ptr<LAppIPC>(new LAppIPC), *_commands));
     if (!_ipcProcessor->Start()) return false;
     return true;
@@ -54,6 +60,8 @@ bool LAppDelegate::Release()
     if (_input) _input->Stop();
     if (_interaction) _interaction->Stop();
     if (_commands) _commands->Stop();
+    if (_plugins) _plugins->Stop();
+    _plugins.reset();
     const bool released = !_models || _models->Stop();
     _ipcProcessor.reset(); _commands.reset(); _input.reset(); _models.reset();
     if (_interaction) _interaction->ShutdownWindow();

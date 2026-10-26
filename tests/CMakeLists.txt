@@ -16,7 +16,10 @@ add_test(NAME command-service-direction-regression
     -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckCommandServiceDirectionRegression.cmake)
 
 find_package(Threads REQUIRED)
-find_package(Qt6 6.5 REQUIRED COMPONENTS Gui OpenGL WaylandClient StateMachine WebSockets Multimedia)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Gui OpenGL WaylandClient StateMachine)
+if(DESKWAIFU_BUILD_SPEECH_PLUGIN)
+  find_package(Qt6 6.5 REQUIRED COMPONENTS WebSockets Multimedia)
+endif()
 find_package(LayerShellQt 6.6 REQUIRED)
 add_executable(offscreen-renderer-test OffscreenRendererTest.cpp)
 target_link_libraries(offscreen-renderer-test PRIVATE deskwaifu_offscreen)
@@ -265,6 +268,10 @@ target_link_options(delegate-keyboard-test PRIVATE
   -Wl,--wrap=_ZN12ModelHotkeys7TriggerERKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEERS5_)
 add_test(NAME delegate-keyboard COMMAND delegate-keyboard-test)
 set_tests_properties(delegate-keyboard PROPERTIES ENVIRONMENT "EGL_PLATFORM=surfaceless" TIMEOUT 30)
+if(DESKWAIFU_BUILD_SPEECH_PLUGIN)
+  add_test(NAME delegate-plugin-commands COMMAND delegate-keyboard-test $<TARGET_FILE:speech_plugin>)
+  set_tests_properties(delegate-plugin-commands PROPERTIES ENVIRONMENT "EGL_PLATFORM=surfaceless" TIMEOUT 30 LABELS "contract;plugin")
+endif()
 
 add_executable(application-service-test ApplicationServiceTest.cpp)
 target_include_directories(application-service-test PRIVATE ../src)
@@ -433,12 +440,32 @@ target_link_libraries(main-window-transform-test PRIVATE Qt6::Test Qt6::Widgets 
 set_target_properties(main-window-transform-test PROPERTIES AUTOMOC ON AUTOUIC ON
   AUTOUIC_SEARCH_PATHS "${CMAKE_CURRENT_SOURCE_DIR}/../control")
 add_test(NAME main-window-transform COMMAND main-window-transform-test)
-foreach(speech_test SpeechPlayer MiniMaxSpeechSource SpeechSettings AudioPlayer)
+if(DESKWAIFU_BUILD_SPEECH_PLUGIN)
+foreach(speech_test SpeechPlayer MiniMaxSpeechSource AudioPlayer)
   qt_add_executable(${speech_test}-test ${speech_test}Test.cpp ../src/contracts/ConfigStore.cpp ../src/processor/interaction/config/LAppConfig.cpp)
   set_target_properties(${speech_test}-test PROPERTIES AUTOMOC ON)
   target_link_libraries(${speech_test}-test PRIVATE deskwaifu_speech Qt6::Test)
   add_test(NAME ${speech_test} COMMAND ${speech_test}-test)
 endforeach()
+qt_add_executable(SpeechSettings-test SpeechSettingsTest.cpp ../src/contracts/ConfigStore.cpp)
+set_target_properties(SpeechSettings-test PROPERTIES AUTOMOC ON)
+target_include_directories(SpeechSettings-test PRIVATE ../src)
+target_link_libraries(SpeechSettings-test PRIVATE Qt6::Core Qt6::Test)
+target_link_options(SpeechSettings-test PRIVATE -Wl,--wrap=mkstemp)
+add_test(NAME SpeechSettings COMMAND SpeechSettings-test)
+endif()
+if(Python3_Interpreter_FOUND)
+  add_test(NAME plugin-boundaries COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_plugin_boundaries.py)
+endif()
+if(CMAKE_READELF AND CMAKE_NM)
+  add_test(NAME plugin-host-link COMMAND ${CMAKE_COMMAND}
+    -DHOST=$<TARGET_FILE:deskwaifu> -DREADELF=${CMAKE_READELF} -DNM=${CMAKE_NM}
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckPluginHostLink.cmake)
+endif()
+add_test(NAME plugin-no-speech-configure COMMAND ${CMAKE_COMMAND}
+  -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -DBINARY_DIR=${CMAKE_BINARY_DIR}/no-speech-configure
+  -DSDK_ROOT=${SDK_ROOT_PATH} -DGLEW_ROOT=${GLEW_PATH} -DGENERATOR=${CMAKE_GENERATOR}
+  -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckNoSpeechConfiguration.cmake)
 set_tests_properties(main-window-transform PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 add_test(NAME main-window-temp-directory
   COMMAND ${CMAKE_COMMAND}

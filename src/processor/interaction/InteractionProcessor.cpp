@@ -1,7 +1,6 @@
 #include "InteractionProcessor.hpp"
 #include "contracts/InputSample.hpp"
 #include "AppCommandHandler.hpp"
-#include "processor/Events.hpp"
 #include <GL/glew.h>
 #include <QJsonDocument>
 #include <chrono>
@@ -37,6 +36,7 @@ InteractionProcessor::InteractionProcessor(ProcessorEventLoop& loop, IProcessor&
 
 void InteractionProcessor::ConnectSources()
 {
+    _notifications = _loop.CreateEndpoint("interaction-notifications", [](const EventDelivery&) {});
     _tapTimer.setSingleShot(true);
     _tapTimer.setTimerType(Qt::PreciseTimer);
     QObject::connect(&_tapTimer, &QTimer::timeout, this,
@@ -54,6 +54,7 @@ void InteractionProcessor::Stop()
 {
     Cancel();
     _stopped = true;
+    if (_notifications) _notifications->Invalidate();
     if (_context) _context->AppEnd();
 }
 
@@ -65,20 +66,11 @@ bool InteractionProcessor::Start(int width, int height)
     state.width = _window.Width(); state.height = _window.Height();
     PrepareFrame(state, _context->hover.Enabled(), _context->hover.Opacity(), _context->hover.IdleOpacity());
     { std::lock_guard<std::mutex> lock(_exchange->mutex); _exchange->state = state; }
-    SyncSpeechSettings();
     return true;
 }
 
 std::unique_ptr<ModelRenderTarget> InteractionProcessor::RenderTarget(const std::string& device)
 { return _window.RenderTarget(device); }
-
-void InteractionProcessor::SyncSpeechSettings()
-{
-    const auto key = QString::fromStdString(_context->config.values.minimaxApiKey);
-    if (_speechKey && key == *_speechKey) return;
-    _speechKey = key;
-    Send("speech.configure", nullptr, {{"api_key", key}});
-}
 
 void InteractionProcessor::ShutdownWindow() { if (_context) _context->Stop(); }
 
@@ -108,7 +100,6 @@ bool InteractionProcessor::Present()
     state.width = width; state.height = height;
     if (Captured() && _settings.Dirty()) _settings.ScheduleSave(SettingsClock(), .5);
     _settings.Tick(SettingsClock());
-    SyncSpeechSettings();
     state.app = _service.Snapshot(); state.controls = _service.FrameInput();
     state.modelToken = _metadata.hotkeys.value("model_token").toString().toStdString();
     PrepareFrame(state, _context->hover.Enabled(), _context->hover.Opacity(), _context->hover.IdleOpacity());
@@ -160,7 +151,6 @@ bool InteractionProcessor::HandleEvent(const ProcessorEvent& event)
         }
         const auto reply = _commands->Execute(event.data.value("json").toString().toStdString(),
             event.data.value("connection").toString().toStdString());
-        SyncSpeechSettings();
         Send("interaction.result", event.sender, {{"json", QString::fromStdString(reply)}});
         return true;
     }
@@ -274,7 +264,7 @@ void InteractionProcessor::PointerButton(int button, bool pressed, std::optional
                 _tapTimer.stop();
                 Operation({{"command", "reset_drag"}});
                 _window.SetKeyboardGrab(true);
-                Send(ProcessorEvents::Speak, nullptr, {{"text", QStringLiteral("姐姐，你好喵")}, {"replace", true}});
+                if (_notifications) _notifications->Notify("interaction.double_click/v1", std::make_shared<ProcessorEvent>());
             } else if (result == InputController::ReleaseResult::Drag) {
                 _tapTimer.stop();
                 Operation({{"command", "reset_drag"}});

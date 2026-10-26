@@ -32,8 +32,8 @@ int main()
     std::string error;
     CHECK(store.Read(disk, error));
     CHECK(disk.values.at("hover_opacity") == "0.25" && disk.values.at("hover_opacity_enabled") == "true");
-    CHECK(disk.values.at("model_x") == "2.5" && !disk.values.count("extra"));
-    CHECK(disk.values.size() == 12 && disk.values.at("window_width") == "1900");
+    CHECK(disk.values.at("model_x") == "2.5" && disk.values.at("extra") == "\"keep\"");
+    CHECK(disk.values.size() == 14 && disk.values.at("window_width") == "1900");
     CHECK(disk.document.find("// keep comment") == std::string::npos);
     CHECK(settings.Set(R"({"enabled":false})").ok);
     CHECK(!settings.Enabled() && settings.Opacity() == 0.25f);

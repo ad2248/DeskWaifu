@@ -30,10 +30,12 @@ int main(int argc, char** argv)
     public:
         using Processor::Processor;
         std::vector<std::string> replies;
+        std::vector<std::string> connections;
         bool HandleEvent(const ProcessorEvent& event) override
         {
             if (event.type != "ipc.command.result") return false;
-            replies.push_back(event.data.value("json").toString().toStdString()); return true;
+            replies.push_back(event.data.value("json").toString().toStdString());
+            connections.push_back(event.data.value("connection").toString().toStdString()); return true;
         }
     } caller(loop);
     auto& replies = caller.replies;
@@ -60,5 +62,40 @@ int main(int argc, char** argv)
     domain.Complete("late");
     for (int i = 0; i < 10; ++i) QCoreApplication::processEvents();
     CHECK(replies.size() == 3);
+    {
+        CommandProcessor processor(loop);
+        std::vector<RequestId> requests;
+        auto provider = loop.CreateEndpoint("test-plugin-commands", [&](const EventDelivery& delivery) {
+            if (delivery.kind == EventDelivery::Kind::Request) requests.push_back(delivery.requestId);
+        });
+        CHECK(provider->Provide("command.custom_plugin_action/v1"));
+        const auto send = [&](const char* connection) {
+            loop.Post({"command.request", &caller, &processor,
+                {{"json", R"({"command":"custom_plugin_action"})"}, {"connection", connection}}});
+        };
+        send("first-plugin-client"); send("second-plugin-client");
+        for (int i = 0; i < 20; ++i) QCoreApplication::processEvents();
+        CHECK(requests.size() == 2 && requests[0] != requests[1]);
+        auto reply = [](const char* json) {
+            return std::make_shared<ProcessorEvent>("command.result", nullptr, nullptr, QVariantMap{{"json", json}});
+        };
+        CHECK(provider->Respond(requests[1], reply(R"({"ok":true,"value":2})")));
+        CHECK(provider->Respond(requests[0], reply(R"({"ok":true,"value":1})")));
+        for (int i = 0; i < 20; ++i) QCoreApplication::processEvents();
+        CHECK(caller.connections[3] == "second-plugin-client" && caller.connections[4] == "first-plugin-client");
+        CHECK(replies[3].find("2") != std::string::npos && replies[4].find("1") != std::string::npos);
+        auto duplicate = loop.CreateEndpoint("duplicate-plugin", [](const EventDelivery&) {});
+        CHECK(duplicate->Provide("command.custom_plugin_action/v1"));
+        send("ambiguous");
+        for (int i = 0; i < 20; ++i) QCoreApplication::processEvents();
+        CHECK(replies.size() == 6 && replies.back().find("false") != std::string::npos && requests.size() == 2);
+        duplicate->Invalidate();
+        send("provider-stopped");
+        for (int i = 0; i < 20; ++i) QCoreApplication::processEvents();
+        CHECK(requests.size() == 3);
+        provider->Invalidate();
+        for (int i = 0; i < 20; ++i) QCoreApplication::processEvents();
+        CHECK(replies.size() == 7 && replies.back().find("false") != std::string::npos);
+    }
     return 0;
 }

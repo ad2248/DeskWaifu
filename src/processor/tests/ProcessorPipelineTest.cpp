@@ -4,10 +4,12 @@
 #include "processor/ocr/OcrProcessor.hpp"
 #include "processor/reading_clip/ReadingClipProcessor.hpp"
 #include "processor/screenshot/ScreenshotProcessor.hpp"
-#include "processor/speech/SpeechProcessor.hpp"
 #include "processor/ipc/IpcProcessor.hpp"
+#ifdef DESKWAIFU_TEST_SPEECH
+#include "processor/speech/SpeechProcessor.hpp"
 #include "processor/speech/source/MiniMaxSpeechSource.hpp"
 #include "processor/speech/audio/AudioPlayer.hpp"
+#endif
 #include "EventLoopFence.hpp"
 #include <QCoreApplication>
 #include <QElapsedTimer>
@@ -207,6 +209,7 @@ try {
         Wait([&] { return reading.CurrentState() == ReadingClipProcessor::State::Idle; });
     }
     qunsetenv("DESKWAIFU_OCR_TEST_MODE");
+#ifdef DESKWAIFU_TEST_SPEECH
     {
         ProcessorEventLoop loop;
         MiniMaxSpeechSource source(QString{}); AudioPlayer audio; SpeechPlayer player(source, audio);
@@ -215,6 +218,7 @@ try {
         Wait([&] { return sink.received.size() == 1; });
         Check(sink.received[0].type == Failed && !sink.received[0].data.value("error").toString().isEmpty(), "speech failure returned as event without cloud or playback");
     }
+#endif
     {
         QTemporaryDir runtime; Check(runtime.isValid(), "private IPC runtime"); qputenv("XDG_RUNTIME_DIR", runtime.path().toUtf8());
         Commands commands; LAppIPC ipc; ipc.SetCommandService(commands); Check(ipc.Initialize(), "initialize private Unix socket");

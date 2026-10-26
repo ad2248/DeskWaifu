@@ -1,0 +1,16 @@
+execute_process(COMMAND "${READELF}" -d "${HOST}"
+  RESULT_VARIABLE result OUTPUT_VARIABLE dynamic ERROR_VARIABLE diagnostic)
+if(NOT result EQUAL 0)
+  message(FATAL_ERROR "Cannot inspect host dependencies: ${diagnostic}")
+endif()
+if(dynamic MATCHES "Qt6(Multimedia|WebSockets)|speech\\.so")
+  message(FATAL_ERROR "Speech implementation leaked into host dependencies: ${dynamic}")
+endif()
+execute_process(COMMAND "${NM}" -C "${HOST}"
+  RESULT_VARIABLE result OUTPUT_VARIABLE symbols ERROR_VARIABLE diagnostic)
+if(NOT result EQUAL 0)
+  message(FATAL_ERROR "Cannot inspect unstripped host symbols: ${diagnostic}")
+endif()
+if(symbols MATCHES "SpeechProcessor|SpeechPlayer|MiniMaxSpeechSource|AudioPlayer|ReadingClipProcessor")
+  message(FATAL_ERROR "Plugin implementation leaked into the host executable")
+endif()
