@@ -26,7 +26,12 @@ public:
     void sendCommand(const QString& command, const QJsonObject& parameters) override
     { AssertThread(); if (_valid && _active) _host.sendCommand(command, parameters); }
     void cancelQueuedCommand(const QString& command) override
-    { AssertThread(); if (_valid && _active) _host.cancelQueuedCommand(command); }
+    {
+        AssertThread();
+        // Teardown must still be able to retract unsent mutations after the
+        // context is invalidated. Cancellation cannot submit new work.
+        if (_active) _host.cancelQueuedCommand(command);
+    }
     void setStatusMessage(const QString& message, int timeoutMs) override
     { AssertThread(); if (_valid) _host.setStatusMessage(message, timeoutMs); }
     void connectToServer() override

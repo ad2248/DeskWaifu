@@ -14,7 +14,9 @@ public:
     bool isRunning() const { return _timer.isActive(); }
     // 允许注入进程目录、锁目录和时限，以保持测试隔离。
     void start(const QString& procDirectory = QStringLiteral("/proc"),
-               const QString& lockDirectory = {}, int timeoutMs = 10000);
+                const QString& lockDirectory = {}, int timeoutMs = 10000);
+    // Silent, idempotent teardown; never starts a replacement or emits feedback.
+    void stop() noexcept;
 
 signals:
     void runningChanged(bool running);

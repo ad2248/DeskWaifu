@@ -74,6 +74,7 @@ public:
         throw std::runtime_error("fixture Initialize threw");
 #else
         services->sendCommand("initialize", {{"plugin", name}});
+        services->cancelQueuedCommand("initialize");
         return true;
 #endif
     }
@@ -104,7 +105,7 @@ public:
         QCoreApplication::processEvents(); // Exercise reentrant teardown after invalidation.
         if (_context->IsValid() || _context->Services()->isConnected()) Log("bad-stop-active");
         _context->Services()->sendCommand("bad-after-stop");
-        _context->Services()->cancelQueuedCommand("bad-after-stop");
+        _context->Services()->cancelQueuedCommand("cleanup");
         _context->Services()->setStatusMessage("bad-after-stop");
     }
 private:

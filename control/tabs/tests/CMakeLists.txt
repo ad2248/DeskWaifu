@@ -26,6 +26,19 @@ target_include_directories(gui_tabs_test PRIVATE .. ${ROOT}/control ${ROOT}/src)
 target_link_libraries(gui_tabs_test PRIVATE Qt6::Widgets Qt6::Test Qt6::Network)
 add_test(NAME gui-tabs COMMAND gui_tabs_test)
 set_tests_properties(gui-tabs PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+if(TARGET system_gui_plugin)
+  add_library(gui_shutdown_pump MODULE ShutdownPump.cpp)
+  target_link_libraries(gui_shutdown_pump PRIVATE deskwaifu_gui_plugin_sdk)
+  add_executable(gui-shutdown-test GuiShutdownTest.cpp)
+  target_link_libraries(gui-shutdown-test PRIVATE deskwaifu_gui_plugin_sdk)
+  set_target_properties(gui-shutdown-test PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/shutdown-fixture-bin")
+  add_dependencies(gui-shutdown-test system_gui_plugin gui_shutdown_pump)
+  add_test(NAME gui-plugin-shutdown COMMAND gui-shutdown-test
+    $<TARGET_FILE:system_gui_plugin> $<TARGET_FILE:gui_shutdown_pump>)
+  set_tests_properties(gui-plugin-shutdown PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 10 RUN_SERIAL TRUE)
+endif()
 # Compile each DSO entry independently; they intentionally export the same symbol.
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 foreach(tab System Interaction Model Log Speech)

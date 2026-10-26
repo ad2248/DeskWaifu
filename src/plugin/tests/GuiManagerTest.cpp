@@ -24,9 +24,9 @@ class Host : public GuiHostServices
 public:
     bool isConnected() const override { return true; }
     void sendCommand(const QString& command, const QJsonObject&) override { commands.append(command); }
-    void cancelQueuedCommand(const QString& command) override { commands.append(command); }
+    void cancelQueuedCommand(const QString& command) override { cancellations.append(command); }
     void setStatusMessage(const QString& message, int) override { statuses.append(message); }
-    QStringList commands, statuses;
+    QStringList commands, statuses, cancellations;
 };
 }
 
@@ -57,6 +57,7 @@ try {
           tabs.widget(2)->property("deskwaifuTabId") == "a-good/first" && tabs.widget(3)->property("deskwaifuTabId") == "b-dual/first", "tabs sorted by order then namespaced ID");
     Check(tabs.widget(0)->objectName() == "fixturePage", "host preserves page objectName for UI lookup and styling");
     Check(!host.commands.contains("initialize") && host.commands.count("start") == 2, "IPC sends prohibited until activation");
+    Check(host.cancellations.isEmpty(), "initialization cannot cancel commands");
     Check(logs == 2 && ready == 2, "log publication and backend-ready forward once without echo recursion");
     Check(!manager.Start(&error) && tabs.count() == 4, "duplicate Start non-destructive");
     emit host.responseReceived("test", {});
@@ -73,6 +74,7 @@ try {
     Check(!stopped.contains("queued-page-response") && !stopped.contains("queued-child-response"),
           "queued page and descendant callbacks cannot run even when Stop processes events");
     Check(stopped.count("a-good:response") == 1 && host.commands == commands && host.statuses == statuses, "no callback or command after invalidation");
+    Check(host.cancellations == QStringList{"cleanup", "cleanup"}, "Stop can cancel queued work without admitting new commands");
     Check(stopped.indexOf("a-good:stop") < stopped.indexOf("a-good:page-destroy") &&
           stopped.lastIndexOf("a-good:page-destroy") < stopped.indexOf("a-good:destroy"), "Stop then pages then plugin, context outlives plugin");
     QLibrary probe(root + "/a-good/a-good.so");

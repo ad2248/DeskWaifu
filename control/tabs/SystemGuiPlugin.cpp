@@ -14,7 +14,7 @@ public:
         return true;
     }
     bool Start(QString*) override { _page->start(); return true; }
-    void Stop() noexcept override {}
+    void Stop() noexcept override { if (_page) _page->stop(); }
 private:
     SystemTab* _page = nullptr; // Context-owned, valid through Stop.
 };

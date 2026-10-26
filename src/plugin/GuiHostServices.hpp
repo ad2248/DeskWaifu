@@ -16,6 +16,8 @@ public:
     explicit GuiHostServices(QObject* parent = nullptr) : QObject(parent) {}
     virtual bool isConnected() const = 0;
     virtual void sendCommand(const QString& command, const QJsonObject& parameters = {}) = 0;
+    // Cleanup only: may be called during Stop after context invalidation.
+    // Cancels unsent commands; it cannot retract an already sent mutation.
     virtual void cancelQueuedCommand(const QString& command) = 0;
     virtual void setStatusMessage(const QString& message, int timeoutMs = 0) { Q_UNUSED(message); Q_UNUSED(timeoutMs); }
     virtual void connectToServer() {}

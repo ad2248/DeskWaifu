@@ -18,7 +18,14 @@ DeskWaifuRespawner::DeskWaifuRespawner(GuiHostServices& client, const QString& a
 
 DeskWaifuRespawner::~DeskWaifuRespawner()
 {
-    if (isRunning()) _client.cancelQueuedCommand(QStringLiteral("quit"));
+    stop();
+}
+
+void DeskWaifuRespawner::stop() noexcept
+{
+    const bool running = isRunning();
+    _timer.stop();
+    if (running) _client.cancelQueuedCommand(QStringLiteral("quit"));
 }
 
 void DeskWaifuRespawner::start(const QString& procDirectory, const QString& lockDirectory, int timeoutMs)

@@ -13,6 +13,7 @@ public:
     explicit SystemTab(GuiHostServices& services);
     ~SystemTab() override;
     void start();
+    void stop() noexcept;
 private:
     void refreshAll();
     void updateSpawnButton();
@@ -24,6 +25,7 @@ private:
     Ui::SystemTab* ui;
     GuiHostServices& _client;
     QString _procDirectory;
+    QTimer _processTimer;
     DeskWaifuRespawner _respawner;
     bool _renderDeviceQueryPending = false;
     bool _renderDeviceSetPending = false;

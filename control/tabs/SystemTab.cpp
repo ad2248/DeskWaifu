@@ -45,10 +45,9 @@ SystemTab::SystemTab(GuiHostServices& services)
         setStatusMessage(message, 8000);
         _client.publishLog(message);
     });
-    auto* processTimer = new QTimer(this);
-    processTimer->setInterval(1000);
-    connect(processTimer, &QTimer::timeout, this, &SystemTab::updateSpawnButton);
-    processTimer->start();
+    _processTimer.setInterval(1000);
+    connect(&_processTimer, &QTimer::timeout, this, &SystemTab::updateSpawnButton);
+    _processTimer.start();
     connect(&_client, &GuiHostServices::connectionChanged, this, [this](bool connected, const QString&) {
         if (!connected) {
             _renderDeviceQueryPending = _renderDeviceSetPending = false;
@@ -66,7 +65,14 @@ void SystemTab::start() { if (_client.isConnected()) refreshAll(); }
 
 SystemTab::~SystemTab()
 {
+    stop();
     delete ui;
+}
+
+void SystemTab::stop() noexcept
+{
+    _processTimer.stop();
+    _respawner.stop();
 }
 
 void SystemTab::setStatusMessage(const QString& message, int timeout) { _client.setStatusMessage(message, timeout); }

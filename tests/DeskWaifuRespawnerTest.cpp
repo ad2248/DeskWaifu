@@ -201,6 +201,31 @@ private slots:
         QVERIFY(!socket->canReadLine());
         QVERIFY(client.isConnected());
     }
+
+    void stopCancelsQueuedQuitWithoutFeedback()
+    {
+        installBackend();
+        QLocalServer server;
+        DeskWaifuClient client;
+        QVERIFY(server.listen(client.socketPath()));
+        auto* socket = connectClient(server, client);
+        QVERIFY(socket);
+        client.sendCommand("get_status");
+        DeskWaifuRespawner respawner(client, app());
+        QSignalSpy finished(&respawner, &DeskWaifuRespawner::finished);
+        respawner.start(proc(), directory.path());
+        QVERIFY(respawner.isRunning());
+        respawner.stop();
+        respawner.stop();
+        QVERIFY(!respawner.isRunning());
+        QVERIFY(finished.isEmpty());
+        QTRY_VERIFY(socket->canReadLine());
+        QCOMPARE(QJsonDocument::fromJson(socket->readLine()).object().value("command").toString(), "get_status");
+        socket->write("{\"ok\":true}\n");
+        socket->flush();
+        QTest::qWait(200);
+        QVERIFY(!socket->canReadLine());
+    }
 };
 
 QTEST_GUILESS_MAIN(DeskWaifuRespawnerTest)
