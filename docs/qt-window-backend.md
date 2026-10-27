@@ -7,10 +7,24 @@ Qt windowing. The optional control panel remains a separate process.
 
 ## Build and run
 
-Requires Qt **6.5+** (`Gui`, `OpenGL`, `WaylandClient`), the Qt Wayland platform
-plugin, LayerShellQt **6.6+**, desktop OpenGL **3.3 compatibility profile**, and the
-existing Cubism/GLEW dependencies. On Arch the extra package is `layer-shell-qt`;
-other distributions may split its library and development headers into packages.
+Requires Qt **6.5+** (`Gui`, `OpenGL`, `WaylandClient`, `StateMachine`,
+`Concurrent`, `DBus`), the Qt Wayland platform plugin,
+LayerShellQt **6.6+**, desktop OpenGL **3.3 compatibility profile**, EGL, libsystemd
+development files and the existing Cubism/GLEW dependencies. The default control
+panel build also requires Qt `Widgets` and `Network`. The speech plugin is enabled
+by default and adds `WebSockets` and `Multimedia`; disabling it with
+`DESKWAIFU_BUILD_SPEECH_PLUGIN=OFF` removes those requirements, but is not supported
+by the complete regression gate. With `BUILD_TESTING=ON`
+(the default), Qt `Network`, `wayland-scanner` and wayland-client development files
+are required; control panel tests also require Qt `Test`. On Arch the LayerShellQt
+package is `layer-shell-qt`; other distributions may split its library and
+development headers into packages.
+
+Backend speech/reading capabilities and control-panel tabs are loaded from
+plugins. For development, point backend `plugin_dir` and control-panel
+`DESKWAIFU_CONTROL_PLUGIN_DIR` at the build's `plugins` directory; their defaults
+refer to the install prefix, not the build tree. See
+[plugin architecture](plugin-architecture.md) and [GUI plugins](gui-plugins.md).
 
 ```sh
 cmake -S . -B build-qt
@@ -38,16 +52,22 @@ no `get_xdg_surface` fallback, for both the window fixture and real model.
   `QtDesktopWindow` using `QWindow`, `QOpenGLContext` and LayerShellQt. Qt owns its
   connection and surface: the application never dispatches Qt's Wayland socket
   or manages Qt's EGL handles itself.
-- A Qt timer drives the shared frame callback through the Qt event loop. IPC and
-  config polling retain their existing semantics; this phase does not replace
-  their transports with Qt alternatives. Empty-input frames use a slower timer.
+- A GUI-thread Qt timer drives window presentation at 16 ms intervals, slowing to
+  33 ms when the input region is empty. The independent model-render timer stays
+  at 16 ms; empty input does not slow model rendering. IPC keeps its Unix socket
+  and JSON protocol, but `QSocketNotifier` now drives readiness-based dispatch,
+  paused during output replacement. Config polling remains presentation-driven.
   `IDesktopWindowEvents` carries input without exposing native protocol objects.
 - The GL compatibility profile is necessary because the current Cubism/sprite
   renderer uses client-side vertex/index arrays. A core-only or OpenGL ES context
   is rejected. The integration test catches accidental core-context creation.
-- The Qt backend renders into an explicitly supplied FBO, never assumes that the
-  model's framebuffer is zero, and scales only final presentation to the backing
-  buffer. Crop rectangles, input masks and mouse events remain in **logical
+- Model rendering runs on a dedicated thread with a separate offscreen context
+  and nonzero FBO. The default/`auto` render target uses `QOffscreenSurface` and
+  `QOpenGLContext`; selecting a PCI render device uses an application-managed EGL
+  context, not a native window backend. Frames are read back to CPU RGBA memory
+  and uploaded to the GUI thread's presentation FBO; this is not a shared-texture
+  or zero-copy path. Qt scales only final presentation to the backing buffer.
+  Crop rectangles, input masks and mouse events remain in **logical
   output-local pixels**. This first version renders at logical resolution even
   on HiDPI displays: a higher-resolution model render target is future work.
 - Input masks are derived from the model's own alpha before hover opacity and
@@ -63,11 +83,11 @@ no `get_xdg_surface` fallback, for both the window fixture and real model.
   `QInputDevice::devices()`: Qt may not list a keyboard until the first key event,
   so that list cannot gate the focus request needed to receive keyboard input.
 - `QScreen` provides logical output geometry and stable IDs are assigned for the
-  lifetime of each screen. A screen replacement reuses the original GL context;
+  lifetime of each screen. A screen replacement reuses the window's GL context;
   input callbacks are suppressed while the replacement is being configured.
   Removing the current screen falls back to another screen; re-added screens
-  receive fresh IDs. Model resources are released with the context current,
-  before Qt destroys the context/window.
+  receive fresh IDs. Model resources are released on the render thread with its
+  context current, before window context/surface teardown.
 - Global cursor gaze still uses the existing KWin bridge. Focused-output and
   cross-output drag capabilities retain their compositor-specific limitations.
   Qt does not grant global-pointer access on Wayland. Sway/Hyprland behavior still
@@ -81,11 +101,15 @@ python3 tests/qt_headless_smoke.py build-qt /path/to/CubismSdkForNative-5-r.5
 python3 tests/qt_headless_smoke.py build-qt /path/to/CubismSdkForNative-5-r.5 --scale 1.5
 ```
 
-The smoke runner requires `kwin_wayland` and `dbus-run-session`; it creates a
-private D-Bus session, two virtual outputs, runtime socket and config directory,
-with software rendering. If `kscreen-doctor` is installed it also disables and
-re-enables an output to exercise hotplug. It does not send input to the user's
-desktop. Logs remain in `BUILD_DIR/qt-smoke-logs/SCALE/`.
+The smoke runner requires a build with `BUILD_TESTING=ON`, Python 3,
+`kwin_wayland` with virtual-output and fake-input v3 support, `dbus-run-session`,
+and the SDK's `Samples/Resources/Haru` model. It creates a private D-Bus session,
+two virtual outputs, runtime socket and config directory, with software rendering.
+`kscreen-doctor` is required for any non-1 scale (including `--scale 1.5`) to apply
+actual output scaling. When installed, it also disables and re-enables an output
+to exercise hotplug. Input injection is confined to the private compositor; no
+input is sent to the user's desktop. Logs remain in
+`BUILD_DIR/qt-smoke-logs/SCALE/`.
 
 The CI Sway smoke runner deliberately has no input devices. It passes
 `--no-keyboard` to the window fixture and verifies the seat's missing keyboard
@@ -98,11 +122,13 @@ sets the window draw target to `GL_NONE` before presentation to cover the NVIDIA
 invisible-window regression, including output replacement and fractional scale.
 It also verifies logical input masks,
 empty-input restoration, synthetic Qt mouse/key dispatch, keyboard focus loss,
-output switching and ordered teardown. The runner additionally checks actual
-Wayland input-region requests and runs a real SDK model through motion,
-expression, mouth/look, transform/crop saves, screen-edit, visibility, model
-switch and quit IPC. This does **not** replace manual checks of physical pointer
-click-through, compositor focus policy or visual quality on real desktops.
+output switching and ordered teardown. The runner additionally tests cross-context
+RGBA frame transfer and actual compositor click routing through empty, shaped and
+restored input regions, checks Wayland input-region requests, and runs a real SDK
+model through motion, expression, mouth/look, transform/crop saves, screen-edit,
+visibility, model switch and quit IPC. This does **not** replace manual checks of
+physical pointer click-through, compositor focus policy or visual quality on real
+desktops.
 
 The model currently emits the SDK's existing
 `GL_INVALID_VALUE in glDeleteProgram` teardown diagnostic (shader sets share
