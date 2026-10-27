@@ -41,7 +41,8 @@ TAB 是导航分组，不是插件边界；SDK 允许一个插件注册多个 TA
 | 无 TAB | `reading_clip/reading_clip.so` | 仅后端 | 剪贴板图像识别与播报编排 |
 
 源码与构建归属以模块为准：`src/plugins/<name>/gui/` 保存所属页面及专用辅助类，
-`src/plugins/CMakeLists.txt` 组装模块的后端/GUI 角色。`control/` 只组装控制端宿主，
+`src/plugins/<name>/CMakeLists.txt` 组装各模块的后端/GUI 角色，
+`src/plugins/CMakeLists.txt` 保留公共构建规则与子目录选择。`control/` 只组装控制端宿主，
 不再反向给语音模块追加 GUI 文件。进程启动/重启辅助类归 `system/gui`，
 模型快捷键控件归 `interaction/gui`。仅 GUI 模块不表示同名后台域已经插件化；
 模型、窗口、输入等后端仍是 legacy 组装。
