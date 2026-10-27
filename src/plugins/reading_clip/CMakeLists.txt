@@ -1,0 +1,2 @@
+deskwaifu_add_plugin(reading_clip ReadingPlugin.cpp)
+target_link_libraries(reading_clip_plugin PRIVATE deskwaifu_reading)

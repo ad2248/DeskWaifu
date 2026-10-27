@@ -62,6 +62,17 @@ class PluginBoundaries(unittest.TestCase):
         for domain in ("system", "interaction", "model", "log", "speech"):
             self.assertTrue((ROOT / "src/plugins" / domain / "gui").is_dir())
 
+    def test_each_plugin_owns_its_build_definition(self):
+        plugins = ROOT / "src/plugins"
+        parent = (plugins / "CMakeLists.txt").read_text()
+        self.assertNotIn(".cpp", parent)
+        self.assertNotIn("target_sources(", parent)
+        for name in ("reading_clip", "speech", "system", "interaction", "model", "log"):
+            with self.subTest(plugin=name):
+                self.assertIn(f"add_subdirectory({name})", parent)
+                self.assertIn(f"deskwaifu_add_plugin({name}",
+                              (plugins / name / "CMakeLists.txt").read_text())
+
 
 if __name__ == "__main__":
     unittest.main()
