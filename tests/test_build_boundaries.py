@@ -94,6 +94,29 @@ target_include_directories(a PRIVATE ${{PROJECT_SOURCE_DIR}}/sdk ${{CMAKE_CURREN
             self.assertNotEqual(result.returncode, 0, result.stdout)
             self.assertIn("Ownership violation", result.stdout)
 
+    def test_precompiled_headers_cannot_be_reused_across_owners(self):
+        for foreign in (False, True):
+            with self.subTest(foreign=foreign), tempfile.TemporaryDirectory(prefix="dw-pch-boundary-", dir="/tmp/opencode") as directory:
+                root = self.fixture(directory, body="int owned(); int main() { return owned() == 7 ? 0 : 1; }\n")
+                directory = root / ("src/plugins/b" if foreign else "src/plugins/a")
+                with (directory / "CMakeLists.txt").open("a") as file:
+                    file.write('\nadd_library(pch_seed STATIC pch.cpp)\ntarget_precompile_headers(pch_seed PRIVATE private/Pch.hpp)\n')
+                (directory / "pch.cpp").write_text("int pch_seed() { return 0; }\n")
+                (directory / "private/Pch.hpp").write_text("inline int private_value() { return 7; }\n")
+                with (root / "src/plugins/a/CMakeLists.txt").open("a") as file:
+                    file.write('\nadd_library(own_impl STATIC owned.cpp)\ntarget_precompile_headers(own_impl REUSE_FROM pch_seed)\ntarget_link_libraries(a PRIVATE own_impl)\n')
+                (root / "src/plugins/a/owned.cpp").write_text("int owned() { return private_value(); }\n")
+                configured = self.run_command("cmake", "-S", str(root), "-B", str(root / "build"), "-G", "Ninja")
+                if foreign:
+                    self.assertNotEqual(configured.returncode, 0, configured.stdout)
+                    self.assertIn("cannot reuse precompiled headers", configured.stdout)
+                else:
+                    self.assertEqual(configured.returncode, 0, configured.stdout)
+                    result = self.run_command("cmake", "--build", str(root / "build"), "--target", "a")
+                    self.assertEqual(result.returncode, 0, result.stdout)
+                    executed = self.run_command(str(root / "build/src/plugins/a/a"))
+                    self.assertEqual(executed.returncode, 0, executed.stdout)
+
     def test_link_artifacts_do_not_depend_on_output_directory_or_argument_spelling(self):
         for spelling in ("absolute", "wl", "xlinker", "response", "wl-response", "search", "xlinker-search", "object"):
             with self.subTest(spelling=spelling), tempfile.TemporaryDirectory(prefix="dw-artifact-boundary-", dir="/tmp/opencode") as directory:
@@ -166,6 +189,40 @@ target_link_libraries(a PRIVATE {flags})
                         result = self.run_command("cmake", "--build", str(root / "build"), "--target", "a")
                         forbidden = static == (foreign_kind == "STATIC")
                         if forbidden:
+                            self.assertNotEqual(result.returncode, 0, result.stdout)
+                            self.assertIn("cannot link plugin:b", result.stdout)
+                        else:
+                            self.assertEqual(result.returncode, 0, result.stdout)
+                            executed = self.run_command(str(root / "build/src/plugins/a/a"))
+                            self.assertEqual(executed.returncode, 0, executed.stdout)
+
+    def test_forwarded_static_is_scoped_not_global(self):
+        for foreign_kind in ("STATIC", "SHARED"):
+            for alias in ("-static", "--static"):
+                for wrapper in ("wl", "xlinker"):
+                    with self.subTest(foreign_kind=foreign_kind, alias=alias, wrapper=wrapper), tempfile.TemporaryDirectory(prefix="dw-scoped-static-", dir="/tmp/opencode") as directory:
+                        root = self.fixture(directory, body="int foreign(); int pinned(); int main() { return foreign() + pinned(); }\n")
+                        own_kind = "SHARED" if foreign_kind == "STATIC" else "STATIC"
+                        (root / "src/plugins/b/CMakeLists.txt").write_text(f'''add_library(foreign_impl {foreign_kind} private/foreign.cpp)
+set_target_properties(foreign_impl PROPERTIES OUTPUT_NAME mixed ARCHIVE_OUTPUT_DIRECTORY "${{CMAKE_BINARY_DIR}}/lib" LIBRARY_OUTPUT_DIRECTORY "${{CMAKE_BINARY_DIR}}/lib")
+''')
+                        (root / "src/plugins/b/private/foreign.cpp").write_text('__attribute__((visibility("default"))) int foreign() { return 3; }\n')
+                        flags = f'"-Wl,--push-state,{alias}" -lpinned -Wl,--pop-state -lmixed' if wrapper == "wl" else f'"-Xlinker" "--push-state" "-Xlinker" "{alias}" -lpinned "-Xlinker" "--pop-state" -lmixed'
+                        with (root / "src/plugins/a/CMakeLists.txt").open("a") as file:
+                            file.write(f'''\nadd_library(own_impl {own_kind} owned.cpp)
+add_library(pinned STATIC pinned.cpp)
+set_target_properties(own_impl pinned PROPERTIES OUTPUT_NAME mixed ARCHIVE_OUTPUT_DIRECTORY "${{CMAKE_BINARY_DIR}}/lib" LIBRARY_OUTPUT_DIRECTORY "${{CMAKE_BINARY_DIR}}/lib")
+set_target_properties(pinned PROPERTIES OUTPUT_NAME pinned)
+add_dependencies(a own_impl foreign_impl pinned)
+target_link_directories(a PRIVATE "${{CMAKE_BINARY_DIR}}/lib")
+target_link_libraries(a PRIVATE {flags})
+''')
+                        (root / "src/plugins/a/owned.cpp").write_text('__attribute__((visibility("default"))) int foreign() { return 0; }\n')
+                        (root / "src/plugins/a/pinned.cpp").write_text("int pinned() { return 0; }\n")
+                        configured = self.run_command("cmake", "-S", str(root), "-B", str(root / "build"), "-G", "Ninja")
+                        self.assertEqual(configured.returncode, 0, configured.stdout)
+                        result = self.run_command("cmake", "--build", str(root / "build"), "--target", "a")
+                        if foreign_kind == "SHARED":
                             self.assertNotEqual(result.returncode, 0, result.stdout)
                             self.assertIn("cannot link plugin:b", result.stdout)
                         else:

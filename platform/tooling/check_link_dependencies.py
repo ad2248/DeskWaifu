@@ -5,22 +5,24 @@ import subprocess
 import sys
 
 
-def arguments(tokens, seen=None):
+def arguments(tokens, seen=None, forwarded=False):
     """Expose linker forwarding and response files without changing the command."""
     seen = set() if seen is None else seen
     tokens = iter(tokens)
     for token in tokens:
+        linker = forwarded
         if token == "-Xlinker":
             token = next(tokens)
+            linker = True
         if token.startswith("-Wl,"):
-            yield from arguments(token[4:].split(","), seen)
+            yield from arguments(token[4:].split(","), seen, True)
         elif token.startswith("@"):
             path = Path(token[1:]).resolve()
             if path in seen:
                 sys.exit(f"Cyclic linker response file: {path}")
-            yield from arguments(shlex.split(path.read_text()), seen | {path})
+            yield from arguments(shlex.split(path.read_text()), seen | {path}, linker)
         else:
-            yield token
+            yield token, linker
 
 
 def options(tokens):
@@ -47,13 +49,17 @@ def main():
         for line in manifest.read_text().splitlines():
             kind, owner, path = line.split("\t", 2)
             (files if kind == "file" else directories)[Path(path).resolve()] = owner
-    tokens = list(options(arguments(command)))
+    expanded = list(arguments(command))
+    driver_static = ("-static", "--static", "-static-pie")
+    static = any(token in driver_static and not linker for token, linker in expanded)
+    # Driver-wide flags apply regardless of position. Forwarded linker aliases
+    # are positional and must participate in --push-state/--pop-state instead.
+    tokens = list(options(token for token, linker in expanded if linker or token not in driver_static))
     search = [Path(token[2:]).resolve() for token in tokens if token.startswith("-L")]
     paths = [Path(token).resolve() for token in tokens if not token.startswith("-")]
-    static = any(token in ("-static", "--static", "-static-pie") for token in tokens)
     modes = []
     for token in tokens:
-        if token in ("-Bstatic", "-dn", "-non_shared", "-aarchive"):
+        if token in ("-static", "--static", "-Bstatic", "-dn", "-non_shared", "-aarchive"):
             static = True
         elif token in ("-Bdynamic", "-dy", "-call_shared", "-ashared", "-adefault"):
             static = False

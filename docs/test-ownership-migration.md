@@ -84,3 +84,17 @@ core，只替换窗口边界。两项 Delegate 场景各自连续重复 5 次通
 26 项定向 ASan/UBSan 全部通过（含新桌面启动场景），报告：
 `build/architecture-sanitize/test-logs/ctest-nurl5qf6/summary.json`。
 纯平台 26/26、无后端 GUI 31/31 再次通过；带空格路径的 Unix Makefiles 构建通过。
+
+## 第三轮架构复审修正
+
+- 配置时检查 `PRECOMPILE_HEADERS_REUSE_FROM`，拒绝跨归属 PCH 复用；同归属复用仍实际
+  构建并执行内联函数。禁止依赖不能靠 GCC 对 PCH 使用者省略原始头依赖而漏检。
+- 参数展开保留编译器参数与 linker 转发参数的来源：驱动层 `-static` 是全局设置，
+  转发的 `-static`/`--static` 只在当前位置改变链接模式，push/pop 恢复正确状态。
+  负例和合法反向归属组合均覆盖 `-Wl`、`-Xlinker` 两种转发方式。
+- 新断言在 `4b1d011` 私有副本上复现跨域 PCH 绕过及八个静态别名选择错误；修正后
+  两套构建隔离测试合计 17/17 通过。另从干净构建目标重新编译完整工程以验证新校验。
+
+干净全量重建完成后，139 项普通门禁再次全部达到政策要求（138 项通过、1 项 PCI
+授权场景未验证），报告：`build/architecture/test-logs/ctest-u5utz7nv/summary.json`。
+此轮没有修改已通过运行时复审的 C++ 实现。
