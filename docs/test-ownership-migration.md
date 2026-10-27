@@ -16,7 +16,7 @@
 
 已通过：`python3 tests/test_build_boundaries.py`（5 项），`python3 tests/test_plugin_boundaries.py`（7 项），独立 `src/plugins/perception/tests/ocr-client` 配置、构建与 `ocr-client` CTest。
 
-迁移后的 79 个测试/夹具 C++ 源文件已做独立语法检查（QtTest 的 moc 与 Wayland 夹具头在临时目录生成）；这是语法证据，不替代正式目标链接与运行。另通过 `platform/build/BoundaryTest.py`（4 项）和 `tests/test_test_gate.py`（7 项）。
+迁移后的 79 个测试/夹具 C++ 源文件已做独立语法检查（QtTest 的 moc 与 Wayland 夹具头在临时目录生成）；这是语法证据，不替代正式目标链接与运行。另通过 `platform/tooling/BoundaryTest.py`（4 项）和 `tests/test_test_gate.py`（7 项）。
 
 正式全量目标配置、编译及普通门禁已通过：134 个注册测试中 133 项通过，1 项按政策
 标记未验证。明确 PCI 设备、私有模型、付费云端和可发声音频的授权测试未执行，不能

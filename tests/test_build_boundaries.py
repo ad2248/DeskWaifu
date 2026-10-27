@@ -37,7 +37,7 @@ target_include_directories(a PRIVATE ${{PROJECT_SOURCE_DIR}}/sdk ${{CMAKE_CURREN
             "src/plugins/b/private/Foreign.hpp": "#pragma once\nstruct Foreign {};\n",
             "platform/Private.hpp": "#pragma once\nstruct PlatformPrivate {};\n",
             "cmake/PluginBoundaries.cmake": (ROOT / "cmake/PluginBoundaries.cmake").read_text(),
-            "platform/build/check_dependencies.py": (ROOT / "platform/build/check_dependencies.py").read_text(),
+            "platform/tooling/check_dependencies.py": (ROOT / "platform/tooling/check_dependencies.py").read_text(),
         }
         for relative, text in files.items():
             path = root / relative
