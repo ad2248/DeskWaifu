@@ -2,7 +2,7 @@
 #include <EGL/egl.h>
 #include "processor/model/ModelFrameRegion.hpp"
 #include "processor/model/ModelOpacityFrame.hpp"
-#include "contracts/ModelInputRegion.hpp"
+#include "processor/model/ModelInputRegion.hpp"
 #include <cmath>
 #include <iostream>
 #include <vector>

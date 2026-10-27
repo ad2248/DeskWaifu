@@ -31,10 +31,21 @@ public:
     {
         _endpoint = context.CreateEndpoint("commands", [this](const EventDelivery& delivery) {
             if (delivery.kind == EventDelivery::Kind::Cancellation) {
-                for (auto& request : _pending) if (request.id == delivery.requestId) request.cancelled = true;
+                for (auto* pending : {&_modelPending, &_interactionPending})
+                    for (auto& request : *pending)
+                        if (request.id == delivery.requestId) request.cancelled = true;
             } else if (delivery.kind == EventDelivery::Kind::Request && delivery.payload) {
-                _pending.push_back({delivery.requestId, delivery.topic, delivery.payload, false});
-                if (_pending.size() == 1) Dispatch();
+                const auto command = QJsonDocument::fromJson(delivery.payload->data.value("json").toString().toUtf8())
+                    .object().value("command").toString();
+                if (delivery.topic != "command." + command + "/v1") {
+                    _endpoint->Respond(delivery.requestId, std::make_shared<ProcessorEvent>("command.result", nullptr, nullptr,
+                        QVariantMap{{"json", QStringLiteral("{\"ok\":false,\"error\":\"command capability mismatch\"}")}}));
+                    return;
+                }
+                const bool model = ModelCommands.contains(command);
+                auto& pending = model ? _modelPending : _interactionPending;
+                pending.push_back({delivery.requestId, delivery.payload, false});
+                if (pending.size() == 1) Dispatch(model);
             }
         });
     }
@@ -47,40 +58,43 @@ public:
     }
     bool HandleEvent(const ProcessorEvent& event) override
     {
-        if (event.receiver != this || _pending.empty() ||
+        if (_stopped || event.receiver != this ||
             (event.type != "model.result" && event.type != "interaction.result")) return false;
-        auto request = std::move(_pending.front());
-        _pending.pop_front();
-        const QString json = event.type == "model.result"
+        const bool model = event.type == "model.result";
+        auto& pending = model ? _modelPending : _interactionPending;
+        if (pending.empty()) return false;
+        auto request = std::move(pending.front());
+        pending.pop_front();
+        const QString json = model
             ? QString::fromUtf8(QJsonDocument(event.data.value("reply").toJsonObject()).toJson(QJsonDocument::Compact))
             : event.data.value("json").toString();
         if (!request.cancelled) _endpoint->Respond(request.id,
             std::make_shared<ProcessorEvent>("command.result", nullptr, nullptr, QVariantMap{{"json", json}}));
-        Dispatch();
+        Dispatch(model);
         return true;
     }
-    void Stop() noexcept override { _pending.clear(); }
-private:
-    void Dispatch()
+    void Stop() noexcept override
     {
-        while (!_pending.empty() && _pending.front().cancelled) _pending.pop_front();
-        if (_pending.empty()) return;
-        const auto& request = _pending.front();
-        const auto command = QJsonDocument::fromJson(request.payload->data.value("json").toString().toUtf8())
-            .object().value("command").toString();
-        if (request.topic != "command." + command + "/v1") {
-            auto id = request.id;
-            _pending.pop_front();
-            _endpoint->Respond(id, std::make_shared<ProcessorEvent>("command.result", nullptr, nullptr,
-                QVariantMap{{"json", QStringLiteral("{\"ok\":false,\"error\":\"command capability mismatch\"}")}}));
-            Dispatch();
-            return;
-        }
-        Send(ModelCommands.contains(command) ? "interaction.model" : "interaction.command", nullptr, request.payload->data);
+        _stopped = true;
+        if (_endpoint) _endpoint->Invalidate();
+        _modelPending.clear();
+        _interactionPending.clear();
+        Processor::Stop();
     }
-    struct Request { RequestId id; QString topic; ProcessorEventPtr payload; bool cancelled; };
+private:
+    void Dispatch(bool model)
+    {
+        auto& pending = model ? _modelPending : _interactionPending;
+        // Only unstarted cancellations may be skipped. The dispatched front is
+        // retained until its domain result arrives, even when its caller leaves.
+        while (!pending.empty() && pending.front().cancelled) pending.pop_front();
+        if (!pending.empty())
+            Send(model ? "interaction.model" : "interaction.command", nullptr, pending.front().payload->data);
+    }
+    struct Request { RequestId id; ProcessorEventPtr payload; bool cancelled; };
     EventEndpoint* _endpoint = nullptr;
-    std::deque<Request> _pending;
+    std::deque<Request> _modelPending, _interactionPending;
+    bool _stopped = false;
 };
 
 class DesktopPlugin final : public IProcessorPlugin

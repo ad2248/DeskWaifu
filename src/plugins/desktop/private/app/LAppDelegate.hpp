@@ -1,7 +1,7 @@
 #pragma once
 
 #include "event/ProcessorEventLoop.hpp"
-#include "contracts/ModelExchange.hpp"
+#include "processor/model/ModelExchange.hpp"
 #include <memory>
 
 class ModelProcessor;

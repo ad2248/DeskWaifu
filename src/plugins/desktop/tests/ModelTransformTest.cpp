@@ -1,4 +1,4 @@
-#include "contracts/ModelTransform.hpp"
+#include "processor/interaction/ModelZoom.hpp"
 #include "processor/model/ModelProjection.hpp"
 
 #include <QtTest>

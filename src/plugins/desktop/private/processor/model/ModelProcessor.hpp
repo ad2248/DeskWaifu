@@ -1,8 +1,8 @@
 #pragma once
 
 #include "processor/Processor.hpp"
-#include "contracts/RenderFrame.hpp"
-#include "contracts/ModelExchange.hpp"
+#include "RenderFrame.hpp"
+#include "ModelExchange.hpp"
 #include "render/ModelRenderTarget.hpp"
 #include <QThread>
 

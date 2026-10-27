@@ -50,7 +50,7 @@ https://github.com/user-attachments/assets/95dfdedc-4957-4bb7-b79f-f3addd97a6db
 | **Linux with Wayland compositor** | Must support `wlr-layer-shell-v1`; KDE Plasma 6 / KWin is required for global cursor tracking |
 | **Live2D Cubism SDK for Native** | Download from [live2d.com/sdk](https://www.live2d.com/en/sdk/about/) (proprietary, not bundled) |
 | **C++ compiler** | GCC or Clang with C++17 support for Qt 6 |
-| **CMake** | >= 3.16 |
+| **CMake** | >= 3.21 (compiler and linker ownership checks) |
 | **pkg-config** | For finding Wayland/EGL libraries |
 | **Wayland development libraries** | Required by Qt Wayland; Qt owns protocol dispatch |
 | **libsystemd development library** | `sd-bus` for the transient KWin cursor bridge |

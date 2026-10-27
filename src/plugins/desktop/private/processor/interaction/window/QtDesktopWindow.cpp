@@ -1,6 +1,6 @@
 #include "DesktopWindow.hpp"
 #include "QtWindowInput.hpp"
-#include "contracts/RenderFrame.hpp"
+#include "processor/model/RenderFrame.hpp"
 #include <QEventLoop>
 #include <QGuiApplication>
 #include <QKeyEvent>
@@ -120,6 +120,9 @@ public:
         QEventLoop loop;
         if (!StartFrames(frame, [&](bool result) { ok = result; loop.quit(); })) return false;
         loop.exec();
+        // Application exit can bypass finished; retire its stack captures before returning.
+        _frameTimer.stop();
+        QObject::disconnect(_presentation);
         return ok;
     }
 

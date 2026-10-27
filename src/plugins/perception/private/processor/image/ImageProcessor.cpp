@@ -1,5 +1,5 @@
 #include "ImageProcessor.hpp"
-#include "contracts/ImageFile.hpp"
+#include "ImageFile.hpp"
 #include "processor/Events.hpp"
 #include "plugin/PluginContext.hpp"
 #include <QFutureWatcher>
@@ -75,6 +75,6 @@ bool ImageProcessor::Read(const ProcessorEvent& event, RequestId request)
             {{"error", cancelled ? "image read cancelled" : "image is too large or PNG encoding failed"}});
         else Complete(ProcessorEvents::ImageReady, receiver, request, {{"image", QVariant::fromValue(file)}});
     });
-    watcher->setFuture(QtConcurrent::run([image] { return ImageFile::Create(image); }));
+    watcher->setFuture(QtConcurrent::run([image] { return CreateImageFile(image); }));
     return true;
 }

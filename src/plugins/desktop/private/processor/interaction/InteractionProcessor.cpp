@@ -1,4 +1,5 @@
 #include "InteractionProcessor.hpp"
+#include "ModelZoom.hpp"
 #include "contracts/InputSample.hpp"
 #include "AppCommandHandler.hpp"
 #include <GL/glew.h>

@@ -1,8 +1,8 @@
 #pragma once
 
 #include "processor/Processor.hpp"
-#include "contracts/RenderFrame.hpp"
-#include "contracts/ModelExchange.hpp"
+#include "processor/model/RenderFrame.hpp"
+#include "processor/model/ModelExchange.hpp"
 #include "InteractionContext.hpp"
 #include "CursorLook.hpp"
 #include "processor/interaction/window/DesktopWindow.hpp"

@@ -19,7 +19,12 @@ struct ModuleEvent : ProcessorEvent
 class FixturePlugin : public IProcessorPlugin
 {
 public:
-    ~FixturePlugin() override { Log("destroy"); }
+    ~FixturePlugin() override
+    {
+        Log("destroy");
+        if (_context && qEnvironmentVariableIsSet("DESKWAIFU_FIXTURE_DESTROY_ERROR"))
+            _context->ReportFailure("intentional destruction failure");
+    }
     bool Initialize(PluginContext& context, QString* error) override
     {
         Log("initialize");

@@ -1,4 +1,5 @@
 #include "processor/image/ImageProcessor.hpp"
+#include "processor/image/ImageFile.hpp"
 #include "processor/ocr/OcrProcessor.hpp"
 #include "processor/screenshot/ScreenshotProcessor.hpp"
 #include "processor/Events.hpp"
@@ -49,6 +50,10 @@ try {
     QCoreApplication app(argc, argv);
     Check(argc == 2, "expected native fake OCR helper");
     using namespace ProcessorEvents;
+    Check(!CreateImageFile(QImage()), "private image factory rejects null images");
+    Check(!CreateImageFile(QImage(4097, 1, QImage::Format_ARGB32))
+          && !CreateImageFile(QImage(1, 4097, QImage::Format_ARGB32)),
+          "private image factory preserves image dimension limits");
     {
         ProcessorEventLoop loop;
         int reads = 0;
@@ -59,6 +64,7 @@ try {
         Check(reads == 1 && sink.received[0].type == ImageReady && sink.received[0].sender == &images, "image service async completion");
         auto file = qvariant_cast<ImageFilePtr>(sink.received[0].data.value("image")); const auto path = file->Path();
         Check(QFileInfo::exists(path), "private PNG exists while referenced");
+        Check(QImage(path) == SyntheticImage(), "private image factory preserves PNG contents");
         sink.received.clear(); file.clear(); Check(AwaitProcessorEvents(loop), "processor FIFO fence timed out");
         Check(!QFileInfo::exists(path), "private PNG is cleaned up by resource lifetime");
     }
@@ -80,7 +86,7 @@ try {
         auto client = std::make_unique<OcrClient>(app.arguments()[1], 1000, 50);
         auto* observedClient = client.get();
         OcrProcessor ocr(loop, std::move(client)); Sink sink(loop);
-        auto image = ImageFile::Create(SyntheticImage()); const auto path = image->Path();
+        auto image = CreateImageFile(SyntheticImage()); const auto path = image->Path();
         loop.Post({Recognize, &sink, &ocr, {{"image", QVariant::fromValue(image)}}}); image.clear();
         if (QString::fromLatin1(mode) == "hang") {
             Wait([&] { return observedClient->Status().value("state") == "pending"; });

@@ -7,12 +7,11 @@
 #include "contracts/ICommandService.hpp"
 #include "contracts/InputSample.hpp"
 #include "contracts/JsonHelpers.hpp"
-#include "contracts/ModelExchange.hpp"
 #include "contracts/RenderDevice.hpp"
 #include "contracts/SpeechEvents.hpp"
+#include "contracts/ImageFile.hpp"
 #ifdef DESKWAIFU_TEST_GUI
 #include "plugin/GuiPluginContext.hpp"
-#include "contracts/ImageFile.hpp"
 #endif
 #include <QCoreApplication>
 #include <QTemporaryDir>

@@ -1,4 +1,4 @@
-#include "contracts/ModelInputRegion.hpp"
+#include "processor/model/ModelInputRegion.hpp"
 #include "processor/interaction/window/QtWindowInput.hpp"
 #include "processor/interaction/ScreenCropInteraction.hpp"
 #include "TestTemporaryDirectory.hpp"

@@ -1,4 +1,4 @@
-#include "contracts/ModelHitTest.hpp"
+#include "processor/model/ModelHitTest.hpp"
 #include <atomic>
 #include <iostream>
 #include <thread>
@@ -21,6 +21,14 @@ int main()
     snapshot.hidden = true; hit = snapshot.Test(query);
     CHECK(hit.available && !hit.inside && hit.parts.empty());
     snapshot.hidden = false;
+
+    auto fallback = snapshot;
+    fallback.fallback = true; fallback.fallbackYScale = -1; fallback.fallbackYOffset = 50;
+    CHECK(fallback.Test(query).parts == std::vector<std::string>{"Head"});
+    CHECK(fallback.Test({25, 50, 100, 100, "model"}).parts == std::vector<std::string>{"Body"});
+    CHECK(fallback.Test({25, 75, 100, 100, "model"}).parts == std::vector<std::string>{"Body"});
+    fallback.partsEnabled = false;
+    CHECK(fallback.Test(query).parts.empty());
 
     auto box = std::make_shared<ModelHitMailbox>();
     auto callback = box->Callback(box);

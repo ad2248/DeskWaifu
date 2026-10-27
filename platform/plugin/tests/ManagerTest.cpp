@@ -97,9 +97,31 @@ try {
         status = RequestStatus::Replied;
         client->Request("fixture.compute", std::make_shared<ProcessorEvent>(), [&](const RequestResult& result) { status = result.status; });
         Drain(); Check(status == RequestStatus::Replied, "healthy provider remains callable after another plugin failed");
-        failing.Stop();
+        Check(failing.Stop(&error) && error.isEmpty(), "successful rollback does not become a shutdown failure");
         client->Request("fixture.compute", std::make_shared<ProcessorEvent>(), [&](const RequestResult& result) { status = result.status; });
         Drain(); Check(status == RequestStatus::NoProvider, "Stop withdraws surviving providers");
+    }
+    for (int fixture : {3, 4}) {
+        for (const char* variable : {"DESKWAIFU_FIXTURE_STOP_ERROR", "DESKWAIFU_FIXTURE_DESTROY_ERROR"}) {
+            const auto failureRoot = directory.path() + "/rollback-" + QString::number(fixture) + variable;
+            Copy(argv[1], failureRoot, "a-good");
+            Copy(argv[fixture], failureRoot, "z-bad");
+            PluginManager failing(loop, failureRoot, config);
+            qputenv(variable, "1");
+            const bool started = failing.Start(&error);
+            qunsetenv(variable); // Only the rejected instance's cleanup failed.
+            const auto cleanup = QString(variable).contains("STOP")
+                ? QStringLiteral("intentional shutdown failure") : QStringLiteral("intentional destruction failure");
+            Check(!started && error.contains(fixture == 3 ? "intentional initialization failure" : "intentional start failure") &&
+                  error.contains("z-bad: cleanup failed: " + cleanup), "Start includes rollback cleanup failure");
+            Check(failing.LoadedPlugins() == QStringList{"a-good"}, "rollback failure preserves healthy plugins");
+            Check(!failing.Stop(&error) && error == "z-bad: cleanup failed: " + cleanup,
+                  "final Stop retains failure from rejected plugin, including destruction");
+            Check(failing.Stop(&error) && error.isEmpty(), "rollback shutdown failure is reported only once");
+            Check(!failing.Start(&error) && !error.contains("cleanup failed"), "restart has only the intentional startup failure");
+            Check(failing.Stop(&error) && error.isEmpty(), "new lifecycle does not retain old rollback failure");
+            Drain();
+        }
     }
     PluginManager empty(loop, directory.path() + "/missing", config);
     Check(empty.Start(&error) && empty.LoadedPlugins().isEmpty(), "missing optional plugin root is empty");

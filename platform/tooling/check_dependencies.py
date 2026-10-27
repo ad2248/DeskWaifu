@@ -11,7 +11,7 @@ def owner(path, root):
     except ValueError:
         return "external"
     parts = relative.parts
-    if not parts or parts[0].startswith("build") or parts[0] in ("thirdParty", "CubismSdkForNative-5-r.5"):
+    if not parts or parts[0].startswith(("build", "CubismSdkForNative")) or parts[0] == "thirdParty":
         return "external"
     if parts and parts[0] == "sdk":
         return "sdk"

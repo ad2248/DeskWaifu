@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[2]
 class Boundaries(unittest.TestCase):
     def fixture(self, root, include='"own.hpp"', link="", launcher=""):
         files = {
-            "CMakeLists.txt": f'''cmake_minimum_required(VERSION 3.19)
+            "CMakeLists.txt": f'''cmake_minimum_required(VERSION 3.21)
 project(boundaries LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 {launcher}
@@ -37,6 +37,7 @@ deskwaifu_validate_boundaries()
         checker = root / "platform/tooling/check_dependencies.py"
         checker.parent.mkdir(parents=True)
         shutil.copyfile(ROOT / "platform/tooling/check_dependencies.py", checker)
+        shutil.copyfile(ROOT / "platform/tooling/check_link_dependencies.py", checker.with_name("check_link_dependencies.py"))
 
     def build(self, root):
         configure = subprocess.run(["cmake", "-S", str(root), "-B", str(root / "build"), "-G", "Ninja"],

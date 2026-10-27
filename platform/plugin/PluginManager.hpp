@@ -29,5 +29,7 @@ private:
     ProcessorEventLoop& _loop;
     QString _pluginRoot, _configRoot;
     std::vector<Instance> _instances;
+    // Rejected instances are already gone, but Stop must still report their cleanup failure.
+    QStringList _pendingShutdownFailures;
     bool _started = false;
 };

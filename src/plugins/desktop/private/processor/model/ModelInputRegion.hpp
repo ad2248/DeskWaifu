@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ModelRegion.hpp"
+#include "contracts/ModelRegion.hpp"
 #include <vector>
 
 // 像素为 glReadPixels 返回的自下而上 RGBA8 数据。

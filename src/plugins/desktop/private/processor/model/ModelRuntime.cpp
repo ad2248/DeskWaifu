@@ -8,7 +8,7 @@
 #include "LAppTextureManager.hpp"
 #include "LAppView.hpp"
 #include "ModelFrameRegion.hpp"
-#include "contracts/ModelInputRegion.hpp"
+#include "ModelInputRegion.hpp"
 #include "contracts/JsonHelpers.hpp"
 #include <algorithm>
 #include <stdexcept>

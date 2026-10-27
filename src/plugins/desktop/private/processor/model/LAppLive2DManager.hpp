@@ -5,7 +5,7 @@
  * that can be found at https://www.live2d.com/eula/live2d-open-software-license-agreement_en.html.
  */
 #pragma once
-#include "contracts/ModelHitTest.hpp"
+#include "ModelHitTest.hpp"
 
 #include <CubismFramework.hpp>
 #include <Math/CubismMatrix44.hpp>

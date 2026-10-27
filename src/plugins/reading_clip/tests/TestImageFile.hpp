@@ -1,5 +1,6 @@
 #pragma once
 #include "contracts/ImageFile.hpp"
+#include <QImage>
 
 inline ImageFilePtr MakeTestImageFile(const QImage& image)
 {

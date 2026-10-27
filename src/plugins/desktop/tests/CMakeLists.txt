@@ -4,6 +4,12 @@ find_package(LayerShellQt 6.6 REQUIRED)
 set(PRIVATE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../private")
 set(TEST_SCRIPTS "${CMAKE_SOURCE_DIR}/tests")
 
+add_executable(model-input-region-test ModelInputRegionTest.cpp)
+add_test(NAME model-input-region COMMAND model-input-region-test)
+add_executable(model-hit-test-test ModelHitTestTest.cpp)
+target_link_libraries(model-hit-test-test PRIVATE Threads::Threads)
+add_test(NAME model-hit-test COMMAND model-hit-test-test)
+
 add_executable(component-dependencies-test ComponentDependenciesTest.cpp)
 add_test(NAME component-dependencies COMMAND component-dependencies-test)
 add_test(NAME component-direction COMMAND ${CMAKE_COMMAND}
@@ -237,6 +243,11 @@ if(DESKWAIFU_BUILD_CONTROL)
   add_test(NAME model-keyboard COMMAND model-keyboard-test)
 endif()
 
+add_executable(qt-desktop-window-run-test QtDesktopWindowRunTest.cpp)
+target_link_libraries(qt-desktop-window-run-test PRIVATE deskwaifu_offscreen Qt6::WaylandClient LayerShellQt::Interface)
+add_test(NAME qt-desktop-window-run COMMAND qt-desktop-window-run-test)
+set_tests_properties(qt-desktop-window-run PROPERTIES TIMEOUT 10 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
 get_property(test_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
 foreach(target IN LISTS test_targets)
   get_target_property(kind ${target} TYPE)
@@ -244,3 +255,5 @@ foreach(target IN LISTS test_targets)
     deskwaifu_domain_test(${target} desktop)
   endif()
 endforeach()
+
+add_subdirectory(commands)

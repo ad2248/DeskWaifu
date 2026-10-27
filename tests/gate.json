@@ -15,7 +15,8 @@
     "main-window-transform", "aur-packaging", "ocr-client", "smoke-isolation",
     "test-environment", "test-gate",
     "build-boundaries", "plugin-build-boundaries", "backend-capabilities", "backend-ipc-only",
-    "desktop-ownership", "reading-pipeline", "perception-adapters", "ipc-readiness", "speech-adapter-failure"
+    "desktop-ownership", "reading-pipeline", "perception-adapters", "ipc-readiness", "speech-adapter-failure",
+    "plugin-sdk-image-file", "plugin-sdk-installed-consumer", "desktop-commands-fairness", "perception-startup", "qt-desktop-window-run"
   ],
   "sanitizer_required": ["sanitizer-failure-gate"],
   "optional_processes": {

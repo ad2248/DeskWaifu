@@ -1,5 +1,5 @@
 #include "ModelFrameRegion.hpp"
-#include "contracts/ModelInputRegion.hpp"
+#include "ModelInputRegion.hpp"
 #include <GL/glew.h>
 #include <vector>
 

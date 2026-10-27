@@ -39,9 +39,14 @@ desktop 插件；图像/OCR/截图属于 perception，Unix socket 与 GUI 客户
 打包入口。根 `deskwaifu-ctl` 是 IPC 插件提供的公开命令行程序；`research/ocr/`
 是 perception 插件的开发工具。第三方 Cubism、GLEW、stb 和推理库保持外部依赖身份。
 
-`cmake/PluginBoundaries.cmake` 校验源文件、包含目录及传递链接依赖；编译器产生的
-实际依赖还会检查绝对/相对路径的跨归属包含。插件实现符号隐藏，模块禁止未解析符号。
+`cmake/PluginBoundaries.cmake` 校验源文件、包含目录及传递链接依赖；C/C++ 编译器产生的
+实际依赖还会检查绝对/相对路径的跨归属包含。生成的目标产物清单在链接前校验归属，
+不依赖库的输出目录，包含 linker 转发参数和响应文件。已有编译/链接 launcher 保留。
+插件实现符号隐藏，模块禁止未解析符号。完整构建要求 CMake 3.21 及以上。
 这约束工程依赖，不是对同进程受信任代码的安全沙箱。
+
+SDK 仅保留公共值和通信契约。帧交换、命中测试、alpha 输入轮廓和缩放策略均为
+desktop 私有实现；公共 `ImageFile` 只管理共享临时文件寿命，图像编码工厂归 perception。
 
 平台只保留进程引导、Qt 事件循环、宿主配置、发现/生命周期、
 通用事件路由及诊断。控制面板现已支持可选 GUI 入口，领域页面源码归入各自模块的

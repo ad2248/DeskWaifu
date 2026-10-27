@@ -23,9 +23,10 @@ Delegate or injected business callbacks. They exchange SDK events and capability
 Strongly coupled model/window/input helpers collaborate within desktop. Command routes protocol requests but owns no GUI,
 configuration, OCR or model state. Model metadata is cached from `model.state`.
 
-`contracts/ModelExchange` is a bounded latest-input/latest-immutable-frame slot,
-not a service port. `ModelHitTest` is the one permitted query callback: it weakly
-references a CPU snapshot mailbox and cannot access processors, SDK or GL.
+Desktop-private `processor/model/ModelExchange` is a bounded latest-input/latest-immutable-frame slot,
+not a service port. The local `ModelHitTest` callback weakly
+references a CPU snapshot mailbox and cannot access processors, Cubism or GL.
+These rendering, hit-test and alpha-region algorithms are not installed SDK contracts.
 Continuous pointer samples also use bounded slots; discrete inputs are barriers.
 
 Each plugin stops its sources and tasks. Desktop joins the model thread before

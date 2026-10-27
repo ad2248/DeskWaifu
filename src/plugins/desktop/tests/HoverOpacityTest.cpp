@@ -1,4 +1,4 @@
-#include "contracts/ModelInputRegion.hpp"
+#include "processor/model/ModelInputRegion.hpp"
 #include "processor/interaction/config/LAppConfig.hpp"
 #include "TestTemporaryDirectory.hpp"
 #include <fstream>

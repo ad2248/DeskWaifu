@@ -31,6 +31,11 @@ public:
                     QVariantMap{{"json", QStringLiteral("{\"ok\":false,\"error\":\"invalid command request\"}")}}));
                 return;
             }
+            if (!_ocr) {
+                _commands->Respond(delivery.requestId, std::make_shared<ProcessorEvent>("command.result", nullptr, nullptr,
+                    QVariantMap{{"json", QStringLiteral("{\"ok\":false,\"error\":\"perception is not ready\"}")}}));
+                return;
+            }
             _requests.push_back(delivery.requestId);
             Send("ocr.command", _ocr.get(), delivery.payload->data);
         });

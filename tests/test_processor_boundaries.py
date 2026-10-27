@@ -97,7 +97,7 @@ class ProcessorBoundaries(unittest.TestCase):
         ):
             with self.subTest(code=code):
                 self.assertTrue(violations(path, code))
-        self.assertFalse(violations(path, '#include "contracts/RenderFrame.hpp"\nIProcessorPlugin* model;'))
+        self.assertFalse(violations(path, '#include "contracts/ModelTransform.hpp"\nIProcessorPlugin* model;'))
         self.assertFalse(violations(Path("src/plugins/desktop/private/app/Runtime.hpp"),
                                     '#include "processor/model/ModelProcessor.hpp"\nModelProcessor* model;'))
 

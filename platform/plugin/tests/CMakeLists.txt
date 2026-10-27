@@ -5,10 +5,12 @@ foreach(kind good consumer init_fail start_fail bad_abi bad_build_abi bad_entry 
   target_link_libraries(plugin-fixture-${kind} PRIVATE deskwaifu_plugin_sdk)
   target_compile_definitions(plugin-fixture-${kind} PRIVATE FIXTURE_${kind})
   set_target_properties(plugin-fixture-${kind} PROPERTIES PREFIX "" OUTPUT_NAME "${kind}")
+  list(APPEND backend_fixtures plugin-fixture-${kind})
 endforeach()
 target_compile_definitions(plugin-fixture-bad_debug_abi PRIVATE _GLIBCXX_DEBUG)
 
 add_executable(plugin-manager-test ManagerTest.cpp)
+add_dependencies(plugin-manager-test ${backend_fixtures})
 target_link_libraries(plugin-manager-test PRIVATE deskwaifu_plugin_host Threads::Threads)
 add_test(NAME plugin-manager COMMAND plugin-manager-test
   $<TARGET_FILE:plugin-fixture-good>
@@ -27,8 +29,10 @@ if(DESKWAIFU_BUILD_GUI_PLUGIN_SDK)
     target_link_libraries(gui-plugin-fixture-${kind} PRIVATE deskwaifu_gui_plugin_sdk)
     target_compile_definitions(gui-plugin-fixture-${kind} PRIVATE FIXTURE_${kind})
     set_target_properties(gui-plugin-fixture-${kind} PROPERTIES PREFIX "" OUTPUT_NAME "gui_${kind}")
+    list(APPEND gui_fixtures gui-plugin-fixture-${kind})
   endforeach()
   add_executable(gui-plugin-manager-test GuiManagerTest.cpp)
+  add_dependencies(gui-plugin-manager-test ${gui_fixtures})
   target_link_libraries(gui-plugin-manager-test PRIVATE deskwaifu_gui_plugin_host deskwaifu_plugin_host Threads::Threads)
   add_test(NAME gui-plugin-manager COMMAND gui-plugin-manager-test
     $<TARGET_FILE:gui-plugin-fixture-good>
@@ -51,8 +55,10 @@ if(DESKWAIFU_BUILD_GUI_PLUGIN_SDK)
     target_link_libraries(gui-transport-fixture-${kind} PRIVATE deskwaifu_gui_plugin_sdk)
     target_compile_definitions(gui-transport-fixture-${kind} PRIVATE FIXTURE_${kind})
     set_target_properties(gui-transport-fixture-${kind} PROPERTIES PREFIX "" OUTPUT_NAME "transport_${kind}")
+    list(APPEND transport_fixtures gui-transport-fixture-${kind})
   endforeach()
   add_executable(gui-transport-manager-test GuiTransportManagerTest.cpp)
+  add_dependencies(gui-transport-manager-test ${transport_fixtures})
   target_link_libraries(gui-transport-manager-test PRIVATE deskwaifu_gui_plugin_host)
   add_test(NAME gui-transport-manager COMMAND gui-transport-manager-test
     $<TARGET_FILE:gui-transport-fixture-good>

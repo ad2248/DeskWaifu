@@ -6,7 +6,7 @@
 #include "processor/interaction/config/HoverOpacitySettings.hpp"
 #include "processor/interaction/config/OutputSettings.hpp"
 #include "processor/interaction/window/CompositorAdapter.hpp"
-#include "contracts/RenderFrame.hpp"
+#include "processor/model/RenderFrame.hpp"
 #include "contracts/InputSample.hpp"
 #include "event/ProcessorEventLoop.hpp"
 

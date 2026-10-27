@@ -1,9 +1,9 @@
 #pragma once
 
-#include "AppState.hpp"
-#include "ModelFrameInput.hpp"
-#include "ModelBinding.hpp"
-#include "ModelRegion.hpp"
+#include "contracts/AppState.hpp"
+#include "contracts/ModelFrameInput.hpp"
+#include "contracts/ModelBinding.hpp"
+#include "contracts/ModelRegion.hpp"
 #include "ModelHitTest.hpp"
 #include <QJsonObject>
 #include <QJsonArray>

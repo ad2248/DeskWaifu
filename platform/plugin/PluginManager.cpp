@@ -31,11 +31,16 @@ bool PluginManager::Start(QString* error)
     }
     if (_started) { if (error) *error = QStringLiteral("Plugins already started"); return false; }
     QStringList failures;
-    const auto discard = [](Instance& instance) {
+    const auto discard = [&](Instance& instance) {
         instance.context->Invalidate();
         instance.plugin->Stop();
         instance.api->destroy(instance.plugin);
         instance.plugin = nullptr;
+        if (!instance.context->_failure.isEmpty()) {
+            const auto failure = instance.name + ": cleanup failed: " + instance.context->_failure;
+            failures.append(failure);
+            _pendingShutdownFailures.append(failure);
+        }
     };
     // A missing optional plugin directory simply means there are no plugins.
     for (const auto& path : Discover(_pluginRoot)) {
@@ -90,6 +95,7 @@ bool PluginManager::Stop(QString* error)
     Q_ASSERT(QThread::currentThread() == _loop.thread());
     if (error) error->clear();
     QStringList failures;
+    failures.swap(_pendingShutdownFailures);
     // Invalidate every endpoint before any plugin stops. Completion callbacks
     // owned by plugins can no longer run; external requesters get unavailable.
     for (auto& instance : _instances) instance.context->Invalidate();
