@@ -1,10 +1,20 @@
 function(deskwaifu_add_plugin name)
-  add_library(${name}_plugin MODULE ${ARGN})
-  target_link_libraries(${name}_plugin PRIVATE deskwaifu_plugin_sdk)
-  set_target_properties(${name}_plugin PROPERTIES PREFIX "" OUTPUT_NAME "${name}"
+  cmake_parse_arguments(PLUGIN "GUI" "" "" ${ARGN})
+  if(PLUGIN_GUI)
+    set(target ${name}_gui_plugin)
+    add_library(${target} MODULE ${PLUGIN_UNPARSED_ARGUMENTS})
+    target_link_libraries(${target} PRIVATE deskwaifu_gui_plugin_sdk)
+    target_include_directories(${target} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/${name}/gui")
+    set_target_properties(${target} PROPERTIES AUTOMOC ON AUTOUIC ON)
+  else()
+    set(target ${name}_plugin)
+    add_library(${target} MODULE ${PLUGIN_UNPARSED_ARGUMENTS})
+    target_link_libraries(${target} PRIVATE deskwaifu_plugin_sdk)
+  endif()
+  set_target_properties(${target} PROPERTIES PREFIX "" OUTPUT_NAME "${name}"
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins/${name}"
     INSTALL_RPATH "$ORIGIN/../../..")
-  install(TARGETS ${name}_plugin LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/deskwaifu/plugins/${name}
+  install(TARGETS ${target} LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/deskwaifu/plugins/${name}
     COMPONENT DeskWaifu)
 endfunction()
 
@@ -22,5 +32,35 @@ if(DESKWAIFU_BUILD_SPEECH_PLUGIN)
     target_link_libraries(speech-endpoint-test PRIVATE deskwaifu_speech)
     add_test(NAME speech-endpoint COMMAND speech-endpoint-test)
     set_tests_properties(speech-plugin-load speech-endpoint PROPERTIES TIMEOUT 30 LABELS "contract;plugin")
+  endif()
+endif()
+
+if(DESKWAIFU_BUILD_CONTROL)
+  deskwaifu_add_plugin(system GUI
+    system/gui/SystemGuiPlugin.cpp system/gui/SystemTab.cpp
+    system/gui/SystemTab.hpp system/gui/SystemTab.ui
+    system/gui/DeskWaifuLauncher.cpp system/gui/DeskWaifuLauncher.hpp
+    system/gui/DeskWaifuRespawner.cpp system/gui/DeskWaifuRespawner.hpp)
+  deskwaifu_add_plugin(interaction GUI
+    interaction/gui/InteractionGuiPlugin.cpp interaction/gui/InteractionTab.cpp
+    interaction/gui/InteractionTab.hpp interaction/gui/InteractionTab.ui
+    interaction/gui/HotkeyPanel.cpp interaction/gui/HotkeyPanel.hpp)
+  deskwaifu_add_plugin(model GUI
+    model/gui/ModelGuiPlugin.cpp model/gui/ModelTab.cpp
+    model/gui/ModelTab.hpp model/gui/ModelTab.ui)
+  deskwaifu_add_plugin(log GUI
+    log/gui/LogGuiPlugin.cpp log/gui/LogTab.cpp
+    log/gui/LogTab.hpp log/gui/LogTab.ui)
+  add_custom_target(deskwaifu_control_plugins DEPENDS
+    system_gui_plugin interaction_gui_plugin model_gui_plugin log_gui_plugin)
+  if(DESKWAIFU_BUILD_SPEECH_PLUGIN)
+    target_sources(speech_plugin PRIVATE
+      speech/gui/SpeechGuiPlugin.cpp speech/gui/SpeechTab.cpp
+      speech/gui/SpeechTab.hpp speech/gui/SpeechTab.ui)
+    target_include_directories(speech_plugin PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/speech/gui")
+    target_link_libraries(speech_plugin PRIVATE deskwaifu_gui_plugin_sdk)
+    set_target_properties(speech_plugin PROPERTIES AUTOMOC ON AUTOUIC ON
+      AUTOUIC_SEARCH_PATHS "${CMAKE_CURRENT_SOURCE_DIR}/speech/gui")
+    add_dependencies(deskwaifu_control_plugins speech_plugin)
   endif()
 endif()

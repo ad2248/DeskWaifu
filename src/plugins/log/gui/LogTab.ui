@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>LogTab</class>
+ <widget class="QWidget" name="logTab">
+  <layout class="QVBoxLayout" name="logLayout">
+   <item><widget class="QPlainTextEdit" name="responseLog"><property name="readOnly"><bool>true</bool></property><property name="placeholderText"><string>IPC 响应将显示在此处。</string></property></widget></item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

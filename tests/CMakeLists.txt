@@ -343,9 +343,11 @@ set_target_properties(spawn-backend-fixture PROPERTIES
   OUTPUT_NAME deskwaifu
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/spawn-fixture")
 
+set(SYSTEM_GUI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../src/plugins/system/gui")
+set(INTERACTION_GUI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../src/plugins/interaction/gui")
 qt_add_executable(deskwaifu-launcher-test
-  DeskWaifuLauncherTest.cpp ../control/DeskWaifuLauncher.cpp)
-target_include_directories(deskwaifu-launcher-test PRIVATE ../control)
+  DeskWaifuLauncherTest.cpp ${SYSTEM_GUI_DIR}/DeskWaifuLauncher.cpp)
+target_include_directories(deskwaifu-launcher-test PRIVATE ${SYSTEM_GUI_DIR})
 target_link_libraries(deskwaifu-launcher-test PRIVATE Qt6::Test)
 target_compile_definitions(deskwaifu-launcher-test PRIVATE
   SPAWN_BACKEND_FIXTURE="$<TARGET_FILE:spawn-backend-fixture>")
@@ -355,11 +357,11 @@ add_test(NAME deskwaifu-launcher COMMAND deskwaifu-launcher-test)
 
 qt_add_executable(deskwaifu-respawner-test
   DeskWaifuRespawnerTest.cpp
-  ../control/DeskWaifuRespawner.cpp ../control/DeskWaifuRespawner.hpp
+  ${SYSTEM_GUI_DIR}/DeskWaifuRespawner.cpp ${SYSTEM_GUI_DIR}/DeskWaifuRespawner.hpp
   ../control/DeskWaifuClient.cpp ../control/DeskWaifuClient.hpp
-  ../control/DeskWaifuLauncher.cpp)
-target_include_directories(deskwaifu-respawner-test PRIVATE ../control ../src)
-target_link_libraries(deskwaifu-respawner-test PRIVATE Qt6::Test Qt6::Network)
+  ${SYSTEM_GUI_DIR}/DeskWaifuLauncher.cpp)
+target_include_directories(deskwaifu-respawner-test PRIVATE ../control ../src ${SYSTEM_GUI_DIR})
+target_link_libraries(deskwaifu-respawner-test PRIVATE Qt6::Test Qt6::Network deskwaifu_plugin_sdk)
 target_compile_definitions(deskwaifu-respawner-test PRIVATE
   SPAWN_BACKEND_FIXTURE="$<TARGET_FILE:spawn-backend-fixture>")
 add_dependencies(deskwaifu-respawner-test spawn-backend-fixture)
@@ -380,6 +382,7 @@ target_include_directories(deskwaifu-client-test PRIVATE
 target_link_libraries(deskwaifu-client-test PRIVATE
   Qt6::Test
   Qt6::Network
+  deskwaifu_plugin_sdk
 )
 
 set_target_properties(deskwaifu-client-test PROPERTIES AUTOMOC ON)
@@ -404,23 +407,26 @@ add_test(NAME model-transform COMMAND model-transform-test)
 
 qt_add_executable(hotkey-panel-test
   HotkeyPanelTest.cpp
-  ../control/HotkeyPanel.cpp
-  ../control/HotkeyPanel.hpp
+  ${INTERACTION_GUI_DIR}/HotkeyPanel.cpp
+  ${INTERACTION_GUI_DIR}/HotkeyPanel.hpp
 )
-target_include_directories(hotkey-panel-test PRIVATE ../control)
+target_include_directories(hotkey-panel-test PRIVATE ${INTERACTION_GUI_DIR})
 target_link_libraries(hotkey-panel-test PRIVATE Qt6::Test Qt6::Widgets)
 set_target_properties(hotkey-panel-test PROPERTIES AUTOMOC ON)
 add_test(NAME hotkey-panel COMMAND hotkey-panel-test)
 set_tests_properties(hotkey-panel PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+if(DESKWAIFU_BUILD_CONTROL)
+add_subdirectory(gui)
 qt_add_executable(control-theme-test
   ControlThemeTest.cpp
-  ../control/MainWindow.ui
-  ../control/HotkeyPanel.cpp
-  ../control/HotkeyPanel.hpp
+  ${INTERACTION_GUI_DIR}/HotkeyPanel.cpp
+  ${INTERACTION_GUI_DIR}/HotkeyPanel.hpp
 )
-target_include_directories(control-theme-test PRIVATE ../control)
-target_link_libraries(control-theme-test PRIVATE Qt6::Test Qt6::Widgets)
+target_include_directories(control-theme-test PRIVATE ../control ${INTERACTION_GUI_DIR})
+target_link_libraries(control-theme-test PRIVATE Qt6::Test deskwaifu_control_shell)
+add_dependencies(control-theme-test deskwaifu_control_plugins)
+target_compile_definitions(control-theme-test PRIVATE DESKWAIFU_TEST_SPEECH_PLUGIN=$<BOOL:${DESKWAIFU_BUILD_SPEECH_PLUGIN}>)
 set_target_properties(control-theme-test PROPERTIES AUTOMOC ON AUTOUIC ON
   AUTOUIC_SEARCH_PATHS "${CMAKE_CURRENT_SOURCE_DIR}/../control")
 add_test(NAME control-theme COMMAND control-theme-test)
@@ -428,18 +434,16 @@ set_tests_properties(control-theme PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offsc
 
 qt_add_executable(main-window-transform-test
   MainWindowTransformTest.cpp
-  ../control/MainWindow.cpp ../control/MainWindow.hpp ../control/MainWindow.ui
-  ../control/DeskWaifuClient.cpp ../control/DeskWaifuClient.hpp
-  ../control/DeskWaifuLauncher.cpp ../control/DeskWaifuLauncher.hpp
-  ../control/DeskWaifuRespawner.cpp ../control/DeskWaifuRespawner.hpp
-  ../control/HotkeyPanel.cpp ../control/HotkeyPanel.hpp
   ../src/contracts/ConfigStore.cpp ../src/processor/interaction/config/LAppConfig.cpp ../src/processor/interaction/InputController.cpp
 )
 target_include_directories(main-window-transform-test PRIVATE ../control ../src)
-target_link_libraries(main-window-transform-test PRIVATE Qt6::Test Qt6::Widgets Qt6::Network)
+target_link_libraries(main-window-transform-test PRIVATE Qt6::Test deskwaifu_control_shell)
+add_dependencies(main-window-transform-test deskwaifu_control_plugins)
+target_compile_definitions(main-window-transform-test PRIVATE DESKWAIFU_TEST_SPEECH_PLUGIN=$<BOOL:${DESKWAIFU_BUILD_SPEECH_PLUGIN}>)
 set_target_properties(main-window-transform-test PROPERTIES AUTOMOC ON AUTOUIC ON
   AUTOUIC_SEARCH_PATHS "${CMAKE_CURRENT_SOURCE_DIR}/../control")
 add_test(NAME main-window-transform COMMAND main-window-transform-test)
+endif()
 if(DESKWAIFU_BUILD_SPEECH_PLUGIN)
 foreach(speech_test SpeechPlayer MiniMaxSpeechSource AudioPlayer)
   qt_add_executable(${speech_test}-test ${speech_test}Test.cpp ../src/contracts/ConfigStore.cpp ../src/processor/interaction/config/LAppConfig.cpp)
@@ -466,7 +470,7 @@ add_test(NAME plugin-no-speech-configure COMMAND ${CMAKE_COMMAND}
   -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -DBINARY_DIR=${CMAKE_BINARY_DIR}/no-speech-configure
   -DSDK_ROOT=${SDK_ROOT_PATH} -DGLEW_ROOT=${GLEW_PATH} -DGENERATOR=${CMAKE_GENERATOR}
   -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckNoSpeechConfiguration.cmake)
-set_tests_properties(main-window-transform PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+if(DESKWAIFU_BUILD_CONTROL)
 add_test(NAME main-window-temp-directory
   COMMAND ${CMAKE_COMMAND}
     -DTEST_TEMP_ROOT=${CMAKE_CURRENT_BINARY_DIR}/tmp
@@ -479,6 +483,9 @@ add_test(NAME main-window-long-temp-directory
     -DEXPECT_LONG_TEMP=ON
     -DWINDOW_TEST=$<TARGET_FILE:main-window-transform-test>
     -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckPortableTemporaryDirectory.cmake)
+set_tests_properties(control-theme main-window-transform main-window-temp-directory main-window-long-temp-directory
+  PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;DESKWAIFU_CONTROL_PLUGIN_DIR=${CMAKE_BINARY_DIR}/plugins")
+endif()
 
 qt_add_executable(model-keyboard-test ModelKeyboardTest.cpp)
 target_include_directories(model-keyboard-test PRIVATE ../src)

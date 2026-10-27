@@ -1,15 +1,15 @@
 #include "DeskWaifuRespawner.hpp"
 #include "DeskWaifuLauncher.hpp"
 
-DeskWaifuRespawner::DeskWaifuRespawner(DeskWaifuClient& client, const QString& applicationDirectory,
+DeskWaifuRespawner::DeskWaifuRespawner(GuiHostServices& client, const QString& applicationDirectory,
                                      QObject* parent)
     : QObject(parent), _client(client), _applicationDirectory(applicationDirectory)
 {
     _timer.setInterval(100);
-    connect(&_client, &DeskWaifuClient::connectionChanged, this, [this](bool connected, const QString&) {
+    connect(&_client, &GuiHostServices::connectionChanged, this, [this](bool connected, const QString&) {
         if (isRunning() && !connected) _disconnected = true;
     });
-    connect(&_client, &DeskWaifuClient::responseReceived, this,
+    connect(&_client, &GuiHostServices::responseReceived, this,
         [this](const QString& command, const QJsonObject& response) {
             if (isRunning() && command == QStringLiteral("quit") && !response.value("ok").toBool())
                 finish(false, tr("重启失败，退出请求被拒绝：%1").arg(response.value("error").toString()));
@@ -18,7 +18,14 @@ DeskWaifuRespawner::DeskWaifuRespawner(DeskWaifuClient& client, const QString& a
 
 DeskWaifuRespawner::~DeskWaifuRespawner()
 {
-    if (isRunning()) _client.cancelQueuedCommand(QStringLiteral("quit"));
+    stop();
+}
+
+void DeskWaifuRespawner::stop() noexcept
+{
+    const bool running = isRunning();
+    _timer.stop();
+    if (running) _client.cancelQueuedCommand(QStringLiteral("quit"));
 }
 
 void DeskWaifuRespawner::start(const QString& procDirectory, const QString& lockDirectory, int timeoutMs)

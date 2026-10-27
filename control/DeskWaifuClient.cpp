@@ -5,7 +5,7 @@
 #include <QStringList>
 
 DeskWaifuClient::DeskWaifuClient(QObject* parent)
-    : QObject(parent)
+    : GuiHostServices(parent)
 {
     _reconnectTimer.setInterval(1500);
     _reconnectTimer.setSingleShot(true);

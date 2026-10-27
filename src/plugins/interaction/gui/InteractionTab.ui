@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>InteractionTab</class>
+ <widget class="QScrollArea" name="interactionTab">
+  <property name="frameShape"><enum>QFrame::Shape::NoFrame</enum></property>
+  <property name="widgetResizable"><bool>true</bool></property>
+  <widget class="QWidget" name="interactionContents">
+   <layout class="QVBoxLayout" name="interactionLayout">
+    <item><widget class="QGroupBox" name="hotkeyGroup"><property name="title"><string>模型快捷键</string></property><layout class="QVBoxLayout" name="hotkeyLayout"/></widget></item>
+    <item><widget class="QGroupBox" name="mouseLookGroup">
+     <property name="enabled"><bool>false</bool></property><property name="title"><string>鼠标注视范围</string></property>
+     <layout class="QGridLayout" name="mouseLookLayout">
+      <item row="0" column="0"><widget class="QLabel" name="mouseLookRadiusLabel"><property name="text"><string>最大半径</string></property><property name="buddy"><cstring>mouseLookRadiusSpin</cstring></property></widget></item>
+      <item row="0" column="1"><widget class="QSlider" name="mouseLookRadiusSlider"><property name="maximum"><number>200</number></property><property name="value"><number>50</number></property><property name="tracking"><bool>false</bool></property><property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property><property name="accessibleName"><string>鼠标注视最大半径</string></property></widget></item>
+      <item row="0" column="2"><widget class="QDoubleSpinBox" name="mouseLookRadiusSpin"><property name="decimals"><number>2</number></property><property name="maximum"><double>10.0</double></property><property name="singleStep"><double>0.05</double></property><property name="value"><double>0.5</double></property><property name="accessibleName"><string>鼠标注视最大半径数值</string></property></widget></item>
+      <item row="1" column="0" colspan="3"><widget class="QLabel" name="mouseLookHintLabel"><property name="text"><string>限制眼球和头部随鼠标转动的最大幅度，数值越小动作越轻。默认 0.5，0 表示居中；滑块范围 0–2，也可输入更大值。松手或确认数值后立即保存，不影响外部注视控制。</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
+     </layout>
+    </widget></item>
+    <item><widget class="QGroupBox" name="lookGroup">
+     <property name="title"><string>手动指定注视方向</string></property>
+     <layout class="QFormLayout" name="lookForm">
+      <item row="0" column="0"><widget class="QLabel" name="lookXLabel"><property name="text"><string>水平方向（-1 至 1）</string></property></widget></item>
+      <item row="0" column="1"><widget class="QDoubleSpinBox" name="lookXSpin"><property name="minimum"><double>-1.0</double></property><property name="maximum"><double>1.0</double></property><property name="singleStep"><double>0.1</double></property></widget></item>
+      <item row="1" column="0"><widget class="QLabel" name="lookYLabel"><property name="text"><string>垂直方向（-1 至 1）</string></property></widget></item>
+      <item row="1" column="1"><widget class="QDoubleSpinBox" name="lookYSpin"><property name="minimum"><double>-1.0</double></property><property name="maximum"><double>1.0</double></property><property name="singleStep"><double>0.1</double></property></widget></item>
+      <item row="2" column="0"><widget class="QPushButton" name="resetLookButton"><property name="text"><string>跟随鼠标</string></property></widget></item>
+      <item row="2" column="1"><widget class="QPushButton" name="lookButton"><property name="text"><string>应用方向</string></property></widget></item>
+     </layout>
+    </widget></item>
+    <item><widget class="QGroupBox" name="hoverOpacityGroup">
+     <property name="enabled"><bool>false</bool></property><property name="title"><string>模型透明度</string></property>
+     <layout class="QGridLayout" name="hoverOpacityLayout">
+      <item row="0" column="0" colspan="3"><widget class="QCheckBox" name="hoverOpacityEnabledCheck"><property name="text"><string>启用悬停半透明</string></property></widget></item>
+      <item row="1" column="0"><widget class="QLabel" name="hoverOpacityLabel"><property name="text"><string>悬停不透明度</string></property><property name="buddy"><cstring>hoverOpacitySlider</cstring></property></widget></item>
+      <item row="1" column="1"><widget class="QSlider" name="hoverOpacitySlider"><property name="maximum"><number>100</number></property><property name="value"><number>50</number></property><property name="tracking"><bool>false</bool></property><property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property><property name="accessibleName"><string>鼠标悬停不透明度</string></property></widget></item>
+      <item row="1" column="2"><widget class="QLabel" name="hoverOpacityValueLabel"><property name="text"><string>50%</string></property><property name="minimumSize"><size><width>42</width><height>0</height></size></property></widget></item>
+      <item row="2" column="0"><widget class="QLabel" name="idleOpacityLabel"><property name="text"><string>平时不透明度</string></property><property name="buddy"><cstring>idleOpacitySlider</cstring></property></widget></item>
+      <item row="2" column="1"><widget class="QSlider" name="idleOpacitySlider"><property name="maximum"><number>100</number></property><property name="value"><number>100</number></property><property name="tracking"><bool>false</bool></property><property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property><property name="accessibleName"><string>平时不透明度</string></property></widget></item>
+      <item row="2" column="2"><widget class="QLabel" name="idleOpacityValueLabel"><property name="text"><string>100%</string></property><property name="minimumSize"><size><width>42</width><height>0</height></size></property></widget></item>
+      <item row="3" column="0" colspan="3"><widget class="QLabel" name="hoverOpacityHintLabel"><property name="text"><string>0% 完全透明，100% 不透明。未启用悬停时始终使用平时值；启用后鼠标悬停使用悬停值。拖动时只更新读数，松手立即设置并保存。</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
+     </layout>
+    </widget></item>
+    <item><spacer name="interactionSpacer"><property name="orientation"><enum>Qt::Orientation::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer></item>
+   </layout>
+  </widget>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

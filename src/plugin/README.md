@@ -27,6 +27,32 @@ ctest --test-dir /tmp/opencode/plugin-sdk-build --output-on-failure
 
 ## 最小插件
 
+### 可选 GUI 入口
+
+同一个 `<root>/<name>/<name>.so` 可同时导出后端 `DeskWaifuPluginEntry` 和 GUI `DeskWaifuGuiPluginEntry`，也可只导出其一。两个宿主都正常跳过缺失的对应入口。GUI 描述符 `GuiPluginApi` 使用独立的 ABI v1，并执行与后端相同的严格构建检查及禁止卸载策略。
+
+核心 SDK 仍只依赖 QtCore。启用 `-DDESKWAIFU_BUILD_GUI_PLUGIN_SDK=ON` 后增加 QtWidgets 目标 `deskwaifu_gui_plugin_sdk` 和 offscreen 测试；已安装 SDK 使用 `find_package(DeskWaifuPluginSDK REQUIRED COMPONENTS Gui)`，链接 `DeskWaifu::gui_plugin_sdk`。不需要 QtNetwork 或控制程序头文件。
+
+宿主实现 `GuiHostServices`，然后在 GUI 主线程创建 `GuiPluginManager(root, services, tabs)`；services 和 QTabWidget 必须比 manager 活得更久。`Start(&error)` 的部分失败、`Stop()` 和重启语义与后端一致。GUI 插件实现 `IGuiPlugin::Initialize(GuiPluginContext&, QString*)`、`Start(QString*)`、`Stop() noexcept`，并用 `DESKWAIFU_EXPORT_GUI_PLUGIN(Type)` 导出入口。
+
+```cpp
+bool Initialize(GuiPluginContext& context, QString* error) override {
+    auto* page = new QWidget;
+    if (!context.RegisterTab({"settings", "Settings", 20}, page, error)) {
+        delete page; // 注册失败不转移所有权
+        return false;
+    }
+    auto* services = context.Services();
+    QObject::connect(services, &GuiHostServices::responseReceived, &context,
+        [page](const QString& command, const QJsonObject& response) { /* 更新页面 */ });
+    return true;
+}
+```
+
+一个插件可注册多个 tab；本地 ID 非空且不能含 `/`，全局 ID 为 `<plugin>/<local>`，按 `order` 再按全局 ID 排序。重复 ID、重复 page、空 page、已有 parent 的 page 均拒绝。只有注册成功才转移 page 所有权；插件此后不得删除 page。所有 Initialize 完成后激活命令发送，所有 Start 完成后才发布成功实例的页面。失败实例单独回滚。退出顺序为：失效所有 context → Stop 所有插件 → 销毁注册页面 → destroy 插件 → 销毁 context。Stop 期间页面仍有效，可用于停止页面定时器；插件析构时页面已销毁，不能再访问。
+
+`context.Services()` 是 context 所有的转发 facade：命令、取消及 connectToServer 在激活前不转发，context 失效后禁止新工作、所有转发连接断开。唯一的清理例外是已激活上下文的 `cancelQueuedCommand`，允许 Stop/析构撤回尚未发送的命令，但不能撤回已经发送的修改。插件必须在 Stop 中停止定时器等本地工作。回调必须绑定 context、注册页面或页面子对象作为 QObject receiver，禁止无 receiver 的捕获插件指针连接；这些接收者上已排队的调用在失效时移除，不支持任意外部接收者的生命周期。通用信号提供连接状态、命令响应/取消/结果未知、协议错误、日志、backendReady 和进程级 activationChanged。领域命令及响应解释留在插件中；命令响应按 command 标识，不增加独立请求 ID 协议。`setStatusMessage(message, timeoutMs)`、`publishLog(message)`、`notifyBackendReady()` 转发到进程宿主，不通过 facade 自身信号回送，避免日志递归。宿主动态属性在创建 facade 时复制一次，可用于注入进程级只读元数据。
+
 领域契约应放在宿主和消费者都能包含的普通头文件，不放进通用总线。事件继承 `ProcessorEvent`，允许直接包含强类型字段，不必使用 QVariantMap：
 
 ```cpp

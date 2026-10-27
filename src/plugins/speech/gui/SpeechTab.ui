@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>SpeechTab</class>
+ <widget class="QScrollArea" name="speechTab">
+  <property name="frameShape"><enum>QFrame::Shape::NoFrame</enum></property>
+  <property name="widgetResizable"><bool>true</bool></property>
+  <widget class="QWidget" name="speechContents">
+   <layout class="QVBoxLayout" name="speechLayout">
+    <item><widget class="QGroupBox" name="speechSettingsGroup">
+     <property name="title"><string>语音服务</string></property>
+     <layout class="QFormLayout" name="speechSettingsLayout">
+      <property name="fieldGrowthPolicy"><enum>QFormLayout::FieldGrowthPolicy::AllNonFixedFieldsGrow</enum></property>
+      <item row="0" column="0"><widget class="QLabel" name="speechKeyLabel"><property name="text"><string>MiniMax API Key</string></property><property name="buddy"><cstring>minimaxApiKey</cstring></property></widget></item>
+      <item row="0" column="1"><widget class="QLineEdit" name="minimaxApiKey"><property name="echoMode"><enum>QLineEdit::EchoMode::Password</enum></property><property name="maxLength"><number>4096</number></property><property name="placeholderText"><string>输入新的 MiniMax API Key</string></property></widget></item>
+      <item row="1" column="0" colspan="2"><widget class="QLabel" name="speechSettingsStatus"><property name="text"><string>尚未查询</string></property><property name="wordWrap"><bool>true</bool></property><property name="textFormat"><enum>Qt::TextFormat::PlainText</enum></property></widget></item>
+      <item row="2" column="0" colspan="2"><widget class="QPushButton" name="saveSpeechKey"><property name="enabled"><bool>false</bool></property><property name="text"><string>保存 API Key</string></property></widget></item>
+      <item row="3" column="0" colspan="2"><widget class="QPushButton" name="clearSpeechKey"><property name="enabled"><bool>false</bool></property><property name="text"><string>删除已保存的 API Key</string></property></widget></item>
+      <item row="4" column="0" colspan="2"><widget class="QLabel" name="speechNotice"><property name="text"><string>密钥以明文保存到桌宠配置文件（权限 0600），不会回显。
+双击模型播报“姐姐，你好喵”；再次双击会打断重播。
+播报文本将发送到 MiniMax，可能产生 API 费用。</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
+     </layout>
+    </widget></item>
+    <item><spacer name="speechSpacer"><property name="orientation"><enum>Qt::Orientation::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer></item>
+   </layout>
+  </widget>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

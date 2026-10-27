@@ -80,7 +80,9 @@ try {
         Copy(argv[1], failureRoot, "a-good");
         Copy(argv[i], failureRoot, "z-bad");
         PluginManager failing(loop, failureRoot, config);
-        Check(!failing.Start(&error) && !error.isEmpty(), "bad plugin rejected with reason");
+        const bool result = failing.Start(&error);
+        if (i == 7) Check(result && error.isEmpty(), "missing backend symbol is an optional GUI-only module");
+        else Check(!result && !error.isEmpty(), "bad plugin rejected with reason");
         Check(failing.LoadedPlugins() == QStringList{"a-good"}, "bad plugin cannot disable healthy plugins");
         Drain();
         const auto failureEvents = Read(log);

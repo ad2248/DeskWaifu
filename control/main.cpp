@@ -21,9 +21,21 @@ int main(int argc, char* argv[])
 
     if (application.arguments().contains(QStringLiteral("--smoke-test")))
     {
+        // Probe the application protocol, not the availability of a particular
+        // GUI plugin. A connected but unresponsive socket must not pass smoke.
+        auto& services = window.hostServices();
         QTimer::singleShot(15000, &application, [&application] { application.exit(1); });
-        QObject::connect(&window, &MainWindow::backendReady, &application,
-            [&application] { application.exit(0); });
+        QObject::connect(&services, &GuiHostServices::responseReceived, &application,
+            [&application](const QString& command, const QJsonObject& response) {
+                if (command == QStringLiteral("get_status"))
+                    application.exit(response.value(QStringLiteral("ok")).isBool() &&
+                        response.value(QStringLiteral("ok")).toBool() ? 0 : 1);
+            });
+        QObject::connect(&services, &GuiHostServices::connectionChanged, &application,
+            [&services](bool connected, const QString&) {
+                if (connected) services.sendCommand(QStringLiteral("get_status"));
+            });
+        if (services.isConnected()) services.sendCommand(QStringLiteral("get_status"));
     }
 
     return application.exec();
