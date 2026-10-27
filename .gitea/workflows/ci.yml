@@ -72,7 +72,7 @@ jobs:
           import json, shlex, sys
           commands = json.load(open(sys.argv[1]))
           expected = '-D' + sys.argv[2]
-          assert any(entry['file'].endswith('/src/processor/model/LAppLive2DManager.cpp') and
+          assert any(entry['file'].endswith('/src/plugins/desktop/private/processor/model/LAppLive2DManager.cpp') and
                      expected in shlex.split(entry['command']) for entry in commands), expected
           PY
             cmake --build "$build_dir" --parallel 16

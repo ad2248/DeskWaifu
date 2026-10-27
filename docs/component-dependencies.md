@@ -1,23 +1,26 @@
 # Component dependencies
 
-The authoritative ownership/event contract is [processor/README](../src/processor/README.md).
+The authoritative ownership contract is [plugin architecture](plugin-architecture.md).
 
 ```text
-main → app/LAppDelegate (construction and lifecycle only)
+platform/main → plugin discovery/lifecycle + SDK event loop
+desktop plugin → private app/LAppDelegate
   ├─ InteractionProcessor → owned InteractionContext
   │    ├─ window/QtDesktopWindow, output/compositor helpers
   │    └─ ApplicationService, TransformEditor, config/*, local command adapter
   ├─ ModelProcessor → model-render thread → ModelRuntime
   │    └─ View, Manager, model/texture store, Cubism/GL resources
-  ├─ IpcProcessor → owned LAppIPC → local ICommandService
-  │    ⇄ command.request / ipc.command.result ⇄ CommandProcessor
-  └─ ProcessorRuntime → image / OCR / screenshot / speech / reading processors
+  └─ InputListener + SignalProcessor
+ipc plugin → IpcProcessor → LAppIPC → local ICommandService
+  ⇄ CommandProcessor ⇄ public command.<name>/v1 providers
+perception plugin → image / OCR / screenshot
+speech plugin → speech player / source / audio
+reading_clip plugin → public image / OCR / speech capabilities
 ```
 
-Concrete processors never include or call a peer implementation, even through
-Delegate or injected business callbacks. They exchange `ProcessorEvent` values
-and opaque `IProcessor*` reply routes. Internal helper classes may call each
-other within their owner. Command routes protocol requests but owns no GUI,
+Plugins never compile, link, include or call another owner's implementation, even through
+Delegate or injected business callbacks. They exchange SDK events and capability requests.
+Strongly coupled model/window/input helpers collaborate within desktop. Command routes protocol requests but owns no GUI,
 configuration, OCR or model state. Model metadata is cached from `model.state`.
 
 `contracts/ModelExchange` is a bounded latest-input/latest-immutable-frame slot,
@@ -25,14 +28,15 @@ not a service port. `ModelHitTest` is the one permitted query callback: it weakl
 references a CPU snapshot mailbox and cannot access processors, SDK or GL.
 Continuous pointer samples also use bounded slots; discrete inputs are barriers.
 
-The composition root stops input/IPC sources, cancels pending work and joins the
-model thread before unregistering consumers and destroying the window. Image
+Each plugin stops its sources and tasks. Desktop joins the model thread before
+unregistering consumers and destroying the window. Image
 encoding and OCR child processes retire before their resource references are
 released. Historical test-only lifecycle/hover helper templates live in
-`tests/support`, not production `src`.
+owning plugin test directories, not the SDK or production implementation.
 
 `processor-boundaries` includes negative fixtures for direct/relative cross-domain
 includes, forward-declared concrete peers, Delegate access and callback bypasses.
-`processor-ownership` exercises the real IPC/Command/GUI/OCR/reading wiring with
-private sockets, synthetic image data and fake platform/model/speech boundaries;
+`processor-ownership` exercises real dynamically loaded IPC/OCR/reading modules with
+private sockets, synthetic image data and public model/speech capability fixtures;
+`desktop-ownership` preserves native input, edit-guard and session-release coverage;
 `model-render-thread` supplies the real Cubism/GL half of the contract.

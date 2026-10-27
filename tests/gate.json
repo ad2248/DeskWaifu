@@ -13,7 +13,9 @@
     "model-pointer-release", "model-pointer-transform", "model-pointer-drag", "model-pointer-state", "model-pointer-cursor",
     "texture-residency", "SpeechPlayer", "MiniMaxSpeechSource", "AudioPlayer",
     "main-window-transform", "aur-packaging", "ocr-client", "smoke-isolation",
-    "test-environment", "test-gate"
+    "test-environment", "test-gate",
+    "build-boundaries", "plugin-build-boundaries", "backend-capabilities", "backend-ipc-only",
+    "desktop-ownership", "reading-pipeline", "perception-adapters", "ipc-readiness", "speech-adapter-failure"
   ],
   "sanitizer_required": ["sanitizer-failure-gate"],
   "optional_processes": {

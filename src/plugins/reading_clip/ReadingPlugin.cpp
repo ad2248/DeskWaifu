@@ -2,7 +2,7 @@
 #include "plugin/PluginContext.hpp"
 #include "processor/reading_clip/ReadingClipProcessor.hpp"
 
-class ReadingPlugin final : public IPlugin
+class ReadingPlugin final : public IProcessorPlugin
 {
 public:
     bool Initialize(PluginContext& context, QString*) override

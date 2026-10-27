@@ -1,15 +1,13 @@
 # Module responsibilities (#77)
 
-`app/LAppDelegate` is only the composition/lifecycle root. InteractionProcessor
+`src/plugins/desktop/private/app/LAppDelegate` is only desktop's composition/lifecycle root. InteractionProcessor
 owns the window/output/configuration state; its backend is QtDesktopWindow.
-See [processor ownership](../src/processor/README.md) for the current event graph.
+See [plugin ownership](plugin-architecture.md) for the current event graph.
 The lower-level model libraries remain split
 as follows; the arrows below are build dependencies, not ownership transfers.
 
 ```text
-App/Delegate (wiring and lifecycle only)
-  ├── IpcProcessor → deskwaifu_ipc (socket, connection lifecycle, line framing)
-  │     → local ICommandService → events → CommandProcessor → domain events
+desktop/Delegate (wiring and lifecycle only)
   ├── deskwaifu_input (pointer-to-model transform and tap policy)
   ├── View → LAppLive2DManager (ModelSession façade: active model, hit handling)
   │     ├── deskwaifu_catalog (stable path IDs, deterministic ordering)
@@ -19,8 +17,8 @@ App/Delegate (wiring and lifecycle only)
   │               → borrowed models from session
 ```
 
-The catalog and input library do not link SDK, GL, Qt or Wayland. The IPC
-transport links none of these either; CommandProcessor routes protocol requests
+The catalog and input helpers remain internal to desktop. The independent IPC
+transport has no desktop dependency; CommandProcessor routes protocol requests
 to their actual domain owners. Both transport and its local adapter
 include the small `ICommandService.hpp` contract; the transport does not include
 the concrete handler header. The renderer and loader

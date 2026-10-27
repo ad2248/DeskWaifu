@@ -4,7 +4,8 @@ from pathlib import Path
 import unittest
 from qt_headless_smoke import assert_keyboard_capability
 
-SOURCE = Path(__file__).resolve().parents[1] / "src"
+ROOT = Path(__file__).resolve().parents[1]
+SOURCE = ROOT / "src/plugins/desktop/private"
 
 
 class QtWindowConfigurationTest(unittest.TestCase):
@@ -35,11 +36,11 @@ class QtWindowConfigurationTest(unittest.TestCase):
             self.assertIn("LayerShellQt::Window::Anchor" + edge, source)
 
     def test_qt_is_unconditional(self):
-        self.assertNotIn("DESKWAIFU_QT_WINDOW", (SOURCE / "main.cpp").read_text())
-        self.assertNotIn("DESKWAIFU_WINDOW_BACKEND", (SOURCE / "CMakeLists.txt").read_text())
+        self.assertNotIn("DESKWAIFU_QT_WINDOW", (ROOT / "platform/main.cpp").read_text())
+        self.assertNotIn("DESKWAIFU_WINDOW_BACKEND", (SOURCE.parent / "CMakeLists.txt").read_text())
 
     def test_legacy_minimum_demo_is_retired(self):
-        self.assertNotIn("CSM_MINIMUM_DEMO", (SOURCE / "CMakeLists.txt").read_text())
+        self.assertNotIn("CSM_MINIMUM_DEMO", (SOURCE.parent / "CMakeLists.txt").read_text())
         for name in ("mainMinimum.cpp", "CubismUserModelExtend.cpp",
                      "CubismUserModelExtend.hpp", "MouseActionManager.cpp",
                      "MouseActionManager.hpp"):

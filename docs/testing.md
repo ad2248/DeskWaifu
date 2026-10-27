@@ -40,7 +40,7 @@ python3 scripts/test-environment.py python3 scripts/check-test-mutations.py buil
 | --- | --- | --- | --- |
 | 根 CTest，由 `run-test-gate.py` 执行 | 每个 PR 合并必跑，Release | 生产状态机、Qt 循环、线程、Unix socket、本地 WebSocket、私有 D-Bus；外部服务用夹具 | 不证明真实云、真实音频或实际 OCR 模型推理 |
 | `speech-contract-*`、`interaction-opacity`、`model-pointer-cursor`、`model-render-thread`、`model-shutdown-context` | 每个 PR 必跑；故障植入也必跑 | 见三个实验 | 不用测试副本当生产策略证据 |
-| `ocr-client` | 并入根 CTest，每个 PR 必跑 | 生产 OcrClient + 真实 native 子进程/协议；替换 OCR 引擎 | 没有下载模型，不验证 OCR 准确率；独立 `features/ocr/tests` 工程仍可使用 |
+| `ocr-client` | 并入根 CTest，每个 PR 必跑 | 生产 OcrClient + 真实 native 子进程/协议；替换 OCR 引擎 | 没有下载模型，不验证 OCR 准确率；独立 `src/plugins/perception/tests/ocr-client` 工程仍可使用 |
 | `aur-packaging` | 并入根 CTest，每个 PR 必跑 | 包装文件元数据约束 | 不是 makepkg 安装或干净系统依赖验证 |
 | Sway smoke | 每个 PR 合并必跑 | 私有 Sway、Wayland、真实应用/控制面板/IPC、多输出 | 无键盘 seat；不拿它代替 KWin 焦点或真实点击穿透 |
 | KWin smoke，scale=1 和 1.5 | 每个 PR 合并必跑 | 私有 KWin/D-Bus、真实 layer-shell、窗口像素、焦点、热插拔、帧/IPC、实际点击路由 | 软件驱动/虚拟输出，不证明物理显示器与所有桌面效果 |

@@ -41,7 +41,7 @@ https://github.com/user-attachments/assets/95dfdedc-4957-4bb7-b79f-f3addd97a6db
 - **Configurable model directory** — load models from any path via CLI flag or XDG config
 - **JSON configuration** — customize behavior via `config.json` (default model, emotion timeout, additional model dirs, scale/position, window size)
 - **IPC control** — Unix domain socket API for external control (model switching, expressions, motions, lipsync, zoom, position, look-at direction)
-- **Optional local OCR (experimental)** — an independently installed C++/ONNX Runtime helper with bundled models; asynchronous image-file recognition over IPC, without Python or OCR dependencies in the main application. See [OCR package and protocol](features/ocr/README.md).
+- **Optional local OCR (experimental)** — an independently installed C++/ONNX Runtime helper owned by the perception plugin, without Python or OCR engine dependencies in the platform. See [OCR package and protocol](src/plugins/perception/native/README.md).
 
 ## Prerequisites
 
@@ -293,16 +293,18 @@ actual window back buffer before swapping, and switches outputs when available.
 ### Control window
 
 The control window exposes the same model, expression, motion, lip-sync,
-transform, visibility, skin, and look-at commands as `deskwaifu-ctl`. Its page
-layout is stored in `control/MainWindow.ui` and can be edited with Qt Designer.
+transform, visibility, skin, and look-at commands as `deskwaifu-ctl`. Its
+shell layout is stored in `platform/control/MainWindow.ui`; plugin pages live in
+`src/plugins/<name>/gui/` and can be edited with Qt Designer.
 
-The four top-level tabs are:
+The five top-level tabs are:
 
-- **系统**: status, process controls, rendering GPU and speech service settings.
+- **系统**: status, process controls and rendering GPU settings.
 - **交互**: model hotkeys, cursor tracking, look-at overrides and opacity behavior.
 - **模型**: model selection, visibility, skins, expressions, motions, lip sync,
   target monitor, position, zoom and crop.
-- **日志**: raw IPC responses and diagnostic messages.
+- **语音**: speech provider and credential settings.
+- **日志**: explicitly published, credential-safe diagnostics (not raw IPC responses).
 
 Settings pages scroll vertically on smaller windows; connection and operation
 feedback remain in the shared status bar.
@@ -1016,26 +1018,15 @@ The default models directory is `$XDG_CONFIG_HOME/deskwaifu/models/` (fallback: 
 
 ```
 deskwaifu/
-├── src/                    # Application source code
-│   ├── main.cpp            # Entry point, CLI argument parsing
-│   ├── LAppConfig.*        # JSON config file reader (singleton)
-│   ├── QtDesktopWindow.*   # Qt window, GL context, layer-shell and input masking
-│   ├── contracts/         # Shared values, frame snapshots and CPU hit-test contracts
-│   ├── render/            # Render-target interface and Qt/EGL implementations
-│   ├── window/            # Window-side keyboard capture state
-│   ├── LAppDelegate.*      # Main app controller, render loop, input handling
-│   ├── LAppLive2DManager.* # Model lifecycle management
-│   ├── LAppView.*          # View/projection matrices, rendering coordination
-│   ├── LAppModel.*         # Individual Live2D model instance
-│   ├── LAppIPC.*           # IPC socket server for external control
-│   ├── event/              # Pointer-routed, queued event dispatch on the Qt main thread
-│   ├── processor/          # Stateful processors, one subdirectory per responsibility
-│   │   ├── input/          # Input sampling and event production
-│   │   ├── interaction/    # Gesture, hover and crop policy
-│   │   ├── model/          # Model runtime, assets and rendering helpers
-│   │   ├── screenshot/     # Event adapter, service interface and portal/ backend
-│   │   └── speech/         # Speech events/coordinator, audio/ playback and source/ backend
-│   └── LAppDefine.*        # Global constants and configuration
+├── sdk/                    # Public plugin APIs, event runtime and shared contracts
+├── platform/               # Process/GUI hosts, discovery, lifecycle and platform tests
+├── src/plugins/            # Independently built business modules and their tests
+│   ├── desktop/            # Model, rendering, window, interaction and input
+│   ├── perception/         # Image/OCR/screenshot services; optional native OCR helper
+│   ├── ipc/                # Backend socket transport, command gateway and GUI client
+│   ├── speech/             # Speech providers, playback and speech settings page
+│   ├── reading_clip/       # Clipboard reading orchestration
+│   └── system|interaction|model|log/  # GUI-only modules
 ├── thirdParty/             # Third-party dependencies (GLEW, stb)
 ├── cmake/                  # CMake helper scripts
 └── CMakeLists.txt          # Build configuration
@@ -1043,7 +1034,8 @@ deskwaifu/
 
 ### Key design decisions
 
-- **Event processors** — input sampling, interaction policy, model operations, image reading, OCR, screenshots and socket readiness use [stateful processors](src/processor/README.md). Speech and clipboard-reading orchestration are plugin-owned. The shared event runtime supports explicit notifications and capability requests alongside the legacy processor routing; IPC and model updates do not depend on the presentation clock. Cubism resources and rendering belong to a dedicated model-render thread.
+- **Three ownership boundaries** — SDK, platform and plugins have separate build dependencies. Business implementations, including IPC transport, belong to plugins; the platform neither links nor directly assembles them. See [plugin architecture](docs/plugin-architecture.md).
+- **Event processors** — plugin-local processors use queued events; cross-plugin command routing uses SDK capability requests with explicit responses, cancellation, timeout and provider errors. Cubism resources and rendering belong to the desktop plugin's dedicated render thread.
 - **Qt-only windowing** — `QWindow` and LayerShellQt own the overlay window, input and screen lifecycle; the application does not manage raw Wayland surfaces.
 - **OpenGL rendering** — Cubism draws into a Qt-managed context. Qt's Wayland platform plugin may use EGL internally; the application does not create or swap EGL window surfaces.
 - **Layer-shell overlay** — the application renders as a Wayland layer surface, sitting above normal windows.

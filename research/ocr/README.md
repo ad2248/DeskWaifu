@@ -2,7 +2,7 @@
 
 独立的 PP-OCRv6 CPU 调试目录，**不是桌宠正式功能**。不接入 CMake、CTest、CI、Arch Linux 包或运行时依赖；所有命令手动执行。不采集屏幕、不调用云端、不自动朗读。
 
-后续原生可选功能包及主程序通信实现位于 [features/ocr](../../features/ocr/README.md)。本目录保留 Python 基线、模型导出与张量对照工具；`export` 依赖组仅用于开发机，不随原生功能包分发。
+原生可选功能包及服务实现位于 [perception/native](../../src/plugins/perception/native/README.md)。本目录归属 perception 插件的开发工具，保留 Python 基线、模型导出与张量对照工具；`export` 依赖组仅用于开发机，不随原生功能包分发。
 
 ## 当前验证状态（2026-10-22）
 

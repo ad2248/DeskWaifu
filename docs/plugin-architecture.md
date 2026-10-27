@@ -7,9 +7,10 @@
 默认插件目录位于安装前缀的 `lib/deskwaifu/plugins`；也可以配置为其他受信任目录。
 空的 `plugin_dir` 禁用插件发现。动态库和目录的符号链接不参与发现。
 
-## 首版兼容与信任模型
+## 开发阶段与信任模型
 
 - 使用同一发行版本的 C++/Qt SDK 构建；不承诺跨工具链的稳定 C ABI。
+- 宿主和插件随源码同步重编译，不维护历史 ABI 兼容层。
 - 插件是与宿主具有相同权限的受信任代码，同进程不能隔离崩溃或死锁。
 - 启动时发现和初始化，运行期间不热加载、重载或卸载。
 - 退出时先停止任务和生产源，再销毁实例。动态库保持映射至进程退出，
@@ -27,29 +28,46 @@
 SDK 的 JSON 工具只负责存储便利性，不替插件决定业务配置；敏感配置不得通过
 日志、事件广播或查询命令返回。
 
-## 渐进迁移
+## 代码归属
 
-本轮把语音能力和依赖语音的剪贴板朗读编排移入插件。尚未迁移的模型、窗口、
-输入、图像、OCR、IPC 等仍属于旧应用组装，不能把本轮描述成全功能插件化已经完成。
-后续按能力迁移；强资源耦合的窗口和模型渲染可以先保持在一个插件中。
+源码分为三种归属：`sdk/` 保存公开事件/契约/插件 API，`platform/` 保存进程与控制面板宿主，
+`src/plugins/<name>/` 保存领域实现。模型、窗口、输入及 GL 生命周期强耦合，统一属于
+desktop 插件；图像/OCR/截图属于 perception，Unix socket 与 GUI 客户端属于 IPC。
+语音和剪贴板朗读分别属于 speech 与 reading_clip。
 
-最终的最小宿主只保留进程引导、Qt 事件循环、宿主配置、发现/生命周期、
+平台的构建与验证工具还包括根 `cmake/`、`scripts/`、`tests/`、`.gitea/`、安装脚本及
+打包入口。根 `deskwaifu-ctl` 是 IPC 插件提供的公开命令行程序；`research/ocr/`
+是 perception 插件的开发工具。第三方 Cubism、GLEW、stb 和推理库保持外部依赖身份。
+
+`cmake/PluginBoundaries.cmake` 校验源文件、包含目录及传递链接依赖；编译器产生的
+实际依赖还会检查绝对/相对路径的跨归属包含。插件实现符号隐藏，模块禁止未解析符号。
+这约束工程依赖，不是对同进程受信任代码的安全沙箱。
+
+平台只保留进程引导、Qt 事件循环、宿主配置、发现/生命周期、
 通用事件路由及诊断。控制面板现已支持可选 GUI 入口，领域页面源码归入各自模块的
-`gui/` 目录；详见 [GUI 插件归属](gui-plugins.md)。这不代表模型、窗口、输入等后台
-legacy 域已经迁为动态插件，也不要求 TAB 与后端处理器一一对应。
+`gui/` 目录；详见 [GUI 插件归属](gui-plugins.md)。TAB 与后端处理器不必一一对应，
+插件间只能通过 SDK 契约交互，不能编译、链接或包含其他插件的私有实现。
 
-插件只读取自己的配置，语音插件不再由交互层逐帧同步凭据。旧主配置中的
+插件负责自己的配置语义。桌面插件保留既有主配置中的桌面设置，宿主只解释其中
+`plugin_dir`；其他插件可在独立目录维护配置。语音插件不由交互层逐帧同步凭据。旧主配置中的
 `minimax_api_key` 不会被自动导入插件；升级后应通过现有控制端重新设置凭据。
 迁移不会主动删除旧文件中的密钥，用户应自行从旧配置中移除该字段。
 
 ## 构建与开发
 
-默认构建输出 `build/plugins/speech/speech.so` 和
-`build/plugins/reading_clip/reading_clip.so`。开发配置例如：
+各模块独立维护 `src/plugins/<name>/CMakeLists.txt`，产物统一为
+`build/plugins/<name>/<name>.so`。开发配置例如：
 
 ```json
 {"plugin_dir":"/绝对路径/DeskWaifu/build/plugins"}
 ```
+
+主程序还可通过 `DESKWAIFU_PLUGIN_DIR` 显式覆盖发现目录，空值禁用发现。
+`DESKWAIFU_BUILD_DESKTOP_PLUGIN`、`DESKWAIFU_BUILD_PERCEPTION_PLUGIN`、
+`DESKWAIFU_BUILD_IPC_PLUGIN`、`DESKWAIFU_BUILD_SPEECH_PLUGIN`、
+`DESKWAIFU_BUILD_READING_CLIP_PLUGIN` 分别控制后端模块；`DESKWAIFU_BUILD_CONTROL`
+控制 GUI 宿主与 GUI 入口。全部业务模块关闭时，平台仍可独立构建、启动和测试。
+完整 `DESKWAIFU_TEST_GATE` 要求所有上述能力启用，不允许用关闭模块缩减完整门禁。
 
 `-DDESKWAIFU_BUILD_SPEECH_PLUGIN=OFF` 不构建语音模块，也不要求 Qt Multimedia
 或 WebSockets；朗读插件仍可加载，但调用缺失的语音能力会明确失败。
@@ -59,4 +77,4 @@ legacy 域已经迁为动态插件，也不要求 TAB 与后端处理器一一�
 可用 `DeskWaifuSDK` 安装组件安装头文件和 CMake package，外部模块使用
 `find_package(DeskWaifuPluginSDK REQUIRED)` 并链接 `DeskWaifu::plugin_sdk`。
 SDK 开发组件需要配套运行库；编译器、Qt 和 C++ 标准必须与宿主一致，ABI 检查不匹配
-时拒绝加载。详细接口及独立测试见 [SDK 文档](../src/plugin/README.md)。
+时拒绝加载。详细接口及独立测试见 [SDK 文档](../sdk/README.md)。

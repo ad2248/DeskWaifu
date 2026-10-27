@@ -1,2 +1,6 @@
+find_package(Qt6 6.5 REQUIRED COMPONENTS Gui)
+add_library(deskwaifu_reading STATIC private/processor/reading_clip/ReadingClipProcessor.cpp)
+target_include_directories(deskwaifu_reading PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/private")
+target_link_libraries(deskwaifu_reading PUBLIC deskwaifu_plugin_sdk Qt6::Gui)
 deskwaifu_add_plugin(reading_clip ReadingPlugin.cpp)
 target_link_libraries(reading_clip_plugin PRIVATE deskwaifu_reading)

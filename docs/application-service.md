@@ -22,4 +22,4 @@ owner. Neither it nor CommandProcessor receives a service reference or callback.
 
 Catalog/status queries serialize cached state; hotkey queries/actions use model
 request/result events. The shared frame slot contains only value input and
-immutable CPU frames. See [processor ownership](../src/processor/README.md).
+immutable CPU frames. See [plugin ownership](plugin-architecture.md).

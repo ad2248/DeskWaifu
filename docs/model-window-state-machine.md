@@ -1,6 +1,6 @@
 # Model window state machine
 
-`src/processor/interaction/ModelWindowState` uses Qt State Machine (`QStateMachine`, `QState`, and
+`src/plugins/desktop/private/processor/interaction/ModelWindowState` uses Qt State Machine (`QStateMachine`, `QState`, and
 `QAbstractTransition`) to control lifecycle and input policy. The active Qt state
 configuration is the source of truth; there is no parallel lifecycle enum or
 end-of-application flag.

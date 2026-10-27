@@ -6,6 +6,8 @@ fi
 source "$(dirname "$0")/quit-exit-status.sh"
 
 BUILD_DIR=${1:-build-ci}
+export DESKWAIFU_PLUGIN_DIR="$(realpath "$BUILD_DIR/plugins")"
+export DESKWAIFU_CONTROL_PLUGIN_DIR="$DESKWAIFU_PLUGIN_DIR"
 DEPS_DIR=${DESKWAIFU_DEPS_DIR:-}
 RUNTIME_DIR=$XDG_RUNTIME_DIR
 LOG_DIR=

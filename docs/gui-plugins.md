@@ -2,8 +2,11 @@
 
 控制面板和主程序可以加载同一个 `<plugin_dir>/<name>/<name>.so`，但只使用各自的入口：
 
-- `DeskWaifuPluginEntry`：主程序后端接口，保留 ABI v1。
-- `DeskWaifuGuiPluginEntry`：控制面板 GUI 接口，独立的 ABI v1。
+- `DeskWaifuPluginEntry`：主程序的 `IProcessorPlugin` 工厂。
+- `DeskWaifuGuiPluginEntry`：控制面板的 `IGuiPlugin` 工厂。
+
+两种接口均继承公共生命周期接口 `IPlugin`。开发阶段宿主和插件同步重编译，
+不维护历史插件二进制或接口布局兼容。
 
 两个入口均为可选；缺少本宿主入口表示该模块不适用于本进程，不是加载错误。
 入口只返回静态描述符。宿主先校验结构大小、接口版本、Qt 版本和构建 ABI，
@@ -39,13 +42,16 @@ TAB 是导航分组，不是插件边界；SDK 允许一个插件注册多个 TA
 | 语音 | `speech/speech.so` | 后端 + GUI | 语音提供者与 MiniMax 凭据设置 |
 | 日志 | `log/log.so` | 仅 GUI | 被动显示宿主和领域插件发布的安全日志 |
 | 无 TAB | `reading_clip/reading_clip.so` | 仅后端 | 剪贴板图像识别与播报编排 |
+| 无 TAB | `desktop/desktop.so` | 仅后端 | 模型、渲染、窗口、输入和交互 |
+| 无 TAB | `perception/perception.so` | 仅后端 | 图像读取、OCR 和截图 |
+| 无 TAB | `ipc/ipc.so` | 后端 + GUI | Unix socket、命令网关和 GUI 传输客户端 |
 
 源码与构建归属以模块为准：`src/plugins/<name>/gui/` 保存所属页面及专用辅助类，
 `src/plugins/<name>/CMakeLists.txt` 组装各模块的后端/GUI 角色，
-`src/plugins/CMakeLists.txt` 保留公共构建规则与子目录选择。`control/` 只组装控制端宿主，
+`src/plugins/CMakeLists.txt` 保留公共构建规则与子目录选择。`platform/control/` 只组装控制端宿主，
 不再反向给语音模块追加 GUI 文件。进程启动/重启辅助类归 `system/gui`，
-模型快捷键控件归 `interaction/gui`。仅 GUI 模块不表示同名后台域已经插件化；
-模型、窗口、输入等后端仍是 legacy 组装。
+模型快捷键控件归 `interaction/gui`。模型、窗口、输入等后台能力由 `desktop`
+插件拥有，不由同名 GUI 模块或平台组装。
 
 此布局经过能力所有权讨论后保留现有卡片分布，而非强制“一 TAB 一插件”：
 
@@ -64,14 +70,16 @@ GUI SDK 是基础 SDK 的可选组件；纯后端插件不必链接 Widgets。
 因此禁止在模块的静态初始化中创建 QWidget 或启动领域工作。
 
 同一个模块在两个进程中拥有独立实例，不能依靠静态变量共享状态。
-GUI 通过宿主提供的 IPC 服务调用后端，不直接读写后端的私有配置或持有后端对象。
+GUI 通过 SDK 的通用服务接口调用后端；宿主只代理请求，实际 IPC 传输由 `ipc`
+插件注册的 `IGuiTransport` 提供。页面不依赖 IPC 实现，不直接读写后端私有配置或持有后端对象。
 日志由页面显式发布，不自动记录所有请求或响应，避免语音密钥进入日志。
 通用协议错误、修改结果未知及发送前取消的提示由宿主生成，即使 `log.so` 缺失仍可反馈；
 日志插件只订阅 `logMessage`，不承担基础错误处理。
 
 `--smoke-test` 在应用入口独立发送现有 `get_status` 并验证成功响应，不依赖系统页
 发送 `backendReady`。仅连接 socket 不算通过；该探针验证命令往返，不声称验证所有页面。
-SDK 的既有 readiness 通知接口保留兼容，不作为此 smoke 的成功条件。
+该探针需要 IPC 传输插件，但不需要系统页。readiness 通知仍是公开状态信号，
+不作为此 smoke 的成功条件。
 
 ## 构建与运行
 
