@@ -1,9 +1,25 @@
 #include "app/LAppDelegate.hpp"
+#include <QCoreApplication>
+#include <QElapsedTimer>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QThread>
 #include <deque>
 
 namespace {
+bool ProbeStartup(ProcessorEventLoop& loop, const QString& phase)
+{
+    auto endpoint = loop.CreateEndpoint("desktop-startup-probe", [](const EventDelivery&) {});
+    bool done = false;
+    RequestStatus status = RequestStatus::TimedOut;
+    if (!endpoint->Request("fixture.desktop.early-probe/v1",
+        std::make_shared<ProcessorEvent>("fixture.probe", nullptr, nullptr, QVariantMap{{"phase", phase}}),
+        [&](const RequestResult& result) { status = result.status; done = true; }, 5000)) return false;
+    QElapsedTimer timer; timer.start();
+    while (!done && timer.elapsed() < 6000) { QCoreApplication::processEvents(); QThread::msleep(1); }
+    return done && (status == RequestStatus::Replied || status == RequestStatus::NoProvider);
+}
+
 class CommandBoundary final : public Processor
 {
 public:
@@ -73,11 +89,17 @@ LAppDelegate* LAppDelegate::GetInstance()
 void LAppDelegate::ReleaseInstance() { GetInstance()->_boundary.reset(); }
 bool LAppDelegate::Initialize(ProcessorEventLoop& loop)
 {
+    _loop = &loop;
+    if (!ProbeStartup(loop, "initialize")) return false;
     _boundary = std::make_unique<CommandBoundary>(loop);
     return true;
 }
+bool LAppDelegate::StartFrames(std::function<void(bool)>)
+{
+    return ProbeStartup(*_loop, "frames");
+}
 bool LAppDelegate::Release()
 {
-    _boundary->Stop();
+    if (_boundary) _boundary->Stop();
     return true;
 }

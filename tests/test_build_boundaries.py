@@ -95,7 +95,7 @@ target_include_directories(a PRIVATE ${{PROJECT_SOURCE_DIR}}/sdk ${{CMAKE_CURREN
             self.assertIn("Ownership violation", result.stdout)
 
     def test_link_artifacts_do_not_depend_on_output_directory_or_argument_spelling(self):
-        for spelling in ("absolute", "wl", "xlinker", "response", "wl-response", "search", "object"):
+        for spelling in ("absolute", "wl", "xlinker", "response", "wl-response", "search", "xlinker-search", "object"):
             with self.subTest(spelling=spelling), tempfile.TemporaryDirectory(prefix="dw-artifact-boundary-", dir="/tmp/opencode") as directory:
                 root = self.fixture(directory, body="int foreign(); int main() { return foreign(); }\n")
                 (root / "src/plugins/b/CMakeLists.txt").write_text('''add_library(foreign_impl STATIC private/foreign.cpp)
@@ -109,6 +109,7 @@ set_target_properties(foreign_impl PROPERTIES ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_
                     "response": 'target_link_options(a PRIVATE "@${CMAKE_BINARY_DIR}/foreign.rsp")',
                     "wl-response": 'target_link_options(a PRIVATE "-Wl,@${CMAKE_BINARY_DIR}/foreign.rsp")',
                     "search": 'target_link_directories(a PRIVATE "${CMAKE_BINARY_DIR}/lib")\ntarget_link_libraries(a PRIVATE -lforeign_impl)',
+                    "xlinker-search": 'target_link_options(a PRIVATE "SHELL:-Xlinker -L -Xlinker ${CMAKE_BINARY_DIR}/lib")\ntarget_link_libraries(a PRIVATE -lforeign_impl)',
                     "object": 'target_link_libraries(a PRIVATE "-Wl,${CMAKE_BINARY_DIR}/src/plugins/b/CMakeFiles/foreign_impl.dir/private/foreign.cpp.o")',
                 }[spelling]
                 with (root / "src/plugins/a/CMakeLists.txt").open("a") as file:
@@ -119,6 +120,58 @@ set_target_properties(foreign_impl PROPERTIES ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_
                 self.assertNotEqual(result.returncode, 0, result.stdout)
                 self.assertIn("cannot link", result.stdout)
                 self.assertFalse((root / "build/src/plugins/a/a").exists())
+
+    def test_static_archives_cannot_absorb_foreign_objects(self):
+        for generator in ("Ninja", "Unix Makefiles"):
+            for source in ("$<TARGET_OBJECTS:foreign_impl>", "$<$<BOOL:1>:$<TARGET_OBJECTS:foreign_impl>>",
+                           "${CMAKE_BINARY_DIR}/src/plugins/b/CMakeFiles/foreign_impl.dir/private/foreign.cpp.o"):
+                with self.subTest(generator=generator, source=source), tempfile.TemporaryDirectory(prefix="dw-archive-boundary-", dir="/tmp/opencode") as directory:
+                    root = self.fixture(directory, body="int foreign(); int main() { return foreign(); }\n")
+                    (root / "src/plugins/b/CMakeLists.txt").write_text("add_library(foreign_impl OBJECT private/foreign.cpp)\n")
+                    with (root / "src/plugins/a/CMakeLists.txt").open("a") as file:
+                        file.write(f'\nadd_library(owned STATIC owned.cpp "{source}")\nadd_dependencies(owned foreign_impl)\ntarget_link_libraries(a PRIVATE owned)\n')
+                        if source.startswith("${CMAKE_BINARY_DIR}"):
+                            file.write(f'set_source_files_properties("{source}" PROPERTIES GENERATED TRUE EXTERNAL_OBJECT TRUE)\n')
+                    (root / "src/plugins/a/owned.cpp").write_text("int owned() { return 0; }\n")
+                    configured = self.run_command("cmake", "-S", str(root), "-B", str(root / "build"), "-G", generator)
+                    self.assertEqual(configured.returncode, 0, configured.stdout)
+                    result = self.run_command("cmake", "--build", str(root / "build"), "--target", "a")
+                    self.assertNotEqual(result.returncode, 0, result.stdout)
+                    self.assertIn("cannot link plugin:b", result.stdout)
+                    self.assertFalse((root / "build/src/plugins/a/libowned.a").exists())
+
+    def test_library_search_respects_static_dynamic_selection(self):
+        for foreign_kind in ("STATIC", "SHARED"):
+            for static in (False, True):
+                for state_stack in (False, True):
+                    with self.subTest(foreign_kind=foreign_kind, static=static, state_stack=state_stack), tempfile.TemporaryDirectory(prefix="dw-library-mode-", dir="/tmp/opencode") as directory:
+                        root = self.fixture(directory, body="int foreign(); int main() { return foreign(); }\n")
+                        own_kind = "SHARED" if foreign_kind == "STATIC" else "STATIC"
+                        (root / "src/plugins/b/CMakeLists.txt").write_text(f'''add_library(foreign_impl {foreign_kind} private/foreign.cpp)
+set_target_properties(foreign_impl PROPERTIES OUTPUT_NAME mixed ARCHIVE_OUTPUT_DIRECTORY "${{CMAKE_BINARY_DIR}}/lib" LIBRARY_OUTPUT_DIRECTORY "${{CMAKE_BINARY_DIR}}/lib")
+''')
+                        (root / "src/plugins/b/private/foreign.cpp").write_text('__attribute__((visibility("default"))) int foreign() { return 3; }\n')
+                        mode = "-Bstatic" if static else "-Bdynamic"
+                        flags = f'"-Wl,--push-state,{mode}" -lmixed -Wl,--pop-state' if state_stack else f'"-Wl,{mode}" -lmixed -Wl,-Bdynamic'
+                        with (root / "src/plugins/a/CMakeLists.txt").open("a") as file:
+                            file.write(f'''\nadd_library(own_impl {own_kind} owned.cpp)
+set_target_properties(own_impl PROPERTIES OUTPUT_NAME mixed ARCHIVE_OUTPUT_DIRECTORY "${{CMAKE_BINARY_DIR}}/lib" LIBRARY_OUTPUT_DIRECTORY "${{CMAKE_BINARY_DIR}}/lib")
+add_dependencies(a own_impl foreign_impl)
+target_link_directories(a PRIVATE "${{CMAKE_BINARY_DIR}}/lib")
+target_link_libraries(a PRIVATE {flags})
+''')
+                        (root / "src/plugins/a/owned.cpp").write_text('__attribute__((visibility("default"))) int foreign() { return 0; }\n')
+                        configured = self.run_command("cmake", "-S", str(root), "-B", str(root / "build"), "-G", "Ninja")
+                        self.assertEqual(configured.returncode, 0, configured.stdout)
+                        result = self.run_command("cmake", "--build", str(root / "build"), "--target", "a")
+                        forbidden = static == (foreign_kind == "STATIC")
+                        if forbidden:
+                            self.assertNotEqual(result.returncode, 0, result.stdout)
+                            self.assertIn("cannot link plugin:b", result.stdout)
+                        else:
+                            self.assertEqual(result.returncode, 0, result.stdout)
+                            executed = self.run_command(str(root / "build/src/plugins/a/a"))
+                            self.assertEqual(executed.returncode, 0, executed.stdout)
 
     def test_renamed_vendor_directory_has_consistent_ownership(self):
         with tempfile.TemporaryDirectory(prefix="dw-vendor-boundary-", dir="/tmp/opencode") as directory:
@@ -141,9 +194,14 @@ set_target_properties(foreign_impl PROPERTIES ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_
                 wrapper = root / "linker.sh"
                 wrapper.write_text('#!/bin/sh\ntouch "' + str(root / "linked") + '"\nexec "$@"\n')
                 wrapper.chmod(0o700)
+                archive_wrapper = root / "archive.sh"
+                archive_wrapper.write_text('#!/bin/sh\ntouch "' + str(root / "archived") + '"\nexec "$@"\n')
+                archive_wrapper.chmod(0o700)
                 with (root / "src/plugins/a/CMakeLists.txt").open("a") as file:
                     file.write(f'''\nset_property(TARGET a PROPERTY {language}_LINKER_LAUNCHER "{wrapper}")
-add_library(owned STATIC owned.c)
+add_library(own_objects OBJECT owned.c)
+add_library(owned STATIC $<TARGET_OBJECTS:own_objects>)
+set_property(TARGET owned PROPERTY RULE_LAUNCH_LINK "'{archive_wrapper}'")
 set_target_properties(owned PROPERTIES ARCHIVE_OUTPUT_DIRECTORY "${{CMAKE_BINARY_DIR}}/lib")
 target_link_libraries(a PRIVATE "${{CMAKE_BINARY_DIR}}/lib/libowned.a")
 add_dependencies(a owned)
@@ -154,6 +212,7 @@ add_dependencies(a owned)
                 result = self.run_command("cmake", "--build", str(root / "build"), "--target", "a")
                 self.assertEqual(result.returncode, 0, result.stdout)
                 self.assertTrue((root / "linked").exists())
+                self.assertTrue((root / "archived").exists())
 
     def test_sdk_include_surface_does_not_expose_plugin_private_headers(self):
         compiler = shutil.which("c++")

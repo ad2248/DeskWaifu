@@ -141,6 +141,22 @@ function(deskwaifu_validate_directory directory)
       endif()
       set_property(TARGET ${target} PROPERTY ${language}_LINKER_LAUNCHER "${checked_launcher}")
     endforeach()
+    if(type STREQUAL STATIC_LIBRARY)
+      # Compiler-driver linker launchers do not run for ar/ranlib. Check those
+      # inputs too, including evaluated TARGET_OBJECTS sources and response files.
+      set(archive_launcher "")
+      foreach(argument IN ITEMS "${Python3_EXECUTABLE}"
+          "${PROJECT_SOURCE_DIR}/platform/tooling/check_link_dependencies.py"
+          "${PROJECT_BINARY_DIR}" "${owner}")
+        string(REPLACE "'" "'\\''" argument "${argument}")
+        string(APPEND archive_launcher "'${argument}' ")
+      endforeach()
+      get_target_property(launcher ${target} RULE_LAUNCH_LINK)
+      if(launcher)
+        string(APPEND archive_launcher "${launcher}")
+      endif()
+      set_property(TARGET ${target} PROPERTY RULE_LAUNCH_LINK "${archive_launcher}")
+    endif()
   endforeach()
   get_property(children DIRECTORY "${directory}" PROPERTY SUBDIRECTORIES)
   foreach(child IN LISTS children)

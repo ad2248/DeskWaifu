@@ -8,16 +8,33 @@ import sys
 def arguments(tokens, seen=None):
     """Expose linker forwarding and response files without changing the command."""
     seen = set() if seen is None else seen
+    tokens = iter(tokens)
     for token in tokens:
+        if token == "-Xlinker":
+            token = next(tokens)
         if token.startswith("-Wl,"):
             yield from arguments(token[4:].split(","), seen)
         elif token.startswith("@"):
             path = Path(token[1:]).resolve()
-            if path not in seen:
-                seen.add(path)
-                yield from arguments(shlex.split(path.read_text()), seen)
+            if path in seen:
+                sys.exit(f"Cyclic linker response file: {path}")
+            yield from arguments(shlex.split(path.read_text()), seen | {path})
         else:
             yield token
+
+
+def options(tokens):
+    """Canonicalize options whose operands may be separate linker arguments."""
+    tokens = iter(tokens)
+    for token in tokens:
+        for short, long in (("-L", "--library-path"), ("-l", "--library")):
+            if token in (short, long):
+                token = short + next(tokens)
+                break
+            if token.startswith(long + "="):
+                token = short + token.split("=", 1)[1]
+                break
+        yield token
 
 
 def main():
@@ -30,21 +47,24 @@ def main():
         for line in manifest.read_text().splitlines():
             kind, owner, path = line.split("\t", 2)
             (files if kind == "file" else directories)[Path(path).resolve()] = owner
-    tokens = list(arguments(command))
-    search = []
-    libraries = []
-    for index, token in enumerate(tokens):
-        if token in ("-L", "-l") and index + 1 < len(tokens):
-            value = tokens[index + 1]
-        else:
-            value = token[2:]
-        if token.startswith("-L"):
-            search.append(Path(value).resolve())
-        elif token.startswith("-l"):
-            libraries.append(value)
+    tokens = list(options(arguments(command)))
+    search = [Path(token[2:]).resolve() for token in tokens if token.startswith("-L")]
     paths = [Path(token).resolve() for token in tokens if not token.startswith("-")]
-    for library in libraries:
-        names = [library[1:]] if library.startswith(":") else ["lib" + library + suffix for suffix in (".so", ".a")]
+    static = any(token in ("-static", "--static", "-static-pie") for token in tokens)
+    modes = []
+    for token in tokens:
+        if token in ("-Bstatic", "-dn", "-non_shared", "-aarchive"):
+            static = True
+        elif token in ("-Bdynamic", "-dy", "-call_shared", "-ashared", "-adefault"):
+            static = False
+        elif token == "--push-state":
+            modes.append(static)
+        elif token == "--pop-state":
+            static = modes.pop()
+        if not token.startswith("-l"):
+            continue
+        library = token[2:]
+        names = [library[1:]] if library.startswith(":") else ["lib" + library + suffix for suffix in ((".a",) if static else (".so", ".a"))]
         for directory in search:
             found = next((directory / name for name in names if (directory / name).exists()), None)
             if found:

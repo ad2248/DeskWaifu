@@ -35,6 +35,11 @@ public:
                     for (auto& request : *pending)
                         if (request.id == delivery.requestId) request.cancelled = true;
             } else if (delivery.kind == EventDelivery::Kind::Request && delivery.payload) {
+                if (!_ready) {
+                    _endpoint->Respond(delivery.requestId, std::make_shared<ProcessorEvent>("command.result", nullptr, nullptr,
+                        QVariantMap{{"json", QStringLiteral("{\"ok\":false,\"error\":\"desktop is not ready\"}")}}));
+                    return;
+                }
                 const auto command = QJsonDocument::fromJson(delivery.payload->data.value("json").toString().toUtf8())
                     .object().value("command").toString();
                 if (delivery.topic != "command." + command + "/v1") {
@@ -56,6 +61,7 @@ public:
             if (!_endpoint->Provide("command." + command + "/v1")) return false;
         return true;
     }
+    void SetReady() { _ready = true; }
     bool HandleEvent(const ProcessorEvent& event) override
     {
         if (_stopped || event.receiver != this ||
@@ -75,6 +81,7 @@ public:
     }
     void Stop() noexcept override
     {
+        _ready = false;
         _stopped = true;
         if (_endpoint) _endpoint->Invalidate();
         _modelPending.clear();
@@ -94,6 +101,7 @@ private:
     struct Request { RequestId id; ProcessorEventPtr payload; bool cancelled; };
     EventEndpoint* _endpoint = nullptr;
     std::deque<Request> _modelPending, _interactionPending;
+    bool _ready = false;
     bool _stopped = false;
 };
 
@@ -135,6 +143,7 @@ public:
             if (error) *error = "Unable to start desktop rendering";
             return false;
         }
+        _commands->SetReady();
         return true;
     }
     void Stop() noexcept override

@@ -10,8 +10,9 @@ public:
     static LAppDelegate* GetInstance();
     static void ReleaseInstance();
     bool Initialize(ProcessorEventLoop& loop);
-    bool StartFrames(std::function<void(bool)>) { return true; }
+    bool StartFrames(std::function<void(bool)>);
     bool Release();
 private:
+    ProcessorEventLoop* _loop = nullptr;
     std::unique_ptr<Processor> _boundary;
 };

@@ -65,3 +65,22 @@ core，只替换窗口边界。两项 Delegate 场景各自连续重复 5 次通
 算法测试移回 desktop、同时新增一个 SDK 文件寿命测试的净变化，不是删除回归。
 六项行为变异再次全部被指定断言拦截，恢复后均通过，报告：
 `build/architecture/test-logs/mutations/run-g500j45w/summary.json`。
+
+## 第二轮严格审查修正
+
+- 静态归档器复用产物归属校验，拒绝通过普通/条件 `TARGET_OBJECTS` 或生成对象路径混入
+  其他插件的实现；Ninja 和 Unix Makefiles 均验证，同归属对象和已有归档 launcher 仍可用。
+- 链接参数先展开 `-Xlinker`，再解析库搜索选项；按实际静态/动态模式及 push/pop 状态
+  选择 `.a`/`.so`，同时覆盖合法选择，防止以误拒合法构建代替隔离。
+- 新增负例在上一提交的私有副本上出现 9 个绕过、两个合法静态选择误拒；修正后全部
+  通过，没有依靠缺失文件或语法错误制造假阴性。
+- `desktop-commands-early-start` 通过公共加载模块 `a`，在桌面 Start 前及实际初始化、
+  StartFrames 泵事件期间请求两个命令域；均明确返回未就绪，不进入相关队列。成功启动后
+  才开放命令，之后继续运行原有完整公平性/取消/停止断言。普通与 ASan/UBSan 各连续
+  20 轮通过，修复前模块运行新回归仍失败。
+
+第二轮修正后完整构建及普通门禁为 139 项：138 项通过，1 项 PCI 授权场景未验证。
+报告：`build/architecture/test-logs/ctest-74bq__7d/summary.json`。
+26 项定向 ASan/UBSan 全部通过（含新桌面启动场景），报告：
+`build/architecture-sanitize/test-logs/ctest-nurl5qf6/summary.json`。
+纯平台 26/26、无后端 GUI 31/31 再次通过；带空格路径的 Unix Makefiles 构建通过。

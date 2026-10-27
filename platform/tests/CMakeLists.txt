@@ -85,6 +85,13 @@ if(TARGET desktop-commands-fixture)
   add_dependencies(desktop-commands-fairness-test desktop-commands-fixture)
   add_test(NAME desktop-commands-fairness COMMAND desktop-commands-fairness-test $<TARGET_FILE:desktop-commands-fixture>)
   set_tests_properties(desktop-commands-fairness PROPERTIES TIMEOUT 30 LABELS "contract;plugin;async")
+  add_library(desktop-early-client-fixture MODULE DesktopEarlyClientFixture.cpp)
+  target_link_libraries(desktop-early-client-fixture PRIVATE deskwaifu_plugin_sdk)
+  set_target_properties(desktop-early-client-fixture PROPERTIES PREFIX "")
+  add_dependencies(desktop-commands-fairness-test desktop-early-client-fixture)
+  add_test(NAME desktop-commands-early-start COMMAND desktop-commands-fairness-test
+    $<TARGET_FILE:desktop-commands-fixture> $<TARGET_FILE:desktop-early-client-fixture>)
+  set_tests_properties(desktop-commands-early-start PROPERTIES TIMEOUT 30 LABELS "contract;plugin;async")
 endif()
 
 if(TARGET desktop-keyboard-fixture AND TARGET ipc_plugin AND TARGET speech_plugin)

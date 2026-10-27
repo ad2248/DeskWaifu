@@ -3,6 +3,7 @@
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QTemporaryDir>
@@ -25,16 +26,46 @@ struct Reply { int calls = 0; RequestStatus status; QJsonObject json; };
 int main(int argc, char** argv)
 try {
     QCoreApplication app(argc, argv);
-    Check(argc == 2, "expected the real desktop adapter with controlled runtime boundary");
+    Check(argc == 2 || argc == 3, "expected the real desktop adapter and optional early client");
     QTemporaryDir directory;
     Check(directory.isValid() && QDir().mkpath(directory.path() + "/plugins/desktop"), "private plugin root");
     Check(QFile::copy(app.arguments()[1], directory.path() + "/plugins/desktop/desktop.so"), "install desktop fixture");
+    if (argc == 3) {
+        Check(QDir().mkpath(directory.path() + "/plugins/a"), "private early client directory");
+        Check(QFile::copy(app.arguments()[2], directory.path() + "/plugins/a/a.so"), "install earlier-starting client");
+    }
     ProcessorEventLoop loop;
     PluginManager plugins(loop, directory.path() + "/plugins", directory.path() + "/config");
     QString error;
     Check(plugins.Start(&error), qPrintable(error));
-    Check(plugins.LoadedPlugins() == QStringList{"desktop"}, "load the real desktop entry through the public host");
+    Check(plugins.LoadedPlugins() == (argc == 3 ? QStringList{"a", "desktop"} : QStringList{"desktop"}),
+        "load the real desktop entry through the public host in name order");
     auto client = loop.CreateEndpoint("desktop-test-client", [](const EventDelivery&) {});
+    if (argc == 3) {
+        QJsonArray records;
+        bool done = false;
+        Check(client->Request("fixture.desktop.early-results/v1", std::make_shared<ProcessorEvent>("fixture.results"),
+            [&](const RequestResult& result) {
+                Check(result.status == RequestStatus::Replied && result.payload, "read early client results");
+                records = result.payload->data.value("records").toJsonArray(); done = true;
+            }) != 0, "query early results through the public SDK");
+        Wait([&] { return done; }, "early client results timed out");
+        Check(records.size() == 6, "probe both domains before Start, during Initialize and during StartFrames");
+        for (const auto& phase : QStringList{"before_start", "initialize", "frames"}) {
+            for (const auto& command : QStringList{"get_status", "set_model"}) {
+                int matches = 0;
+                for (const auto& record : records) {
+                    const auto sample = record.toObject();
+                    if (sample.value("phase") != phase || sample.value("command") != command) continue;
+                    ++matches;
+                    Check(sample.value("status") == "replied" && sample.value("response").toObject() ==
+                        QJsonObject{{"ok", false}, {"error", "desktop is not ready"}},
+                        "both domains must reject early commands explicitly without queuing a lost result");
+                }
+                Check(matches == 1, "each early command completes exactly once in its own startup phase");
+            }
+        }
+    }
     std::map<RequestId, Reply> replies;
     auto request = [&](const QString& capability, const QString& command, const QString& tag, bool hold = false) {
         const auto json = QJsonDocument(QJsonObject{{"command", command}, {"tag", tag}, {"hold", hold}}).toJson(QJsonDocument::Compact);
