@@ -1,3 +1,5 @@
+cmake_minimum_required(VERSION 3.21)
+
 # Preserve the historical aggregate gate while each adapter compiles only in
 # its owner's test target. The dynamic test covers their real protocol chain.
 foreach(program READING PERCEPTION IPC)
