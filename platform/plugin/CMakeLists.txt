@@ -7,7 +7,7 @@ if(NOT TARGET deskwaifu_plugin_sdk)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../sdk ${CMAKE_CURRENT_BINARY_DIR}/sdk)
 endif()
 
-add_library(deskwaifu_plugin_host STATIC PluginManager.cpp)
+add_library(deskwaifu_plugin_host STATIC PluginManager.cpp PluginCommand.cpp)
 target_include_directories(deskwaifu_plugin_host PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
 target_link_libraries(deskwaifu_plugin_host PUBLIC deskwaifu_plugin_sdk)
 target_compile_features(deskwaifu_plugin_host PUBLIC cxx_std_14)

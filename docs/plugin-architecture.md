@@ -47,6 +47,13 @@ PCH 的 `REUSE_FROM` 同样校验提供目标归属，不能以预编译头绕�
 插件实现符号隐藏，模块禁止未解析符号。完整构建要求 CMake 3.25 及以上。
 这约束工程依赖，不是对同进程受信任代码的安全沙箱。
 
+无图形会话的单次命令由插件安装在 `<pluginRoot>/<name>/commands/<argument>` 的可执行
+helper 提供。宿主在创建 QGuiApplication、读取配置和加载模块之前按参数顺序查找，
+命中唯一提供者时直接 exec 并传递原始参数；重复提供者明确报错。此路径仅使用
+`DESKWAIFU_PLUGIN_DIR` 或编译时的默认插件目录，不读取配置中的 `plugin_dir`。
+desktop 的 `toggle`/`--toggle` 与 `focus`/`--focus` helper 使用已有 psmisc 依赖发送信号，
+不初始化业务插件。这些独立工具不是运行时 IPlugin 实例，宿主不解释其业务含义。
+
 SDK 仅保留公共值和通信契约。帧交换、命中测试、alpha 输入轮廓和缩放策略均为
 desktop 私有实现；公共 `ImageFile` 只管理共享临时文件寿命，图像编码工厂归 perception。
 

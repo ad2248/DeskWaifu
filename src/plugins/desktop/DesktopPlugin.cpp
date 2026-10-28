@@ -6,10 +6,6 @@
 #include <QCoreApplication>
 #include <QJsonDocument>
 #include <QTimer>
-#include <QDir>
-#include <QFile>
-#include <csignal>
-#include <unistd.h>
 #include <deque>
 #include <cstdio>
 
@@ -111,10 +107,6 @@ public:
     bool Initialize(PluginContext& context, QString* error) override
     {
         _context = &context;
-        for (const auto& argument : QCoreApplication::arguments()) {
-            if (argument == "toggle" || argument == "--toggle") { _signal = SIGUSR1; return true; }
-            if (argument == "focus" || argument == "--focus") { _signal = SIGUSR2; return true; }
-        }
         if (!ConfigureDesktop(error)) {
             QTimer::singleShot(0, QCoreApplication::instance(), [] { QCoreApplication::exit(1); });
             return false;
@@ -124,18 +116,6 @@ public:
     }
     bool Start(QString* error) override
     {
-        if (_signal) {
-            for (const auto& name : QDir("/proc").entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
-                bool numeric = false;
-                const auto pid = name.toInt(&numeric);
-                if (!numeric || pid == getpid()) continue;
-                QFile command("/proc/" + name + "/comm");
-                if (command.open(QIODevice::ReadOnly) && command.readAll().trimmed() == "deskwaifu")
-                    ::kill(pid, _signal);
-            }
-            QTimer::singleShot(0, QCoreApplication::instance(), [] { QCoreApplication::quit(); });
-            return true;
-        }
         _runtime = LAppDelegate::GetInstance();
         if (!_runtime->Initialize(_context->Loop()) || !_runtime->StartFrames([](bool ok) {
             QCoreApplication::exit(ok ? 0 : 1);
@@ -162,7 +142,6 @@ public:
     }
 private:
     PluginContext* _context = nullptr;
-    int _signal = 0;
     LAppDelegate* _runtime = nullptr;
     std::unique_ptr<DesktopCommands> _commands;
 };

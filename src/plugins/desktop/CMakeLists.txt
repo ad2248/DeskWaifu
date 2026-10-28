@@ -1,3 +1,10 @@
+foreach(command toggle --toggle focus --focus)
+  configure_file(cli/ControlCommand.sh "${CMAKE_BINARY_DIR}/plugins/desktop/commands/${command}"
+    COPYONLY FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
+  install(PROGRAMS cli/ControlCommand.sh
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/deskwaifu/plugins/desktop/commands RENAME "${command}" COMPONENT DeskWaifu)
+endforeach()
+
 find_package(Qt6 6.5 REQUIRED COMPONENTS Gui OpenGL WaylandClient StateMachine Concurrent)
 find_package(LayerShellQt 6.6 REQUIRED)
 find_package(OpenGL REQUIRED COMPONENTS OpenGL EGL)

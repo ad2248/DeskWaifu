@@ -11,6 +11,9 @@ if(Python3_Interpreter_FOUND)
   add_test(NAME processor-pipeline-script COMMAND ${Python3_EXECUTABLE} -B
     ${CMAKE_CURRENT_SOURCE_DIR}/ProcessorPipelineScriptTest.py ${CMAKE_COMMAND})
   set_tests_properties(processor-pipeline-script PROPERTIES TIMEOUT 30 LABELS "regression")
+  add_test(NAME plugin-cli COMMAND ${Python3_EXECUTABLE} -B
+    ${CMAKE_CURRENT_SOURCE_DIR}/PluginCommandTest.py $<TARGET_FILE:deskwaifu>)
+  set_tests_properties(plugin-cli PROPERTIES TIMEOUT 15 LABELS "contract;regression")
 endif()
 find_package(Qt6 6.5 REQUIRED COMPONENTS Core)
 if(TARGET ipc_plugin)
