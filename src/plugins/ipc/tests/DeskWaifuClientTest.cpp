@@ -12,6 +12,18 @@
 #include <QtTest>
 #include <unistd.h>
 
+namespace { bool disconnectDuringFlush = false; }
+extern "C" bool __real__ZN12QLocalSocket5flushEv(QLocalSocket* socket);
+extern "C" bool __wrap__ZN12QLocalSocket5flushEv(QLocalSocket* socket)
+{
+    if (disconnectDuringFlush) {
+        disconnectDuringFlush = false;
+        socket->abort(); // A write failure may synchronously emit disconnected.
+        return false;
+    }
+    return __real__ZN12QLocalSocket5flushEv(socket);
+}
+
 class DeskWaifuClientTest : public QObject
 {
     Q_OBJECT
@@ -28,7 +40,53 @@ private slots:
     void discardsQueuedMutations();
     void recoversFromInvalidResponse();
     void recoversFromInvalidResponse_data();
+    void synchronousWriteDisconnect();
+    void synchronousWriteDisconnect_data();
 };
+
+void DeskWaifuClientTest::synchronousWriteDisconnect_data()
+{
+    QTest::addColumn<QString>("command");
+    QTest::addColumn<bool>("retry");
+    QTest::newRow("mouse-look-query") << QStringLiteral("get_mouse_look") << true;
+    QTest::newRow("mouse-look-mutation") << QStringLiteral("set_mouse_look") << false;
+}
+
+void DeskWaifuClientTest::synchronousWriteDisconnect()
+{
+    QFETCH(QString, command);
+    QFETCH(bool, retry);
+    QTemporaryDir runtime;
+    QVERIFY(runtime.isValid());
+    const auto previous = qgetenv("XDG_RUNTIME_DIR");
+    const auto restore = qScopeGuard([&] { qputenv("XDG_RUNTIME_DIR", previous); });
+    qputenv("XDG_RUNTIME_DIR", runtime.path().toLocal8Bit());
+    DeskWaifuClient client;
+    QLocalServer server;
+    QVERIFY(server.listen(client.socketPath()));
+    client.connectToServer();
+    QTRY_VERIFY(server.hasPendingConnections() && client.isConnected());
+    auto* first = server.nextPendingConnection();
+    QVERIFY(first);
+    QSignalSpy unknown(&client, &DeskWaifuClient::commandOutcomeUnknown);
+    disconnectDuringFlush = true;
+    client.sendCommand(command);
+    QVERIFY(!disconnectDuringFlush);
+    QCOMPARE(unknown.count(), retry ? 0 : 1);
+    if (!retry) QCOMPARE(unknown.first().first().toString(), command);
+    QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections() && client.isConnected(), 4000);
+    auto* replacement = server.nextPendingConnection();
+    client.sendCommand(QStringLiteral("get_status"));
+    QTRY_VERIFY(replacement->canReadLine());
+    QCOMPARE(QJsonDocument::fromJson(replacement->readLine()).object().value("command").toString(),
+             retry ? command : QStringLiteral("get_status"));
+    replacement->write("{\"ok\":true}\n");
+    replacement->flush();
+    if (retry) {
+        QTRY_VERIFY(replacement->canReadLine());
+        QCOMPARE(QJsonDocument::fromJson(replacement->readLine()).object().value("command").toString(), "get_status");
+    }
+}
 
 void DeskWaifuClientTest::usesPrivateFallbackSocketPath()
 {

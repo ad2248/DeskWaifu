@@ -152,9 +152,11 @@ void DeskWaifuClient::sendNext()
         return;
     }
     _inFlight = _requests.dequeue();
+    // write/flush can synchronously disconnect. Publish the in-flight state
+    // first so cleanup can retry queries or report an unknown mutation result.
+    _waitingForResponse = true;
     _socket.write(_inFlight.payload);
     _socket.flush();
-    _waitingForResponse = true;
 }
 
 bool DeskWaifuClient::isRetryableQuery(const QString& command)
