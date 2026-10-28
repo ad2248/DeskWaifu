@@ -5,7 +5,9 @@
 
 ## 本地入口
 
-完整门禁需要 Linux、CMake 3.21+、Qt/LayerShellQt、Mesa llvmpipe、D-Bus、Node、Wayland scanner、Cubism SDK 与 GLEW。
+完整门禁需要 Linux、CMake 3.21+、Ninja、Python 3、Qt/LayerShellQt、Mesa llvmpipe、D-Bus、Node、Wayland scanner、Cubism SDK 与 GLEW。
+平台 smoke 还需要 Sway（含 swaymsg）、wayland-info 和 kwin_wayland；KWin 的 1.5 倍缩放需要 kscreen-doctor，热插拔检查仅在找到该命令时启用。
+以下命令从仓库根目录运行。
 SDK/GLEW 可位于源码外，通过以下参数指定，不必复制到仓库：
 
 ```bash
@@ -29,7 +31,9 @@ python3 tests/qt_headless_smoke.py build /path/to/CubismSdkForNative-5-r.5 --sca
 python3 scripts/test-environment.py python3 scripts/check-test-mutations.py build
 ```
 
-`DESKWAIFU_TEST_GATE=ON` 拒绝关闭测试/控制面板以及缺失的 Python、D-Bus、Node。
+上述入口不包含完整 CI 的所有构建检查。渲染分支编译与 Debug ASan+UBSan 子集的具体配置、目标及筛选命令，见 [CI 工作流](../.gitea/workflows/ci.yml) 的 `Compile render-target variants` 和 `Test core contracts with ASan and UBSan` 步骤；本地使用源码外依赖时，也须传入 SDK_ROOT_PATH/GLEW_PATH。
+
+`DESKWAIFU_TEST_GATE=ON` 拒绝关闭测试、控制面板或语音插件，以及缺失的 Python、D-Bus、Node。
 `tests/gate.json` 额外核对关键注册入口。所有实际注册的测试都执行；不在清单里的新测试也不能任意 skip。
 纯设备/授权子用例使用精确的类/用例名标注原因，不能将整个 QtTest 进程列为例外。
 普通构建可以关闭门禁选项；不能把它的成功当作完整门禁通过。
@@ -44,9 +48,10 @@ python3 scripts/test-environment.py python3 scripts/check-test-mutations.py buil
 | `aur-packaging` | 并入根 CTest，每个 PR 必跑 | 包装文件元数据约束 | 不是 makepkg 安装或干净系统依赖验证 |
 | Sway smoke | 每个 PR 合并必跑 | 私有 Sway、Wayland、真实应用/控制面板/IPC、多输出 | 无键盘 seat；不拿它代替 KWin 焦点或真实点击穿透 |
 | KWin smoke，scale=1 和 1.5 | 每个 PR 合并必跑 | 私有 KWin/D-Bus、真实 layer-shell、窗口像素、焦点、热插拔、帧/IPC、实际点击路由 | 软件驱动/虚拟输出，不证明物理显示器与所有桌面效果 |
-| KWin `--installed` | 每个 PR 的 1.5 倍缩放场景必跑 | 私有 prefix 安装组件，使用安装的三条命令；源码外 cwd；运行控制面板 smoke | 复用 CI 镜像系统库，不是全发行版兼容矩阵；OCR helper/模型是独立可选安装，不虚报已安装 |
+| KWin `--installed` | 每个 PR 的 1.5 倍缩放场景必跑 | 私有 prefix 安装组件，使用安装的三条命令；应用和控制面板在源码外 cwd 运行，CLI 继承启动目录；运行控制面板 smoke | 未证明 CLI 脱离源码目录运行；复用 CI 镜像系统库，不是全发行版兼容矩阵；OCR helper/模型是独立可选安装，不虚报已安装 |
 | `USE_RENDER_TARGET` / `USE_MODEL_RENDER_TARGET` | 每个 PR 两种分支编译必跑 | 正式应用目标 | 编译成功不等于两种路径的像素行为均已执行 |
 | ASan+UBSan | 每个 PR 核心契约子集必跑，Debug | 事件、语音/交互契约、ConfigStore、IPC 背压；UBSan 禁止恢复，溢出夹具证明普通门禁确实非零失败 | SDK 的预编译 Core 未插桩；不宣称 GL/Qt/线程检查全覆盖 |
+| 插件与 GUI | 随对应插件/SDK/控制面板目标注册到 CTest；完整门禁执行所有已注册测试 | 请求路由、插件加载/停止、GUI 页面与关闭、独立控制端 smoke 探针 | GUI 夹具不等于真实桌面；后端语音状态机夹具不等于动态模块集成 |
 | `offscreen-renderer-test`、`gpu-transfer-test` 的指定 PCI 场景 | 专用 GPU runner；发布前由维护者显式执行并附报告 | 必须给出具体 PCI 地址、驱动版本和窗口 GPU；跨 GPU 分别记录 | 普通软件门禁中的 auto **不能**充当指定 PCI/跨 GPU 证据；普通报告明确未验证 |
 | AudioPlayer 设备场景、真实云 API、私有模型 | 专用/授权验证；未获授权不运行，不阻断普通软件 PR | 明确的设备、key 文件、可发声授权或模型目录 | 不因继承环境变量自动开启；PCM 无设备验证继续由 #230 交付，设备选择由 #233 交付 |
 
@@ -61,14 +66,15 @@ CI 的容器已经有独立进程视图，无需嵌套 mount/user namespace。CI
 
 产品承诺：同一请求按契约终结一次，回复原接收者；取消/替换后旧结果不得开始或污染后续语音，不能只检查最终 Idle。
 
-生产路径为 ReadingClipProcessor → SpeechProcessor → SpeechPlayer → source/audio；图像和 OCR 边界使用可控制的能力夹具。
-`speech-contract-reading-complete/reading-cancel` 用真实朗读/语音状态机检查状态序列、图片释放与后续副作用。
+当前生产组装由 reading_clip 插件持有 ReadingClipProcessor，经 `speech.speak/v1` 请求 speech 插件的 SpeechEndpoint，再进入 SpeechProcessor → SpeechPlayer → source/audio；图像与 OCR 同样走能力请求。平台不再组装这些业务对象。
+`speech-contract-reading-complete/reading-cancel` 仍通过注入旧处理器引用运行真实朗读/语音状态机，检查状态序列、图片释放与后续副作用，不经过动态插件加载和 SpeechEndpoint。
 `processor-pipeline` 另有真实图像编码/OCR 子进程、OCR 取消与 PNG 生命周期证据，不用内存夹具代替真实子进程语义。
+`reading-plugin` 加载真实朗读模块并连接真实图像/OCR，以语音能力夹具检查完成、取消、缺失提供者及停止后迟到回复；`speech-plugin-load`、`speech-endpoint` 和 `delegate-plugin-commands` 分别补充语音模块加载、桥接及命令入口证据。插件边界详见 [插件架构](plugin-architecture.md)。语音契约和语音模块测试受 DESKWAIFU_BUILD_SPEECH_PLUGIN 控制；完整门禁要求其开启。
 
 独立场景覆盖：正常 EOF 必须等到 Drained；Preparing/Playing/Draining 取消；无权取消；替换；
 旧任务仍活跃时两次连续替换只启动最后一个；队列交错时更新的替换不能被旧请求反向覆盖；
 旧结果在新任务后到达；重复终结；语音适配器销毁；请求者销毁；待启动替换的请求者销毁；朗读正常/取消。
-每次终结断言 sender、receiver、type、次数，source/audio 记录真实调用边界和任务 ID。
+语音定向终结检查 sender、receiver、type 与接收次数，并检查初始请求不会重复终结；朗读场景检查状态序列与后续副作用。source/audio 夹具记录调用边界和任务 ID。
 
 时序控制使用已有 source/audio 虚方法与信号，无需新增生产访问器。数据流为：
 `Speak → Accepted/Source.Start → 手动完成/取消/替换 → 实际 Finished → 定向终结 → FIFO fence`。
@@ -84,14 +90,14 @@ CI 的容器已经有独立进程视图，无需嵌套 mount/user namespace。CI
 产品承诺：生产 `PrepareFrame()` 根据焦点、当前命中快照、开关、独立 idle/hover 值与编辑手柄求透明度，不受旧模型快照影响。
 `interaction-opacity` 运行真实 InteractionProcessor、TransformEditor、输入监听和事件循环；窗口/模型命中数据是显式小夹具，不创建 GL。
 同时检查全局光标采样只改变视线，不合成拖动、局部指针位置或编辑行为。
-`model-pointer-cursor` 则启动真实 LAppDelegate 组装和 StartCursor/Qt 定时器，仅链接替换 KWin 光标平台边界，证明没有任何窗口呈现帧时仍周期采样并进入实际交互视线，不触发拖动/编辑。移除生产组装的启动调用或停掉定时器，分别触发启动计数/采样进展断言。
+`model-pointer-cursor` 则启动真实 LAppDelegate 组装和 StartCursor/Qt 定时器，使用 DesktopWindow 窗口/循环夹具与真实 EGL，并链接替换 KWin 光标平台边界，证明没有任何窗口呈现帧时仍周期采样并进入实际交互视线，不触发拖动/编辑。移除生产组装的启动调用或停掉定时器，分别对应启动计数/采样进展断言。
 
 | 原辅助断言 | 迁移状态与现有证据 |
 | --- | --- |
 | 未进入/进入/离开，离开后仅移动不恢复焦点 | 已覆盖：Leave/Enter/Position → PrepareFrame |
 | 禁用，hover=0/.01/.5/1，多帧，idle=0/.25/1 | 已覆盖：生产入口参数表；答案是独立常量 |
 | 光标静止，模型区域消失/恢复，区域外点 | 已覆盖：可变 CPU 命中边界；模型像素与真实快照生成分别由 model-region-render/model-render-thread 验证 |
-| 手柄与模型重叠、非重叠 | 已覆盖：真实裁剪事务生成 handles，角点/内部点分别断言 idle/hover |
+| 手柄与模型重叠、非重叠 | 部分覆盖：真实裁剪事务生成 handles，重叠角点/模型内部点分别断言 idle/hover；没有非重叠手柄的 PrepareFrame 透明度断言，渲染测试中的模型外手柄检查不等价于策略覆盖 |
 | 隐藏、旧模型 token | 已覆盖：服务隐藏和不匹配快照下回到 idle |
 | 输入轮廓提取/裁剪/阈值、配置合法性 | 保留原 HoverOpacityTest、ModelInputRegionTest、Settings 测试的生产断言 |
 | 渲染后像素与 GL 状态 | 保留 ModelRegionRenderTest；仅去掉重复策略推算，使用明确的数学透明度期望 |
@@ -110,7 +116,7 @@ CI 的容器已经有独立进程视图，无需嵌套 mount/user namespace。CI
 | 历史断言 | 迁移状态与限制 |
 | --- | --- |
 | 两处可能被 NDEBUG 移除的 current/零驻留检查 | 用真实 GL 创建/删除账本、线程和上下文检查替换，Release 也执行；保留生产 TextureResidency 租约/共享/失败加载断言 |
-| 完整六阶段私有析构顺序 | 不再适用：生产组装已改为 processor/runtime 所有权；只保留产品要求的有效上下文与资源释放，不锁死任意全序 |
+| 完整六阶段私有析构顺序 | 不再适用：当前业务组装由各插件持有，平台只管理插件生命周期；只保留产品要求的有效上下文与资源释放，不锁死任意全序 |
 | 无 GPU 资源时不绑定 | 部分覆盖：Prepare/BeforeContext 失败不进行 GL 纹理操作；没有独立于渲染上下文的“仅启动 Cubism runtime”生产入口 |
 | 绑定失败时不错误删除 | 帧绑定失败后的正式收尾和恢复已覆盖。独立进程 `model-shutdown-context` 强制销毁时恢复失败并解除当前上下文，检查模型 GL 删除被禁止、Stop 返回失败且遗留资源交给进程清理；目标本身可独立恢复上下文收尾。仍不等价于物理 context-loss/驱动复位 |
 | 传输先销毁，服务仍可接收断开 | 保留 IpcTransportTest 的真实传输析构断言，直接销毁真实对象；processor-ownership 覆盖晚到领域完成 |
@@ -138,10 +144,10 @@ GUI 不派发时独立绘制使用不处理 GUI 的有界条件等待。移除�
 Sway 不再删除传入目录里的 `wayland-*` 或应用 socket。回归用真实 Unix sentinel socket 验证用户目录保持不变。
 源码中的合成 key 不是真凭据；常规测试没有真实云目标的有效凭据，也不读取用户配置。授权测试需从明确的专用入口单独调用，不通过普通 launcher 继承开关。
 
-每次 CTest 运行保留独立的 `BUILD/test-logs/ctest-*/{registry.json,ctest.xml,ctest.log,summary.json}`，不覆盖首次失败；包括实际注册命令、首次退出状态、每场景耗时和未验证原因。
+通过 `run-test-gate.py` 在持久构建目录执行且正常完成报告流程时，保留独立的 `BUILD/test-logs/ctest-*/{registry.json,ctest.xml,ctest.log,summary.json}`，不覆盖首次失败；记录实际注册命令、进程通过/失败/未验证状态、每场景耗时和未验证原因。直接调用 CTest 不生成这组门禁产物；提前中断或缺少 JUnit 报告时，产物可能不完整。
 显式提高 CTest 成功/失败输出保留上限；若仍发生截断，门禁拒绝据此证明内部子用例覆盖，避免默认 1024 字节成功输出把后部 QTest skip 隐藏。`status=partial` 与 CTest 的 `process_status=passed` 分开记录。
-KWin 日志位于 `BUILD/qt-smoke-logs/<scale>/run-*/`，包括实际点击、窗口、GPU 传输、模型、安装与控制面板输出；Sway 位于 `test-logs/sway-*/`。
-故障植入记录 `test-logs/mutations/run-*/` 的故障、入口、目标断言、编译结果、失败日志及恢复成功日志。
+KWin 日志位于 `BUILD/qt-smoke-logs/<scale>/run-*/`，包括实际点击、窗口、GPU 传输和模型输出；仅 `--installed` 场景另有安装与控制面板日志。Sway 位于 `BUILD/test-logs/sway-*/`。
+故障植入在 `BUILD/test-logs/mutations/run-*/` 留存配置、编译、故障与恢复测试的文本日志；正常完成时另有汇总，记录故障、入口、目标断言、编译/测试结果和恢复是否通过。内层 CTest 的 registry.json、ctest.xml、summary.json 随临时构建删除，不完整留存这组结构化产物。
 CI 无论成功失败都上传这些文本产物；不上传 SDK、模型、构建二进制、环境全量或真实凭据。新增图像差异/随机测试时应记录合成输入、独立期望和种子，并先检查产物是否含隐私。
 
 增加保护时：先定义可观察承诺和真实/替换边界 → 注册独立场景 → 需要关键入口保护时加入 gate.json.required → 设计一次针对性故障 → 验证指定断言失败且恢复后通过。
@@ -149,9 +155,10 @@ CI 无论成功失败都上传这些文本产物；不上传 SDK、模型、构�
 共享设施只在重复使用后提取；当前只共享一个语义明确的 FIFO fence，没有万能时钟/事件/窗口框架。
 诊断重跑应另存日志，不能把首次失败覆盖成“稳定通过”。
 
-## 实测基线与预算
+## 历史实测记录与预算
 
-初始 `f311447`：本机 Release 构建成功；84 个 CTest 入口串行约 246.64 秒，model-pointer-drag 失败、指定设备 offscreen 未验证。
-这次基线发现旧夹具阻塞异步输入、未接入的 AUR 元数据不一致、KWin 同模型 token 回归；不把它称为历史稳定性测量。
-本次另外实际执行六个行为故障植入（三个初始实验、光标采样定时器/组装启动、GPU 无上下文销毁保护），均由预期断言拦截且恢复通过；详见同次交付的报告。
-CI 保留原有 30 分钟总时限。单次本机基线不能推出 p95/误报率或生产资源上限；先记录每次 summary 耗时，再由维护者根据 CI 多次运行调整预算，不设虚构的覆盖率/测试数指标。
+以下为原有历史记录，本次仅静态核对代码，未复跑；未找到可追溯的原始日志或报告链接，不作为本次通过或耗时证据：
+- 原记录称初始 `f311447` 本机 Release 构建成功，84 个 CTest 入口串行约 246.64 秒，model-pointer-drag 失败、指定设备 offscreen 未验证，并发现旧夹具阻塞异步输入、AUR 元数据不一致和 KWin 同模型 token 回归。上述实测及发现过程均未复核。
+- 原记录称六个行为故障植入均由预期断言拦截且恢复通过，未复核。当前 `check-test-mutations.py` 确实定义六种故障（三个初始实验、光标采样定时器/组装启动、GPU 无上下文销毁保护）；定义及断言存在不等于已运行通过。
+
+CI 工作流配置的 job 总时限为 30 分钟，不是实测完成时间。单次本机基线不能推出 p95/误报率或生产资源上限；先记录每次 summary 耗时，再由维护者根据 CI 多次运行调整预算，不设虚构的覆盖率/测试数指标。
