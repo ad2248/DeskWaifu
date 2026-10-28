@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import subprocess
 import signal
+import tempfile
 import unittest
 
 
@@ -10,6 +11,33 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class TestEnvironmentTest(unittest.TestCase):
+    def test_boundary_fixtures_honor_tmpdir(self):
+        script = """import os, runpy, sys, tempfile
+from pathlib import Path
+original = tempfile.TemporaryDirectory
+def private_directory(*args, **kwargs):
+    directory = original(*args, **kwargs)
+    if not Path(directory.name).is_relative_to(Path(os.environ["TMPDIR"])):
+        directory.cleanup()
+        raise AssertionError("boundary fixture ignored TMPDIR")
+    return directory
+tempfile.TemporaryDirectory = private_directory
+path = sys.argv.pop(1)
+runpy.run_path(path, run_name="__main__")
+"""
+        cases = (
+            ("platform/tooling/BoundaryTest.py", "Boundaries.test_own_headers_and_sdk_links_are_allowed"),
+            ("tests/test_build_boundaries.py", "BuildBoundaries.test_c_include_ownership"),
+        )
+        with tempfile.TemporaryDirectory(prefix="boundary-tmpdir-") as directory:
+            for path, case in cases:
+                with self.subTest(path=path):
+                    result = subprocess.run(
+                        ["python3", "-B", "-c", script, str(ROOT / path), case],
+                        env=dict(os.environ, TMPDIR=directory), capture_output=True, text=True, timeout=20,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_interruption_cleans_owned_runtime(self):
         script = ('import json, os, signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); '
                   'print(json.dumps(dict(os.environ)), flush=True); time.sleep(60)')

@@ -84,7 +84,7 @@ target_include_directories(a PRIVATE ${{PROJECT_SOURCE_DIR}}/sdk ${{CMAKE_CURREN
                 self.assertFalse((root / "build/src/plugins/a/CMakeFiles/a.dir/main.cpp.o").exists())
 
     def test_c_include_ownership(self):
-        with tempfile.TemporaryDirectory(prefix="dw-c-boundary-", dir="/tmp/opencode") as directory:
+        with tempfile.TemporaryDirectory(prefix="dw-c-boundary-") as directory:
             root = self.fixture(directory, sources="main.c")
             (root / "src/plugins/a/main.c").write_text('#include "../b/private/Foreign.h"\nint main(void) { return 0; }\n')
             (root / "src/plugins/b/private/Foreign.h").write_text("typedef int Foreign;\n")
@@ -96,7 +96,7 @@ target_include_directories(a PRIVATE ${{PROJECT_SOURCE_DIR}}/sdk ${{CMAKE_CURREN
 
     def test_precompiled_headers_cannot_be_reused_across_owners(self):
         for foreign in (False, True):
-            with self.subTest(foreign=foreign), tempfile.TemporaryDirectory(prefix="dw-pch-boundary-", dir="/tmp/opencode") as directory:
+            with self.subTest(foreign=foreign), tempfile.TemporaryDirectory(prefix="dw-pch-boundary-") as directory:
                 root = self.fixture(directory, body="int owned(); int main() { return owned() == 7 ? 0 : 1; }\n")
                 directory = root / ("src/plugins/b" if foreign else "src/plugins/a")
                 with (directory / "CMakeLists.txt").open("a") as file:
@@ -119,7 +119,7 @@ target_include_directories(a PRIVATE ${{PROJECT_SOURCE_DIR}}/sdk ${{CMAKE_CURREN
 
     def test_link_artifacts_do_not_depend_on_output_directory_or_argument_spelling(self):
         for spelling in ("absolute", "wl", "xlinker", "response", "wl-response", "search", "xlinker-search", "object"):
-            with self.subTest(spelling=spelling), tempfile.TemporaryDirectory(prefix="dw-artifact-boundary-", dir="/tmp/opencode") as directory:
+            with self.subTest(spelling=spelling), tempfile.TemporaryDirectory(prefix="dw-artifact-boundary-") as directory:
                 root = self.fixture(directory, body="int foreign(); int main() { return foreign(); }\n")
                 (root / "src/plugins/b/CMakeLists.txt").write_text('''add_library(foreign_impl STATIC private/foreign.cpp)
 set_target_properties(foreign_impl PROPERTIES ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
@@ -148,7 +148,7 @@ set_target_properties(foreign_impl PROPERTIES ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_
         for generator in ("Ninja", "Unix Makefiles"):
             for source in ("$<TARGET_OBJECTS:foreign_impl>", "$<$<BOOL:1>:$<TARGET_OBJECTS:foreign_impl>>",
                            "${CMAKE_BINARY_DIR}/src/plugins/b/CMakeFiles/foreign_impl.dir/private/foreign.cpp.o"):
-                with self.subTest(generator=generator, source=source), tempfile.TemporaryDirectory(prefix="dw-archive-boundary-", dir="/tmp/opencode") as directory:
+                with self.subTest(generator=generator, source=source), tempfile.TemporaryDirectory(prefix="dw-archive-boundary-") as directory:
                     root = self.fixture(directory, body="int foreign(); int main() { return foreign(); }\n")
                     (root / "src/plugins/b/CMakeLists.txt").write_text("add_library(foreign_impl OBJECT private/foreign.cpp)\n")
                     with (root / "src/plugins/a/CMakeLists.txt").open("a") as file:
@@ -167,7 +167,7 @@ set_target_properties(foreign_impl PROPERTIES ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_
         for foreign_kind in ("STATIC", "SHARED"):
             for static in (False, True):
                 for state_stack in (False, True):
-                    with self.subTest(foreign_kind=foreign_kind, static=static, state_stack=state_stack), tempfile.TemporaryDirectory(prefix="dw-library-mode-", dir="/tmp/opencode") as directory:
+                    with self.subTest(foreign_kind=foreign_kind, static=static, state_stack=state_stack), tempfile.TemporaryDirectory(prefix="dw-library-mode-") as directory:
                         root = self.fixture(directory, body="int foreign(); int main() { return foreign(); }\n")
                         own_kind = "SHARED" if foreign_kind == "STATIC" else "STATIC"
                         (root / "src/plugins/b/CMakeLists.txt").write_text(f'''add_library(foreign_impl {foreign_kind} private/foreign.cpp)
@@ -200,7 +200,7 @@ target_link_libraries(a PRIVATE {flags})
         for foreign_kind in ("STATIC", "SHARED"):
             for alias in ("-static", "--static"):
                 for wrapper in ("wl", "xlinker"):
-                    with self.subTest(foreign_kind=foreign_kind, alias=alias, wrapper=wrapper), tempfile.TemporaryDirectory(prefix="dw-scoped-static-", dir="/tmp/opencode") as directory:
+                    with self.subTest(foreign_kind=foreign_kind, alias=alias, wrapper=wrapper), tempfile.TemporaryDirectory(prefix="dw-scoped-static-") as directory:
                         root = self.fixture(directory, body="int foreign(); int pinned(); int main() { return foreign() + pinned(); }\n")
                         own_kind = "SHARED" if foreign_kind == "STATIC" else "STATIC"
                         (root / "src/plugins/b/CMakeLists.txt").write_text(f'''add_library(foreign_impl {foreign_kind} private/foreign.cpp)
@@ -231,7 +231,7 @@ target_link_libraries(a PRIVATE {flags})
                             self.assertEqual(executed.returncode, 0, executed.stdout)
 
     def test_renamed_vendor_directory_has_consistent_ownership(self):
-        with tempfile.TemporaryDirectory(prefix="dw-vendor-boundary-", dir="/tmp/opencode") as directory:
+        with tempfile.TemporaryDirectory(prefix="dw-vendor-boundary-") as directory:
             root = self.fixture(directory, body='#include "Vendor.hpp"\nint main() { return vendor(); }\n')
             vendor = root / "CubismSdkForNative-next"
             vendor.mkdir()
@@ -245,7 +245,7 @@ target_link_libraries(a PRIVATE {flags})
 
     def test_same_owner_archives_and_existing_launchers_are_allowed(self):
         for language, source in (("C", "main.c"), ("CXX", "main.cpp")):
-            with self.subTest(language=language), tempfile.TemporaryDirectory(prefix="dw-launcher-boundary-", dir="/tmp/opencode") as directory:
+            with self.subTest(language=language), tempfile.TemporaryDirectory(prefix="dw-launcher-boundary-") as directory:
                 root = self.fixture(directory, sources=source)
                 (root / "src/plugins/a" / source).write_text("int main(void) { return 0; }\n")
                 wrapper = root / "linker.sh"
