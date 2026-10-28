@@ -1,3 +1,5 @@
+cmake_minimum_required(VERSION 3.25)
+
 set(fixture "${CMAKE_CURRENT_BINARY_DIR}/sdk-package-consumer")
 # A previous installation may contain headers that no longer belong to the SDK.
 file(REMOVE_RECURSE "${fixture}/prefix")

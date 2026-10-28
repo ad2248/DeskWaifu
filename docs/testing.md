@@ -5,7 +5,7 @@
 
 ## 本地入口
 
-完整门禁需要 Linux、CMake 3.21+、Ninja、Python 3、Qt/LayerShellQt、Mesa llvmpipe、D-Bus、Node、Wayland scanner、Cubism SDK 与 GLEW。
+完整门禁需要 Linux、CMake 3.25+、Ninja、Python 3、Qt/LayerShellQt、Mesa llvmpipe、D-Bus、Node、Wayland scanner、Cubism SDK 与 GLEW。
 平台 smoke 还需要 Sway（含 swaymsg）、wayland-info 和 kwin_wayland；KWin 的 1.5 倍缩放需要 kscreen-doctor，热插拔检查仅在找到该命令时启用。
 以下命令从仓库根目录运行。
 SDK/GLEW 可位于源码外，通过以下参数指定，不必复制到仓库：

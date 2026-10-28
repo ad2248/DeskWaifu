@@ -1,3 +1,5 @@
+cmake_minimum_required(VERSION 3.25)
+
 file(MAKE_DIRECTORY "${FIXTURE_SOURCE}")
 file(WRITE "${FIXTURE_SOURCE}/Transport.cpp" "#include \"processor/ipc/LAppIPC.hpp\"\n")
 execute_process(COMMAND "${CXX_COMPILER}" -std=c++17 "-I${APP_SOURCE}" "-I${SDK_SOURCE}"

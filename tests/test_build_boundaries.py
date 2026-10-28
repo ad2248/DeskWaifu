@@ -16,7 +16,7 @@ class BuildBoundaries(unittest.TestCase):
     def fixture(self, directory, body="int main() { return 0; }", link="", sources="main.cpp"):
         root = Path(directory)
         files = {
-            "CMakeLists.txt": """cmake_minimum_required(VERSION 3.21)
+            "CMakeLists.txt": """cmake_minimum_required(VERSION 3.25)
 project(ownership_fixture LANGUAGES C CXX)
 include(cmake/PluginBoundaries.cmake)
 add_subdirectory(sdk)

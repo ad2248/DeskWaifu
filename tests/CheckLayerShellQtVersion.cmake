@@ -1,3 +1,5 @@
+cmake_minimum_required(VERSION 3.25)
+
 # 无需安装旧版 LayerShellQt，即可测试应用真实依赖要求。
 # 屏幕选择使用的 API 要求 6.6 版本。
 file(READ "${APP_SOURCE}/CMakeLists.txt" source)
@@ -10,7 +12,7 @@ string(REPLACE "REQUIRED)" "REQUIRED CONFIG NO_DEFAULT_PATH PATHS \"${FIXTURE_DI
 file(MAKE_DIRECTORY "${FIXTURE_DIR}/package")
 file(WRITE "${FIXTURE_DIR}/package/LayerShellQtConfig.cmake" "")
 file(WRITE "${FIXTURE_DIR}/CMakeLists.txt"
-  "cmake_minimum_required(VERSION 3.16)\nproject(LayerShellVersion NONE)\n${requirement}\n")
+  "cmake_minimum_required(VERSION 3.25)\nproject(LayerShellVersion NONE)\n${requirement}\n")
 foreach(version 6.5 6.6)
   file(WRITE "${FIXTURE_DIR}/package/LayerShellQtConfigVersion.cmake"
     "set(PACKAGE_VERSION ${version})\nif(PACKAGE_FIND_VERSION VERSION_GREATER PACKAGE_VERSION)\nset(PACKAGE_VERSION_COMPATIBLE FALSE)\nelse()\nset(PACKAGE_VERSION_COMPATIBLE TRUE)\nendif()\n")

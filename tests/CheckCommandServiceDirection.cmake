@@ -1,3 +1,5 @@
+cmake_minimum_required(VERSION 3.25)
+
 foreach(extension .hpp .cpp)
   set(source "${APP_SOURCE}/processor/interaction/AppCommandHandler${extension}")
   if (NOT EXISTS "${source}")

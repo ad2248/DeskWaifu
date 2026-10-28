@@ -19,7 +19,7 @@ class TestGateTest(unittest.TestCase):
             script = root / "long.py"
             script.write_text('print("x" * 4096)\nprint("SKIP   : T::late() critical protection absent")\n')
             (root / "CMakeLists.txt").write_text(
-                'cmake_minimum_required(VERSION 3.16)\nproject(fixture NONE)\nenable_testing()\n'
+                'cmake_minimum_required(VERSION 3.25)\nproject(fixture NONE)\nenable_testing()\n'
                 f'add_test(NAME fixture COMMAND [=[{sys.executable}]=] [=[{script}]=])\n')
             build = root / "build"
             subprocess.run(["cmake", "-S", str(root), "-B", str(build)], capture_output=True, check=True)
@@ -36,7 +36,7 @@ class TestGateTest(unittest.TestCase):
     def test_reruns_preserve_previous_evidence(self):
         with tempfile.TemporaryDirectory(prefix="gate-report-") as directory:
             root = Path(directory)
-            (root / "CMakeLists.txt").write_text('cmake_minimum_required(VERSION 3.16)\nproject(fixture NONE)\nenable_testing()\nadd_test(NAME fixture COMMAND "${CMAKE_COMMAND}" -E true)\n')
+            (root / "CMakeLists.txt").write_text('cmake_minimum_required(VERSION 3.25)\nproject(fixture NONE)\nenable_testing()\nadd_test(NAME fixture COMMAND "${CMAKE_COMMAND}" -E true)\n')
             build = root / "build"
             subprocess.run(["cmake", "-S", str(root), "-B", str(build)], capture_output=True, check=True)
             for _ in range(2):

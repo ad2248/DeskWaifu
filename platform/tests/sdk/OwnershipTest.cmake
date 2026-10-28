@@ -1,3 +1,5 @@
+cmake_minimum_required(VERSION 3.25)
+
 set(fixture "${CMAKE_CURRENT_BINARY_DIR}/ownership-fixture")
 file(MAKE_DIRECTORY "${fixture}/plugin")
 foreach(header IN ITEMS "platform/plugin/PluginManager.hpp" "../private/Domain.hpp" "QLibrary" "QPluginLoader" "CubismFramework.hpp")

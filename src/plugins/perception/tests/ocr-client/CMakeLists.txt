@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.25)
 project(ocr_communication_tests LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 find_package(Qt6 6.5 REQUIRED COMPONENTS Core)

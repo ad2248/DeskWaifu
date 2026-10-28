@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[2]
 class Boundaries(unittest.TestCase):
     def fixture(self, root, include='"own.hpp"', link="", launcher=""):
         files = {
-            "CMakeLists.txt": f'''cmake_minimum_required(VERSION 3.21)
+            "CMakeLists.txt": f'''cmake_minimum_required(VERSION 3.25)
 project(boundaries LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 {launcher}

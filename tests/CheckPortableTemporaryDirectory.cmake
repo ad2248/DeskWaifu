@@ -1,3 +1,5 @@
+cmake_minimum_required(VERSION 3.25)
+
 # 使用运行器提供的临时根目录测试，不要求预先存在 /tmp/opencode。
 # GUI 测试还必须处理长度超出套接字名称限制的根目录。
 file(MAKE_DIRECTORY "${TEST_TEMP_ROOT}")

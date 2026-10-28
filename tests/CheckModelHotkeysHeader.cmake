@@ -1,3 +1,5 @@
+cmake_minimum_required(VERSION 3.25)
+
 file(MAKE_DIRECTORY "${FIXTURE_SOURCE}")
 file(WRITE "${FIXTURE_SOURCE}/binding.cpp"
   "#include \"processor/model/ModelHotkeys.hpp\"\nint main() { ModelHotkeys::Binding binding; return binding.expression + 1; }\n")

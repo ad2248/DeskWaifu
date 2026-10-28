@@ -1,3 +1,5 @@
+cmake_minimum_required(VERSION 3.25)
+
 file(MAKE_DIRECTORY "${FIXTURE_DIR}")
 file(WRITE "${FIXTURE_DIR}/invalid.json" "{\"render_device\":false}")
 file(WRITE "${FIXTURE_DIR}/invalid-address.json" "{\"render_device\":\"intel\"}")

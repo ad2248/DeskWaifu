@@ -10,7 +10,7 @@ with tempfile.TemporaryDirectory(prefix="ubsan-gate-") as directory:
     source = Path(directory)
     binary = Path(sys.argv[1]).resolve()
     (source / "CMakeLists.txt").write_text(
-        'cmake_minimum_required(VERSION 3.16)\nproject(fixture NONE)\nenable_testing()\n'
+        'cmake_minimum_required(VERSION 3.25)\nproject(fixture NONE)\nenable_testing()\n'
         f'add_test(NAME ub-runtime COMMAND [=[{binary}]=])\n')
     build = source / "build"
     subprocess.run(["cmake", "-S", str(source), "-B", str(build)], check=True)

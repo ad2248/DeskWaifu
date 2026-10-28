@@ -1,3 +1,5 @@
+cmake_minimum_required(VERSION 3.25)
+
 if(NOT DEFINED SDK_ROOT)
   get_filename_component(SDK_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 endif()
