@@ -4,7 +4,7 @@
 
 - 当前构建固定使用 Linux x86_64 的 Cubism Core 静态库，不会自动选择其他架构的库。
 - 先按 [README 的前置依赖说明](../README.md#prerequisites)准备默认完整构建的系统开发依赖：CMake ≥ 3.21、支持 Qt 6 的 C++ 工具链、Bash、pkg-config、OpenGL/EGL、libsystemd、Qt ≥ 6.5 和 LayerShellQt ≥ 6.6。关闭控制面板本身不能免除 Qt；启用 perception 时截图仍需 DBus、后台图像编码仍需 Concurrent。默认启用的语音插件另需 Multimedia/WebSockets；设置 `-DDESKWAIFU_BUILD_SPEECH_PLUGIN=OFF` 可省去这两项，但不能用于完整门禁。桌面专属依赖可随 `DESKWAIFU_BUILD_DESKTOP_PLUGIN=OFF` 关闭，其他后端也有独立构建开关；见[插件构建说明](plugin-architecture.md#构建与开发)。
-- 默认构建测试，还需 `wayland-scanner`、Wayland 开发库及（控制面板开启时的）Qt Test。仅构建应用可设置 `-DBUILD_TESTING=OFF`；完整测试门禁另需 Python 3、Node.js 和 `dbus-run-session`。
+- 根工程构建始终需要 Python 3 执行依赖隔离校验，包括 `BUILD_TESTING=OFF`。默认构建测试：启用桌面插件时还需 `wayland-scanner` 和 Wayland 开发库，启用控制面板或语音组件测试时需要 Qt Test。仅构建应用可设置 `-DBUILD_TESTING=OFF`；完整测试门禁另需 Node.js 和 `dbus-run-session`。
 
 ## 下载与解压
 

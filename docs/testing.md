@@ -67,7 +67,7 @@ CI 的容器已经有独立进程视图，无需嵌套 mount/user namespace。CI
 产品承诺：同一请求按契约终结一次，回复原接收者；取消/替换后旧结果不得开始或污染后续语音，不能只检查最终 Idle。
 
 当前生产组装由 reading_clip 插件持有 ReadingClipProcessor，经 `speech.speak/v1` 请求 speech 插件的 SpeechEndpoint，再进入 SpeechProcessor → SpeechPlayer → source/audio；图像与 OCR 同样走能力请求。平台不再组装这些业务对象。
-`speech-contract-reading-complete/reading-cancel` 仍通过注入旧处理器引用运行真实朗读/语音状态机，检查状态序列、图片释放与后续副作用，不经过动态插件加载和 SpeechEndpoint。
+`speech-contract-reading-complete/reading-cancel` 动态加载真实朗读模块和 `speech-contract-fixture`，后者组装真实 SpeechEndpoint、SpeechProcessor 与 SpeechPlayer 状态机，检查状态序列、图片释放与后续副作用。图像/OCR 能力为合成夹具，source/audio 替换为可控边界；这不等于加载生产语音模块或验证真实提供者、云端协议和音频设备。
 `processor-pipeline` 另有真实图像编码/OCR 子进程、OCR 取消与 PNG 生命周期证据，不用内存夹具代替真实子进程语义。
 `reading-plugin` 加载真实朗读模块并连接真实图像/OCR，以语音能力夹具检查完成、取消、缺失提供者及停止后迟到回复；`speech-plugin-load`、`speech-endpoint` 和 `delegate-plugin-commands` 分别补充语音模块加载、桥接及命令入口证据。插件边界详见 [插件架构](plugin-architecture.md)。语音契约和语音模块测试受 DESKWAIFU_BUILD_SPEECH_PLUGIN 控制；完整门禁要求其开启。
 
