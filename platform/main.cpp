@@ -6,9 +6,7 @@
 
 int main(int argc, char* argv[])
 {
-    const auto pluginRoot = qEnvironmentVariableIsSet("DESKWAIFU_PLUGIN_DIR")
-        ? qEnvironmentVariable("DESKWAIFU_PLUGIN_DIR") : QStringLiteral(DESKWAIFU_PLUGIN_DIR);
-    const int command = RunPluginCommand(argc, argv, pluginRoot);
+    const int command = RunPluginCommand(argc, argv, QStringLiteral(DESKWAIFU_PLUGIN_DIR));
     if (command >= 0) return command;
     QGuiApplication application(argc, argv);
     application.setApplicationName("deskwaifu");

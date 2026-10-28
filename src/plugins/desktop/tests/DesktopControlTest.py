@@ -22,6 +22,7 @@ class DesktopControlTest(unittest.TestCase):
                 "    stream.write(json.dumps(sys.argv[1:]) + '\\n')\n"
             )
             killall.chmod(0o700)
+            default_root = (Path(HOST).resolve().parent.parent / "plugins").resolve() == Path(PLUGINS).resolve()
             for display in (False, True):
                 environment = dict(os.environ, DESKWAIFU_PLUGIN_DIR=PLUGINS, PATH=f"{root}:{os.environ['PATH']}")
                 for name in ("DISPLAY", "WAYLAND_DISPLAY", "QT_QPA_PLATFORM"):
@@ -38,7 +39,14 @@ class DesktopControlTest(unittest.TestCase):
                         self.assertEqual(calls[-1], ["-s", signal, "deskwaifu"])
                         self.assertNotIn("[Plugins]", result.stderr)
                         self.assertNotIn("[Config]", result.stderr)
-            self.assertEqual(len(calls), 8)
+                        if default_root:
+                            environment.pop("DESKWAIFU_PLUGIN_DIR", None)
+                            result = subprocess.run([HOST, command], env=environment,
+                                                    capture_output=True, text=True, timeout=5)
+                            self.assertEqual(result.returncode, 0, result.stderr)
+                            self.assertEqual(json.loads(log.read_text().splitlines()[-1]), ["-s", signal, "deskwaifu"])
+                            environment["DESKWAIFU_PLUGIN_DIR"] = PLUGINS
+            self.assertEqual(len(log.read_text().splitlines()), 16 if default_root else 8)
 
 
 if __name__ == "__main__":

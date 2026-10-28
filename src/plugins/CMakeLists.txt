@@ -20,6 +20,7 @@ function(deskwaifu_add_plugin name)
     COMPONENT DeskWaifu)
 endfunction()
 
+add_subdirectory(desktop/cli)
 if(DESKWAIFU_BUILD_DESKTOP_PLUGIN)
   add_subdirectory(desktop)
 endif()

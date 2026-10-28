@@ -3,9 +3,6 @@ find_package(Qt6 6.5 REQUIRED COMPONENTS Gui OpenGL WaylandClient StateMachine)
 find_package(LayerShellQt 6.6 REQUIRED)
 set(PRIVATE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../private")
 set(TEST_SCRIPTS "${CMAKE_SOURCE_DIR}/tests")
-add_test(NAME desktop-cli COMMAND ${Python3_EXECUTABLE} -B
-  ${CMAKE_CURRENT_SOURCE_DIR}/DesktopControlTest.py $<TARGET_FILE:deskwaifu> ${CMAKE_BINARY_DIR}/plugins)
-set_tests_properties(desktop-cli PROPERTIES TIMEOUT 15 LABELS "contract;regression")
 
 add_executable(model-input-region-test ModelInputRegionTest.cpp)
 add_test(NAME model-input-region COMMAND model-input-region-test)

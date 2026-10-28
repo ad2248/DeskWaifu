@@ -7,8 +7,11 @@
 #include <cstring>
 #include <unistd.h>
 
-int RunPluginCommand(int argc, char* argv[], const QString& pluginRoot)
+int RunPluginCommand(int argc, char* argv[], const QString& defaultPluginRoot)
 {
+    const auto adjacent = QFileInfo(QFileInfo("/proc/self/exe").symLinkTarget()).dir().filePath("../plugins");
+    const auto pluginRoot = qEnvironmentVariableIsSet("DESKWAIFU_PLUGIN_DIR")
+        ? qEnvironmentVariable("DESKWAIFU_PLUGIN_DIR") : QDir(adjacent).exists() ? adjacent : defaultPluginRoot;
     if (pluginRoot.isEmpty()) return -1;
     const QDir root(pluginRoot);
     const auto plugins = root.entryList(QDir::Dirs | QDir::NoDotAndDotDot | QDir::NoSymLinks, QDir::Name);
