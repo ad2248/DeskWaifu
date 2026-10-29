@@ -12,7 +12,7 @@ constexpr auto GetSettings = "command.get_speech_settings/v1";
 constexpr auto SetSettings = "command.set_speech_settings/v1";
 constexpr auto DoubleClick = "interaction.double_click/v1";
 
-class SpeechPlugin final : public IPlugin
+class SpeechPlugin final : public IProcessorPlugin
 {
 public:
     bool Initialize(PluginContext& context, QString* error) override

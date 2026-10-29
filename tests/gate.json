@@ -2,7 +2,7 @@
   "required": [
     "plugin-events", "plugin-timeout-flood", "plugin-manager", "speech-plugin-load", "speech-endpoint", "reading-plugin", "plugin-no-speech-configure",
     "plugin-boundaries", "plugin-host-link", "gui-plugin-manager", "gui-plugin-shutdown", "gui-tabs", "control-smoke-probe", "control-theme", "delegate-plugin-commands", "command-processor", "SpeechSettings",
-    "screenshot-service", "processor-event-loop", "processor-pipeline", "processor-ownership",
+    "screenshot-service", "processor-event-loop", "processor-pipeline", "processor-pipeline-script", "processor-ownership", "plugin-cli", "desktop-cli",
     "interaction-processor", "interaction-opacity",
     "speech-contract-normal", "speech-contract-cancel", "speech-contract-cancel-playing", "speech-contract-cancel-draining", "speech-contract-replace",
     "speech-contract-repeat-replace", "speech-contract-queued-replace", "speech-contract-destroy", "speech-contract-receiver-destroy", "speech-contract-pending-destroy",
@@ -13,7 +13,10 @@
     "model-pointer-release", "model-pointer-transform", "model-pointer-drag", "model-pointer-state", "model-pointer-cursor",
     "texture-residency", "SpeechPlayer", "MiniMaxSpeechSource", "AudioPlayer",
     "main-window-transform", "aur-packaging", "ocr-client", "smoke-isolation",
-    "test-environment", "test-gate"
+    "test-environment", "test-gate",
+    "build-boundaries", "plugin-build-boundaries", "backend-capabilities", "backend-ipc-only",
+    "desktop-ownership", "reading-pipeline", "perception-adapters", "ipc-readiness", "speech-adapter-failure",
+    "plugin-sdk-image-file", "plugin-sdk-installed-consumer", "desktop-commands-fairness", "desktop-commands-early-start", "perception-startup", "qt-desktop-window-run"
   ],
   "sanitizer_required": ["sanitizer-failure-gate"],
   "optional_processes": {

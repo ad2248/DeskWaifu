@@ -11,22 +11,22 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 MUTATIONS = [
-    ("late-speech", "src/processor/speech/SpeechPlayer.cpp",
+    ("late-speech", "src/plugins/speech/private/processor/speech/SpeechPlayer.cpp",
      "return _id && e.id == _id;", "return bool(_id);",
      "speech-processor-contract-test", "speech-contract-replace", "old results cannot affect the new request"),
-    ("hover", "src/processor/interaction/InteractionProcessor.cpp",
+    ("hover", "src/plugins/desktop/private/processor/interaction/InteractionProcessor.cpp",
      "? hoverOpacity : idleOpacity;", "? idleOpacity : idleOpacity;",
      "interaction-processor-test", "interaction-opacity", "frame.opacity == hovered"),
-    ("gpu-release", "src/processor/model/ModelProcessor.cpp",
+    ("gpu-release", "src/plugins/desktop/private/processor/model/ModelProcessor.cpp",
      "_stoppedCleanly = _runtime->Shutdown(_target->MakeCurrent());", "_stoppedCleanly = true;",
      "model-render-thread-test", "model-render-thread", "calls.created == calls.deleted"),
-    ("cursor-timer", "src/processor/input/InputListener.cpp",
+    ("cursor-timer", "src/plugins/desktop/private/processor/input/InputListener.cpp",
      "_cursorTimer.start(16);", ";",
      "model-pointer-test", "model-pointer-cursor", "periodic cursor sampling must progress without presentation frames"),
-    ("cursor-assembly", "src/app/LAppDelegate.cpp",
+    ("cursor-assembly", "src/plugins/desktop/private/app/LAppDelegate.cpp",
      "if (!_input->StartCursor())", "if (false)",
      "model-pointer-test", "model-pointer-cursor", "cursorStarts == 1"),
-    ("gpu-context-guard", "src/processor/model/ModelRuntime.cpp",
+    ("gpu-context-guard", "src/plugins/desktop/private/processor/model/ModelRuntime.cpp",
      "if (!contextCurrent && (_view || _manager || _textures))", "if (false)",
      "model-render-thread-test", "model-shutdown-context", "calls.forbiddenDeletes == 0"),
 ]

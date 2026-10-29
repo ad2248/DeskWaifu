@@ -2,8 +2,9 @@
 
 Qt is the only model-window implementation. The native Wayland/EGL window backend
 and backend-selection build option have been removed. Cubism model/session,
-application service, editing, configuration and JSON IPC remain independent of
-Qt windowing. The optional control panel remains a separate process.
+application service, editing and configuration belong to desktop and remain
+separate from its window port. JSON IPC belongs to the independent IPC plugin.
+The optional control panel remains a separate process.
 
 ## Build and run
 
@@ -15,12 +16,12 @@ panel build also requires Qt `Widgets` and `Network`. The speech plugin is enabl
 by default and adds `WebSockets` and `Multimedia`; disabling it with
 `DESKWAIFU_BUILD_SPEECH_PLUGIN=OFF` removes those requirements, but is not supported
 by the complete regression gate. With `BUILD_TESTING=ON`
-(the default), Qt `Network`, `wayland-scanner` and wayland-client development files
-are required; control panel tests also require Qt `Test`. On Arch the LayerShellQt
+(the default), the full default test set additionally requires Qt `Network`/`Test`,
+`wayland-scanner` and wayland-client development files. On Arch the LayerShellQt
 package is `layer-shell-qt`; other distributions may split its library and
 development headers into packages.
 
-Backend speech/reading capabilities and control-panel tabs are loaded from
+Desktop, perception, IPC, speech/reading capabilities and control-panel tabs are loaded from
 plugins. For development, point backend `plugin_dir` and control-panel
 `DESKWAIFU_CONTROL_PLUGIN_DIR` at the build's `plugins` directory; their defaults
 refer to the install prefix, not the build tree. See
@@ -38,8 +39,9 @@ when working in an independent worktree. Qt remains required when
 
 The executable is still named `deskwaifu`; the CLI, IPC socket and config paths
 are unchanged. Do not run multiple model processes against the same runtime socket.
-The backend rejects non-Wayland platforms or compositors without layer-shell
-instead of silently presenting an ordinary desktop window.
+The desktop plugin rejects non-Wayland platforms or compositors without layer-shell
+instead of silently presenting an ordinary desktop window. The platform and other
+healthy plugins can remain active when desktop fails to initialize.
 With the required Qt 6.5+, `LayerShellQt::Window::get()` selects the shell
 integration per window; the old application-wide `Shell::useLayerShell()` call
 is no longer required. The isolated smoke test removes shell integration

@@ -5,7 +5,7 @@
 
 ## 本地入口
 
-完整门禁需要 Linux、CMake 3.21+、Ninja、Python 3、Qt/LayerShellQt、Mesa llvmpipe、D-Bus、Node、Wayland scanner、Cubism SDK 与 GLEW。
+完整门禁需要 Linux、CMake 3.25+、Ninja、Python 3、Qt/LayerShellQt、Mesa llvmpipe、D-Bus、Node、Wayland scanner、Cubism SDK 与 GLEW。
 平台 smoke 还需要 Sway（含 swaymsg）、wayland-info 和 kwin_wayland；KWin 的 1.5 倍缩放需要 kscreen-doctor，热插拔检查仅在找到该命令时启用。
 以下命令从仓库根目录运行。
 SDK/GLEW 可位于源码外，通过以下参数指定，不必复制到仓库：
@@ -44,7 +44,7 @@ python3 scripts/test-environment.py python3 scripts/check-test-mutations.py buil
 | --- | --- | --- | --- |
 | 根 CTest，由 `run-test-gate.py` 执行 | 每个 PR 合并必跑，Release | 生产状态机、Qt 循环、线程、Unix socket、本地 WebSocket、私有 D-Bus；外部服务用夹具 | 不证明真实云、真实音频或实际 OCR 模型推理 |
 | `speech-contract-*`、`interaction-opacity`、`model-pointer-cursor`、`model-render-thread`、`model-shutdown-context` | 每个 PR 必跑；故障植入也必跑 | 见三个实验 | 不用测试副本当生产策略证据 |
-| `ocr-client` | 并入根 CTest，每个 PR 必跑 | 生产 OcrClient + 真实 native 子进程/协议；替换 OCR 引擎 | 没有下载模型，不验证 OCR 准确率；独立 `features/ocr/tests` 工程仍可使用 |
+| `ocr-client` | 并入根 CTest，每个 PR 必跑 | 生产 OcrClient + 真实 native 子进程/协议；替换 OCR 引擎 | 没有下载模型，不验证 OCR 准确率；独立 `src/plugins/perception/tests/ocr-client` 工程仍可使用 |
 | `aur-packaging` | 并入根 CTest，每个 PR 必跑 | 包装文件元数据约束 | 不是 makepkg 安装或干净系统依赖验证 |
 | Sway smoke | 每个 PR 合并必跑 | 私有 Sway、Wayland、真实应用/控制面板/IPC、多输出 | 无键盘 seat；不拿它代替 KWin 焦点或真实点击穿透 |
 | KWin smoke，scale=1 和 1.5 | 每个 PR 合并必跑 | 私有 KWin/D-Bus、真实 layer-shell、窗口像素、焦点、热插拔、帧/IPC、实际点击路由 | 软件驱动/虚拟输出，不证明物理显示器与所有桌面效果 |
@@ -66,8 +66,8 @@ CI 的容器已经有独立进程视图，无需嵌套 mount/user namespace。CI
 
 产品承诺：同一请求按契约终结一次，回复原接收者；取消/替换后旧结果不得开始或污染后续语音，不能只检查最终 Idle。
 
-当前生产组装由 reading_clip 插件持有 ReadingClipProcessor，经 `speech.speak/v1` 请求 speech 插件的 SpeechEndpoint，再进入 SpeechProcessor → SpeechPlayer → source/audio；图像与 OCR 同样走能力请求。它们不再由 ProcessorRuntime 直接组装。
-`speech-contract-reading-complete/reading-cancel` 仍通过注入旧处理器引用运行真实朗读/语音状态机，检查状态序列、图片释放与后续副作用，不经过动态插件加载和 SpeechEndpoint。
+当前生产组装由 reading_clip 插件持有 ReadingClipProcessor，经 `speech.speak/v1` 请求 speech 插件的 SpeechEndpoint，再进入 SpeechProcessor → SpeechPlayer → source/audio；图像与 OCR 同样走能力请求。平台不再组装这些业务对象。
+`speech-contract-reading-complete/reading-cancel` 动态加载真实朗读模块和 `speech-contract-fixture`，后者组装真实 SpeechEndpoint、SpeechProcessor 与 SpeechPlayer 状态机，检查状态序列、图片释放与后续副作用。图像/OCR 能力为合成夹具，source/audio 替换为可控边界；这不等于加载生产语音模块或验证真实提供者、云端协议和音频设备。
 `processor-pipeline` 另有真实图像编码/OCR 子进程、OCR 取消与 PNG 生命周期证据，不用内存夹具代替真实子进程语义。
 `reading-plugin` 加载真实朗读模块并连接真实图像/OCR，以语音能力夹具检查完成、取消、缺失提供者及停止后迟到回复；`speech-plugin-load`、`speech-endpoint` 和 `delegate-plugin-commands` 分别补充语音模块加载、桥接及命令入口证据。插件边界详见 [插件架构](plugin-architecture.md)。语音契约和语音模块测试受 DESKWAIFU_BUILD_SPEECH_PLUGIN 控制；完整门禁要求其开启。
 
@@ -116,7 +116,7 @@ CI 的容器已经有独立进程视图，无需嵌套 mount/user namespace。CI
 | 历史断言 | 迁移状态与限制 |
 | --- | --- |
 | 两处可能被 NDEBUG 移除的 current/零驻留检查 | 用真实 GL 创建/删除账本、线程和上下文检查替换，Release 也执行；保留生产 TextureResidency 租约/共享/失败加载断言 |
-| 完整六阶段私有析构顺序 | 不再适用：当前生产组装分为 legacy processor/runtime 与插件生命周期；只保留产品要求的有效上下文与资源释放，不锁死任意全序 |
+| 完整六阶段私有析构顺序 | 不再适用：当前业务组装由各插件持有，平台只管理插件生命周期；只保留产品要求的有效上下文与资源释放，不锁死任意全序 |
 | 无 GPU 资源时不绑定 | 部分覆盖：Prepare/BeforeContext 失败不进行 GL 纹理操作；没有独立于渲染上下文的“仅启动 Cubism runtime”生产入口 |
 | 绑定失败时不错误删除 | 帧绑定失败后的正式收尾和恢复已覆盖。独立进程 `model-shutdown-context` 强制销毁时恢复失败并解除当前上下文，检查模型 GL 删除被禁止、Stop 返回失败且遗留资源交给进程清理；目标本身可独立恢复上下文收尾。仍不等价于物理 context-loss/驱动复位 |
 | 传输先销毁，服务仍可接收断开 | 保留 IpcTransportTest 的真实传输析构断言，直接销毁真实对象；processor-ownership 覆盖晚到领域完成 |

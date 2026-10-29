@@ -1,0 +1,100 @@
+# 测试归属迁移
+
+普通测试的根入口为 `platform/tests/CMakeLists.txt`，脚本门禁仍位于 `tests/`。
+
+- desktop、perception、IPC、reading_clip、speech 的私有单元测试分别位于自己的 `src/plugins/<owner>/tests`。
+- `processor-pipeline` 保留为聚合门禁：依次执行 reading、perception、IPC 领域适配器，再动态加载 perception/reading 做完整链路；speech 开启时保留无凭据失败覆盖。
+- `processor-ownership` 动态加载 IPC/perception/reading，验证异步结果、半关闭、外部 OCR 接受/查询/取消、重复键拒绝及卸载。原 desktop 窗口/输入/编辑保护/会话释放覆盖在 `desktop-ownership`。
+- `gui-tabs` 仅通过 GUI SDK 与动态插件交互；不编译插件 GUI 源码。`control-theme` 通过公开宿主消息填充真实热键面板。
+- `MainWindowTransformTest` 不包含 desktop 私有头。其原设置假后端被移入 desktop 自己编译的 `desktop-settings-fixture` 模块，测试仅通过 test-only JSON 协议控制并观察。
+- `platform/testing` 只供 platform 集成测试使用；领域单元测试仅依赖 SDK、自己的实现和目录内的小夹具，不为测试放宽构建防火墙。
+- speech-reading 与 respawner 的跨插件覆盖位于 platform；speech/system 自编译测试模块通过公开测试协议暴露可控的 source/audio 或重启边界，platform 不包含它们的私有头。
+- `build-boundaries` 独立创建无需 Qt/Cubism 的有效 C++ 夹具，验证真实防火墙拒绝跨归属源文件、链接（含 interface/generator expression）和绝对/相对/尖括号 include，并验证合法消费者可构建。
+- `delegate-keyboard` 保留 desktop 私有键盘、失败日志、重复按键抑制及模型令牌断言；`delegate-plugin-commands` 位于 platform，动态加载生产 DesktopPlugin 入口（仅窗口换成 EGL 测试边界）、真实 IPC/speech 模块，验证完整命令管线、配置隔离与 quit 最后回复。
+
+## 验证记录
+
+已通过：`python3 tests/test_build_boundaries.py`（5 项），`python3 tests/test_plugin_boundaries.py`（7 项），独立 `src/plugins/perception/tests/ocr-client` 配置、构建与 `ocr-client` CTest。
+
+迁移后的 79 个测试/夹具 C++ 源文件已做独立语法检查（QtTest 的 moc 与 Wayland 夹具头在临时目录生成）；这是语法证据，不替代正式目标链接与运行。另通过 `platform/tooling/BoundaryTest.py`（4 项）和 `tests/test_test_gate.py`（7 项）。
+
+首版提交的全量目标配置、编译及普通门禁已通过：134 个注册测试中 133 项通过，1 项按政策
+标记未验证。明确 PCI 设备、私有模型、付费云端和可发声音频的授权测试未执行，不能
+据此宣称这些环境已覆盖。报告位于构建目录的 `test-logs/ctest-*/summary.json`。
+
+全部业务模块及 GUI 关闭的纯平台配置完成构建，27/27 项测试通过，不需要 Cubism、
+GLEW、LayerShellQt、OCR 或语音专属依赖。SDK/平台宿主独立配置完成构建，9/9 项契约
+测试通过，包含安装后消费者和 GUI 传输失效屏障。
+
+禁用全部后端模块的 GUI 配置完成构建，32/32 项测试通过。另在全新目录仅构建
+`deskwaifu-control` 目标，确认没有产生任何业务插件 `.so`，空插件 GUI 宿主能启动。
+
+`speech-plugin-load` 已归平台测试。`delegate-keyboard` 不再使用 socket 或可选插件装配；
+平台集成使用 `desktop-keyboard-fixture`，编译真实 `DesktopPlugin.cpp` 和正式 desktop
+core，只替换窗口边界。两项 Delegate 场景各自连续重复 5 次通过。
+
+独立 KWin 虚拟双输出的 Qt/模型/IPC/退出流程已通过正常缩放，以及私有安装前缀下的
+1.5 倍缩放验证。Sway 冒烟因环境未安装 `sway` 未执行，不能报告为通过。测试没有
+接入用户真实桌面、真实剪贴板、云端服务或可发声音频。
+
+## 首轮严格审查修正
+
+- 桌面 alpha/命中/缩放策略与帧交换收回 desktop 私有实现，原算法断言随归属迁移。
+  新增 `plugin-sdk-image-file` 与安装后仅 QtCore 消费者，验证共享文件寿命不依赖 perception。
+- 构建防火墙覆盖 C/C++，在链接前对生成的实际产物清单校验归属；新增自定义输出目录、
+  `-Wl`/`-Xlinker`、响应文件、库搜索及对象文件负例，以及合法 launcher 和重命名供应商目录正例。
+- `desktop-commands-fairness` 动态加载真实桌面命令桥，仅以本插件夹具控制领域完成；验证
+  慢模型期间状态/隐藏/退出继续前进，双向取消占位、后续结果关联及 Stop 屏障。
+- `perception-startup` 通过公共加载协议在 perception Start 前请求状态，并在启动后反复验证
+  状态、取消、超时及回复配对；早期请求明确失败，不进入相关队列。
+- `qt-desktop-window-run` 运行真实 Run/StartFrames，仅替换窗口可用性和 GL 边界；验证外部
+  退出嵌套循环后不再调用引用栈局部的定时器回调，并覆盖重复运行、普通失败及不可用窗口。
+- `plugin-manager` 覆盖初始化/启动失败与 Stop/析构失败的四种组合；回滚失败出现在启动
+  诊断中，并保留到最终 Stop 返回失败，健康插件与后续生命周期不受旧故障状态污染。
+- 显式声明 manager 与 OCR 测试的动态模块/子进程夹具依赖，单独构建测试目标也能运行。
+
+上述新增运行时回归已证明在修复前失败、修复后连续 20 次通过；25 项定向 ASan/UBSan
+通过，启用了栈返回后使用与泄漏检测。对应报告：
+`build/architecture-sanitize/test-logs/ctest-w7ajcrnq/summary.json`。
+
+修正后重新构建全部目标，完整普通门禁 138 项中 137 项通过，1 项仍按明确 PCI 设备授权
+政策未验证；没有扩大全局或子用例 skip 例外。完整报告：
+`build/architecture/test-logs/ctest-i7r66jkv/summary.json`。
+两个渲染目标编译变体以及 KWin 构建目录 scale=1、私有安装目录 scale=1.5 冒烟再次通过。
+全新纯平台配置 26/26、无后端 GUI 配置 31/31 通过；计数较首版各减少 1，是两个桌面
+算法测试移回 desktop、同时新增一个 SDK 文件寿命测试的净变化，不是删除回归。
+六项行为变异再次全部被指定断言拦截，恢复后均通过，报告：
+`build/architecture/test-logs/mutations/run-g500j45w/summary.json`。
+
+## 第二轮严格审查修正
+
+- 静态归档器复用产物归属校验，拒绝通过普通/条件 `TARGET_OBJECTS` 或生成对象路径混入
+  其他插件的实现；Ninja 和 Unix Makefiles 均验证，同归属对象和已有归档 launcher 仍可用。
+- 链接参数先展开 `-Xlinker`，再解析库搜索选项；按实际静态/动态模式及 push/pop 状态
+  选择 `.a`/`.so`，同时覆盖合法选择，防止以误拒合法构建代替隔离。
+- 新增负例在上一提交的私有副本上出现 9 个绕过、两个合法静态选择误拒；修正后全部
+  通过，没有依靠缺失文件或语法错误制造假阴性。
+- `desktop-commands-early-start` 通过公共加载模块 `a`，在桌面 Start 前及实际初始化、
+  StartFrames 泵事件期间请求两个命令域；均明确返回未就绪，不进入相关队列。成功启动后
+  才开放命令，之后继续运行原有完整公平性/取消/停止断言。普通与 ASan/UBSan 各连续
+  20 轮通过，修复前模块运行新回归仍失败。
+
+第二轮修正后完整构建及普通门禁为 139 项：138 项通过，1 项 PCI 授权场景未验证。
+报告：`build/architecture/test-logs/ctest-74bq__7d/summary.json`。
+26 项定向 ASan/UBSan 全部通过（含新桌面启动场景），报告：
+`build/architecture-sanitize/test-logs/ctest-nurl5qf6/summary.json`。
+纯平台 26/26、无后端 GUI 31/31 再次通过；带空格路径的 Unix Makefiles 构建通过。
+
+## 第三轮架构复审修正
+
+- 配置时检查 `PRECOMPILE_HEADERS_REUSE_FROM`，拒绝跨归属 PCH 复用；同归属复用仍实际
+  构建并执行内联函数。禁止依赖不能靠 GCC 对 PCH 使用者省略原始头依赖而漏检。
+- 参数展开保留编译器参数与 linker 转发参数的来源：驱动层 `-static` 是全局设置，
+  转发的 `-static`/`--static` 只在当前位置改变链接模式，push/pop 恢复正确状态。
+  负例和合法反向归属组合均覆盖 `-Wl`、`-Xlinker` 两种转发方式。
+- 新断言在 `4b1d011` 私有副本上复现跨域 PCH 绕过及八个静态别名选择错误；修正后
+  两套构建隔离测试合计 17/17 通过。另从干净构建目标重新编译完整工程以验证新校验。
+
+干净全量重建完成后，139 项普通门禁再次全部达到政策要求（138 项通过、1 项 PCI
+授权场景未验证），报告：`build/architecture/test-logs/ctest-u5utz7nv/summary.json`。
+此轮没有修改已通过运行时复审的 C++ 实现。

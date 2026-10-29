@@ -74,6 +74,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix="qt-model-", dir=temp_root) as directory:
         root = Path(directory)
         binaries = build / "bin"
+        plugin_root = build / "plugins"
         cli = Path(__file__).resolve().parents[1] / "deskwaifu-ctl"
         if args.installed:
             prefix = root / "prefix"
@@ -81,6 +82,9 @@ def main():
                 subprocess.run(["cmake", "--install", str(build), "--component", "DeskWaifu", "--prefix", str(prefix)],
                                stdout=log, stderr=subprocess.STDOUT, check=True, timeout=30)
             binaries = prefix / "bin"
+            plugin_directories = list(prefix.glob("lib*/deskwaifu/plugins"))
+            assert len(plugin_directories) == 1, plugin_directories
+            plugin_root = plugin_directories[0]
             cli = binaries / "deskwaifu-ctl"
             assert (prefix / "share/applications/deskwaifu-control.desktop").is_file()
             for name in ("deskwaifu", "deskwaifu-control", "deskwaifu-ctl"):
@@ -99,7 +103,8 @@ def main():
             overlay.mkdir()
             for item in (resources / "Haru").iterdir():
                 (overlay / item.name).symlink_to(item, target_is_directory=item.is_dir())
-        (config / "config.json").write_text(json.dumps({"default_model": "Haru", "additional_model_dirs": [str(aliases)]}))
+        (config / "config.json").write_text(json.dumps({"default_model": "Haru", "additional_model_dirs": [str(aliases)],
+                                                       "plugin_dir": str(plugin_root)}))
         env = dict(os.environ, XDG_RUNTIME_DIR=str(runtime), XDG_CONFIG_HOME=str(root / "config"),
                    XDG_CACHE_HOME=str(root / "cache"), XDG_DATA_HOME=str(root / "data"),
                    LIBGL_ALWAYS_SOFTWARE="1", MESA_DEBUG="context",

@@ -1,3 +1,5 @@
+cmake_minimum_required(VERSION 3.25)
+
 foreach(component processor/model/LAppView processor/model/LAppLive2DManager processor/model/LAppModel processor/model/LAppPal processor/model/LAppSprite
     processor/model/ModelHotkeys processor/interaction/ModelInputDispatch
     processor/interaction/InteractionProcessor processor/interaction/ModelWindowState)

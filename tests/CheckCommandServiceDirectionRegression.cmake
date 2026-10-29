@@ -1,3 +1,5 @@
+cmake_minimum_required(VERSION 3.25)
+
 file(MAKE_DIRECTORY "${FIXTURE_SOURCE}/processor/interaction")
 file(WRITE "${FIXTURE_SOURCE}/processor/interaction/AppCommandHandler.cpp" "// Commands only\n")
 foreach(dependency "IExternalControlPort& port;" "LAppIPC* transport;" "auto port = app.GetIPC();")

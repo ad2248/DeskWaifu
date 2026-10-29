@@ -1,0 +1,152 @@
+# 插件 SDK
+
+宿主只认识插件生命周期和消息，不认识语音、OCR、reading 等领域。没有 manifest、依赖解析、市场或热重载；**同进程插件不是崩溃隔离边界**。
+
+## 宿主接线
+
+SDK 可独立验证，不需要 Cubism、领域实现或宿主头文件：
+
+```sh
+cmake -S sdk -B /tmp/opencode/plugin-sdk-build -DCMAKE_CXX_STANDARD=14
+cmake --build /tmp/opencode/plugin-sdk-build -j4
+ctest --test-dir /tmp/opencode/plugin-sdk-build --output-on-failure
+```
+
+在应用构建中：
+
+1. `add_subdirectory(sdk)` 创建共享目标 `deskwaifu_events`、`deskwaifu_plugin_sdk`，以及共享配置辅助目标 `deskwaifu_contracts`。宿主和所有模块必须使用同一个共享事件运行时，不能各自静态嵌入事件实现。
+2. `add_subdirectory(platform/plugin)` 创建独立静态宿主目标 `deskwaifu_plugin_host`；启用 GUI SDK 时还创建 `deskwaifu_gui_plugin_host`。应用链接相应宿主目标，插件只链接 SDK，不链接宿主或整个应用。
+3. 随安装打包 `libdeskwaifu_events.so.2`、`libdeskwaifu_plugin_sdk.so.2` 以及启用时的 `libdeskwaifu_gui_plugin_sdk.so.2`，并配置动态库搜索路径。SDK 的公共 include 根目录为 `sdk/`，保持 `plugin/...`、`event/...`、`contracts/...`、`processor/Processor.hpp` 拼写。加载器头文件由平台提供，不安装到 SDK。
+4. 与现有处理器共用一个 `ProcessorEventLoop`；主线程创建 `PluginManager(loop, pluginRoot, configRoot)`，调用 `Start(&error)`。退出时先 `Stop()`（停止并 join 工作线程），之后再销毁 loop。处理器可使用相同的端点 API，不必成为动态插件。
+
+`Discover(root)` 只接受 `<root>/<name>/<name>.so` 普通文件，按目录名排序；不接受 `lib<name>.so`、平铺模块、递归目录、目录/模块符号链接。缺少根目录表示没有可选插件。`LoadedPlugins()` 给出实例名。
+
+`Start` 依次创建并 Initialize 各实例，随后激活成功初始化的端点，最后逐个 Start。初始化阶段禁止发送消息。某个入口/ABI/工厂/初始化/Start 失败，只失效并 Stop/destroy 失败实例，其他健康插件继续工作。返回 false 和汇总诊断表示存在失败项，不表示健康插件已停止；调用者仍须 Stop。**Stop 必须支持部分初始化，并且 noexcept。** 配置文件是持久数据，不随失败回滚删除。启动完成后再次 Start 会报错；Stop 幂等，Stop 后允许重新创建实例，但不会卸载或重新载入库代码。插件之间按运行时能力协作，首版不解析硬依赖图；依赖不可用由请求结果报告。
+
+`IPlugin` 仅统一虚析构、默认成功的 `Start(QString*)` 和纯虚 `Stop() noexcept`。`IProcessorPlugin`、`IGuiPlugin` 分别继承它，且只在各自接口声明 `Initialize(PluginContext&, QString*)`、`Initialize(GuiPluginContext&, QString*)`。`PluginApi` 工厂返回 `IProcessorPlugin*`。处理器插件可实现 `HandleEvent` 消费直接事件，也可只使用 context 端点；后者继承默认的“不消费”，不需要空的事件处理实现。
+
+库设置 `QLibrary::PreventUnloadHint`，即便入口不兼容、启动失败或 Stop，也保持映射到进程退出。这样插件事件、Qt 元类型、延迟释放对象仍可执行其代码；不是热卸载方案。描述符在工厂调用前检查结构大小、SDK 版本、精确 Qt 版本、平台 ABI、编译器、C++ 标准及标准库 ABI（含 libstdc++ debug 模式），用于发现误装二进制。开发阶段所有组件以同一源码版本、工具链和 Qt 同步重编译，不维护历史接口兼容层。这些检查不能使恶意或损坏的 `.so` 变安全。
+
+## 最小插件
+
+### 可选 GUI 入口
+
+同一个 `<root>/<name>/<name>.so` 可同时导出后端 `DeskWaifuPluginEntry` 和 GUI `DeskWaifuGuiPluginEntry`，也可只导出其一。两个宿主都正常跳过缺失的对应入口。GUI 描述符 `GuiPluginApi` 使用独立的 ABI v2，并执行与后端相同的严格构建检查及禁止卸载策略。宿主和插件使用当前 SDK 一起构建，不提供历史接口适配。
+
+核心 SDK 仍只依赖 QtCore。启用 `-DDESKWAIFU_BUILD_GUI_PLUGIN_SDK=ON` 后增加 QtWidgets 目标 `deskwaifu_gui_plugin_sdk` 和 offscreen 测试；已安装 SDK 使用 `find_package(DeskWaifuPluginSDK REQUIRED COMPONENTS Gui)`，链接 `DeskWaifu::gui_plugin_sdk`。不需要 QtNetwork 或控制程序头文件。
+
+宿主实现 `GuiHostServices`，然后在 GUI 主线程创建 `GuiPluginManager(root, services, tabs)`；services 和 QTabWidget 必须比 manager 活得更久。`Start(&error)` 的部分失败、`Stop()` 和重启语义与后端一致。GUI 插件实现 `IGuiPlugin::Initialize(GuiPluginContext&, QString*)`、`Start(QString*)`、`Stop() noexcept`，并用 `DESKWAIFU_EXPORT_GUI_PLUGIN(Type)` 导出入口。
+
+```cpp
+bool Initialize(GuiPluginContext& context, QString* error) override {
+    auto* page = new QWidget;
+    if (!context.RegisterTab({"settings", "Settings", 20}, page, error)) {
+        delete page; // 注册失败不转移所有权
+        return false;
+    }
+    auto* services = context.Services();
+    QObject::connect(services, &GuiHostServices::responseReceived, &context,
+        [page](const QString& command, const QJsonObject& response) { /* 更新页面 */ });
+    return true;
+}
+```
+
+一个插件可注册多个 tab；本地 ID 非空且不能含 `/`，全局 ID 为 `<plugin>/<local>`，按 `order` 再按全局 ID 排序。重复 ID、重复 page、空 page、已有 parent 的 page 均拒绝。只有注册成功才转移 page 所有权；插件此后不得删除 page。所有 Initialize 完成后激活命令发送，所有 Start 完成后才发布成功实例的页面。失败实例单独回滚。退出顺序为：失效所有 context → Stop 所有插件 → 销毁注册页面 → destroy 插件 → 销毁 context。Stop 期间页面仍有效，可用于停止页面定时器；插件析构时页面已销毁，不能再访问。
+
+`context.Services()` 是 context 所有的转发 facade：命令、取消及 connectToServer 在激活前不转发，context 失效后禁止新工作、所有转发连接断开。唯一的清理例外是已激活上下文的 `cancelQueuedCommand`，允许 Stop/析构撤回尚未发送的命令，但不能撤回已经发送的修改。插件必须在 Stop 中停止定时器等本地工作。回调必须绑定 context、注册页面或页面子对象作为 QObject receiver，禁止无 receiver 的捕获插件指针连接；这些接收者上已排队的调用在失效时移除，不支持任意外部接收者的生命周期。通用信号提供连接状态、命令响应/取消/结果未知、协议错误、日志、backendReady 和进程级 activationChanged。领域命令及响应解释留在插件中；命令响应按 command 标识，不增加独立请求 ID 协议。`setStatusMessage(message, timeoutMs)`、`publishLog(message)`、`notifyBackendReady()` 转发到进程宿主，不通过 facade 自身信号回送，避免日志递归。宿主动态属性在创建 facade 时复制一次，可用于注入进程级只读元数据。
+
+传输插件实现公共 `IGuiTransport`，通过 `context.Services()->registerTransport(transport, &context)` 注册一个 GUI 线程对象，允许在 Initialize 注册。对象仍由插件所有，宿主只借用；重复注册、空对象和其他 owner 被拒绝。context 失效时先断开信号、清除受支持接收者上的排队回调，再向 broker 撤销注册，最后才调用插件 Stop。因此 broker 撤销期间即使发送信号或处理事件，也不能回调已失效的 context、页面及页面子对象。显式撤销允许随后重新注册；失效后禁止注册，重复或空撤销是无副作用操作。插件在 Stop 中销毁自己的传输对象，SDK 不依赖任何具体协议客户端。
+
+领域契约应放在宿主和消费者都能包含的普通头文件，不放进通用总线。事件继承 `ProcessorEvent`，允许直接包含强类型字段，不必使用 QVariantMap：
+
+```cpp
+struct RenderText : ProcessorEvent { QString text; };
+struct RenderResult : ProcessorEvent { bool ok; QString error; };
+
+class TextPlugin final : public IProcessorPlugin {
+    EventEndpoint* endpoint = nullptr; // 由 context 所有，Initialize 至 destroy 期间有效
+public:
+    bool Initialize(PluginContext& context, QString*) override {
+        endpoint = context.CreateEndpoint("render", [this](const EventDelivery& d) {
+            if (d.kind == EventDelivery::Kind::Cancellation) {
+                // 以 d.requestId 定位并取消实际异步工作；不再 Respond。
+                return;
+            }
+            if (d.kind != EventDelivery::Kind::Request) return;
+            auto request = std::dynamic_pointer_cast<const RenderText>(d.payload);
+            auto result = std::make_shared<RenderResult>();
+            result->ok = bool(request);
+            if (!request) result->error = "unsupported request";
+            endpoint->Respond(d.requestId, result);
+        });
+        return endpoint && endpoint->Provide("text.render/v1");
+    }
+    void Stop() noexcept override { /* 取消实际工作并 join 线程，不能再使用 endpoint 发消息 */ }
+};
+DESKWAIFU_EXPORT_PLUGIN(TextPlugin)
+```
+
+模块 CMake 形状：
+
+```cmake
+add_library(text MODULE TextPlugin.cpp)
+target_link_libraries(text PRIVATE deskwaifu_plugin_sdk)
+set_target_properties(text PROPERTIES PREFIX "" OUTPUT_NAME text)
+# 安装/输出到插件根目录下的 text/text.so
+```
+
+`PluginContext::Name()` 是目录名；`ConfigDirectory()` 是 `<configRoot>/plugin/<name>`。`ReadConfig("settings.json", object, &error)` / `WriteConfig(...)` 只接受单一文件名，写入自动创建目录。缺失/非法/非对象 JSON 返回 false，读取失败不改变输出；调用者决定默认值。`ConfigJson.hpp` 还提供按完整路径读写的 `ReadJsonObject` / `WriteJsonObject`。写入使用 `QSaveFile` 原子提交，禁止退回直接覆盖，不会留下半截 JSON。它不提供并发读改写事务。
+
+`ReportFailure(message)` 是 loop 线程上的安全诊断入口，上下文失效后的 Stop/析构阶段
+仍可使用。平台的 `PluginManager::Stop(&error)` 汇总失败并返回 false；资源收尾失败
+不能被主程序报告为成功退出。消息由插件负责脱敏，不得包含凭据或请求正文。
+
+适配器可通过 `context.Loop()` 复用 RAII `Processor`，不能另建第二条总线。`Processor` 是 `QObject + IProcessorPlugin`，构造时注册、默认 Initialize 成功、Start 继承自公共生命周期，默认 Stop 解绑，析构仍兜底解绑。派生 Stop 必须为 `noexcept`，并负责停止工作线程和调用 `Processor::Stop()`；基类不能替派生类 join 工作线程。直接注册不受 context 的端点激活门控，因此插件必须遵守 Initialize 不发送、Start 才启动工作的约定。新能力和订阅应使用 context 所有的端点。
+
+## 通知与能力请求
+
+`EventEndpoint` 的处理函数是 `void(const EventDelivery&)`，不承担 Legacy 的 bool 消费规则。一个实例可用多个具名端点；context 自动加 `<pluginName>/` 前缀并拥有端点。重复名称、重复订阅、同一端点重复 Provide 返回失败。端点创建/订阅/提供/激活/失效只能在 loop 所在线程操作；创建或注册在错误线程明确失败。工作线程可在端点仍存活期间调用 Notify/Request/Respond/Cancel。Stop 必须 join 工作线程后才允许 context 析构。
+
+```cpp
+auto consumer = loop.CreateEndpoint("reading", [](const EventDelivery& d) {
+    if (d.kind == EventDelivery::Kind::Notification) { /* 每个订阅者都可见 */ }
+});
+consumer->Subscribe("text.changed/v1");
+consumer->Notify("text.changed/v1", std::make_shared<RenderText>());
+
+auto request = std::make_shared<RenderText>();
+request->text = "hello";
+RequestId id = consumer->Request("text.render/v1", request,
+    [](const RequestResult& r) {
+        // r.requestId 是调用返回的关联 ID，回调始终异步在主线程执行。
+        if (r.status != RequestStatus::Replied) { /* 传输/生命周期失败 */ return; }
+        auto result = std::dynamic_pointer_cast<const RenderResult>(r.payload);
+        // 领域失败由 RenderResult 表达；总线不理解领域错误。
+    }, 30000);
+consumer->Cancel(id);
+```
+
+* Topic / capability 都是显式字符串；领域自行使用 `/v1` 等版本后缀。通知发送时对当前活跃订阅者取快照，各自收到通知；任一处理者不能消费别人的通知。未知 topic 是无副作用的成功发送。
+* 请求只匹配**恰好一个**活跃能力提供者；零个/多个分别异步返回 `NoProvider` / `AmbiguousProvider`，绝不按注册顺序选。未发送、空参数、无回调、超时非正数或发送端无效返回 ID 0；其余调用返回非零 ID。
+* 提供者从 delivery 获取请求 ID，用自己的端点 `Respond(id, payload)`；只有匹配提供者可以响应，只有请求者可以 Cancel。成功响应为 `Replied`；领域成功、失败、拒绝由响应类型描述。未知事件类型应由提供者回一个领域级“不支持”，或者等待超时；总线不硬编码领域失败。
+* `Cancelled`、`TimedOut`、`EndpointUnavailable`、`HandlerFailed` 都是终态。取消/超时/请求者失效会向仍活跃提供者投递 `Cancellation`（相同 ID、空 payload），提供者须自行终止实际异步工作。处理函数抛出的 C++ 异常会记录警告，请求返回 `HandlerFailed`；异常并非进程崩溃隔离。
+* 响应、取消、超时以互斥锁内首次确立的终态为准；响应入口也检查单调时钟截止时间，不依赖主线程及时处理定时器。已结束/迟到/重复/错误端点的响应和取消返回 false，不再触发回调。终态已排队的响应不会被随后 Cancel 改写。
+* 提供者失效使待决请求返回 `EndpointUnavailable`。请求者失效会取消其工作，**不再调用属于它的 completion**；已经排队的回调也跳过。同名新端点使用新 ID，不能接收或响应旧请求。通知/请求派发前发送者或接收者失效也跳过，防止已销毁插件回调。
+* 除请求/响应正文外不要跨插件持有裸领域对象。共享事件投递后应视为不可变；生产者也不能继续修改它。所有旧、新消息共享一条 FIFO、非递归 Qt 主线程调度队列；嵌套 `processEvents()` 不会重入消息处理。外部 I/O 完成与超时仍要求 Qt 事件循环正常运转，没有实时保证。
+* 新通知/请求的准入预算为 4096 条排队投递和 1024 个待决请求；饱和时 Notify 返回 false、Request 返回 0。通知按全部订阅者一次性检查预算，不部分发送。已接受请求的终态与取消不因预算耗尽被丢弃，可能暂时超出准入水位。Legacy Post 保留原有行为，不受此准入限制；这不是恶意插件的内存沙箱。
+
+## 直接事件消费
+
+`Post({type, sender, receiver, data})`、`IProcessorPlugin::HandleEvent(const ProcessorEvent&)`、`Processor::Send` 按注册顺序遇到 true 停止。新通知不受该规则影响；不再提供旧 `IProcessor` 类型或历史接口布局兼容。
+
+`PostEvent(std::shared_ptr<const ProcessorEvent>)` 支持以基类共享所有权投递派生 Legacy 事件，`Post(ConcreteDerivedEvent)` 模板也保留动态类型。**不要把派生对象先复制成 `ProcessorEvent` 值，或调用 Legacy 按值 Post(baseReference)**；那是 C++ 本身的切片，无法恢复。跨线程/异步派生事件应始终采用 `make_shared<Derived>` 和基类共享指针接口。
+
+## 归属检查与测试
+
+SDK 构建会检查公共源文件只包含 SDK 内的双引号头文件，禁止加载器、私有平台/领域实现和 Cubism 依赖。测试全部归平台或插件所有：`platform/tests/sdk` 验证 SDK 总线、类型化生命周期、配置辅助和安装后的消费；`platform/plugin/tests` 验证动态库发现、ABI、回滚和 GUI 生命周期。SDK 独立构建启用 `BUILD_TESTING` 时会添加仓库中的平台契约测试，生产 SDK 目标不依赖平台实现。完整加载器测试可以独立运行：
+
+```sh
+cmake -S platform/plugin -B /tmp/opencode/plugin-host-build -DDESKWAIFU_BUILD_GUI_PLUGIN_SDK=ON -DCMAKE_CXX_STANDARD=14
+cmake --build /tmp/opencode/plugin-host-build -j4
+ctest --test-dir /tmp/opencode/plugin-host-build --output-on-failure
+```

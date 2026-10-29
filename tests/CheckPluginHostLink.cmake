@@ -1,3 +1,5 @@
+cmake_minimum_required(VERSION 3.25)
+
 execute_process(COMMAND "${READELF}" -d "${HOST}"
   RESULT_VARIABLE result OUTPUT_VARIABLE dynamic ERROR_VARIABLE diagnostic)
 if(NOT result EQUAL 0)

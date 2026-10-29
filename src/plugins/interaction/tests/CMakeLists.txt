@@ -1,0 +1,7 @@
+qt_add_executable(hotkey-panel-test HotkeyPanelTest.cpp ../gui/HotkeyPanel.cpp ../gui/HotkeyPanel.hpp)
+target_include_directories(hotkey-panel-test PRIVATE ../gui)
+target_link_libraries(hotkey-panel-test PRIVATE Qt6::Test Qt6::Widgets)
+deskwaifu_domain_test(hotkey-panel-test interaction)
+set_target_properties(hotkey-panel-test PROPERTIES AUTOMOC ON)
+add_test(NAME hotkey-panel COMMAND hotkey-panel-test)
+set_tests_properties(hotkey-panel PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

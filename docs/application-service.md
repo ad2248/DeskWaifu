@@ -8,8 +8,8 @@ configuration and editor. Model selection/actions belong to ModelProcessor and
 are requested only through events; model metadata is cached from state events.
 Delegate only assembles lifetimes and never forwards business calls.
 Speech credentials and clipboard-reading orchestration now belong to backend
-plugins, not ApplicationService or InteractionContext. CommandProcessor first
-tries plugin command capabilities before legacy domain routing; control-panel
+plugins, not ApplicationService or InteractionContext. CommandProcessor routes
+through public plugin command capabilities without legacy fallback; control-panel
 GUI entries use IPC, not direct references to this service. See
 [plugin architecture](plugin-architecture.md) and [GUI plugins](gui-plugins.md).
 
@@ -38,4 +38,4 @@ sources outrank persistent sources, and the latest update wins within a rank.
 Disconnect releases that connection's controls; a model index or instance-token
 change clears all controls. The shared frame slot contains value input,
 immutable CPU frames and an error status, not window or GPU objects.
-See [processor ownership](../src/processor/README.md).
+See [plugin ownership](plugin-architecture.md).
