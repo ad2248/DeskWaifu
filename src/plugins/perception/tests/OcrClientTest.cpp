@@ -96,6 +96,93 @@ try {
         const auto retry = client.Submit(image).value("job_id").toString();
         Wait([&] { return client.Result(retry).value("state") == "completed"; });
     }
+    {
+        OcrClient client(directory.filePath("missing"));
+        client.ConfigureModels({});
+        Check(client.Status().value("error_code") == "helper_missing", "missing helper diagnostic");
+        Check(client.Status().value("detection_model_dir") == "/usr/share/deskwaifu/ocr/models/PP-OCRv6_small_det", "default detection directory");
+        Check(client.Status().value("recognition_model_dir") == "/usr/share/deskwaifu/ocr/models/PP-OCRv6_small_rec", "default recognition directory");
+    }
+    for (const QJsonValue value : {QJsonValue("relative"), QJsonValue(""), QJsonValue(42), QJsonValue(QJsonValue::Null)}) {
+        OcrClient client(helper);
+        client.ConfigureModels({{"ocr_detection_model_dir", value}});
+        Check(client.Status().value("error_code") == "invalid_config", "invalid configured directory");
+        Check(!client.Status().value("running").toBool(), "invalid config must not start worker");
+        Check(!client.Submit(image).value("ok").toBool(), "invalid config rejects task");
+        Check(client.Status().value("job_id").toString().isEmpty(), "rejection creates no job");
+    }
+    {
+        OcrClient client(helper);
+        client.ConfigureModels({}, "Malformed configuration JSON");
+        Check(client.Status().value("error_code") == "invalid_config", "configuration read error disables OCR");
+    }
+    {
+        qputenv("DESKWAIFU_OCR_TEST_MODE", "arguments");
+        OcrClient client(helper, 1000, 100);
+        client.ConfigureModels({{"ocr_detection_model_dir", "/tmp/检测 模型"}, {"ocr_recognition_model_dir", "/tmp/识别 模型"}});
+        Check(client.Status().value("availability_state") == "checking", "asynchronous startup validation");
+        Check(!client.Submit(image).value("ok").toBool(), "checking rejects tasks");
+        Wait([&] { return client.Status().value("available").toBool(); });
+        Check(client.Status().value("state") == "idle", "validation is not a recognition task");
+        const auto id = client.Submit(image).value("job_id").toString();
+        Wait([&] { return client.Result(id).value("state") == "completed"; });
+        Wait([&] { return !client.Status().value("running").toBool(); });
+        Check(client.Status().value("available").toBool(), "idle exit retains last validated availability");
+        qunsetenv("DESKWAIFU_OCR_TEST_MODE");
+    }
+    {
+        qputenv("DESKWAIFU_OCR_TEST_MODE", "delayed-reply");
+        OcrClient client(helper, 1000, 1000);
+        client.ConfigureModels({});
+        Wait([&] { return client.Status().value("available").toBool(); });
+        const auto id = client.Submit(image).value("job_id").toString();
+        QCoreApplication::processEvents(); // Flush the request without consuming the delayed reply.
+        QThread::msleep(150);
+        Check(client.Cancel(id).value("ok").toBool(), "cancel with reply already buffered");
+        Wait([&] { return !client.Status().value("running").toBool(); });
+        Check(client.Status().value("available").toBool(), "retired worker output must not disable OCR");
+        const auto retry = client.Submit(image).value("job_id").toString();
+        Wait([&] { return client.Result(retry).value("state") == "completed"; });
+        qunsetenv("DESKWAIFU_OCR_TEST_MODE");
+    }
+    {
+        const auto modePath = directory.filePath("worker-mode");
+        QFile modeFile(modePath);
+        Check(modeFile.open(QIODevice::WriteOnly), "create worker mode file");
+        modeFile.write("crash-request"); modeFile.close();
+        qputenv("DESKWAIFU_OCR_TEST_MODE_FILE", modePath.toUtf8());
+        OcrClient client(helper, 1000, 100);
+        client.ConfigureModels({});
+        Wait([&] { return client.Status().value("available").toBool(); });
+        const auto id = client.Submit(image).value("job_id").toString();
+        Wait([&] { return client.Result(id).value("state") == "failed" && !client.Status().value("running").toBool(); });
+        Check(!client.Status().value("available").toBool(), "worker crash invalidates availability");
+        Check(modeFile.open(QIODevice::WriteOnly | QIODevice::Truncate), "update worker mode file");
+        modeFile.write("text"); modeFile.close();
+        const auto retry = client.Submit(image).value("job_id").toString();
+        Check(!retry.isEmpty(), "explicit request can recover previously validated worker");
+        Wait([&] { return client.Result(retry).value("state") == "completed"; });
+        Wait([&] { return !client.Status().value("running").toBool(); });
+        qputenv("DESKWAIFU_OCR_TEST_MODE", "load-error");
+        const auto failedReload = client.Submit(image).value("job_id").toString();
+        Wait([&] { return client.Result(failedReload).value("state") == "failed"; });
+        Check(!client.Submit(image).value("ok").toBool(), "model load failure stays disabled even after previous success");
+        qunsetenv("DESKWAIFU_OCR_TEST_MODE");
+        qunsetenv("DESKWAIFU_OCR_TEST_MODE_FILE");
+    }
+    for (const auto* mode : {"load-error", "no-ready", "version", "crash"}) {
+        qputenv("DESKWAIFU_OCR_TEST_MODE", mode);
+        OcrClient client(helper, 150, 100);
+        client.ConfigureModels({});
+        Wait([&] { return client.Status().value("availability_state") == "unavailable"; });
+        Check(!client.Status().value("error").toString().isEmpty(), "startup failure has diagnostic");
+        Wait([&] { return !client.Status().value("running").toBool(); });
+        qunsetenv("DESKWAIFU_OCR_TEST_MODE");
+        if (QString::fromLatin1(mode) == "crash") {
+            const auto retry = client.Submit(image).value("job_id").toString();
+            Wait([&] { return client.Result(retry).value("state") == "completed"; });
+        } else Check(!client.Submit(image).value("ok").toBool(), "initialization failure rejects tasks without retry loop");
+    }
     std::cout << "OCR client lifecycle and protocol tests passed\n";
     return 0;
 } catch (const std::exception& error) {

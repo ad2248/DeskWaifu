@@ -39,9 +39,11 @@ try {
     const auto root = directory.path() + "/plugins";
     Copy(argv[1], root, "a");
     Copy(argv[2], root, "perception");
+    QString error;
+    Check(WriteJsonObject(directory.path() + "/plugin/perception/config.json",
+          {{"ocr_detection_model_dir", directory.path() + "/检测 模型"}}, &error), "write perception model configuration");
     ProcessorEventLoop loop;
     PluginManager plugins(loop, root, directory.path());
-    QString error;
     Check(plugins.Start(&error), qPrintable(error));
     QJsonObject early;
     Check(ReadJsonObject(directory.path() + "/plugin/a/early.json", early, &error), "read early response");
@@ -64,8 +66,15 @@ try {
     const auto status = [&] {
         const auto id = request("get_ocr_status");
         Wait([&] { return results.count(id) != 0; });
-        Check(Json(results.at(id)) == QJsonObject{{"ok", true}, {"available", false}, {"state", "idle"},
-              {"job_id", ""}, {"running", false}}, "status is paired with its own request");
+        const auto reply = Json(results.at(id));
+        Check(reply.value("ok").toBool() && !reply.value("available").toBool() &&
+              reply.value("state") == "idle" && reply.value("job_id") == "" &&
+              reply.value("running") == false, "status is paired with its own request");
+        Check(reply.value("availability_state") == "unavailable" && reply.value("error_code") == "helper_missing",
+              "missing extension disables only OCR and reports its reason");
+        Check(reply.value("detection_model_dir") == directory.path() + "/检测 模型" &&
+              reply.value("recognition_model_dir") == "/usr/share/deskwaifu/ocr/models/PP-OCRv6_small_rec",
+              "perception reads custom model path and preserves independent default");
     };
     for (int i = 0; i < 3; ++i) status();
 

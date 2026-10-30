@@ -52,6 +52,7 @@ jobs:
           cmake -S . -B build-ci -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_TESTING=ON \
+            -DDESKWAIFU_BUILD_OCR=OFF \
             -DDESKWAIFU_BUILD_CONTROL=ON \
             -DDESKWAIFU_TEST_GATE=ON
 
@@ -65,6 +66,7 @@ jobs:
             cmake -S . -B "$build_dir" -G Ninja \
               -DCMAKE_BUILD_TYPE=Release \
               -DBUILD_TESTING=OFF \
+              -DDESKWAIFU_BUILD_OCR=OFF \
               -DDESKWAIFU_BUILD_CONTROL=OFF \
               -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
               "-DCMAKE_CXX_FLAGS=-D$definition"
@@ -96,6 +98,7 @@ jobs:
         run: |
           cmake -S . -B build-sanitize -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON \
+            -DDESKWAIFU_BUILD_OCR=OFF \
             -DDESKWAIFU_ENABLE_SANITIZERS=ON -DDESKWAIFU_TEST_GATE=ON
           cmake --build build-sanitize --parallel 16 --target \
             processor-event-loop-test speech-processor-contract-test interaction-processor-test \

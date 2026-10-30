@@ -40,6 +40,7 @@ build() {
     -DCMAKE_INSTALL_PREFIX=/usr \
     -DCMAKE_INSTALL_LIBDIR=lib \
     -DBUILD_TESTING=OFF \
+    -DDESKWAIFU_BUILD_OCR=OFF \
     -DDESKWAIFU_BUILD_CONTROL=ON
   cmake --build "$srcdir/build"
 }

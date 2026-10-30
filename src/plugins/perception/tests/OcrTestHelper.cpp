@@ -15,6 +15,12 @@ int main(int argc, char** argv)
 {
     QCoreApplication app(argc, argv);
     auto mode = qEnvironmentVariable("DESKWAIFU_OCR_TEST_MODE");
+    if (mode == "arguments") {
+        const auto arguments = app.arguments();
+        if (arguments.mid(1) != QStringList{"--detection-model-dir", "/tmp/检测 模型", "--recognition-model-dir", "/tmp/识别 模型", "--serve"}) {
+            Emit({{"event", "error"}, {"protocol", 1}, {"error", "incorrect model arguments"}}); return 1;
+        }
+    }
     if (mode == "no-ready") { QThread::sleep(10); return 0; }
     if (mode == "load-error") { Emit({{"event", "error"}, {"protocol", 1}, {"error", "model checksum mismatch"}}); return 1; }
     Emit({{"event", "ready"}, {"protocol", mode == "version" ? 2 : 1}});
@@ -28,10 +34,12 @@ int main(int argc, char** argv)
             mode = QString::fromUtf8(file.readAll()).trimmed();
         }
         if (mode == "hang") { QThread::sleep(10); return 0; }
+        if (mode == "crash-request") return 3;
         if (mode == "oversized") { std::cout << std::string(4 * 1024 * 1024 + 1, 'x') << std::flush; QThread::sleep(10); return 0; }
         if (mode == "garbage") { std::cout << "not-json\n" << std::flush; continue; }
         const auto request = QJsonDocument::fromJson(QByteArray::fromStdString(line)).object();
         const auto id = mode == "bad-id" ? QJsonValue("wrong-id") : request.value("id");
+        if (mode == "delayed-reply") QThread::msleep(50);
         if (mode == "error") { Emit({{"protocol", 1}, {"id", id}, {"ok", false}, {"error", "test request error"}}); continue; }
         QJsonObject result{{"width", 1}, {"height", 1}, {"lines", QJsonArray{}}, {"helper_pid", QCoreApplication::applicationPid()}};
         if (mode == "text") result.insert("lines", QJsonArray{QJsonObject{

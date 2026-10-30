@@ -2,11 +2,17 @@
 # the root test entry point is platform/tests.
 
 if(Python3_Interpreter_FOUND)
-  foreach(script smoke_isolation test_environment test_gate aur_packaging)
+  foreach(script smoke_isolation test_environment test_gate aur_packaging ocr_build release_packaging)
     string(REPLACE "_" "-" test_name ${script})
     add_test(NAME ${test_name} COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/test_${script}.py)
     set_tests_properties(${test_name} PROPERTIES TIMEOUT 30)
   endforeach()
+  if(TARGET deskwaifu-ocr)
+    add_test(NAME ocr-native-models COMMAND ${CMAKE_COMMAND} -E env
+      "OCR_NATIVE_HELPER=$<TARGET_FILE:deskwaifu-ocr>"
+      ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/test_ocr_native_models.py)
+    set_tests_properties(ocr-native-models PROPERTIES TIMEOUT 60)
+  endif()
   foreach(script processor_boundaries plugin_boundaries qt_window_configuration ctl)
     string(REPLACE "_" "-" test_name ${script})
     add_test(NAME ${test_name} COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_${script}.py)

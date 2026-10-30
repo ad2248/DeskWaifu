@@ -1,0 +1,54 @@
+# Maintainer: kals
+# Generated from the checked-out release tag; all sources are acquired beforehand.
+pkgbase=deskwaifu-bin
+pkgname=('deskwaifu-bin' 'deskwaifu-ocr-bin')
+pkgver=@PKGVER@
+pkgrel=1
+pkgdesc='DeskWaifu application and all default plugins'
+arch=('x86_64')
+url='https://github.com/ad2248/DeskWaifu'
+license=('LicenseRef-Live2D-Open-Software' 'LicenseRef-Live2D-Proprietary' 'BSD-3-Clause' 'MIT' 'Unlicense')
+makedepends=('cmake' 'ninja' 'qt6-base' 'qt6-wayland' 'qt6-scxml' 'qt6-websockets' 'qt6-multimedia' 'layer-shell-qt' 'wayland' 'libglvnd' 'systemd-libs' 'opencv' 'yaml-cpp')
+options=('!debug')
+source=('deskwaifu.tar.gz' 'private-deps.tar.gz' 'onnxruntime-linux-x64-1.31.0.tgz')
+sha256sums=('@SOURCE_SHA@' '@PRIVATE_SHA@' 'cc5c72baf5ae5c8238a6841f0897227be2d02826b9cf98eaf02fdefaeeb03a57')
+
+build() {
+  cmake -S "$srcdir/deskwaifu" -B "$srcdir/build-main" -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib \
+    -DBUILD_TESTING=OFF -DDESKWAIFU_BUILD_OCR=OFF \
+    -DDESKWAIFU_BUILD_CONTROL=ON -DDESKWAIFU_BUILD_GUI_PLUGIN_SDK=ON \
+    -DDESKWAIFU_BUILD_DESKTOP_PLUGIN=ON -DDESKWAIFU_BUILD_PERCEPTION_PLUGIN=ON \
+    -DDESKWAIFU_BUILD_IPC_PLUGIN=ON -DDESKWAIFU_BUILD_SPEECH_PLUGIN=ON \
+    -DDESKWAIFU_BUILD_READING_CLIP_PLUGIN=ON \
+    -DSDK_ROOT_PATH="$srcdir/private-deps/CubismSdkForNative-5-r.5" \
+    -DGLEW_PATH="$srcdir/private-deps/glew"
+  cmake --build "$srcdir/build-main" --parallel "${CMAKE_BUILD_PARALLEL_LEVEL:-4}"
+  cmake -S "$srcdir/deskwaifu/src/plugins/perception/native" -B "$srcdir/build-ocr" -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib \
+    -DONNXRUNTIME_ROOT="$srcdir/onnxruntime-linux-x64-1.31.0"
+  cmake --build "$srcdir/build-ocr" --parallel "${CMAKE_BUILD_PARALLEL_LEVEL:-4}"
+}
+
+package_deskwaifu-bin() {
+  depends=('glibc' 'gcc-libs' 'wayland' 'libglvnd' 'systemd-libs' 'qt6-base>=6.5' 'qt6-wayland>=6.5' 'qt6-scxml>=6.5' 'qt6-websockets>=6.5' 'qt6-multimedia>=6.5' 'layer-shell-qt>=6.6' 'bash' 'python' 'psmisc')
+  optdepends=('deskwaifu-ocr-bin: optional native OCR helper (models provisioned separately)')
+  provides=("deskwaifu=$pkgver")
+  conflicts=('deskwaifu')
+  DESTDIR="$pkgdir" cmake --install "$srcdir/build-main" --component DeskWaifu
+  install -Dm644 "$srcdir/deskwaifu/README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
+  local sdk="$srcdir/private-deps/CubismSdkForNative-5-r.5"
+  install -Dm644 "$sdk/LICENSE.md" "$pkgdir/usr/share/licenses/$pkgname/Live2D-SDK.md"
+  install -Dm644 "$sdk/Core/LICENSE.md" "$pkgdir/usr/share/licenses/$pkgname/Live2D-Core.md"
+  install -Dm644 "$sdk/Framework/LICENSE.md" "$pkgdir/usr/share/licenses/$pkgname/Live2D-Framework.md"
+  install -Dm644 "$srcdir/private-deps/glew/LICENSE.txt" "$pkgdir/usr/share/licenses/$pkgname/GLEW.txt"
+}
+
+package_deskwaifu-ocr-bin() {
+  pkgdesc='DeskWaifu native OCR helper and ONNX Runtime CPU runtime (no models or dictionaries)'
+  license=('MIT' 'Apache-2.0')
+  depends=("deskwaifu-bin=$pkgver-$pkgrel" 'glibc' 'gcc-libs' 'qt6-base>=6.5' 'opencv' 'yaml-cpp')
+  provides=("deskwaifu-ocr=$pkgver")
+  conflicts=('deskwaifu-ocr')
+  DESTDIR="$pkgdir" cmake --install "$srcdir/build-ocr" --component DeskWaifuOCR
+}

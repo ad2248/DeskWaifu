@@ -7,6 +7,7 @@ import resource
 import subprocess
 import tempfile
 import time
+import unicodedata
 
 
 def main():
@@ -14,6 +15,10 @@ def main():
     parser.add_argument("--helper", type=Path, required=True)
     parser.add_argument("--samples", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--detection-model-dir", type=Path,
+                        default=Path("/usr/share/deskwaifu/ocr/models/PP-OCRv6_small_det"))
+    parser.add_argument("--recognition-model-dir", type=Path,
+                        default=Path("/usr/share/deskwaifu/ocr/models/PP-OCRv6_small_rec"))
     args = parser.parse_args()
     args.samples = args.samples.resolve()
     args.output.mkdir(parents=True, exist_ok=True)
@@ -29,7 +34,9 @@ def main():
     start = time.perf_counter()
     # 辅助进程不继承 Python 环境、模型缓存、GPU 配置或 LD_LIBRARY_PATH。
     env = {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}
-    result = subprocess.run([str(args.helper.resolve()), "--serve"], env=env,
+    command = [str(args.helper.resolve()), "--serve", "--detection-model-dir", str(args.detection_model_dir.resolve()),
+               "--recognition-model-dir", str(args.recognition_model_dir.resolve())]
+    result = subprocess.run(command, env=env,
                             input="\n".join(requests) + "\n", capture_output=True, text=True, timeout=180)
     (args.output / "native.jsonl").write_text(result.stdout)
     (args.output / "native.log").write_text(result.stderr)
@@ -38,7 +45,9 @@ def main():
     assert len(replies) == len(requests) + 1
     assert replies[0]["event"] == "ready" and replies[0]["protocol"] == 1
     assert all(not reply["ok"] for reply in replies[1:7]), replies[1:7]
-    normalize = lambda text: "".join(text.split())
+    # JPEG may change full-width punctuation; compare NFKC text without whitespace,
+    # not byte-for-byte accuracy or a general recognition benchmark.
+    normalize = lambda text: "".join(unicodedata.normalize("NFKC", text).split())
     timings = {}
     for reply in replies[7:]:
         assert reply["protocol"] == 1 and reply["ok"], reply
@@ -51,21 +60,25 @@ def main():
             assert len(line["polygon"]) == 4
             assert all(0 <= x < value["width"] and 0 <= y < value["height"] for x, y in line["polygon"])
         timings.setdefault(name, []).append(value["elapsed_s"])
-    summary = {"checks": "passed", "timings_s": timings,
+    summary = {"checks": "passed", "text_comparison": "NFKC, ignoring whitespace", "timings_s": timings,
                "total_process_s": time.perf_counter() - start,
                "child_peak_rss_mib": resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss / 1024}
-    models = args.helper.resolve().parent.parent / "share/deskwaifu/ocr"
-    with tempfile.TemporaryDirectory(prefix="bad-bundle-", dir=args.output) as temporary:
+    with tempfile.TemporaryDirectory(prefix="bad-recognition-metadata-", dir=args.output) as temporary:
         invalid = Path(temporary)
-        for name in ("manifest.json", "detection.onnx", "recognition.onnx"):
-            (invalid / name).symlink_to(models / name)
-        (invalid / "dictionary.json").write_text('["tampered"]\n')
-        corrupted = subprocess.run([str(args.helper.resolve()), "--models", str(invalid.resolve()), "--serve"],
+        (invalid / "inference.onnx").symlink_to(args.recognition_model_dir.resolve() / "inference.onnx")
+        metadata = (args.recognition_model_dir / "inference.yml").read_text()
+        assert "  character_dict:" in metadata
+        (invalid / "inference.yml").write_text(metadata.replace(
+            "  character_dict:", "  character_dict: []\n  original_dictionary:", 1))
+        corrupted = subprocess.run([str(args.helper.resolve()), "--serve",
+                                   "--detection-model-dir", str(args.detection_model_dir.resolve()),
+                                   "--recognition-model-dir", str(invalid.resolve())],
                                    env=env, capture_output=True, text=True, timeout=10)
         assert corrupted.returncode != 0
         error = json.loads(corrupted.stdout)
-        assert error["event"] == "error" and "checksum" in error["error"], error
-    summary["corrupt_bundle_rejected"] = True
+        assert error["event"] == "error" and error["code"] == "model_incompatible", error
+        assert "dictionary" in error["error"], error
+    summary["invalid_dictionary_rejected_before_ready"] = True
     (args.output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     print(json.dumps(summary, indent=2))
 

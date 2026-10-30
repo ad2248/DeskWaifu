@@ -41,7 +41,7 @@ https://github.com/user-attachments/assets/95dfdedc-4957-4bb7-b79f-f3addd97a6db
 - **Configurable model directory** — load models from any path via CLI flag or XDG config
 - **JSON configuration** — customize behavior via `config.json` (default model, emotion timeout, additional model dirs, scale/position, window size)
 - **IPC control** — Unix domain socket API for external control (model switching, expressions, motions, lipsync, zoom, position, look-at direction)
-- **Optional local OCR (experimental)** — an independently installed C++/ONNX Runtime helper owned by the perception plugin, without Python or OCR engine dependencies in the platform. See [OCR package and protocol](src/plugins/perception/native/README.md).
+- **Optional local OCR (experimental)** — a C++/ONNX Runtime helper owned by the perception plugin, without Python or OCR engine dependencies in the platform. Builds include the helper by default; models are not bundled. See [OCR package and protocol](src/plugins/perception/native/README.md).
 
 ## Prerequisites
 
@@ -98,6 +98,42 @@ The SDK and GLEW are downloaded automatically. See
 [packaging instructions and license information](packaging/aur/README.md).
 The recipe is usable locally; this does not imply it has been published to AUR.
 
+Tagged releases can also provide `deskwaifu-bin` (application and default plugins)
+and `deskwaifu-ocr-bin` (OCR helper, without models). See
+[release packaging](docs/release-packaging.md).
+
+### OCR model configuration
+
+The OCR extension does not download or ship models. Clone the official
+Hugging Face **ONNX** repositories, including their LFS model files, into readable
+directories. The default locations are:
+
+```text
+/usr/share/deskwaifu/ocr/models/PP-OCRv6_small_det
+/usr/share/deskwaifu/ocr/models/PP-OCRv6_small_rec
+```
+
+Use `PaddlePaddle/PP-OCRv6_small_det_onnx` and
+`PaddlePaddle/PP-OCRv6_small_rec_onnx`, not the Paddle-format repositories.
+No renaming or conversion of repository files is required. To use user-owned
+directories instead, create `~/.config/deskwaifu/plugin/perception/config.json`
+(under `$XDG_CONFIG_HOME/deskwaifu/` when set):
+
+```json
+{
+  "ocr_detection_model_dir": "/home/your-user/models/PP-OCRv6_small_det_onnx",
+  "ocr_recognition_model_dir": "/home/your-user/models/PP-OCRv6_small_rec_onnx"
+}
+```
+
+Use absolute paths; `~` and environment variables are not expanded. With a
+custom main configuration, the plugin configuration is relative to that
+configuration's directory. Restart DeskWaifu after changing paths or models.
+Startup checks run asynchronously; missing, unreadable or incompatible models
+disable OCR only. Inspect `deskwaifu-ctl get_ocr_status` for the effective paths,
+availability and failure reason. Model directories are never modified by the
+application or package installation.
+
 ### Building from source
 
 #### 1. Clone the repository
@@ -122,6 +158,18 @@ cd DeskWaifu
 4. If the folder name differs from `CubismSdkForNative-5-r.5`, update `SDK_ROOT_PATH` in `CMakeLists.txt`.
 
 #### 3. Build
+
+The default full build includes the OCR helper. Install OpenCV and yaml-cpp
+development packages, then unpack the ONNX Runtime CPU SDK as described in
+[the OCR build instructions](src/plugins/perception/native/README.md). Set its
+location before running either build method:
+
+```bash
+export ONNXRUNTIME_ROOT=/absolute/path/to/onnxruntime-linux-x64-1.31.0
+```
+
+OCR models are **not** required for compiling or packaging. To explicitly omit
+the OCR helper, configure with `-DDESKWAIFU_BUILD_OCR=OFF` instead.
 
 Use the install script (recommended):
 

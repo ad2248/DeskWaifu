@@ -45,7 +45,7 @@ OcrClient::OcrClient(QString executable, int timeoutMs, int idleMs) : _executabl
     _deadline.setInterval(timeoutMs);
     _idle.setSingleShot(true);
     _idle.setInterval(idleMs);
-    connect(&_deadline, &QTimer::timeout, this, [this] { Fail("OCR request timed out"); });
+    connect(&_deadline, &QTimer::timeout, this, [this] { Fail("OCR initialization or request timed out", "timeout"); });
     connect(&_idle, &QTimer::timeout, this, [this] { _ready = false; _process.kill(); });
     connect(&_process, &QProcess::readyReadStandardOutput, this, [this] { ReadOutput(); });
     // 不保留无界诊断输出，也不将图像内容写入应用日志。
@@ -53,11 +53,13 @@ OcrClient::OcrClient(QString executable, int timeoutMs, int idleMs) : _executabl
     connect(&_process, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
         if (error == QProcess::FailedToStart) Fail("OCR helper failed to start: " + _process.errorString());
     });
-    connect(&_process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this, [this] {
+    connect(&_process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this, [this](int exitCode, QProcess::ExitStatus exitStatus) {
+        const bool initializing = _checking;
+        const bool unexpectedExit = _ready && (exitCode != 0 || exitStatus == QProcess::CrashExit);
         _ready = false;
         _buffer.clear();
         _idle.stop();
-        if (Pending()) Fail("OCR helper exited before completing the request");
+        if (Pending() || initializing || unexpectedExit) Fail("OCR helper exited before completing initialization or request");
         emit WorkerStopped();
     });
 }
@@ -74,15 +76,59 @@ OcrClient::~OcrClient()
 QJsonObject OcrClient::Status() const
 {
     const QFileInfo helper(_executable);
-    return {{"ok", true}, {"available", helper.isFile() && helper.isExecutable()},
+    return {{"ok", true}, {"available", _configured ? _availability == "available" : helper.isFile() && helper.isExecutable()},
+        {"availability_state", _availability}, {"error_code", _errorCode}, {"error", _error},
+        {"detection_model_dir", _detectionDir}, {"recognition_model_dir", _recognitionDir},
         {"state", _state}, {"job_id", _id}, {"running", _process.state() != QProcess::NotRunning}};
+}
+
+void OcrClient::ConfigureModels(const QJsonObject& config, const QString& configError)
+{
+    _configured = true;
+    _detectionDir = "/usr/share/deskwaifu/ocr/models/PP-OCRv6_small_det";
+    _recognitionDir = "/usr/share/deskwaifu/ocr/models/PP-OCRv6_small_rec";
+    if (!configError.isEmpty()) { Fail(configError, "invalid_config"); return; }
+    for (const auto& item : {qMakePair(QStringLiteral("ocr_detection_model_dir"), &_detectionDir),
+                            qMakePair(QStringLiteral("ocr_recognition_model_dir"), &_recognitionDir)}) {
+        if (config.contains(item.first)) {
+            const auto value = config.value(item.first);
+            if (!value.isString() || value.toString().contains(QChar::Null) || !QDir::isAbsolutePath(value.toString())) {
+                Fail("OCR configuration requires an absolute directory: " + item.first, "invalid_config"); return;
+            }
+            *item.second = value.toString();
+        }
+    }
+    const QFileInfo helper(_executable);
+    if (!helper.isFile() || !helper.isExecutable()) {
+        Fail("OCR feature package is not installed or executable", "helper_missing"); return;
+    }
+    _availability = "checking";
+    _checking = true;
+    _deadline.start();
+    StartWorker();
+}
+
+void OcrClient::StartWorker()
+{
+    QStringList arguments;
+    if (_configured) {
+        _availability = "checking";
+        arguments << "--detection-model-dir" << _detectionDir << "--recognition-model-dir" << _recognitionDir;
+    }
+    arguments << "--serve";
+    _buffer.clear();
+    _process.start(_executable, arguments);
 }
 
 QJsonObject OcrClient::Submit(const QString& image)
 {
     if (Pending()) return Error("OCR is busy");
+    const bool recoverable = _validated && (_errorCode == "helper_error" || _errorCode == "timeout");
+    if (_configured && _availability != "available" && !recoverable)
+        return {{"ok", false}, {"error", _availability == "checking" ? "OCR is initializing; retry shortly" : _error},
+            {"error_code", _availability == "checking" ? "initializing" : _errorCode}};
     if (_process.state() != QProcess::NotRunning && !_ready) return Error("OCR helper is stopping; retry shortly");
-    if (!Status().value("available").toBool()) return Error("OCR feature package is not installed");
+    if (!Status().value("available").toBool() && !recoverable) return Error("OCR feature package is not installed");
     const QFileInfo file(image);
     if (!file.isAbsolute() || !file.isFile() || !file.isReadable()) return Error("image must be an absolute readable file path");
     _idle.stop();
@@ -93,8 +139,7 @@ QJsonObject OcrClient::Submit(const QString& image)
     _deadline.start();
     if (_ready) SendRequest();
     else {
-        _buffer.clear();
-        _process.start(_executable, {"--serve"});
+        StartWorker();
     }
     return {{"ok", true}, {"job_id", _id}, {"state", "pending"}};
 }
@@ -110,15 +155,25 @@ QJsonObject OcrClient::Result(const QString& id) const
 QJsonObject OcrClient::Cancel(const QString& id)
 {
     if (id.isEmpty() || id != _id || !Pending()) return Error("no matching pending OCR job");
-    Fail("OCR request cancelled");
+    Fail("OCR request cancelled", "cancelled");
     return {{"ok", true}, {"job_id", _id}};
 }
 
-void OcrClient::Fail(const QString& error)
+void OcrClient::Fail(const QString& error, const QString& code)
 {
     _deadline.stop();
     _idle.stop();
     _ready = false;
+    _checking = false;
+    if (_configured && code == "cancelled" && _validated) {
+        _availability = "available";
+        _error.clear(); _errorCode.clear();
+    }
+    if (_configured && code != "cancelled") {
+        _availability = "unavailable";
+        _error = error;
+        _errorCode = code;
+    }
     _buffer.clear();
     const bool notify = Pending();
     if (notify) {
@@ -141,6 +196,12 @@ void OcrClient::SendRequest()
 
 void OcrClient::ReadOutput()
 {
+    // Cancel/idle shutdown may leave a ready event or completed reply buffered.
+    // It belongs to the retired worker, not a new initialization handshake.
+    if (!_ready && !_checking && !Pending()) {
+        _process.readAllStandardOutput();
+        return;
+    }
     _buffer += _process.readAllStandardOutput();
     if (_buffer.size() > MaxReplyBytes) { Fail("OCR reply exceeded size limit"); return; }
     while (_buffer.contains('\n')) {
@@ -155,11 +216,17 @@ void OcrClient::ReadOutput()
         }
         if (!_ready) {
             if (reply.value("event") == QJsonValue("error") && reply.value("error").isString()) {
-                Fail("OCR initialization failed: " + reply.value("error").toString()); return;
+                Fail("OCR initialization failed: " + reply.value("error").toString(),
+                    reply.value("code").toString("model_load_failed")); return;
             }
-            if (!Pending() || reply.value("event") != QJsonValue("ready")) { Fail("OCR handshake failed"); return; }
+            if ((!Pending() && !_checking) || reply.value("event") != QJsonValue("ready")) { Fail("OCR handshake failed"); return; }
             _ready = true;
-            SendRequest();
+            _validated = true;
+            _checking = false;
+            _availability = "available";
+            _error.clear(); _errorCode.clear();
+            if (Pending()) SendRequest();
+            else { _deadline.stop(); _idle.start(); }
         } else {
             if (!Pending() || reply.value("id") != QJsonValue(_id) || !reply.value("ok").isBool() ||
                 (reply.value("ok").toBool() ? !ValidResult(reply.value("result").toObject()) : !reply.value("error").isString())) {

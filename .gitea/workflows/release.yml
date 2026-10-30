@@ -1,0 +1,72 @@
+name: DeskWaifu Arch release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Exact existing release tag, e.g. v1.2.3 (never a branch)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deskwaifu-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: deskwaifu-arch
+    timeout-minutes: 60
+    env:
+      http_proxy: http://100.64.0.11:7912
+      https_proxy: http://100.64.0.11:7912
+      ALL_PROXY: http://100.64.0.11:7912
+      no_proxy: 127.0.0.1,localhost
+    steps:
+      - name: Verify runner isolation
+        run: |
+          test ! -S /var/run/docker.sock
+          test "$(id -u)" = 0 || {
+            echo 'Release requires root orchestration with a separate makepkg user; no sudo fallback' >&2
+            exit 1
+          }
+
+      - name: Check out repository
+        uses: https://git.kals.top/actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Select and check out the exact release tag
+        env:
+          RELEASE_EVENT: ${{ github.event_name }}
+          RELEASE_REF: ${{ github.ref }}
+          RELEASE_EVENT_SHA: ${{ github.sha }}
+          RELEASE_INPUT_TAG: ${{ github.event.inputs.tag }}
+        run: python3 scripts/release-source.py
+
+      - name: Test release tooling from selected tag
+        run: python3 -B -m unittest discover -s tests -p test_release_packaging.py -v
+
+      - name: Acquire system build dependencies
+        # The current fixed runner image lacks OpenCV/yaml-cpp. Do not rebuild or
+        # publish the private image here; perform a full Arch upgrade, not -Sy.
+        run: |
+          packages=(base-devel cmake ninja curl git libarchive python opencv yaml-cpp
+            qt6-base qt6-wayland qt6-scxml qt6-websockets qt6-multimedia
+            layer-shell-qt wayland libglvnd systemd-libs psmisc)
+          pacman -Syu --needed --noconfirm "${packages[@]}"
+
+      - name: Acquire verified sources and build unprivileged Arch packages
+        run: bash scripts/release-build.sh
+
+      - name: Upload verified packages to GitHub release
+        # Never expose this credential to checkout, dependency acquisition,
+        # CMake, makepkg, tests, or shell profiles used by the build user.
+        env:
+          RELEASE_UPLOAD: ${{ secrets.RELEASE_UPLOAD }}
+        run: python3 scripts/release-upload.py release-assets "$RELEASE_TAG" "$RELEASE_COMMIT"

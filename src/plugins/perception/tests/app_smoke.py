@@ -34,7 +34,11 @@ def stop(process):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--app", type=Path, required=True)
-    parser.add_argument("--helper", type=Path, required=True, help="installed/staged helper with bundled models")
+    parser.add_argument("--helper", type=Path, required=True, help="installed/staged helper; models deployed separately")
+    parser.add_argument("--detection-model-dir", type=Path,
+                        default=Path("/usr/share/deskwaifu/ocr/models/PP-OCRv6_small_det"))
+    parser.add_argument("--recognition-model-dir", type=Path,
+                        default=Path("/usr/share/deskwaifu/ocr/models/PP-OCRv6_small_rec"))
     parser.add_argument("--live2d-models", type=Path, required=True)
     parser.add_argument("--samples", type=Path, required=True)
     parser.add_argument("--logs", type=Path, required=True)
@@ -44,6 +48,12 @@ def main():
     args.logs.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="ocr-smoke-", dir="/tmp/opencode") as temporary:
         runtime = Path(temporary)
+        perception_config = runtime / "config/deskwaifu/plugin/perception/config.json"
+        perception_config.parent.mkdir(parents=True)
+        perception_config.write_text(json.dumps({
+            "ocr_detection_model_dir": str(args.detection_model_dir.resolve()),
+            "ocr_recognition_model_dir": str(args.recognition_model_dir.resolve()),
+        }))
         env = dict(os.environ, XDG_RUNTIME_DIR=str(runtime), XDG_CONFIG_HOME=str(runtime / "config"),
                    DBUS_SESSION_BUS_ADDRESS=f"unix:path={runtime}/no-session-bus",
                    WLR_BACKENDS="headless", WLR_LIBINPUT_NO_DEVICES="1", WLR_RENDERER="pixman",
@@ -86,8 +96,12 @@ def main():
                         assert reply["ok"], reply
                         return reply["job_id"]
 
-                    status = command("get_ocr_status")
-                    assert status["available"] == installed and not status["running"], status
+                    def initialized():
+                        status = command("get_ocr_status")
+                        return status if status.get("availability_state") != "checking" else None
+
+                    status = wait_for(initialized, timeout=60)
+                    assert status["available"] == installed, status
                     assert command("get_status")["ok"]
                     reading = command("get_reading_clip_status")
                     assert reading["ok"] and reading["state"] == "idle", reading
