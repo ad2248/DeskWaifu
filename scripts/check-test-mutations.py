@@ -56,9 +56,11 @@ def main():
         shutil.copytree(ROOT, source, ignore=shutil.ignore_patterns(".git", "build*", "__pycache__", "CubismSdkForNative-5-r.5", "glew"))
         configure = ["cmake", "-S", str(source), "-B", str(build), "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release",
                      "-DBUILD_TESTING=ON", "-DDESKWAIFU_BUILD_CONTROL=ON", "-DDESKWAIFU_TEST_GATE=ON",
+                     "-DDESKWAIFU_BUILD_OCR=OFF",
                      "-DSDK_ROOT_PATH=" + cache["SDK_ROOT_PATH"], "-DGLEW_PATH=" + cache["GLEW_PATH"]]
+        # These mutations exercise application/plugin behavior, not the optional native OCR engine.
         if run(configure, logs / "configure.log"):
-            sys.exit(f"mutation configuration failed; see {logs}")
+            sys.exit(f"mutation configuration failed; see {logs}\n{(logs / 'configure.log').read_text()}")
         for name, relative, old, new, target, test, assertion in MUTATIONS:
             path = source / relative
             clean = path.read_text()

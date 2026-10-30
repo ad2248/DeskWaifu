@@ -13,6 +13,7 @@ SDK/GLEW 可位于源码外，通过以下参数指定，不必复制到仓库�
 ```bash
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
   -DBUILD_TESTING=ON -DDESKWAIFU_BUILD_CONTROL=ON -DDESKWAIFU_TEST_GATE=ON \
+  -DDESKWAIFU_BUILD_OCR=OFF \
   -DSDK_ROOT_PATH=/path/to/CubismSdkForNative-5-r.5 -DGLEW_PATH=/path/to/glew
 cmake --build build --parallel 8
 python3 scripts/test-environment.py python3 scripts/run-test-gate.py build
@@ -32,6 +33,16 @@ python3 scripts/test-environment.py python3 scripts/check-test-mutations.py buil
 ```
 
 上述入口不包含完整 CI 的所有构建检查。渲染分支编译与 Debug ASan+UBSan 子集的具体配置、目标及筛选命令，见 [CI 工作流](../.gitea/workflows/ci.yml) 的 `Compile render-target variants` 和 `Test core contracts with ASan and UBSan` 步骤；本地使用源码外依赖时，也须传入 SDK_ROOT_PATH/GLEW_PATH。
+
+普通 CI 与上述应用回归入口明确关闭原生 OCR helper；真实 OCR 模型及推理后端的验证
+使用 [OCR 专用入口](../src/plugins/perception/native/README.md)。这不改变普通源码构建默认全量开启 OCR 的行为。
+故障植入脚本也必须在其新建的 CMake 工程中显式关闭原生 OCR，不能假设它继承了父构建缓存。
+`mutation-configuration` 使用实际 CMake 小工程检查这条独立配置路径及失败诊断。
+验证“与 CI 一致”时，需使用相同固定镜像、新建构建目录并执行工作流的全部门禁步骤；
+仅运行 `cmake --build` 和普通 `ctest`，即使全部通过，也不能声明故障植入、严格门禁、
+渲染变体、Sway/KWin 安装场景或 sanitizer 子集已经通过。
+本次独立配置遗漏的因果链、验证范围差异与同镜像重放记录见
+[CI run 556 失败分析报告](ci-556-analysis.md)。
 
 `DESKWAIFU_TEST_GATE=ON` 拒绝关闭测试、控制面板或语音插件，以及缺失的 Python、D-Bus、Node。
 `tests/gate.json` 额外核对关键注册入口。所有实际注册的测试都执行；不在清单里的新测试也不能任意 skip。
