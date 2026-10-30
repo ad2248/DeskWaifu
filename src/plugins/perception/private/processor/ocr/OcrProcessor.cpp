@@ -3,6 +3,8 @@
 #include "plugin/PluginContext.hpp"
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QFileInfo>
+#include <QDir>
 
 OcrProcessor::OcrProcessor(ProcessorEventLoop& loop)
     : OcrProcessor(loop, std::unique_ptr<OcrClient>(new OcrClient(OcrClient::DefaultExecutable()))) {}
@@ -44,6 +46,13 @@ OcrProcessor::OcrProcessor(ProcessorEventLoop& loop, std::unique_ptr<OcrClient> 
             Complete(ProcessorEvents::Recognized, receiver, pending, {{"text", texts.join('\n')}, {"result", result.toVariantMap()}});
         }
     });
+    if (context) {
+        QJsonObject config;
+        QString error;
+        if (QFileInfo::exists(QDir(context->ConfigDirectory()).filePath("config.json")))
+            context->ReadConfig("config.json", config, &error);
+        _client->ConfigureModels(config, error);
+    }
 }
 
 OcrProcessor::~OcrProcessor()

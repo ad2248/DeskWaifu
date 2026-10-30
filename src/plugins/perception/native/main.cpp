@@ -1,6 +1,5 @@
 #include "OcrEngine.hpp"
 #include <QCoreApplication>
-#include <QDir>
 #include <QJsonDocument>
 #include <iostream>
 #include <stdexcept>
@@ -18,19 +17,26 @@ int main(int argc, char** argv)
     QCoreApplication app(argc, argv);
     auto arguments = app.arguments();
     arguments.removeFirst();
-    QString models = QDir(QCoreApplication::applicationDirPath()).filePath(OCR_MODELS_RELATIVE);
-    if (arguments.size() >= 2 && arguments[0] == "--models") {
-        models = arguments[1]; arguments.remove(0, 2);
-    }
-    if (arguments != QStringList{"--serve"}) {
-        std::cerr << "Usage: deskwaifu-ocr [--models DIRECTORY] --serve\n";
-        return 2;
-    }
+    QString detectionModelDir = "/usr/share/deskwaifu/ocr/models/PP-OCRv6_small_det";
+    QString recognitionModelDir = "/usr/share/deskwaifu/ocr/models/PP-OCRv6_small_rec";
     try {
-        OcrEngine engine(models);
+        bool serve = false, detectionSet = false, recognitionSet = false;
+        while (!arguments.isEmpty()) {
+            const auto option = arguments.takeFirst();
+            if (option == "--serve" && !serve) serve = true;
+            else if ((option == "--detection-model-dir" && !detectionSet) ||
+                     (option == "--recognition-model-dir" && !recognitionSet)) {
+                if (arguments.isEmpty() || arguments.first().isEmpty() || arguments.first().startsWith("--"))
+                    throw OcrModelError("invalid_arguments", "Missing directory for " + option);
+                if (option == "--detection-model-dir") { detectionModelDir = arguments.takeFirst(); detectionSet = true; }
+                else { recognitionModelDir = arguments.takeFirst(); recognitionSet = true; }
+            } else throw OcrModelError("invalid_arguments", "Unknown or duplicate option: " + option);
+        }
+        if (!serve) throw OcrModelError("invalid_arguments", "Expected --serve");
+        OcrEngine engine(detectionModelDir, recognitionModelDir);
         Emit({{"event", "ready"}, {"backend", "onnxruntime-cpu"},
             {"runtime_version", QString::fromUtf8(OrtGetApiBase()->GetVersionString())},
-            {"profile", "ppocrv6-small-medium-v1"}});
+            {"detection_model", "PP-OCRv6_small_det"}, {"recognition_model", "PP-OCRv6_small_rec"}});
         std::string line;
         while (std::cin.good()) {
             line.clear();
@@ -57,8 +63,11 @@ int main(int argc, char** argv)
                 Emit({{"id", id}, {"ok", false}, {"error", QString::fromUtf8(error.what())}});
             }
         }
+    } catch (const OcrModelError& error) {
+        Emit({{"event", "error"}, {"code", error.code}, {"error", QString::fromUtf8(error.what())}});
+        return QString::fromLatin1(error.code) == "invalid_arguments" ? 2 : 1;
     } catch (const std::exception& error) {
-        Emit({{"event", "error"}, {"error", QString::fromUtf8(error.what())}});
+        Emit({{"event", "error"}, {"code", "model_load_failed"}, {"error", QString::fromUtf8(error.what())}});
         return 1;
     }
     return 0;

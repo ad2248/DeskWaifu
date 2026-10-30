@@ -17,6 +17,7 @@ public:
     QJsonObject Status() const;
     QJsonObject Cancel(const QString& id);
     static QString DefaultExecutable();
+    void ConfigureModels(const QJsonObject& config, const QString& configError = {});
 
 signals:
     void Finished(const QString& request, const QJsonObject& response);
@@ -25,7 +26,8 @@ signals:
 private:
     void ReadOutput();
     void SendRequest();
-    void Fail(const QString& error);
+    void Fail(const QString& error, const QString& code = QStringLiteral("helper_error"));
+    void StartWorker();
     bool Pending() const { return _state == QStringLiteral("pending"); }
     QString _executable, _id, _image, _state = QStringLiteral("idle");
     QJsonObject _reply;
@@ -33,4 +35,7 @@ private:
     QTimer _deadline, _idle;
     QByteArray _buffer;
     bool _ready = false;
+    bool _configured = false, _checking = false, _validated = false;
+    QString _availability = QStringLiteral("unchecked"), _error, _errorCode;
+    QString _detectionDir, _recognitionDir;
 };

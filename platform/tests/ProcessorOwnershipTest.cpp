@@ -94,6 +94,7 @@ try {
 
     const auto externalFile = MakeTestImageFile(image);
     Check(bool(externalFile), "private external OCR image");
+    Wait([&] { return Request(second, {{"command", "get_ocr_status"}}).value("available").toBool(); });
     const auto accepted = Request(second, {{"command", "ocr_recognize"}, {"image", externalFile->Path()}});
     const auto job = accepted.value("job_id").toString();
     Check(accepted.value("ok").toBool() && !job.isEmpty(), "external OCR accepted with original job id");

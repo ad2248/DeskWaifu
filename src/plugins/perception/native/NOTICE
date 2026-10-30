@@ -1,12 +1,15 @@
-This optional bundle uses PP-OCRv6_small_det and PP-OCRv6_medium_rec by
+This helper supports PP-OCRv6_small_det and PP-OCRv6_small_rec by
 PaddlePaddle/PaddleOCR, distributed under Apache-2.0 according to the model cards.
 Copyright (c) 2016 PaddlePaddle Authors. All Rights Reserved.
 Upstream: https://github.com/PaddlePaddle/PaddleOCR
 
-The original inference models are converted to ONNX with paddle2onnx and their
-character dictionary is extracted to JSON. No model training or quantization is
-performed. Source and output hashes and conversion versions are recorded in the
-installed manifest.json. The C++ pipeline implements the PaddleOCR BGR
+Models are deployed separately by cloning the official ONNX repositories:
+https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx
+https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx
+The helper reads inference.onnx and the original inference.yml character
+dictionary and preprocessing metadata without modifying either repository.
+It performs no download, conversion, training or quantization. There is no
+custom model manifest or generated dictionary. The C++ pipeline implements BGR
 normalization, DB quad postprocessing and CTC decoding; its floating-point
 rectangle expansion differs from the reference's integer pyclipper offset.
 
