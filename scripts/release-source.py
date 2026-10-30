@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Select an explicit release tag, never a branch, before acquiring/building sources."""
 import os
+from pathlib import Path
 import re
+import shutil
 import subprocess
+import tempfile
 
 
 def select_tag(event, ref, explicit):
@@ -34,11 +37,21 @@ def main():
             raise ValueError("Missing tag-push commit identity")
         if git("rev-parse", "--verify", f"{event_sha}^{{commit}}") != commit:
             raise ValueError("Release tag moved since the push event")
+    # Keep the workflow's trusted tooling when the selected historical source
+    # contains older release scripts. Only application source changes below.
+    tools = Path(tempfile.mkdtemp(prefix="deskwaifu-release-tools-", dir=os.environ.get("RUNNER_TEMP")))
+    tool_source = Path(__file__).resolve().parents[1]
+    for relative in ("scripts/release-source.py", "scripts/release-build.sh", "scripts/release-packaging.py",
+                     "scripts/release-upload.py", "scripts/find-deps-dir.sh", "packaging/release/PKGBUILD.in",
+                     "tests/test_release_packaging.py", ".gitea/workflows/release.yml"):
+        target = tools / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(tool_source / relative, target)
     subprocess.run(["git", "checkout", "--detach", f"refs/tags/{tag}"], check=True)
     if git("rev-parse", "HEAD") != commit:
         raise ValueError("Checkout does not match release tag")
     with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as stream:
-        stream.write(f"RELEASE_TAG={tag}\nRELEASE_COMMIT={commit}\n")
+        stream.write(f"RELEASE_TAG={tag}\nRELEASE_COMMIT={commit}\nRELEASE_TOOLS_DIR={tools}\n")
     print(f"Selected {tag} at {commit}")
 
 

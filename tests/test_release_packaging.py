@@ -51,6 +51,42 @@ def fixture_files(ocr=False):
 
 
 class PackagingTest(unittest.TestCase):
+    def test_current_tools_survive_checkout_of_historical_tag(self):
+        with tempfile.TemporaryDirectory(prefix="release-historical-tools-", dir=TEMP_ROOT) as temporary:
+            root = Path(temporary)
+            repo = root / "source"
+            repo.mkdir()
+            def git(*args):
+                return subprocess.check_output(["git", "-C", str(repo), *args], text=True, stderr=subprocess.PIPE).strip()
+            git("init", "--initial-branch=main")
+            (repo / "scripts").mkdir()
+            historical = repo / "scripts/release-packaging.py"
+            historical.write_text('raise RuntimeError("historical packaging must not run")\n')
+            git("add", ".")
+            git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "historical")
+            commit = git("rev-parse", "HEAD")
+            git("tag", "0.1.0")
+            historical.write_text("# newer source\n")
+            git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-am", "later")
+            env_file = root / "env"
+            env = dict(os.environ, RELEASE_EVENT="workflow_dispatch", RELEASE_REF="refs/heads/main",
+                       RELEASE_INPUT_TAG="0.1.0", GITHUB_ENV=str(env_file), RUNNER_TEMP=str(root))
+            result = subprocess.run([sys.executable, "-B", str(ROOT / "scripts/release-source.py")],
+                                    cwd=repo, env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            values = dict(line.split("=", 1) for line in env_file.read_text().splitlines())
+            tools = Path(values["RELEASE_TOOLS_DIR"])
+            self.assertFalse(tools.is_relative_to(repo))
+            self.assertIn("historical packaging must not run", historical.read_text())
+            acquired = root / "acquired"
+            acquired.mkdir()
+            (acquired / "deskwaifu.tar.gz").write_bytes(b"source")
+            (acquired / "private-deps.tar.gz").write_bytes(b"deps")
+            subprocess.run([sys.executable, "-B", str(tools / "scripts/release-packaging.py"),
+                            "prepare", str(acquired), "0.1.0", commit], check=True)
+            self.assertIn("pkgver=0.1.0\n", (acquired / "PKGBUILD").read_text())
+            self.assertEqual(git("rev-parse", "HEAD"), commit)
+
     def test_arbitrary_tags_are_used_as_pkgver_without_conversion(self):
         for tag in ("0.1.0", "v0.1.0", "nightly", "release/2026-10", "0.1.0-rc.1", "发布",
                     "0.1.0+build", "@SOURCE_SHA@", "tag'$(touch SHOULD_NOT_EXIST)"):
@@ -129,7 +165,7 @@ class PackagingTest(unittest.TestCase):
             subprocess.run(["git", "clone", "--quiet", str(origin), str(checkout)], check=True)
             env_file = root / "env"
             env = dict(os.environ, RELEASE_EVENT="workflow_dispatch", RELEASE_REF="refs/heads/main",
-                       RELEASE_INPUT_TAG=TAG, GITHUB_ENV=str(env_file))
+                       RELEASE_INPUT_TAG=TAG, GITHUB_ENV=str(env_file), RUNNER_TEMP=str(root))
             command = [sys.executable, "-B", str(ROOT / "scripts/release-source.py")]
             result = subprocess.run(command, cwd=checkout, env=env, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -232,6 +268,9 @@ class PackagingTest(unittest.TestCase):
         self.assertIn("tags: ['**']", workflow)
         self.assertIn("https://git.kals.top/actions/checkout@v4", workflow)
         self.assertIn("RELEASE_INPUT_TAG: ${{ github.event.inputs.tag }}", workflow)
+        self.assertIn('python3 -B "$RELEASE_TOOLS_DIR/tests/test_release_packaging.py"', workflow)
+        self.assertIn('bash "$RELEASE_TOOLS_DIR/scripts/release-build.sh"', workflow)
+        self.assertIn('python3 "$RELEASE_TOOLS_DIR/scripts/release-upload.py"', workflow)
         job_env = workflow.split("    env:\n", 1)[1].split("    steps:", 1)[0]
         for name in ("http_proxy", "https_proxy", "ALL_PROXY"):
             self.assertIn(f"{name}: http://100.64.0.11:7912", job_env)
@@ -262,13 +301,31 @@ class PackagingTest(unittest.TestCase):
             runuser.write_text('#!/bin/bash\necho "$*" >> "$CALL_LOG"\nexit 1\n')
             runuser.chmod(0o755)
             env = dict(os.environ, PATH=f"{work}:{os.environ['PATH']}", CALL_LOG=str(work / "calls"),
-                       root=str(ROOT), work=str(work), build_user="fixture")
+                       root=str(ROOT), tools_root=str(ROOT), work=str(work), build_user="fixture")
             result = subprocess.run(["bash", "-c", "set -euo pipefail\n" + guard], env=env, capture_output=True, text=True)
             self.assertEqual(result.returncode, 1)
             self.assertIn("can modify trusted release tooling", result.stderr)
             calls = (work / "calls").read_text()
             self.assertIn("test ! -w", calls)
             self.assertNotIn("makepkg", calls)
+
+    def test_writable_ancestor_blocks_readonly_tool_tree_replacement(self):
+        script = (ROOT / "scripts/release-build.sh").read_text()
+        guard = script[script.index('for trusted in '):script.index('output="$root/release-assets"')]
+        with tempfile.TemporaryDirectory(prefix="release-parent-trust-", dir=TEMP_ROOT) as temporary:
+            work = Path(temporary)
+            runuser = work / "runuser"
+            runuser.write_text('#!/bin/bash\n'
+                               'while [[ "$1" != -- ]]; do shift; done\nshift\n'
+                               'if [[ "$1 $2" == "test !" ]]; then exit 0; fi\n'
+                               'if [[ "$1 $2 $3" == "test -w $WRITABLE_PARENT" ]]; then exit 0; fi\n'
+                               'exit 1\n')
+            runuser.chmod(0o755)
+            env = dict(os.environ, PATH=f"{work}:{os.environ['PATH']}", WRITABLE_PARENT=str(work),
+                       root=str(work / "checkout"), tools_root=str(work / "tools"), work=str(work), build_user="fixture")
+            result = subprocess.run(["bash", "-c", "set -euo pipefail\n" + guard], env=env, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("can replace trusted release tooling", result.stderr)
 
     def test_root_user_creation_failure_does_not_delete_existing_account(self):
         # Run the actual script's root-user section with failing useradd and
