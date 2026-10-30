@@ -147,11 +147,9 @@ def check_asset(api, asset, data):
 
 
 def load_assets(directory, tag, commit):
-    if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9]+(?:\.[A-Za-z0-9]+)*)?", tag):
-        raise ValueError("Invalid release tag")
     if not re.fullmatch(r"[0-9a-f]{40}", commit):
         raise ValueError("Expected a full source commit SHA")
-    version = tag[1:].replace("-", "~", 1)
+    version = tag
     names = {f"{name}-{version}-1-x86_64.pkg.tar.zst" for name in ("deskwaifu-bin", "deskwaifu-ocr-bin")}
     names.update(("release-metadata.json", "SHA256SUMS"))
     if {path.name for path in directory.iterdir()} != names:
@@ -174,7 +172,6 @@ def publish(api, tag, commit, assets):
         try:
             release = api.request("POST", "/releases", {
                 "tag_name": tag, "target_commitish": commit, "name": tag, "draft": True,
-                "prerelease": "-" in tag,
                 "body": f"Source commit: `{commit}`\n\nArch x86_64 binary packages. OCR models and dictionaries are not included.",
             })
         except ApiError as error:

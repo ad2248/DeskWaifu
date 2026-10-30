@@ -1,11 +1,19 @@
 # Arch 二进制发布
 
-`.gitea/workflows/release.yml` 在 `deskwaifu-arch` 私有 runner 上执行：推送 `v*`
-tag，或手动运行并显式填写已有 tag。支持 `v1.2.3`、`v1.2.3-rc.1`；不接受
-分支、空输入或 `+build` 元数据。预发行版转换为 Arch 的 `1.2.3~rc.1`。
+`.gitea/workflows/release.yml` 在 `deskwaifu-arch` 私有 runner 上执行：推送任意
+tag（包括包含 `/` 的标签），或手动运行并显式填写已有 tag。不限制标签命名或
+版本格式；仍只检出确切的 `refs/tags/<原始标签>`，不接受用分支代替标签或空输入。
 checkout action 先获取完整历史/tag，发布工具再 detached checkout 精确 tag；
 推送事件还校验事件提交身份。不要求把 checkout 凭据留在仓库中再次 fetch。
 实际输入是该提交的 `git archive`，不是触发手动运行时所选的分支。
+原始标签直接作为 Arch `pkgver`、包文件名中的版本及 GitHub Release 的标签和标题。
+不添加或移除 `v`，不替换字符、不编码、不使用提交号兜底，也不根据标签推断预发行版。
+生成 PKGBUILD 时只做 shell 引用以保留原始字符串，绝不把标签当作命令执行。
+如果标签不符合 Arch 的 `pkgver` 规则（例如包含 `/`、`-` 或非 ASCII 字符），
+由 makepkg 直接报错，任务失败并停止上传；不会为了让打包通过而改写标签。
+
+重跑历史任务仍使用历史工作流与脚本。标签格式修复不会追溯更新旧标签中的工具；
+发布修复后版本时，应使用包含修复提交的新标签。不要为重跑而强制移动已发布标签。
 
 ## 产物
 

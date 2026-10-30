@@ -2,15 +2,12 @@
 """Render makepkg input and verify the actual split-package payload before upload."""
 import argparse
 import hashlib
-import importlib.util
 import json
 from pathlib import Path
+import shlex
 import subprocess
 
 ROOT = Path(__file__).resolve().parent.parent
-spec = importlib.util.spec_from_file_location("release_source", ROOT / "scripts/release-source.py")
-source = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(source)
 PLUGINS = ("desktop", "perception", "ipc", "speech", "reading_clip", "system", "interaction", "model", "log")
 MAIN_DEPENDS = {"glibc", "gcc-libs", "wayland", "libglvnd", "systemd-libs", "qt6-base>=6.5",
                 "qt6-wayland>=6.5", "qt6-scxml>=6.5", "qt6-websockets>=6.5", "qt6-multimedia>=6.5",
@@ -25,10 +22,9 @@ def digest(path):
 
 
 def prepare(directory, tag, commit):
-    version = source.package_version(tag)
     template = (ROOT / "packaging/release/PKGBUILD.in").read_text()
-    for key, value in {"PKGVER": version, "SOURCE_SHA": digest(directory / "deskwaifu.tar.gz"),
-                       "PRIVATE_SHA": digest(directory / "private-deps.tar.gz")}.items():
+    for key, value in {"SOURCE_SHA": digest(directory / "deskwaifu.tar.gz"),
+                       "PRIVATE_SHA": digest(directory / "private-deps.tar.gz"), "PKGVER": shlex.quote(tag)}.items():
         template = template.replace(f"@{key}@", value)
     (directory / "PKGBUILD").write_text(template)
 
@@ -71,7 +67,7 @@ def verify_content(name, info, files, version):
 
 
 def verify(directory, tag, commit):
-    version = source.package_version(tag)
+    version = tag
     packages = sorted(directory.glob("*.pkg.tar.zst"))
     expected = {f"{name}-{version}-1-x86_64.pkg.tar.zst": name for name in ("deskwaifu-bin", "deskwaifu-ocr-bin")}
     if {path.name for path in packages} != expected.keys():

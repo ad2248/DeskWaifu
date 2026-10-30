@@ -5,12 +5,6 @@ import re
 import subprocess
 
 
-def package_version(tag):
-    if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9]+(?:\.[A-Za-z0-9]+)*)?", tag):
-        raise ValueError("Expected vMAJOR.MINOR.PATCH with optional -prerelease (no build metadata)")
-    return tag[1:].replace("-", "~", 1)
-
-
 def select_tag(event, ref, explicit):
     if event == "workflow_dispatch":
         tag = explicit
@@ -18,7 +12,8 @@ def select_tag(event, ref, explicit):
         tag = ref.removeprefix("refs/tags/")
     else:
         raise ValueError("Only tag pushes and explicit-tag manual dispatches may release")
-    package_version(tag)
+    if not tag:
+        raise ValueError("An explicit tag is required")
     return tag
 
 

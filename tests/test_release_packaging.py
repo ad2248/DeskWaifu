@@ -51,6 +51,35 @@ def fixture_files(ocr=False):
 
 
 class PackagingTest(unittest.TestCase):
+    def test_arbitrary_tags_are_used_as_pkgver_without_conversion(self):
+        for tag in ("0.1.0", "v0.1.0", "nightly", "release/2026-10", "0.1.0-rc.1", "发布",
+                    "0.1.0+build", "@SOURCE_SHA@", "tag'$(touch SHOULD_NOT_EXIST)"):
+            with self.subTest(tag=tag):
+                self.assertEqual(source.select_tag("workflow_dispatch", "refs/heads/main", tag), tag)
+                self.assertEqual(source.select_tag("push", "refs/tags/" + tag, ""), tag)
+                with tempfile.TemporaryDirectory(prefix="release-raw-tag-", dir=TEMP_ROOT) as temporary:
+                    work = Path(temporary)
+                    (work / "deskwaifu.tar.gz").write_bytes(b"source")
+                    (work / "private-deps.tar.gz").write_bytes(b"deps")
+                    packaging.prepare(work, tag, COMMIT)
+                    result = subprocess.check_output(["bash", "-c", '. "$1"; printf "%s" "$pkgver"',
+                                                      "_", str(work / "PKGBUILD")], cwd=work, text=True)
+                    self.assertEqual(result, tag)
+                    self.assertFalse((work / "SHOULD_NOT_EXIST").exists())
+
+    @unittest.skipUnless(shutil.which("makepkg") and os.getuid() != 0, "requires nonroot makepkg")
+    def test_arch_incompatible_tags_fail_in_makepkg_without_fallback(self):
+        with tempfile.TemporaryDirectory(prefix="release-invalid-pkgver-", dir=TEMP_ROOT) as temporary:
+            work = Path(temporary)
+            (work / "deskwaifu.tar.gz").write_bytes(b"source")
+            (work / "private-deps.tar.gz").write_bytes(b"deps")
+            for tag in ("release/2026", "v1.2.3-rc.1", "发布"):
+                with self.subTest(tag=tag):
+                    packaging.prepare(work, tag, COMMIT)
+                    result = subprocess.run(["makepkg", "--printsrcinfo"], cwd=work, capture_output=True, text=True)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("pkgver", result.stderr)
+
     def test_tag_selection_never_accepts_branches_or_missing_manual_tag(self):
         self.assertEqual(source.select_tag("push", "refs/tags/v1.2.3", ""), TAG)
         self.assertEqual(source.select_tag("workflow_dispatch", "refs/heads/main", TAG), TAG)
@@ -59,10 +88,6 @@ class PackagingTest(unittest.TestCase):
                                      ("pull_request", "refs/tags/v1.2.3", "")]:
             with self.assertRaises(ValueError):
                 source.select_tag(event, ref, explicit)
-        for tag in ("main", "v1", "v1.2.3\nX=bad", "v1.2.3/other", "v1.2.3+meta", "--help"):
-            with self.assertRaises(ValueError):
-                source.package_version(tag)
-        self.assertEqual(source.package_version("v1.2.3-rc.1"), "1.2.3~rc.1")
 
     def test_payload_and_exact_dependency(self):
         for name, ocr in (("deskwaifu-bin", False), ("deskwaifu-ocr-bin", True)):
@@ -96,6 +121,8 @@ class PackagingTest(unittest.TestCase):
             git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "release")
             commit = git("rev-parse", "HEAD")
             git("tag", TAG)
+            git("tag", "1.2.3")
+            git("tag", "release/2026-10")
             (origin / "version").write_text("newer branch source, must not be packaged")
             git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-am", "later")
             checkout = root / "checkout"
@@ -110,7 +137,16 @@ class PackagingTest(unittest.TestCase):
             self.assertIn(f"RELEASE_COMMIT={commit}", env_file.read_text())
             symbolic = subprocess.run(["git", "symbolic-ref", "-q", "HEAD"], cwd=checkout, capture_output=True)
             self.assertNotEqual(symbolic.returncode, 0)
+            env.update(RELEASE_INPUT_TAG="1.2.3")
+            result = subprocess.run(command, cwd=checkout, env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("RELEASE_TAG=1.2.3\n", env_file.read_text())
+            self.assertEqual((checkout / "version").read_text(), "tagged source")
             # A moved tag/push identity must fail before changing source.
+            env.update(RELEASE_INPUT_TAG="release/2026-10")
+            result = subprocess.run(command, cwd=checkout, env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("RELEASE_TAG=release/2026-10\n", env_file.read_text())
             env.update(RELEASE_EVENT="push", RELEASE_REF="refs/tags/" + TAG, RELEASE_EVENT_SHA=git("rev-parse", "HEAD"))
             result = subprocess.run(command, cwd=checkout, env=env, capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
@@ -160,7 +196,7 @@ class PackagingTest(unittest.TestCase):
                 "cc5c72baf5ae5c8238a6841f0897227be2d02826b9cf98eaf02fdefaeeb03a57", packaging.digest(sdk)))
             subprocess.run(["bash", "-n", str(pkgbuild)], check=True)
             srcinfo = subprocess.check_output(["makepkg", "--printsrcinfo"], cwd=work, text=True)
-            self.assertIn("depends = deskwaifu-bin=1.2.3-1", srcinfo)
+            self.assertIn(f"depends = deskwaifu-bin={TAG}-1", srcinfo)
             self.assertIn("depends = yaml-cpp", srcinfo)
             self.assertIn("makedepends = opencv", srcinfo)
             self.assertEqual(srcinfo.count("pkgname = "), 2)
@@ -193,6 +229,7 @@ class PackagingTest(unittest.TestCase):
         self.assertEqual(workflow.count("secrets.RELEASE_UPLOAD"), 1)
         self.assertNotIn("secrets.RELEASE_UPLOAD", workflow.split("- name: Upload verified packages")[0])
         self.assertIn("runs-on: deskwaifu-arch", workflow)
+        self.assertIn("tags: ['**']", workflow)
         self.assertIn("https://git.kals.top/actions/checkout@v4", workflow)
         self.assertIn("RELEASE_INPUT_TAG: ${{ github.event.inputs.tag }}", workflow)
         job_env = workflow.split("    env:\n", 1)[1].split("    steps:", 1)[0]
@@ -320,6 +357,36 @@ upload_module = upload
 
 
 class UploadTest(unittest.TestCase):
+    def test_arbitrary_github_release_tags_are_not_renamed_or_classified(self):
+        for tag in ("nightly", "release/2026-10", "发布", "0.1.0+build"):
+            with self.subTest(tag=tag):
+                api = FakeAPI()
+                api.commit = None
+                upload.publish(api, tag, COMMIT, {})
+                self.assertEqual(api.release["tag_name"], tag)
+                self.assertEqual(api.release["name"], tag)
+                self.assertNotIn("prerelease", api.release)
+                self.assertIn(("POST", "/git/refs", {"ref": "refs/tags/" + tag, "sha": COMMIT}), api.calls)
+
+    def test_unprefixed_tag_assets_and_github_release_keep_original_name(self):
+        with tempfile.TemporaryDirectory(prefix="release-plain-tag-", dir=TEMP_ROOT) as temporary:
+            directory = Path(temporary)
+            for name in ("deskwaifu-bin", "deskwaifu-ocr-bin"):
+                (directory / f"{name}-0.1.0-1-x86_64.pkg.tar.zst").write_bytes(b"fixture")
+            (directory / "release-metadata.json").write_text(json.dumps({
+                "tag": "0.1.0", "commit": COMMIT, "pkgver": "0.1.0", "pkgrel": 1, "ocr_models_included": False}))
+            files = sorted(directory.iterdir())
+            (directory / "SHA256SUMS").write_text("".join(
+                f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n" for path in files))
+            assets = upload.load_assets(directory, "0.1.0", COMMIT)
+            api = FakeAPI()
+            api.commit = None
+            upload.publish(api, "0.1.0", COMMIT, assets)
+            self.assertEqual(api.release["tag_name"], "0.1.0")
+            self.assertIn(("POST", "/git/refs", {"ref": "refs/tags/0.1.0", "sha": COMMIT}), api.calls)
+            with self.assertRaisesRegex(ValueError, "artifacts"):
+                upload.load_assets(directory, "v0.1.0", COMMIT)
+
     def test_stdlib_uploader_honors_https_proxy_without_network(self):
         proxy = "http://100.64.0.11:7912"
         response = addinfourl(io.BytesIO(b'{"ok": true}'), {}, upload.API + "/releases", 200)
