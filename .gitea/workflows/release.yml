@@ -49,8 +49,8 @@ jobs:
           RELEASE_INPUT_TAG: ${{ github.event.inputs.tag }}
         run: python3 scripts/release-source.py
 
-      - name: Test release tooling from selected tag
-        run: python3 -B -m unittest discover -s tests -p test_release_packaging.py -v
+      - name: Test preserved release tooling
+        run: python3 -B "$RELEASE_TOOLS_DIR/tests/test_release_packaging.py" -v
 
       - name: Acquire system build dependencies
         # The current fixed runner image lacks OpenCV/yaml-cpp. Do not rebuild or
@@ -62,11 +62,11 @@ jobs:
           pacman -Syu --needed --noconfirm "${packages[@]}"
 
       - name: Acquire verified sources and build unprivileged Arch packages
-        run: bash scripts/release-build.sh
+        run: bash "$RELEASE_TOOLS_DIR/scripts/release-build.sh"
 
       - name: Upload verified packages to GitHub release
         # Never expose this credential to checkout, dependency acquisition,
         # CMake, makepkg, tests, or shell profiles used by the build user.
         env:
           RELEASE_UPLOAD: ${{ secrets.RELEASE_UPLOAD }}
-        run: python3 scripts/release-upload.py release-assets "$RELEASE_TAG" "$RELEASE_COMMIT"
+        run: python3 "$RELEASE_TOOLS_DIR/scripts/release-upload.py" release-assets "$RELEASE_TAG" "$RELEASE_COMMIT"
