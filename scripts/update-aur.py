@@ -58,6 +58,7 @@ def verify_assets(directory, tag, commit):
     release_tool("release-upload").load_assets(directory, tag, commit)
     packaging = release_tool("release-packaging")
     checksums = []
+    dependencies = {}
     for name in PACKAGES:
         path = directory / f"{name}-{tag}-1-x86_64.pkg.tar.zst"
         info = packaging.metadata(subprocess.check_output(
@@ -71,7 +72,28 @@ def verify_assets(directory, tag, commit):
                 raise ValueError(f"Unsupported binary package path: {entry}")
         packaging.verify_content(name, info, files, tag)
         checksums.append(hashlib.sha256(path.read_bytes()).hexdigest())
-    return checksums
+        dependencies[name] = set(info.get("depend", []))
+    return checksums, dependencies
+
+
+def verify_dependencies(dependencies, tag, srcinfo):
+    srcinfo = "\n".join(line.strip() for line in srcinfo.splitlines())
+    sections = srcinfo.split("\npkgname = ")
+    metadata = release_tool("release-packaging").metadata
+    base = metadata(sections[0])
+    version = f"{base['pkgver'][0]}-{base['pkgrel'][0]}"
+    declared = {}
+    for section in sections[1:]:
+        name, _, fields = section.partition("\n")
+        declared[name] = set(base.get("depends", [])) | set(metadata(fields).get("depends", []))
+    for name, required in dependencies.items():
+        # Upstream pkgrel and the AUR recipe revision are deliberately independent.
+        required = {f"deskwaifu-bin={version}" if dep == f"deskwaifu-bin={tag}-1" else dep
+                    for dep in required}
+        missing = required - declared.get(name, set())
+        if missing:
+            raise ValueError(f"AUR recipe omits upstream dependencies for {name}: {sorted(missing)}; "
+                             "update the recipe manually before retrying")
 
 
 def render_recipe(text, tag, checksums):
@@ -104,11 +126,12 @@ def update(tag):
         for name in names:
             (directory / name).write_bytes(download(base + name))
         commit = public_tag_commit(tag)
-        checksums = verify_assets(directory, tag, commit)
+        checksums, dependencies = verify_assets(directory, tag, commit)
         text = render_recipe((recipe / "PKGBUILD").read_text(), tag, checksums)
         # Generate metadata before changing either maintained file.
         (directory / "PKGBUILD").write_text(text)
         srcinfo = subprocess.check_output(["makepkg", "--printsrcinfo"], cwd=directory, text=True)
+        verify_dependencies(dependencies, tag, srcinfo)
         (recipe / "PKGBUILD").write_text(text)
         (recipe / ".SRCINFO").write_text(srcinfo)
     subprocess.run(["git", "diff", "--", "PKGBUILD", ".SRCINFO"], cwd=recipe, check=True)

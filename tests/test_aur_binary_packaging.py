@@ -88,9 +88,36 @@ class AssetTest(unittest.TestCase):
         PRODUCER.verify(self.directory, "0.1.0", COMMIT)
 
     def test_valid_assets(self):
-        sums = updater.verify_assets(self.directory, "0.1.0", COMMIT)
+        sums, dependencies = updater.verify_assets(self.directory, "0.1.0", COMMIT)
         self.assertEqual(len(sums), 2)
         self.assertTrue(all(len(value) == 64 for value in sums))
+        self.assertEqual(dependencies["deskwaifu-bin"], PRODUCER.MAIN_DEPENDS)
+
+    def test_new_upstream_dependency_is_not_silently_dropped(self):
+        archive = self.directory / "deskwaifu-bin-0.1.0-1-x86_64.pkg.tar.zst"
+        with tarfile.open(archive) as stream:
+            entries = [(entry, stream.extractfile(entry).read()) for entry in stream.getmembers()]
+        with tarfile.open(archive, "w") as stream:
+            for entry, data in entries:
+                if entry.name == ".PKGINFO":
+                    data += b"depend = libnotify>=0.8\n"
+                    entry.size = len(data)
+                stream.addfile(entry, io.BytesIO(data))
+        PRODUCER.verify(self.directory, "0.1.0", COMMIT)
+        _, dependencies = updater.verify_assets(self.directory, "0.1.0", COMMIT)
+        info = "pkgbase = deskwaifu-bin\n\tpkgver = 0.1.0\n\tpkgrel = 2\n"
+        for name, required in dependencies.items():
+            info += f"\npkgname = {name}\n"
+            for dep in sorted(required - {"libnotify>=0.8"}):
+                dep = dep.replace("deskwaifu-bin=0.1.0-1", "deskwaifu-bin=0.1.0-2")
+                info += f"\tdepends = {dep}\n"
+        with self.assertRaisesRegex(ValueError, "libnotify>=0.8"):
+            updater.verify_dependencies(dependencies, "0.1.0", info)
+        # Keeping the new dependency and using the AUR revision satisfies the contract.
+        info = info.replace("pkgname = deskwaifu-bin\n", "pkgname = deskwaifu-bin\n\tdepends = libnotify>=0.8\n")
+        updater.verify_dependencies(dependencies, "0.1.0", info)
+        with self.assertRaisesRegex(ValueError, "deskwaifu-bin=0.1.0-2"):
+            updater.verify_dependencies(dependencies, "0.1.0", info.replace("deskwaifu-bin=0.1.0-2", "deskwaifu-bin=0.1.0-1"))
 
     def test_corrupt_or_missing_asset_is_rejected(self):
         path = next(self.directory.glob("*.pkg.tar.zst"))

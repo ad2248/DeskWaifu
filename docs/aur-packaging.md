@@ -39,6 +39,9 @@ Do not expose the AUR private key to PR jobs, builds or dependency acquisition.
 3. Review the diff. The updater checks the GitHub tag's commit against the
    manifest, SHA-256, binary package identities, dependencies and payload contract.
    An existing release with different checksums is rejected.
+   If the release requires dependencies missing from the generated AUR metadata,
+   the update is rejected before modifying either maintained file. Adjust the
+   recipe manually, regenerate `.SRCINFO`, and commit those changes before retrying.
 4. In a clean Arch environment, run `makepkg -s`, `namcap PKGBUILD`, and
    `namcap` on each generated package. Test the main package alone and then OCR.
    Do not use `makepkg -i` when only the main split package is wanted.
