@@ -1,4 +1,4 @@
-# Arch Linux / AUR packaging
+# Arch Linux source packaging
 
 This directory contains the `deskwaifu-git` recipe for x86_64. It builds the
 latest `main` commit, including the Qt control panel and the IPC CLI. It can be
@@ -12,7 +12,7 @@ No Git credentials are required.
 ```bash
 sudo pacman -S --needed base-devel git
 git clone https://github.com/ad2248/DeskWaifu.git
-cd DeskWaifu/packaging/aur
+cd DeskWaifu/packaging/arch/deskwaifu-git
 makepkg -si
 ```
 
@@ -49,9 +49,11 @@ include models or configure autostart. User configuration remains in
 To update, run `git pull` in this checkout and `makepkg -si` again in this
 directory. To uninstall: `sudo pacman -Rns deskwaifu-git`.
 
-## Maintaining / publishing the AUR recipe
+## Maintaining the source recipe
 
-Copy `PKGBUILD` and `.SRCINFO` to the root of the AUR package repository.
+This recipe is maintained in the main repository, separately from the
+`deskwaifu-bin` AUR submodule in `packaging/aur/`. No source-package AUR
+publication is performed by this repository.
 Before publishing, the application installation rules must have reached `main`.
 Refresh metadata after changing the recipe:
 
