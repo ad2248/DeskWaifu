@@ -38,7 +38,7 @@ int main(int argc, char** argv)
 try {
     QGuiApplication app(argc, argv);
     Check(argc == 4, "expected reading module, perception module and OCR fixture");
-    qputenv("DESKWAIFU_OCR_HELPER", app.arguments()[3].toUtf8());
+    qputenv("DESKWAIFU_OCR_MODULE", app.arguments()[3].toUtf8());
     qputenv("DESKWAIFU_OCR_TEST_MODE", "text");
     QImage image(4, 4, QImage::Format_ARGB32); image.fill(Qt::blue);
     QGuiApplication::clipboard()->setImage(image);

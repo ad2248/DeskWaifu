@@ -34,7 +34,7 @@ def stop(process):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--app", type=Path, required=True)
-    parser.add_argument("--helper", type=Path, required=True, help="installed/staged helper; models deployed separately")
+    parser.add_argument("--module", type=Path, required=True, help="installed/staged module; models deployed separately")
     parser.add_argument("--detection-model-dir", type=Path,
                         default=Path("/usr/share/deskwaifu/ocr/models/PP-OCRv6_small_det"))
     parser.add_argument("--recognition-model-dir", type=Path,
@@ -72,7 +72,7 @@ def main():
             display = wait_for(lambda: next((p for p in runtime.glob("wayland-*") if p.is_socket()), None))
             env["WAYLAND_DISPLAY"] = display.name
             for installed in (False, True):
-                env["DESKWAIFU_OCR_HELPER"] = str(args.helper.resolve()) if installed else str(runtime / "missing-helper")
+                env["DESKWAIFU_OCR_MODULE"] = str(args.module.resolve()) if installed else str(runtime / "missing-module")
                 with (args.logs / f"app-{installed}.log").open("w") as log:
                     app = subprocess.Popen([str(args.app.resolve()), "--models_dir", str(args.live2d_models.resolve())], env=env, stdout=log, stderr=log)
                 try:
@@ -102,13 +102,19 @@ def main():
 
                     status = wait_for(initialized, timeout=60)
                     assert status["available"] == installed, status
+                    assert status["execution_mode"] == "in_process", status
                     assert command("get_status")["ok"]
                     reading = command("get_reading_clip_status")
                     assert reading["ok"] and reading["state"] == "idle", reading
                     if not installed:
+                        assert status["error_code"] == "module_missing", status
                         assert not command("ocr_recognize", image=str((args.samples / "light.png").resolve()))["ok"]
                     else:
                         first = submit("light.png")
+                        # The native module must be mapped into the application, not a helper.
+                        assert str(args.module.resolve()) in Path(f"/proc/{app.pid}/maps").read_text()
+                        children = Path(f"/proc/{app.pid}/task/{app.pid}/children").read_text().split()
+                        assert all(Path(f"/proc/{pid}/comm").read_text().strip() != "deskwaifu-ocr" for pid in children)
                         assert not command("ocr_recognize", image=str((args.samples / "light.png").resolve()))["ok"]
                         start = time.monotonic()
                         assert command("get_status")["ok"]
@@ -122,20 +128,6 @@ def main():
                         cancelled = submit("dense.png")
                         assert command("cancel_ocr", job_id=cancelled)["ok"]
                         assert finished(cancelled)["state"] == "failed"
-                        wait_for(lambda: not command("get_ocr_status")["running"])
-                        crashed = submit("dense.png")
-                        children_file = Path(f"/proc/{app.pid}/task/{app.pid}/children")
-
-                        def worker_pid():
-                            for value in children_file.read_text().split():
-                                executable = Path(f"/proc/{value}/exe")
-                                if executable.exists() and executable.resolve() == args.helper.resolve():
-                                    return int(value)
-                            return None
-
-                        pid = wait_for(worker_pid)
-                        os.kill(pid, signal.SIGKILL)  # 只终止隔离测试应用中已确认的辅助子进程。
-                        assert wait_for(lambda: finished(crashed))["state"] == "failed"
                         wait_for(lambda: not command("get_ocr_status")["running"])
                         recovered = submit("light.jpg")
                         result = wait_for(lambda: finished(recovered), timeout=60)

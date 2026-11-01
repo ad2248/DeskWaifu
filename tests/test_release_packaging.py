@@ -44,7 +44,7 @@ def archive(path, files):
 
 def fixture_files(ocr=False):
     if ocr:
-        return {"usr/libexec/deskwaifu-ocr", "usr/lib/deskwaifu/ocr/libonnxruntime.so.1"}
+        return {"usr/lib/deskwaifu/ocr/deskwaifu-ocr.so", "usr/lib/deskwaifu/ocr/libonnxruntime.so.1"}
     return {"usr/bin/deskwaifu", "usr/bin/deskwaifu-control", "usr/bin/deskwaifu-ctl", "usr/bin/deskwaifu-cursor-guard",
             *(f"usr/lib/deskwaifu/plugins/{name}/{name}.so" for name in packaging.PLUGINS),
             *packaging.SDK_LIBRARIES}
@@ -130,6 +130,11 @@ class PackagingTest(unittest.TestCase):
             info = {"pkgname": [name], "pkgver": ["1.2.3-1"], "arch": ["x86_64"],
                     "depend": ["deskwaifu-bin=1.2.3-1", "opencv", "yaml-cpp"] if ocr else sorted(packaging.MAIN_DEPENDS)}
             packaging.verify_content(name, info, fixture_files(ocr), "1.2.3")
+            if ocr:
+                with self.assertRaisesRegex(ValueError, "retired helper"):
+                    packaging.verify_content(name, info, fixture_files(True) | {"usr/libexec/deskwaifu-ocr"}, "1.2.3")
+                with self.assertRaisesRegex(ValueError, "Missing package files"):
+                    packaging.verify_content(name, info, fixture_files(True) - {"usr/lib/deskwaifu/ocr/deskwaifu-ocr.so"}, "1.2.3")
             for extra in ("usr/share/deskwaifu/ocr/detection.onnx", "usr/share/other/dictionary.json", "usr/share/model/inference.yml"):
                 with self.assertRaisesRegex(ValueError, "Models/dictionaries"):
                     packaging.verify_content(name, info, fixture_files(ocr) | {extra}, "1.2.3")

@@ -41,7 +41,7 @@ https://github.com/user-attachments/assets/95dfdedc-4957-4bb7-b79f-f3addd97a6db
 - **Configurable model directory** — load models from any path via CLI flag or XDG config
 - **JSON configuration** — customize behavior via `config.json` (default model, emotion timeout, additional model dirs, scale/position, window size)
 - **IPC control** — Unix domain socket API for external control (model switching, expressions, motions, lipsync, zoom, position, look-at direction)
-- **Optional local OCR (experimental)** — a C++/ONNX Runtime helper owned by the perception plugin, without Python or OCR engine dependencies in the platform. Builds include the helper by default; models are not bundled. See [OCR package and protocol](src/plugins/perception/native/README.md).
+- **Optional local OCR (experimental)** — a C++/ONNX Runtime module owned by the perception plugin, running on a background thread inside the application process. The platform does not directly link OCR engine dependencies. Builds include the module by default; models are not bundled. See [OCR package and lifecycle](src/plugins/perception/native/README.md).
 
 ## Prerequisites
 
@@ -88,7 +88,7 @@ fixed GitHub Release, without compiling DeskWaifu or downloading the SDK:
 
 ```bash
 yay -S deskwaifu-bin
-# Optional OCR helper/runtime; models and dictionaries are not included:
+# Optional OCR module/runtime; models and dictionaries are not included:
 yay -S deskwaifu-ocr-bin
 ```
 
@@ -115,7 +115,7 @@ The SDK and GLEW are downloaded automatically. See
 The recipe is usable locally; this does not imply it has been published to AUR.
 
 Tagged releases can also provide `deskwaifu-bin` (application and default plugins)
-and `deskwaifu-ocr-bin` (OCR helper, without models). See
+and `deskwaifu-ocr-bin` (optional in-process OCR module, without models). See
 [release packaging](docs/release-packaging.md).
 
 ### OCR model configuration
@@ -175,7 +175,7 @@ cd DeskWaifu
 
 #### 3. Build
 
-The default full build includes the OCR helper. Install OpenCV and yaml-cpp
+The default full build includes the OCR module. Install OpenCV and yaml-cpp
 development packages, then unpack the ONNX Runtime CPU SDK as described in
 [the OCR build instructions](src/plugins/perception/native/README.md). Set its
 location before running either build method:
@@ -185,7 +185,7 @@ export ONNXRUNTIME_ROOT=/absolute/path/to/onnxruntime-linux-x64-1.31.0
 ```
 
 OCR models are **not** required for compiling or packaging. To explicitly omit
-the OCR helper, configure with `-DDESKWAIFU_BUILD_OCR=OFF` instead.
+the OCR module, configure with `-DDESKWAIFU_BUILD_OCR=OFF` instead.
 
 Use the install script (recommended):
 
@@ -1086,7 +1086,7 @@ deskwaifu/
 ├── platform/               # Process/GUI hosts, discovery, lifecycle and platform tests
 ├── src/plugins/            # Independently built business modules and their tests
 │   ├── desktop/            # Model, rendering, window, interaction and input
-│   ├── perception/         # Image/OCR/screenshot services; optional native OCR helper
+│   ├── perception/         # Image/OCR/screenshot services; optional in-process OCR module
 │   ├── ipc/                # Backend socket transport, command gateway and GUI client
 │   ├── speech/             # Speech providers, playback and speech settings page
 │   ├── reading_clip/       # Clipboard reading orchestration

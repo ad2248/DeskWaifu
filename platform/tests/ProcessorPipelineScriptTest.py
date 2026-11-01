@@ -26,7 +26,7 @@ class ProcessorPipelineScriptTest(unittest.TestCase):
                         "    stream.write(json.dumps([sys.argv[0], sys.argv[1:]]) + '\\n')\n"
                     )
                     program.chmod(0o700)
-                paths = {name: str(root / name) for name in ("OCR_HELPER", "READING_PLUGIN", "PERCEPTION_PLUGIN")}
+                paths = {name: str(root / name) for name in ("OCR_MODULE", "READING_PLUGIN", "PERCEPTION_PLUGIN")}
                 definitions = {name: str(program) for name, program in programs.items() if name != "SPEECH"}
                 definitions.update(paths)
                 environment = os.environ.copy()
@@ -40,13 +40,13 @@ class ProcessorPipelineScriptTest(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stdout)
                 expected = [
                     [str(programs["READING"]), []],
-                    [str(programs["PERCEPTION"]), [paths["OCR_HELPER"]]],
+                    [str(programs["PERCEPTION"]), [paths["OCR_MODULE"]]],
                     [str(programs["IPC"]), []],
                 ]
                 if speech:
                     expected.append([str(programs["SPEECH"]), []])
                 expected.append([str(programs["DYNAMIC"]), [paths[name] for name in
-                                 ("READING_PLUGIN", "PERCEPTION_PLUGIN", "OCR_HELPER")]])
+                                 ("READING_PLUGIN", "PERCEPTION_PLUGIN", "OCR_MODULE")]])
                 self.assertEqual([json.loads(line) for line in log.read_text().splitlines()], expected, result.stdout)
 
 

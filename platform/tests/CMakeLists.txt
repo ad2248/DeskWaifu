@@ -156,7 +156,7 @@ add_test(NAME processor-pipeline COMMAND ${CMAKE_COMMAND}
   -DREADING=$<TARGET_FILE:reading-pipeline-test> -DPERCEPTION=$<TARGET_FILE:perception-adapters-test>
   -DIPC=$<TARGET_FILE:ipc-readiness-test> -DDYNAMIC=$<TARGET_FILE:reading-plugin-test>
   -DREADING_PLUGIN=$<TARGET_FILE:reading_clip_plugin> -DPERCEPTION_PLUGIN=$<TARGET_FILE:perception_plugin>
-  -DOCR_HELPER=$<TARGET_FILE:processor-ocr-fixture> -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckProcessorPipeline.cmake)
+  -DOCR_MODULE=$<TARGET_FILE:processor-ocr-fixture> -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckProcessorPipeline.cmake)
 if(TARGET speech-adapter-failure-test)
   add_dependencies(processor-pipeline-test speech-adapter-failure-test)
   set_property(TEST processor-pipeline APPEND PROPERTY ENVIRONMENT

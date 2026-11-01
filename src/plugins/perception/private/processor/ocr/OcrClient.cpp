@@ -1,14 +1,16 @@
 #include "OcrClient.hpp"
+#include "OcrBackend.hpp"
 #include <QDir>
 #include <QFileInfo>
 #include <QJsonArray>
-#include <QJsonDocument>
+#include <QPluginLoader>
 #include <QUuid>
 #include <cmath>
+#include <memory>
+#include <stdexcept>
 #include <utility>
 
 namespace {
-constexpr int MaxReplyBytes = 4 * 1024 * 1024;
 QJsonObject Error(const QString& error) { return {{"ok", false}, {"error", error}}; }
 
 bool ValidResult(const QJsonObject& result)
@@ -34,56 +36,76 @@ bool ValidResult(const QJsonObject& result)
 }
 }
 
-QString OcrClient::DefaultExecutable()
+// Accessed only on the dedicated thread, including module destruction/unloading.
+class OcrClient::Worker : public QObject
 {
-    return qEnvironmentVariable("DESKWAIFU_OCR_HELPER", QStringLiteral(DESKWAIFU_OCR_HELPER_PATH));
+public:
+    Worker() : loader(this) {}
+    QPluginLoader loader;
+    std::unique_ptr<OcrBackend> backend;
+
+    QJsonObject Load(const QString& module, const QString& detection, const QString& recognition)
+    {
+        loader.setFileName(module);
+        loader.setLoadHints(QLibrary::ResolveAllSymbolsHint);
+        if (loader.metaData().value("IID") != QJsonValue(DeskWaifuOcrBackend_iid))
+            return {{"ok", false}, {"code", "module_incompatible"}, {"error", "OCR module is invalid or incompatible; reinstall the matching OCR package: " + loader.errorString()}};
+        auto* instance = loader.instance();
+        auto* factory = qobject_cast<OcrBackendFactory*>(instance);
+        if (!factory)
+            return {{"ok", false}, {"code", "module_load_failed"}, {"error", "Cannot load OCR module; check its runtime dependencies: " + loader.errorString()}};
+        backend.reset(factory->Create());
+        if (!backend) throw std::runtime_error("OCR module could not create an engine");
+        return backend->Initialize(detection, recognition);
+    }
+
+    void Release()
+    {
+        if (backend) backend->Release();
+        backend.reset();
+        loader.unload();
+    }
+};
+
+QString OcrClient::DefaultModule()
+{
+    return qEnvironmentVariable("DESKWAIFU_OCR_MODULE", QStringLiteral(DESKWAIFU_OCR_MODULE_PATH));
 }
 
-OcrClient::OcrClient(QString executable, int timeoutMs, int idleMs) : _executable(std::move(executable))
+OcrClient::OcrClient(QString module, int timeoutMs, int idleMs)
+    : _worker(new Worker), _module(std::move(module))
 {
+    _worker->moveToThread(&_thread);
+    connect(&_thread, &QThread::finished, _worker, &QObject::deleteLater);
+    _thread.start();
     _deadline.setSingleShot(true);
     _deadline.setInterval(timeoutMs);
     _idle.setSingleShot(true);
     _idle.setInterval(idleMs);
     connect(&_deadline, &QTimer::timeout, this, [this] { Fail("OCR initialization or request timed out", "timeout"); });
-    connect(&_idle, &QTimer::timeout, this, [this] { _ready = false; _process.kill(); });
-    connect(&_process, &QProcess::readyReadStandardOutput, this, [this] { ReadOutput(); });
-    // 不保留无界诊断输出，也不将图像内容写入应用日志。
-    connect(&_process, &QProcess::readyReadStandardError, this, [this] { _process.readAllStandardError(); });
-    connect(&_process, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
-        if (error == QProcess::FailedToStart) Fail("OCR helper failed to start: " + _process.errorString());
-    });
-    connect(&_process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this, [this](int exitCode, QProcess::ExitStatus exitStatus) {
-        const bool initializing = _checking;
-        const bool unexpectedExit = _ready && (exitCode != 0 || exitStatus == QProcess::CrashExit);
-        _ready = false;
-        _buffer.clear();
-        _idle.stop();
-        if (Pending() || initializing || unexpectedExit) Fail("OCR helper exited before completing initialization or request");
-        emit WorkerStopped();
-    });
+    connect(&_idle, &QTimer::timeout, this, [this] { ReleaseWorker(); });
 }
 
 OcrClient::~OcrClient()
 {
-    _process.disconnect(this);
-    if (_process.state() != QProcess::NotRunning) {
-        _process.kill();
-        _process.waitForFinished(1000);
-    }
+    // Never terminate a native inference thread. Keep borrowed files and code alive until it returns.
+    QMetaObject::invokeMethod(_worker, [worker = _worker] { worker->Release(); }, Qt::BlockingQueuedConnection);
+    _thread.quit();
+    _thread.wait();
 }
 
 QJsonObject OcrClient::Status() const
 {
-    const QFileInfo helper(_executable);
-    return {{"ok", true}, {"available", _configured ? _availability == "available" : helper.isFile() && helper.isExecutable()},
+    return {{"ok", true}, {"available", _availability == "available"},
         {"availability_state", _availability}, {"error_code", _errorCode}, {"error", _error},
         {"detection_model_dir", _detectionDir}, {"recognition_model_dir", _recognitionDir},
-        {"state", _state}, {"job_id", _id}, {"running", _process.state() != QProcess::NotRunning}};
+        {"state", _state}, {"job_id", _id}, {"running", _loaded || _working},
+        {"busy", _working}, {"retiring", _retiring}, {"execution_mode", "in_process"}};
 }
 
 void OcrClient::ConfigureModels(const QJsonObject& config, const QString& configError)
 {
+    if (_working || _loaded) return;
     _configured = true;
     _detectionDir = "/usr/share/deskwaifu/ocr/models/PP-OCRv6_small_det";
     _recognitionDir = "/usr/share/deskwaifu/ocr/models/PP-OCRv6_small_rec";
@@ -98,37 +120,45 @@ void OcrClient::ConfigureModels(const QJsonObject& config, const QString& config
             *item.second = value.toString();
         }
     }
-    const QFileInfo helper(_executable);
-    if (!helper.isFile() || !helper.isExecutable()) {
-        Fail("OCR feature package is not installed or executable", "helper_missing"); return;
+    if (!QFileInfo(_module).isFile()) {
+        Fail("OCR feature module is not installed; install the matching OCR package", "module_missing"); return;
     }
-    _availability = "checking";
-    _checking = true;
     _deadline.start();
     StartWorker();
 }
 
 void OcrClient::StartWorker()
 {
-    QStringList arguments;
-    if (_configured) {
-        _availability = "checking";
-        arguments << "--detection-model-dir" << _detectionDir << "--recognition-model-dir" << _recognitionDir;
-    }
-    arguments << "--serve";
-    _buffer.clear();
-    _process.start(_executable, arguments);
+    _working = true;
+    _availability = "checking";
+    QMetaObject::invokeMethod(_worker, [this, worker = _worker, module = _module, detection = _detectionDir, recognition = _recognitionDir] {
+        QJsonObject reply;
+        try { reply = worker->Load(module, detection, recognition); }
+        catch (const std::exception& error) { reply = {{"ok", false}, {"code", "model_load_failed"}, {"error", QString::fromUtf8(error.what())}}; }
+        QMetaObject::invokeMethod(this, [this, reply] {
+            _working = false;
+            _loaded = true; // The module must be released even if initialization failed.
+            if (_retiring) { ReleaseWorker(); return; }
+            if (!reply.value("ok").toBool()) {
+                Fail(reply.value("error").toString(), reply.value("code").toString("model_load_failed")); return;
+            }
+            _validated = true;
+            _availability = "available";
+            _error.clear(); _errorCode.clear();
+            if (Pending()) SendRequest();
+            else { _deadline.stop(); _idle.start(); }
+        }, Qt::QueuedConnection);
+    }, Qt::QueuedConnection);
 }
 
 QJsonObject OcrClient::Submit(const QString& image)
 {
-    if (Pending()) return Error("OCR is busy");
-    const bool recoverable = _validated && (_errorCode == "helper_error" || _errorCode == "timeout");
+    if (Pending() || _working || _retiring) return Error("OCR is busy");
+    const bool recoverable = _validated && (_errorCode == "backend_error" || _errorCode == "timeout");
     if (_configured && _availability != "available" && !recoverable)
         return {{"ok", false}, {"error", _availability == "checking" ? "OCR is initializing; retry shortly" : _error},
             {"error_code", _availability == "checking" ? "initializing" : _errorCode}};
-    if (_process.state() != QProcess::NotRunning && !_ready) return Error("OCR helper is stopping; retry shortly");
-    if (!Status().value("available").toBool() && !recoverable) return Error("OCR feature package is not installed");
+    if (!QFileInfo(_module).isFile()) return Error("OCR feature module is not installed");
     const QFileInfo file(image);
     if (!file.isAbsolute() || !file.isFile() || !file.isReadable()) return Error("image must be an absolute readable file path");
     _idle.stop();
@@ -137,10 +167,8 @@ QJsonObject OcrClient::Submit(const QString& image)
     _state = "pending";
     _reply = {};
     _deadline.start();
-    if (_ready) SendRequest();
-    else {
-        StartWorker();
-    }
+    if (_loaded) SendRequest();
+    else StartWorker();
     return {{"ok", true}, {"job_id", _id}, {"state", "pending"}};
 }
 
@@ -163,82 +191,62 @@ void OcrClient::Fail(const QString& error, const QString& code)
 {
     _deadline.stop();
     _idle.stop();
-    _ready = false;
-    _checking = false;
-    if (_configured && code == "cancelled" && _validated) {
+    if (code != "cancelled") {
+        _availability = "unavailable";
+        _error = error; _errorCode = code;
+    } else if (_validated) {
         _availability = "available";
         _error.clear(); _errorCode.clear();
     }
-    if (_configured && code != "cancelled") {
-        _availability = "unavailable";
-        _error = error;
-        _errorCode = code;
-    }
-    _buffer.clear();
-    const bool notify = Pending();
-    if (notify) {
+    if (Pending()) {
         _state = "failed";
         _reply = Error(error);
-    }
-    if (_process.state() != QProcess::NotRunning) _process.kill();
-    if (notify) {
         const auto request = _id;
         const auto response = _reply;
         QTimer::singleShot(0, this, [this, request, response] { emit Finished(request, response); });
     }
+    if (_working) _retiring = true;
+    else if (_loaded) ReleaseWorker();
+}
+
+void OcrClient::ReleaseWorker()
+{
+    _working = true;
+    _retiring = true;
+    QMetaObject::invokeMethod(_worker, [this, worker = _worker] {
+        worker->Release();
+        QMetaObject::invokeMethod(this, [this] {
+            _loaded = false;
+            _working = false;
+            _retiring = false;
+            emit WorkerStopped();
+        }, Qt::QueuedConnection);
+    }, Qt::QueuedConnection);
 }
 
 void OcrClient::SendRequest()
 {
-    const auto data = QJsonDocument(QJsonObject{{"protocol", 1}, {"id", _id}, {"image", _image}}).toJson(QJsonDocument::Compact) + '\n';
-    if (_process.write(data) != data.size()) Fail("failed to write OCR request");
-}
-
-void OcrClient::ReadOutput()
-{
-    // Cancel/idle shutdown may leave a ready event or completed reply buffered.
-    // It belongs to the retired worker, not a new initialization handshake.
-    if (!_ready && !_checking && !Pending()) {
-        _process.readAllStandardOutput();
-        return;
-    }
-    _buffer += _process.readAllStandardOutput();
-    if (_buffer.size() > MaxReplyBytes) { Fail("OCR reply exceeded size limit"); return; }
-    while (_buffer.contains('\n')) {
-        const auto end = _buffer.indexOf('\n');
-        const auto line = _buffer.left(end);
-        _buffer.remove(0, end + 1);
-        QJsonParseError parse;
-        const auto document = QJsonDocument::fromJson(line, &parse);
-        const auto reply = document.object();
-        if (parse.error != QJsonParseError::NoError || !document.isObject() || reply.value("protocol") != QJsonValue(1)) {
-            Fail("invalid OCR protocol reply"); return;
-        }
-        if (!_ready) {
-            if (reply.value("event") == QJsonValue("error") && reply.value("error").isString()) {
-                Fail("OCR initialization failed: " + reply.value("error").toString(),
-                    reply.value("code").toString("model_load_failed")); return;
-            }
-            if ((!Pending() && !_checking) || reply.value("event") != QJsonValue("ready")) { Fail("OCR handshake failed"); return; }
-            _ready = true;
-            _validated = true;
-            _checking = false;
-            _availability = "available";
-            _error.clear(); _errorCode.clear();
-            if (Pending()) SendRequest();
-            else { _deadline.stop(); _idle.start(); }
-        } else {
-            if (!Pending() || reply.value("id") != QJsonValue(_id) || !reply.value("ok").isBool() ||
+    _working = true;
+    QMetaObject::invokeMethod(_worker, [this, worker = _worker, image = _image] {
+        QJsonObject reply;
+        try { reply = worker->backend->Recognize(image); }
+        catch (const std::exception& error) { reply = Error(QString::fromUtf8(error.what())); }
+        QMetaObject::invokeMethod(this, [this, reply] {
+            _working = false;
+            if (_retiring) { ReleaseWorker(); return; }
+            if (!reply.value("ok").isBool() ||
                 (reply.value("ok").toBool() ? !ValidResult(reply.value("result").toObject()) : !reply.value("error").isString())) {
-                Fail("invalid OCR response or request identifier"); return;
+                Fail("Invalid OCR module response"); return;
             }
             _deadline.stop();
             _reply = reply;
+            _reply.insert("protocol", 1);
+            _reply.insert("id", _id);
             _state = reply.value("ok").toBool() ? "completed" : "failed";
             _idle.start();
             const auto request = _id;
             const auto response = _reply;
             QTimer::singleShot(0, this, [this, request, response] { emit Finished(request, response); });
-        }
-    }
+        }, Qt::QueuedConnection);
+    }, Qt::QueuedConnection);
 }

@@ -1,4 +1,4 @@
-"""Manual native-helper checks. Requires generated samples, not Paddle or Python OCR deps."""
+"""Manual in-process module checks using the test-only probe and generated samples."""
 
 import argparse
 import json
@@ -12,7 +12,8 @@ import unicodedata
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--helper", type=Path, required=True)
+    parser.add_argument("--probe", type=Path, required=True)
+    parser.add_argument("--module", type=Path, required=True)
     parser.add_argument("--samples", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--detection-model-dir", type=Path,
@@ -32,9 +33,9 @@ def main():
             requests.append(json.dumps({"protocol": 1, "id": f"{name}-{repeat}", "image": str(args.samples / name)}))
     requests.append(json.dumps({"protocol": 1, "id": "jpeg", "image": str(args.samples / "light.jpg")}))
     start = time.perf_counter()
-    # 辅助进程不继承 Python 环境、模型缓存、GPU 配置或 LD_LIBRARY_PATH。
+    # 测试宿主不继承 Python 环境、模型缓存、GPU 配置或 LD_LIBRARY_PATH。
     env = {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}
-    command = [str(args.helper.resolve()), "--serve", "--detection-model-dir", str(args.detection_model_dir.resolve()),
+    command = [str(args.probe.resolve()), "--module", str(args.module.resolve()), "--serve", "--detection-model-dir", str(args.detection_model_dir.resolve()),
                "--recognition-model-dir", str(args.recognition_model_dir.resolve())]
     result = subprocess.run(command, env=env,
                             input="\n".join(requests) + "\n", capture_output=True, text=True, timeout=180)
@@ -61,8 +62,10 @@ def main():
             assert all(0 <= x < value["width"] and 0 <= y < value["height"] for x, y in line["polygon"])
         timings.setdefault(name, []).append(value["elapsed_s"])
     summary = {"checks": "passed", "text_comparison": "NFKC, ignoring whitespace", "timings_s": timings,
+               "initialization_ms": replies[0]["initialization_ms"],
                "total_process_s": time.perf_counter() - start,
                "child_peak_rss_mib": resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss / 1024}
+    summary.update(next(json.loads(line) for line in result.stderr.splitlines() if '"probe_metrics":true' in line))
     with tempfile.TemporaryDirectory(prefix="bad-recognition-metadata-", dir=args.output) as temporary:
         invalid = Path(temporary)
         (invalid / "inference.onnx").symlink_to(args.recognition_model_dir.resolve() / "inference.onnx")
@@ -70,7 +73,7 @@ def main():
         assert "  character_dict:" in metadata
         (invalid / "inference.yml").write_text(metadata.replace(
             "  character_dict:", "  character_dict: []\n  original_dictionary:", 1))
-        corrupted = subprocess.run([str(args.helper.resolve()), "--serve",
+        corrupted = subprocess.run([str(args.probe.resolve()), "--module", str(args.module.resolve()), "--serve",
                                    "--detection-model-dir", str(args.detection_model_dir.resolve()),
                                    "--recognition-model-dir", str(invalid.resolve())],
                                    env=env, capture_output=True, text=True, timeout=10)

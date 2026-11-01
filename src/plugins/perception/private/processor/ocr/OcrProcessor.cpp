@@ -7,13 +7,13 @@
 #include <QDir>
 
 OcrProcessor::OcrProcessor(ProcessorEventLoop& loop)
-    : OcrProcessor(loop, std::unique_ptr<OcrClient>(new OcrClient(OcrClient::DefaultExecutable()))) {}
+    : OcrProcessor(loop, std::unique_ptr<OcrClient>(new OcrClient(OcrClient::DefaultModule()))) {}
 
 OcrProcessor::OcrProcessor(ProcessorEventLoop& loop, std::unique_ptr<OcrClient> client)
     : OcrProcessor(loop, std::move(client), nullptr) {}
 
 OcrProcessor::OcrProcessor(PluginContext& context)
-    : OcrProcessor(context.Loop(), std::unique_ptr<OcrClient>(new OcrClient(OcrClient::DefaultExecutable())), &context) {}
+    : OcrProcessor(context.Loop(), std::unique_ptr<OcrClient>(new OcrClient(OcrClient::DefaultModule())), &context) {}
 
 OcrProcessor::OcrProcessor(ProcessorEventLoop& loop, std::unique_ptr<OcrClient> client, PluginContext* context)
     : Processor(loop), _client(std::move(client))
@@ -64,7 +64,7 @@ void OcrProcessor::Stop() noexcept
     if (!_client) return;
     _client->disconnect(this);
     if (!_transportRequest.isEmpty()) _client->Cancel(_transportRequest);
-    _client.reset(); // kill/join 后再释放被 helper 借用的文件。
+    _client.reset(); // 等待后台推理结束后再释放借用的文件。
     _image.clear(); _retiringImage.clear(); _transportRequest.clear(); _requester = nullptr; _request = 0;
 }
 
@@ -114,7 +114,7 @@ bool OcrProcessor::Recognize(const ProcessorEvent& event, RequestId request)
     } else {
         _requester = event.sender;
         _request = request;
-        // 原生辅助进程的现有传输协议隔离在此处，事件路由不使用该协议标识。
+        // OCR 任务标识与事件路由标识保持隔离。
         _transportRequest = accepted.value("job_id").toString();
     }
     return true;
