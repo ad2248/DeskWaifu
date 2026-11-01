@@ -4,7 +4,7 @@ add_library(deskwaifu_ocr_client STATIC private/processor/ocr/OcrClient.cpp priv
 target_include_directories(deskwaifu_ocr_client PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/private/processor/ocr")
 target_link_libraries(deskwaifu_ocr_client PUBLIC Qt6::Core)
 target_compile_definitions(deskwaifu_ocr_client PRIVATE
-  DESKWAIFU_OCR_HELPER_PATH="${CMAKE_INSTALL_FULL_LIBEXECDIR}/deskwaifu-ocr")
+  DESKWAIFU_OCR_MODULE_PATH="${CMAKE_INSTALL_FULL_LIBDIR}/deskwaifu/ocr/deskwaifu-ocr.so")
 set_target_properties(deskwaifu_ocr_client PROPERTIES AUTOMOC ON)
 add_library(deskwaifu_perception STATIC
   private/processor/image/ImageFile.cpp private/processor/image/ImageProcessor.cpp

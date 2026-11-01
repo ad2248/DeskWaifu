@@ -1,4 +1,4 @@
-"""Native ONNX repository contract; set OCR_NATIVE_HELPER to a built helper.
+"""Native ONNX repository contract; set OCR_NATIVE_MODULE and OCR_MODULE_PROBE.
 
 Fixtures are tiny ONNX Constant graphs encoded with the standard library. No
 Python ONNX/Paddle packages, network access, real weights, or model conversion.
@@ -90,10 +90,12 @@ PostProcess:
 class NativeModelDirectories(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        helper = os.environ.get("OCR_NATIVE_HELPER")
-        if not helper:
-            raise unittest.SkipTest("Set OCR_NATIVE_HELPER to run native ONNX model contract tests")
-        cls.helper = str(Path(helper).resolve())
+        module = os.environ.get("OCR_NATIVE_MODULE")
+        probe = os.environ.get("OCR_MODULE_PROBE")
+        if not module or not probe:
+            raise unittest.SkipTest("Set OCR_NATIVE_MODULE and OCR_MODULE_PROBE to run native ONNX model contract tests")
+        cls.module = str(Path(module).resolve())
+        cls.probe = str(Path(probe).resolve())
 
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="ocr-native-models-")
@@ -116,7 +118,7 @@ class NativeModelDirectories(unittest.TestCase):
             input_shape or [1, 3, 48, -1], [1, 5, classes], values, dtype=dtype))
 
     def start(self, requests="", extra=()):
-        result = subprocess.run([self.helper, "--detection-model-dir", str(self.detection),
+        result = subprocess.run([self.probe, "--module", self.module, "--detection-model-dir", str(self.detection),
                                  "--recognition-model-dir", str(self.recognition), "--serve", *extra],
                                 input=requests, capture_output=True, text=True, timeout=30)
         replies = [json.loads(line) for line in result.stdout.splitlines()]
@@ -157,6 +159,20 @@ class NativeModelDirectories(unittest.TestCase):
         (self.recognition / "inference.yml").unlink()
         reply = self.rejected("model_missing")
         self.assertIn(str(self.recognition), reply["error"])
+
+    def test_repeated_model_release_and_reload(self):
+        image = self.root / "image.ppm"
+        image.write_bytes(b"P6\n64 64\n255\n" + b"\xff" * (64 * 64 * 3))
+        request = json.dumps({"protocol": 1, "id": "fixture", "image": str(image)})
+        result, replies = self.start((request + '\n{"probe_action":"idle"}\n') * 10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(replies), 21)
+        for reply in replies[1::2]:
+            self.assertTrue(reply["ok"], reply)
+            self.assertEqual(reply["result"]["lines"][0]["text"], "中' ")
+        for reply in replies[2::2]:
+            self.assertEqual(reply["event"], "idle")
+            self.assertFalse(reply["running"])
 
     def test_missing_model_identifies_directory(self):
         (self.detection / "inference.onnx").unlink()

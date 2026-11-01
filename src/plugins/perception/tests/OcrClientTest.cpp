@@ -2,11 +2,11 @@
 #include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QFile>
-#include <QJsonObject>
 #include <QTemporaryDir>
 #include <QThread>
 #include <functional>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 
 void Check(bool condition, const char* message)
@@ -25,56 +25,71 @@ void Wait(const std::function<bool()>& predicate)
     Check(predicate(), "event-loop wait timed out");
 }
 
+QJsonObject Recognize(OcrClient& client, const QString& image)
+{
+    const auto id = client.Submit(image).value("job_id").toString();
+    Check(!id.isEmpty(), "request accepted");
+    Wait([&] { return client.Result(id).value("state") == "completed"; });
+    return client.Result(id).value("response").toObject().value("result").toObject();
+}
+
 int main(int argc, char** argv)
 try {
     QCoreApplication app(argc, argv);
-    Check(argc == 2, "expected helper path");
-    const QString helper = app.arguments()[1];
+    Check(argc == 2, "expected module path");
+    const QString module = app.arguments()[1];
     QTemporaryDir directory;
     const auto image = directory.filePath("image.png");
     QFile file(image);
     Check(file.open(QIODevice::WriteOnly), "temporary image"); file.close();
     {
+        qputenv("DESKWAIFU_OCR_HELPER", "/obsolete-helper-must-be-ignored");
+        qputenv("DESKWAIFU_OCR_MODULE", module.toUtf8());
+        Check(OcrClient::DefaultModule() == module, "only the module override is supported");
+        qunsetenv("DESKWAIFU_OCR_HELPER"); qunsetenv("DESKWAIFU_OCR_MODULE");
         OcrClient absent(directory.filePath("missing"));
-        Check(!absent.Status().value("available").toBool(), "optional package must be absent");
-        Check(!absent.Submit(image).value("ok").toBool(), "missing package must fail cleanly");
-        Check(!absent.Status().value("running").toBool(), "missing package must not start process");
+        absent.ConfigureModels({});
+        Check(absent.Status().value("error_code") == "module_missing", "missing optional module diagnostic");
+        Check(!absent.Submit(image).value("ok").toBool(), "missing package fails cleanly");
+        Check(!absent.Status().value("running").toBool(), "missing package does not load engine");
     }
     {
-        const auto broken = directory.filePath("broken-helper");
-        QFile executable(broken);
-        Check(executable.open(QIODevice::WriteOnly), "temporary executable");
-        executable.write("#!/nonexistent/ocr-interpreter\n"); executable.close();
-        Check(executable.setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner), "executable permissions");
-        OcrClient client(broken, 1000, 100);
-        const auto id = client.Submit(image).value("job_id").toString();
-        Wait([&] { return client.Result(id).value("state") == "failed"; });
-        Check(!client.Status().value("running").toBool(), "failed-to-start must release worker");
+        OcrClient broken(image, 1000, 100);
+        broken.ConfigureModels({});
+        Wait([&] { return broken.Status().value("availability_state") == "unavailable"; });
+        Check(broken.Status().value("error_code") == "module_incompatible", "invalid module diagnostic");
+        Wait([&] { return !broken.Status().value("running").toBool(); });
+    }
+    for (const auto* path : {OCR_MISSING_DEPENDENCY_MODULE, OCR_INCOMPATIBLE_MODULE}) {
+        OcrClient client(QString::fromUtf8(path), 1000, 30);
+        client.ConfigureModels({});
+        Wait([&] { return client.Status().value("availability_state") == "unavailable"; });
+        const auto expected = QString::fromUtf8(path) == OCR_MISSING_DEPENDENCY_MODULE ? "module_load_failed" : "module_incompatible";
+        Check(client.Status().value("error_code") == expected, "dependency/ABI mismatch disables only OCR");
+        Wait([&] { return !client.Status().value("running").toBool(); });
     }
     {
-        qunsetenv("DESKWAIFU_OCR_TEST_MODE");
-        OcrClient client(helper, 1000, 100);
+        OcrClient client(module, 1000, 100);
+        Check(!client.Status().value("available").toBool(), "unvalidated module is not available yet");
         Check(!client.Submit("relative.png").value("ok").toBool(), "reject relative path");
-        Check(!client.Status().value("running").toBool(), "lazy startup");
+        Check(!client.Status().value("running").toBool(), "lazy engine startup");
         const auto first = client.Submit(image).value("job_id").toString();
         Check(!first.isEmpty(), "request accepted");
         Check(!client.Submit(image).value("ok").toBool(), "reject busy request without queue");
         Wait([&] { return client.Result(first).value("state") == "completed"; });
-        const auto pid = client.Result(first).value("response").toObject().value("result").toObject().value("helper_pid");
-        const auto second = client.Submit(image).value("job_id").toString();
-        Check(second != first, "unique job ids");
+        const auto result = client.Result(first).value("response").toObject().value("result").toObject();
+        Check(result.value("process_pid").toInteger() == app.applicationPid(), "inference runs inside host process");
+        Check(result.value("background_thread").toBool(), "inference is off main thread");
+        const auto second = Recognize(client, image);
         Check(!client.Result(first).value("ok").toBool(), "bounded receipt retention");
-        Check(!client.Cancel(first).value("ok").toBool(), "stale cancel cannot cancel new request");
-        Wait([&] { return client.Result(second).value("state") == "completed"; });
-        Check(pid == client.Result(second).value("response").toObject().value("result").toObject().value("helper_pid"), "reuse loaded worker");
+        Check(!client.Cancel(first).value("ok").toBool(), "stale cancellation rejected");
+        Check(second.value("instance") == result.value("instance"), "reuse loaded model instance");
         Wait([&] { return !client.Status().value("running").toBool(); });
-        const auto third = client.Submit(image).value("job_id").toString();
-        Wait([&] { return client.Result(third).value("state") == "completed"; });
-        Check(pid != client.Result(third).value("response").toObject().value("result").toObject().value("helper_pid"), "restart after idle exit");
+        Check(Recognize(client, image).value("instance") != result.value("instance"), "reinitialize after idle release");
     }
-    for (const auto* mode : {"no-ready", "load-error", "version", "crash", "hang", "oversized", "garbage", "bad-id", "bad-result", "error"}) {
+    for (const auto* mode : {"error", "throw", "bad-result", "load-error", "throw-load"}) {
         qputenv("DESKWAIFU_OCR_TEST_MODE", mode);
-        OcrClient client(helper, 150, 100);
+        OcrClient client(module, 1000, 30);
         const auto id = client.Submit(image).value("job_id").toString();
         Wait([&] { return client.Result(id).value("state") == "failed"; });
         Check(!client.Result(id).value("response").toObject().value("error").toString().isEmpty(), "failure diagnostic");
@@ -82,108 +97,89 @@ try {
             Check(client.Result(id).value("response").toObject().value("error").toString().contains("model checksum mismatch"), "preserve initialization error");
         Wait([&] { return !client.Status().value("running").toBool(); });
         qunsetenv("DESKWAIFU_OCR_TEST_MODE");
-        const auto retry = client.Submit(image).value("job_id").toString();
-        Wait([&] { return client.Result(retry).value("state") == "completed"; });
+        Recognize(client, image);
     }
-    {
-        qputenv("DESKWAIFU_OCR_TEST_MODE", "hang");
-        OcrClient client(helper, 1000, 100);
-        const auto id = client.Submit(image).value("job_id").toString();
-        Check(client.Cancel(id).value("ok").toBool(), "cancel accepted");
-        Check(client.Result(id).value("state") == "failed", "cancel records failure");
-        Wait([&] { return !client.Status().value("running").toBool(); });
-        qunsetenv("DESKWAIFU_OCR_TEST_MODE");
-        const auto retry = client.Submit(image).value("job_id").toString();
-        Wait([&] { return client.Result(retry).value("state") == "completed"; });
-    }
-    {
-        OcrClient client(directory.filePath("missing"));
-        client.ConfigureModels({});
-        Check(client.Status().value("error_code") == "helper_missing", "missing helper diagnostic");
-        Check(client.Status().value("detection_model_dir") == "/usr/share/deskwaifu/ocr/models/PP-OCRv6_small_det", "default detection directory");
-        Check(client.Status().value("recognition_model_dir") == "/usr/share/deskwaifu/ocr/models/PP-OCRv6_small_rec", "default recognition directory");
+    // Cancel/timeout must finish the user task promptly, but keep the worker occupied
+    // until its real completion. Buffered results must never resurrect the task.
+    for (const auto* mode : {"hang", "slow-load", "delayed-reply"}) {
+        for (bool cancel : {true, false}) {
+            qputenv("DESKWAIFU_OCR_TEST_MODE", mode);
+            OcrClient client(module, cancel ? 1000 : 50, 30);
+            int completions = 0;
+            QObject::connect(&client, &OcrClient::Finished, &app, [&](const QString&, const QJsonObject&) { ++completions; });
+            const auto id = client.Submit(image).value("job_id").toString();
+            // Give a warm-engine inference time to enter its blocking call.
+            QElapsedTimer elapsed; elapsed.start();
+            while (elapsed.elapsed() < 20) { QCoreApplication::processEvents(); QThread::msleep(1); }
+            if (cancel) Check(client.Cancel(id).value("ok").toBool(), "cancel accepted");
+            Wait([&] { return client.Result(id).value("state") == "failed"; });
+            Check(client.Status().value("busy").toBool() && client.Status().value("retiring").toBool(), "underlying work is still draining");
+            Check(!client.Submit(image).value("ok").toBool(), "no overlapping work while draining");
+            Wait([&] { return !client.Status().value("running").toBool(); });
+            Check(client.Result(id).value("state") == "failed" && completions == 1, "discard late completion exactly once");
+            qunsetenv("DESKWAIFU_OCR_TEST_MODE");
+            Recognize(client, image);
+        }
     }
     for (const QJsonValue value : {QJsonValue("relative"), QJsonValue(""), QJsonValue(42), QJsonValue(QJsonValue::Null)}) {
-        OcrClient client(helper);
+        OcrClient client(module);
         client.ConfigureModels({{"ocr_detection_model_dir", value}});
         Check(client.Status().value("error_code") == "invalid_config", "invalid configured directory");
-        Check(!client.Status().value("running").toBool(), "invalid config must not start worker");
+        Check(!client.Status().value("running").toBool(), "invalid config does not load engine");
         Check(!client.Submit(image).value("ok").toBool(), "invalid config rejects task");
-        Check(client.Status().value("job_id").toString().isEmpty(), "rejection creates no job");
     }
     {
-        OcrClient client(helper);
+        OcrClient client(module);
         client.ConfigureModels({}, "Malformed configuration JSON");
         Check(client.Status().value("error_code") == "invalid_config", "configuration read error disables OCR");
     }
     {
         qputenv("DESKWAIFU_OCR_TEST_MODE", "arguments");
-        OcrClient client(helper, 1000, 100);
+        OcrClient client(module, 1000, 30);
         client.ConfigureModels({{"ocr_detection_model_dir", "/tmp/检测 模型"}, {"ocr_recognition_model_dir", "/tmp/识别 模型"}});
         Check(client.Status().value("availability_state") == "checking", "asynchronous startup validation");
         Check(!client.Submit(image).value("ok").toBool(), "checking rejects tasks");
         Wait([&] { return client.Status().value("available").toBool(); });
         Check(client.Status().value("state") == "idle", "validation is not a recognition task");
-        const auto id = client.Submit(image).value("job_id").toString();
-        Wait([&] { return client.Result(id).value("state") == "completed"; });
+        Recognize(client, image);
         Wait([&] { return !client.Status().value("running").toBool(); });
-        Check(client.Status().value("available").toBool(), "idle exit retains last validated availability");
+        Check(client.Status().value("available").toBool(), "idle release retains last validated availability");
         qunsetenv("DESKWAIFU_OCR_TEST_MODE");
     }
     {
-        qputenv("DESKWAIFU_OCR_TEST_MODE", "delayed-reply");
-        OcrClient client(helper, 1000, 1000);
-        client.ConfigureModels({});
-        Wait([&] { return client.Status().value("available").toBool(); });
-        const auto id = client.Submit(image).value("job_id").toString();
-        QCoreApplication::processEvents(); // Flush the request without consuming the delayed reply.
-        QThread::msleep(150);
-        Check(client.Cancel(id).value("ok").toBool(), "cancel with reply already buffered");
-        Wait([&] { return !client.Status().value("running").toBool(); });
-        Check(client.Status().value("available").toBool(), "retired worker output must not disable OCR");
-        const auto retry = client.Submit(image).value("job_id").toString();
-        Wait([&] { return client.Result(retry).value("state") == "completed"; });
-        qunsetenv("DESKWAIFU_OCR_TEST_MODE");
-    }
-    {
-        const auto modePath = directory.filePath("worker-mode");
-        QFile modeFile(modePath);
-        Check(modeFile.open(QIODevice::WriteOnly), "create worker mode file");
-        modeFile.write("crash-request"); modeFile.close();
-        qputenv("DESKWAIFU_OCR_TEST_MODE_FILE", modePath.toUtf8());
-        OcrClient client(helper, 1000, 100);
-        client.ConfigureModels({});
-        Wait([&] { return client.Status().value("available").toBool(); });
-        const auto id = client.Submit(image).value("job_id").toString();
-        Wait([&] { return client.Result(id).value("state") == "failed" && !client.Status().value("running").toBool(); });
-        Check(!client.Status().value("available").toBool(), "worker crash invalidates availability");
-        Check(modeFile.open(QIODevice::WriteOnly | QIODevice::Truncate), "update worker mode file");
-        modeFile.write("text"); modeFile.close();
-        const auto retry = client.Submit(image).value("job_id").toString();
-        Check(!retry.isEmpty(), "explicit request can recover previously validated worker");
-        Wait([&] { return client.Result(retry).value("state") == "completed"; });
-        Wait([&] { return !client.Status().value("running").toBool(); });
         qputenv("DESKWAIFU_OCR_TEST_MODE", "load-error");
-        const auto failedReload = client.Submit(image).value("job_id").toString();
-        Wait([&] { return client.Result(failedReload).value("state") == "failed"; });
-        Check(!client.Submit(image).value("ok").toBool(), "model load failure stays disabled even after previous success");
-        qunsetenv("DESKWAIFU_OCR_TEST_MODE");
-        qunsetenv("DESKWAIFU_OCR_TEST_MODE_FILE");
-    }
-    for (const auto* mode : {"load-error", "no-ready", "version", "crash"}) {
-        qputenv("DESKWAIFU_OCR_TEST_MODE", mode);
-        OcrClient client(helper, 150, 100);
+        OcrClient client(module, 1000, 30);
         client.ConfigureModels({});
         Wait([&] { return client.Status().value("availability_state") == "unavailable"; });
-        Check(!client.Status().value("error").toString().isEmpty(), "startup failure has diagnostic");
         Wait([&] { return !client.Status().value("running").toBool(); });
+        Check(!client.Submit(image).value("ok").toBool(), "model load failure stays disabled without retry loop");
         qunsetenv("DESKWAIFU_OCR_TEST_MODE");
-        if (QString::fromLatin1(mode) == "crash") {
-            const auto retry = client.Submit(image).value("job_id").toString();
-            Wait([&] { return client.Result(retry).value("state") == "completed"; });
-        } else Check(!client.Submit(image).value("ok").toBool(), "initialization failure rejects tasks without retry loop");
     }
-    std::cout << "OCR client lifecycle and protocol tests passed\n";
+    // Destruction during initialization/inference joins safely, never unloading executing code.
+    for (const auto* mode : {"slow-load", "hang", "slow-release"}) {
+        qputenv("DESKWAIFU_OCR_TEST_MODE", mode);
+        auto client = std::make_unique<OcrClient>(module, 1000, 30);
+        client->Submit(image);
+        QElapsedTimer elapsed; elapsed.start();
+        while (elapsed.elapsed() < 20) { QCoreApplication::processEvents(); QThread::msleep(1); }
+        client.reset();
+        QCoreApplication::processEvents();
+        qunsetenv("DESKWAIFU_OCR_TEST_MODE");
+    }
+    for (int i = 0; i < 10; ++i) {
+        OcrClient client(module, 1000, 5);
+        Recognize(client, image);
+        Wait([&] { return !client.Status().value("running").toBool(); });
+    }
+    {
+        OcrClient first(module, 1000, 5), second(module, 1000, 1000);
+        const auto a = Recognize(first, image);
+        const auto b = Recognize(second, image);
+        Check(a.value("instance") != b.value("instance"), "each client owns an independent model session");
+        Wait([&] { return !first.Status().value("running").toBool(); });
+        Check(Recognize(second, image).value("instance") == b.value("instance"), "another client's release cannot destroy active session");
+    }
+    std::cout << "OCR in-process lifecycle, responsiveness and compatibility tests passed\n";
     return 0;
 } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';

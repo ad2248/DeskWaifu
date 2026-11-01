@@ -43,10 +43,13 @@ class OcrBuildTest(unittest.TestCase):
         native = self.source / NATIVE
         for name in ("CMakeLists.txt", "LICENSE-PaddleOCR", "NOTICE", "README.md", "RESULTS.md"):
             self.write(native / name, (ROOT / NATIVE / name).read_text())
+        # The real module uses AUTOMOC; these dependency-free stubs do not.
+        with (native / "CMakeLists.txt").open("a") as file:
+            file.write('\nset_target_properties(deskwaifu-ocr PROPERTIES AUTOMOC OFF)\n')
         with (native / "CMakeLists.txt").open("a") as file:
             file.write('\nfile(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/helper-links.txt" '
                        'CONTENT "$<TARGET_PROPERTY:deskwaifu-ocr,LINK_LIBRARIES>")\n')
-        self.write(native / "main.cpp", "int main() { return 0; }\n")
+        self.write(native / "OcrModule.cpp", "int module_fixture() { return 0; }\n")
         self.write(native / "OcrEngine.cpp", "// Inference implementation is outside this build-rule fixture.\n")
         self.write(native / "OcrEngine.hpp", "#pragma once\n")
         for relative in ("CMakeLists.txt", "cmake/PluginBoundaries.cmake",
@@ -87,7 +90,7 @@ add_library(opencv_imgproc INTERFACE IMPORTED)
     def configure(self, standalone=False, ocr=True, success=True):
         arguments = ["cmake", "-S", str(self.source / NATIVE if standalone else self.source),
                      "-B", str(self.build), "-G", "Ninja",
-                     f"-DCMAKE_INSTALL_PREFIX={self.prefix}", "-DCMAKE_INSTALL_LIBDIR=lib"]
+                     f"-DCMAKE_INSTALL_PREFIX={self.prefix}", "-DCMAKE_INSTALL_LIBDIR=lib", "-DBUILD_TESTING=OFF"]
         if ocr:
             arguments += [f"-DCMAKE_PREFIX_PATH={self.dependencies}",
                           f"-DONNXRUNTIME_ROOT={self.dependencies / 'ort'}"]
@@ -100,26 +103,27 @@ add_library(opencv_imgproc INTERFACE IMPORTED)
 
     def assert_model_free_install(self):
         paths = {str(path.relative_to(self.prefix)) for path in self.prefix.rglob("*") if path.is_file()}
-        self.assertIn("libexec/deskwaifu-ocr", paths)
+        self.assertIn("lib/deskwaifu/ocr/deskwaifu-ocr.so", paths)
+        self.assertNotIn("libexec/deskwaifu-ocr", paths)
         self.assertIn("lib/deskwaifu/ocr/libonnxruntime.so", paths)
         for name in ("LICENSE", "ThirdPartyNotices.txt"):
             self.assertIn(f"share/licenses/deskwaifu-ocr/onnxruntime/{name}", paths)
         self.assertFalse((self.prefix / "share/deskwaifu/ocr").exists())
         self.assertFalse(any(path.endswith((".onnx", ".json", ".yml")) for path in paths), paths)
 
-    def test_default_root_build_includes_isolated_helper_without_models(self):
+    def test_default_root_build_includes_optional_module_without_models(self):
         self.fixture()
         self.configure()
         self.assertIn("DESKWAIFU_BUILD_OCR:BOOL=ON", (self.build / "CMakeCache.txt").read_text())
         self.run_command("cmake", "--build", str(self.build))
-        self.assertTrue((self.build / "bin/deskwaifu-ocr").is_file())
+        self.assertTrue((self.build / NATIVE / "deskwaifu-ocr.so").is_file())
         self.assertTrue((self.build / "bin/deskwaifu").is_file())
         self.assertEqual((self.build / "app-links.txt").read_text(), "")
         self.assertIn("yaml-cpp::yaml-cpp", (self.build / "helper-links.txt").read_text())
         self.assertFalse((self.build / "CPackConfig.cmake").exists())
         self.run_command("cmake", "--install", str(self.build), "--component", "DeskWaifu")
         self.assertTrue((self.prefix / "bin/deskwaifu").is_file())
-        self.assertFalse((self.prefix / "libexec/deskwaifu-ocr").exists())
+        self.assertFalse((self.prefix / "lib/deskwaifu/ocr/deskwaifu-ocr.so").exists())
         self.run_command("cmake", "--install", str(self.build), "--component", "DeskWaifuOCR")
         self.assert_model_free_install()
 
@@ -135,7 +139,8 @@ add_library(opencv_imgproc INTERFACE IMPORTED)
         archive, = packages.glob("deskwaifu-ocr-*.tar.xz")
         with tarfile.open(archive) as package:
             names = package.getnames()
-        self.assertTrue(any(name.endswith("libexec/deskwaifu-ocr") for name in names), names)
+        self.assertTrue(any(name.endswith("lib/deskwaifu/ocr/deskwaifu-ocr.so") for name in names), names)
+        self.assertFalse(any(name.endswith("libexec/deskwaifu-ocr") for name in names), names)
         self.assertFalse(any(name.endswith((".onnx", ".json", ".yml")) for name in names), names)
 
     def test_explicit_ocr_off_needs_no_native_dependencies(self):
@@ -144,7 +149,7 @@ add_library(opencv_imgproc INTERFACE IMPORTED)
         self.configure(ocr=False)
         self.run_command("cmake", "--build", str(self.build))
         self.assertTrue((self.build / "bin/deskwaifu").is_file())
-        self.assertFalse((self.build / "bin/deskwaifu-ocr").exists())
+        self.assertFalse((self.build / NATIVE / "deskwaifu-ocr.so").exists())
 
     def test_runtime_sdk_licenses_are_still_required(self):
         self.fixture()

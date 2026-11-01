@@ -9,7 +9,8 @@ if(Python3_Interpreter_FOUND)
   endforeach()
   if(TARGET deskwaifu-ocr)
     add_test(NAME ocr-native-models COMMAND ${CMAKE_COMMAND} -E env
-      "OCR_NATIVE_HELPER=$<TARGET_FILE:deskwaifu-ocr>"
+      "OCR_NATIVE_MODULE=$<TARGET_FILE:deskwaifu-ocr>"
+      "OCR_MODULE_PROBE=$<TARGET_FILE:ocr-module-probe>"
       ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/test_ocr_native_models.py)
     set_tests_properties(ocr-native-models PROPERTIES TIMEOUT 60)
   endif()

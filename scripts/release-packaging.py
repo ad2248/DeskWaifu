@@ -51,13 +51,15 @@ def verify_content(name, info, files, version):
         required.update(f"usr/lib/deskwaifu/plugins/{plugin}/{plugin}.so" for plugin in PLUGINS)
         required.update(SDK_LIBRARIES)
         if any(path.startswith("usr/lib/deskwaifu/ocr/") or path == "usr/libexec/deskwaifu-ocr" for path in files):
-            raise ValueError("Main package must not contain OCR helper/runtime")
+            raise ValueError("Main package must not contain OCR module/runtime")
         if any(dep.startswith(("opencv", "onnxruntime", "deskwaifu-ocr")) for dep in info.get("depend", [])):
             raise ValueError("Main package must not require the optional OCR runtime")
         if not MAIN_DEPENDS <= set(info.get("depend", [])):
             raise ValueError(f"Missing main runtime dependencies: {sorted(MAIN_DEPENDS - set(info.get('depend', [])))}")
     else:
-        required = {"usr/libexec/deskwaifu-ocr", "usr/lib/deskwaifu/ocr/libonnxruntime.so.1"}
+        required = {"usr/lib/deskwaifu/ocr/deskwaifu-ocr.so", "usr/lib/deskwaifu/ocr/libonnxruntime.so.1"}
+        if "usr/libexec/deskwaifu-ocr" in files:
+            raise ValueError("OCR package must not contain the retired helper executable")
         if not {f"deskwaifu-bin={version}-1", "opencv", "yaml-cpp"} <= set(info.get("depend", [])):
             raise ValueError("OCR package needs the exact main package version, OpenCV and yaml-cpp")
         if any(path.startswith("usr/lib/deskwaifu/plugins/") for path in files):

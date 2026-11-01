@@ -1,6 +1,6 @@
-# 原生 OCR 辅助程序
+# 进程内原生 OCR 模块
 
-`deskwaifu-ocr` 是 C++/ONNX Runtime CPU 辅助进程。主程序只链接 QtCore 客户端，不链接 ONNX Runtime、Paddle 或 OpenCV。构建、安装辅助程序**不需要模型文件**；未配置模型时主程序仍可启动，OCR 状态会报告不可用原因。
+`deskwaifu-ocr.so` 是可选的 C++/ONNX Runtime CPU 模块，在主程序进程的专用后台线程中加载、初始化、推理及释放，**不启动 OCR 子进程**。主程序 ELF 仍不直接链接 ONNX Runtime、Paddle 或 OpenCV；这些依赖在加载模块时解析。构建、安装模块**不需要模型文件**；未安装功能包、缺少依赖或模型时主程序仍可启动，OCR 状态会报告不可用原因。
 
 本功能不包含截图采集、框选 UI 或自动朗读。只接收本机图片绝对路径，不上传图片、不自动下载/转换模型、不写入模型目录、不保存识别结果。
 
@@ -18,7 +18,7 @@ git clone https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx \
   "$HOME/.local/share/deskwaifu/ocr/models/PP-OCRv6_small_rec"
 ```
 
-目录名无需带 `_onnx` 后缀；上面是显式指定的克隆目标。若禁用了 LFS 自动获取，应在各仓库显式运行 `git lfs pull`。每个官方仓库含 `inference.onnx`、`inference.yml`、`inference.json`；辅助程序直接读取前两者，第三个是 Paddle 图描述，不是字符字典。
+目录名无需带 `_onnx` 后缀；上面是显式指定的克隆目标。若禁用了 LFS 自动获取，应在各仓库显式运行 `git lfs pull`。每个官方仓库含 `inference.onnx`、`inference.yml`、`inference.json`；模块直接读取前两者，第三个是 Paddle 图描述，不是字符字典。
 
 识别字符字典来自原始 `inference.yml` 的 `PostProcess.character_dict`，按照 PaddleX CTC 解码约定在内存中添加 blank 和空格，不生成 `dictionary.json`。不再要求自定义 manifest、校验和或 small+medium profile；应自行信任并固定所使用的上游版本。
 
@@ -27,19 +27,11 @@ git clone https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx \
 - `/usr/share/deskwaifu/ocr/models/PP-OCRv6_small_det`
 - `/usr/share/deskwaifu/ocr/models/PP-OCRv6_small_rec`
 
-自定义目录可直接传给辅助程序（不经 shell 拼接）：
-
-```bash
-build-ocr/deskwaifu-ocr --serve \
-  --detection-model-dir "$HOME/.local/share/deskwaifu/ocr/models/PP-OCRv6_small_det" \
-  --recognition-model-dir "$HOME/.local/share/deskwaifu/ocr/models/PP-OCRv6_small_rec"
-```
-
-目录可以只读。旧 `--models` 单目录参数已移除。
+目录可以只读。自定义目录使用下述主程序配置，不再通过辅助程序命令行传递。
 
 ## 构建与安装
 
-运行依赖 glibc、C++ 运行库、Qt6 Core/Gui（含所需图片格式插件）、OpenCV core/imgproc（OpenCV 5 还需 geometry）、yaml-cpp 和 ONNX Runtime CPU。不需要 Python、Paddle、CUDA 或 Live2D SDK。模型是单独部署的数据，不属于辅助程序构建输入，也不会被辅助程序自动安装。
+运行依赖 glibc、C++ 运行库、Qt6 Core/Gui（含所需图片格式插件）、OpenCV core/imgproc（OpenCV 5 还需 geometry）、yaml-cpp 和 ONNX Runtime CPU。不需要 Python、Paddle、CUDA 或 Live2D SDK。模型是单独部署的数据，不属于模块构建输入，也不会被自动安装。整个项目可用 `-DDESKWAIFU_BUILD_OCR=OFF` 跳过推理依赖；这不影响主程序和 perception 插件构建。
 
 以下为已校验的 ONNX Runtime 1.31.0 Linux x86_64 SDK 下载方式；其他架构需使用相应 SDK 并独立核验：
 
@@ -60,17 +52,19 @@ cmake --build build-ocr --parallel 4
 DESTDIR="$PWD/stage-ocr" cmake --install build-ocr --component DeskWaifuOCR
 ```
 
-辅助程序通过相对 RPATH 查找随附的 ORT 运行库；**模型不再相对可执行程序定位**。暂存目录运行时应传入两个模型目录。Qt/OpenCV/yaml-cpp 是系统依赖，不随本示例打包；不能据此声称跨发行版 ABI 兼容。
+安装内容为 `usr/lib/deskwaifu/ocr/deskwaifu-ocr.so`、同目录 ORT 运行库及许可证，不包含可执行辅助程序或模型。模块通过 `$ORIGIN` RPATH 查找 ORT；模型仍使用配置中的绝对路径。Qt/OpenCV/yaml-cpp 是系统依赖；模块与主程序需匹配 Qt/C++ ABI 和私有接口版本，正式 OCR 包严格依赖同版本主包。不能据此声称跨发行版 ABI 兼容。
 
-## 主程序通信
+## 配置与升级
 
-开发时可用 `DESKWAIFU_OCR_HELPER=/绝对路径/deskwaifu-ocr` 覆盖辅助程序路径；该值仅为可执行程序路径，不是 shell 命令。在主程序配置根目录下的 `plugin/perception/config.json` 设置两个绝对目录（默认根目录为 `~/.config/deskwaifu`）：
+默认模块路径为 `/usr/lib/deskwaifu/ocr/deskwaifu-ocr.so`（可由安装前缀/libdir 改变）。开发时可用 `DESKWAIFU_OCR_MODULE=/绝对路径/deskwaifu-ocr.so` 指向暂存模块。旧 `DESKWAIFU_OCR_HELPER` 已不再读取，也不会回退到子进程。升级时同步更新主包及 OCR 包，已有模型目录配置无需迁移。
+
+在主程序配置根目录下的 `plugin/perception/config.json` 设置两个绝对目录（默认根目录为 `~/.config/deskwaifu`）：
 
 ```json
 {"ocr_detection_model_dir":"/绝对路径/PP-OCRv6_small_det","ocr_recognition_model_dir":"/绝对路径/PP-OCRv6_small_rec"}
 ```
 
-主程序客户端通过两个目录参数传递配置，并在启动时异步初始化辅助程序。`get_ocr_status` 的 `availability_state` 区分 `checking`、`available` 和 `unavailable`；`available` 只有在模型初始化成功后才为 true，`state` 仍表示识别任务状态。状态同时包含有效目录、`error_code` 和错误说明。省略的配置项使用默认值；空值、非字符串或非绝对路径报错，不展开 `~` 或环境变量，不静默回退。修改配置或修复加载错误后重启桌宠。
+启动时异步初始化模型。`get_ocr_status` 的 `availability_state` 区分 `checking`、`available` 和 `unavailable`；`available` 只有在模型初始化成功后才为 true，`state` 仍表示识别任务状态。状态同时包含有效目录、`error_code` 和错误说明。省略的配置项使用默认值；空值、非字符串或非绝对路径报错，不展开 `~` 或环境变量，不静默回退。修改配置或修复加载错误后重启桌宠。
 
 ```bash
 ./deskwaifu-ctl get_ocr_status
@@ -80,44 +74,52 @@ DESTDIR="$PWD/stage-ocr" cmake --install build-ocr --component DeskWaifuOCR
 ./deskwaifu-ctl cancel_ocr --job_id 上一步返回的ID
 ```
 
-辅助进程启动与推理均异步进行，不应阻塞主线程。忙时拒绝新识别，不建立队列；只保留最近一个任务结果。检查中拒绝识别，不创建任务。模型缺失或加载失败会停用 OCR，重启前不反复尝试；其他能力不受影响。已成功初始化过的辅助进程因超时、协议错误或崩溃退出后，下一次用户请求可重新启动并验证模型（不是后台自动重试）。取消任务不会停用已验证的 OCR；空闲退出后也会在下一次请求重新加载。
+忙时拒绝新识别，不建立队列；只保留最近一个任务结果。检查中拒绝识别，不创建任务。模型缺失或加载失败会停用 OCR，重启前不反复尝试；其他能力不受影响。成功初始化过的引擎因超时或无效响应退役后，可由下一次用户请求重新加载（不是后台自动重试）。
 
-## 辅助进程协议 v1
+## 生命周期与接口兼容
 
-只通过 stdin/stdout 交换逐行 JSON，没有额外网络监听。stderr 为诊断流。模型读取、预处理元数据检查、ONNX 输入/输出类型与形状检查、字典类别数检查及一次试运行**全部成功后**才输出：
+原有四个外部命令、任务 ID、`pending/completed/failed`、识别结果字段及 `response.protocol/id` 保留。内部不再使用 stdin/stdout 协议，而是版本化的 Qt 模块工厂接口；模型元数据、形状、字典和试运行全部通过后才标记可用。
 
-```json
-{"protocol":1,"event":"ready","backend":"onnxruntime-cpu","runtime_version":"1.31.0","detection_model":"PP-OCRv6_small_det","recognition_model":"PP-OCRv6_small_rec"}
-```
+- `execution_mode` 固定为 `in_process`。
+- `running` 表示模型工作实例已加载或正在初始化、推理、释放，不再表示子进程存在。
+- `busy` 表示底层正在执行操作，不能接收新任务。
+- `retiring` 表示取消、超时或空闲释放后的收尾阶段。
+- 默认初始化/任务超时为 60 秒，模型在空闲 60 秒后于后台释放；下次请求重新加载。专用线程可保持休眠，不代表模型仍驻留。释放资源不保证分配器立即将全部 RSS 归还操作系统。
+- 取消立即将用户任务标记为 `failed`；超时也只终结用户任务。底层调用可能继续执行，其迟到结果会丢弃。期间仍拒绝新任务，输入文件及模块代码保留到真实执行结束，不强杀线程。
+- 应用退出或插件停用时停止接收任务，等待执行结束再卸载代码、释放输入文件。若原生推理永久卡死，退出也可能等待；无安全的强制线程终止或子进程重启恢复能力。
 
-加载失败只输出 error 事件并非零退出，不会先报告 ready，例如：
+错误码与处理：
 
-```json
-{"protocol":1,"event":"error","code":"model_missing","error":"Cannot read OCR metadata: /path/inference.yml"}
-```
+- `module_missing`：安装匹配版本的 OCR 功能包。
+- `module_incompatible`：模块格式或接口版本不符，重新安装匹配包。
+- `module_load_failed`：检查 Qt/OpenCV/yaml-cpp/ORT 依赖及 ABI。
+- `invalid_config`：修正配置 JSON 和绝对目录。
+- `model_missing`、`model_incompatible`、`model_load_failed`：检查官方 ONNX 模型、元数据和文件权限。
+- `timeout`、`backend_error`：等待 `busy/retiring` 清除后，已验证的引擎可重新请求。
 
-启动错误码：`model_missing`（文件不存在/不可读）、`model_incompatible`（元数据、预处理、类型、维度或字典不兼容）、`model_load_failed`（ONNX 无法加载）以及 `invalid_arguments`（参数错误）。
+文字行仍含 `text`、`confidence` 和左上/右上/右下/左下四点 `polygon`（原图像素坐标），结果保留 `width/height/lines/elapsed_s`。可捕获的异常返回失败，不影响其他功能。**不再具备进程崩溃隔离：原生库段错误、abort 或内存破坏可能使整个应用退出。** 模型与图像不是安全沙箱输入，只应使用可信文件。日志不默认记录图像或识别全文。
 
-父进程请求：
-
-```json
-{"protocol":1,"id":"任务ID","image":"/绝对路径/图片.png"}
-```
-
-每个请求得到同 ID 的 `{"protocol":1,"id":"任务ID","ok":true,"result":{"width":960,"height":640,"lines":[],"elapsed_s":0.3}}` 或 `ok:false,error`。文字行含 `text`、`confidence` 和左上/右上/右下/左下四点 `polygon`（原图像素坐标）。请求错误后继续服务，stdin EOF 正常退出。
-
-限制：单帧图片，每边不超过 4096 像素、文件不超过 64 MiB；请求行不超过 64 KiB。支持 BGR 归一化、DB quad 后处理和 CTC 解码；识别输入元数据必须为 `[3,48,320]`，实际推理宽度按比例扩展、最多 3200。检测器空间输入与识别器宽度须为动态维度。不兼容的模型在 ready 前拒绝。检测保留本 helper 的最短边 64/最长边 4000 缩放策略，不同于 PaddleX 当前 small_det 默认最长边 960；DB 阈值和扩张比例取检测模型 YAML。浮点矩形扩张与参考 pyclipper 整数偏移不逐位等价，不能声称与 PaddleX 输出完全一致。
+限制：单帧图片，每边不超过 4096 像素、文件不超过 64 MiB。支持 BGR 归一化、DB quad 后处理和 CTC 解码；识别输入元数据必须为 `[3,48,320]`，实际推理宽度按比例扩展、最多 3200。检测器空间输入与识别器宽度须为动态维度。不兼容的模型在可用前拒绝。检测保留最短边 64/最长边 4000 缩放策略，不同于 PaddleX 当前 small_det 默认最长边 960；DB 阈值和扩张比例取检测模型 YAML。浮点矩形扩张与参考 pyclipper 整数偏移不逐位等价，不能声称与 PaddleX 输出完全一致。
 
 ## 验证
 
 不下载真实权重的原生回归测试：
 
 ```bash
-OCR_NATIVE_HELPER="$PWD/build-ocr/deskwaifu-ocr" \
+OCR_NATIVE_MODULE="$PWD/build-ocr/deskwaifu-ocr.so" \
+OCR_MODULE_PROBE="$PWD/build-ocr/ocr-module-probe" \
   python -m unittest discover -s tests -p test_ocr_native_models.py -v
 ```
 
-测试用标准库生成微型 ONNX fixture，覆盖分离目录（含空格/中文路径）、原始 YAML 字典及 CTC blank/空格、目录不被修改、缺失文件、损坏 YAML/ONNX、不兼容模型/预处理/静态维度/张量类型、输出类别与字典不匹配、启动错误和错误请求后恢复。未设置 `OCR_NATIVE_HELPER` 时跳过，不要求普通构建具备推理依赖。
+测试用标准库生成微型 ONNX fixture，覆盖分离目录（含空格/中文路径）、原始 YAML 字典及 CTC blank/空格、目录不被修改、缺失文件、损坏 YAML/ONNX、不兼容模型/预处理/静态维度/张量类型、输出类别与字典不匹配、启动错误和错误请求后恢复。未设置上述环境变量时跳过。`ocr-module-probe` 仅在 `BUILD_TESTING=ON` 时构建，不安装；其 JSON 行输入只是测试驱动，不是正式运行模式。
+
+无 OCR 依赖的生命周期测试：
+
+```bash
+cmake -S src/plugins/perception/tests/ocr-client -B build-ocr-client -G Ninja
+cmake --build build-ocr-client
+ctest --test-dir build-ocr-client --output-on-failure
+```
 
 真实模型测试（仅开发时用 Python/Pillow 生成合成图，不进入运行包）：
 
@@ -125,12 +127,15 @@ OCR_NATIVE_HELPER="$PWD/build-ocr/deskwaifu-ocr" \
 uv run --no-project --with pillow python research/ocr/make_samples.py \
   --font /usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc --output /tmp/opencode/ocr-samples
 python src/plugins/perception/tests/native_smoke.py \
-  --helper build-ocr/deskwaifu-ocr --samples /tmp/opencode/ocr-samples \
+  --probe build-ocr/ocr-module-probe --module build-ocr/deskwaifu-ocr.so \
+  --samples /tmp/opencode/ocr-samples \
   --detection-model-dir "$HOME/.local/share/deskwaifu/ocr/models/PP-OCRv6_small_det" \
   --recognition-model-dir "$HOME/.local/share/deskwaifu/ocr/models/PP-OCRv6_small_rec" \
   --output /tmp/opencode/ocr-smoke
 ```
 
-真实图对比使用 NFKC 归一化并忽略空白；例如 JPEG 可能将全角 `！` 识别成 `!`，不声称逐字节一致。`app_smoke.py` 同样接受这两个模型目录参数，在私有无头合成器中验证 IPC。测试权重和产物不应提交或发布。历史 [RESULTS.md](RESULTS.md) 使用旧 small+medium 转换模型，仅作历史记录，不能作为当前 small+small 模型的准确率或性能结论。
+真实图对比使用 NFKC 归一化并忽略空白；例如 JPEG 可能将全角 `！` 识别成 `!`，不声称逐字节一致。`app_smoke.py --app … --module … --live2d-models … --samples … --logs …` 同样接受两个模型目录参数，在私有无头合成器中验证 IPC、模块映射、无 OCR 子进程及取消后恢复。测试权重和产物不应提交或发布。历史 [RESULTS.md](RESULTS.md) 使用旧 small+medium 转换模型，仅作历史记录，不能作为当前模型的准确率或性能结论。
 
 不承诺文档排版还原、任意来源图片安全沙箱或实时看屏性能。文件由本用户授权读取；合成图验证不代表真实桌面准确率。
+
+本次迁移的测试范围、性能对照及局限见 [进程内化验证记录](../../../../docs/ocr-in-process-validation.md)。

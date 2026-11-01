@@ -174,7 +174,7 @@ OcrEngine::OcrEngine(const QString& detectionModelDir, const QString& recognitio
     _recognizer = LoadSession(_env, _options, recognitionModelDir);
     ValidateSession(*_detector, true, _recognitionHeight, _characters.size());
     ValidateSession(*_recognizer, false, _recognitionHeight, _characters.size());
-    // Check dynamic outputs as well, before the parent sees a ready event.
+    // Check dynamic outputs as well, before the host marks the engine available.
     try {
         Detect(cv::Mat(64, 64, CV_8UC3, cv::Scalar(255, 255, 255)));
         const cv::Mat line(_recognitionHeight, _recognitionWidth, CV_8UC3, cv::Scalar(255, 255, 255));
@@ -202,7 +202,7 @@ Ort::Value OcrEngine::Run(Ort::Session& session, std::vector<float>& pixels, int
 
 std::vector<std::vector<cv::Point2f>> OcrEngine::Detect(const cv::Mat& image)
 {
-    // 保留本 helper 的缩放策略：最短边 64、最长边 4000，尺寸为 32 的倍数。
+    // 保留原有缩放策略：最短边 64、最长边 4000，尺寸为 32 的倍数。
     // 不等同于 PaddleX 当前 small_det 的默认最长边 960。
     double ratio = std::min(image.rows, image.cols) < 64 ? 64.0 / std::min(image.rows, image.cols) : 1.0;
     int height = int(image.rows * ratio), width = int(image.cols * ratio);

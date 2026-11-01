@@ -1,4 +1,4 @@
-This helper supports PP-OCRv6_small_det and PP-OCRv6_small_rec by
+This module supports PP-OCRv6_small_det and PP-OCRv6_small_rec by
 PaddlePaddle/PaddleOCR, distributed under Apache-2.0 according to the model cards.
 Copyright (c) 2016 PaddlePaddle Authors. All Rights Reserved.
 Upstream: https://github.com/PaddlePaddle/PaddleOCR
@@ -6,7 +6,7 @@ Upstream: https://github.com/PaddlePaddle/PaddleOCR
 Models are deployed separately by cloning the official ONNX repositories:
 https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx
 https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx
-The helper reads inference.onnx and the original inference.yml character
+The module reads inference.onnx and the original inference.yml character
 dictionary and preprocessing metadata without modifying either repository.
 It performs no download, conversion, training or quantization. There is no
 custom model manifest or generated dictionary. The C++ pipeline implements BGR
