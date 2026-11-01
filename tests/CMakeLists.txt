@@ -2,7 +2,7 @@
 # the root test entry point is platform/tests.
 
 if(Python3_Interpreter_FOUND)
-  foreach(script smoke_isolation test_environment test_gate aur_packaging ocr_build release_packaging mutation_configuration)
+  foreach(script smoke_isolation test_environment test_gate aur_packaging aur_binary_packaging ocr_build release_packaging mutation_configuration)
     string(REPLACE "_" "-" test_name ${script})
     add_test(NAME ${test_name} COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/test_${script}.py)
     set_tests_properties(${test_name} PROPERTIES TIMEOUT 30)

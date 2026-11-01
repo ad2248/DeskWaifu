@@ -8,13 +8,13 @@ import unittest
 class AurPackagingTest(unittest.TestCase):
     def test_cli_python_runtime_dependency(self):
         root = Path(__file__).resolve().parents[1]
-        recipe = root / "packaging/aur"
+        recipe = root / "packaging/arch/deskwaifu-git"
         self.assertTrue((root / "deskwaifu-ctl").read_text().startswith("#!/usr/bin/env python3\n"))
         self.assertIn("'python'", (recipe / "PKGBUILD").read_text())
         self.assertIn("\tdepends = python\n", (recipe / ".SRCINFO").read_text())
 
     def test_aur_build_disables_automated_tests(self):
-        recipe = Path(__file__).resolve().parents[1] / "packaging/aur"
+        recipe = Path(__file__).resolve().parents[1] / "packaging/arch/deskwaifu-git"
         pkgbuild = (recipe / "PKGBUILD").read_text()
         self.assertIn("-DBUILD_TESTING=OFF", pkgbuild)
         self.assertNotIn("-DBUILD_TESTING=ON", pkgbuild)
@@ -25,7 +25,7 @@ class AurPackagingTest(unittest.TestCase):
 
     def test_recipe_and_metadata_use_github_main(self):
         root = Path(__file__).resolve().parents[1]
-        recipe = root / "packaging/aur"
+        recipe = root / "packaging/arch/deskwaifu-git"
         pkgbuild = (recipe / "PKGBUILD").read_text()
         srcinfo = (recipe / ".SRCINFO").read_text()
         url = "https://github.com/ad2248/DeskWaifu"
@@ -41,7 +41,7 @@ class AurPackagingTest(unittest.TestCase):
             self.assertIn(f"git clone {url}.git", path.read_text())
 
     def test_readme_is_installed_under_package_documentation_directory(self):
-        pkgbuild = (Path(__file__).resolve().parents[1] / "packaging/aur/PKGBUILD").read_text()
+        pkgbuild = (Path(__file__).resolve().parents[1] / "packaging/arch/deskwaifu-git/PKGBUILD").read_text()
         readme_install = re.search(r'^\s*install -Dm644 .*README\.md" "([^"]+)"', pkgbuild, re.M)
         self.assertIsNotNone(readme_install)
         self.assertEqual(readme_install.group(1), "$pkgdir/usr/share/doc/$pkgname/README.md")

@@ -81,21 +81,37 @@ older Qt/Plasma packages, a newer package repository or source build may be need
 
 ## Installation
 
-### Arch Linux package (makepkg)
+### Arch Linux binary packages (AUR)
 
-An AUR-style `deskwaifu-git` recipe is available in `packaging/aur/`:
+The `deskwaifu-bin` AUR split recipe downloads verified x86_64 binaries from a
+fixed GitHub Release, without compiling DeskWaifu or downloading the SDK:
+
+```bash
+yay -S deskwaifu-bin
+# Optional OCR helper/runtime; models and dictionaries are not included:
+yay -S deskwaifu-ocr-bin
+```
+
+For manual installation, clone `https://aur.archlinux.org/deskwaifu-bin.git`,
+run `makepkg -s`, and install the desired generated packages with `pacman -U`.
+Both assets are downloaded, but installing OCR is optional.
+See [AUR maintenance](docs/aur-packaging.md) for repository layout and updates.
+
+### Arch Linux source package (makepkg)
+
+The local `deskwaifu-git` source recipe is maintained separately:
 
 ```bash
 sudo pacman -S --needed base-devel git
 git clone https://github.com/ad2248/DeskWaifu.git
-cd DeskWaifu/packaging/aur
+cd DeskWaifu/packaging/arch/deskwaifu-git
 makepkg -si
 ```
 
 This builds the latest `main` for x86_64 and installs `deskwaifu`,
 `deskwaifu-control`, `deskwaifu-ctl`, and a control-panel application-menu entry.
 The SDK and GLEW are downloaded automatically. See
-[packaging instructions and license information](packaging/aur/README.md).
+[packaging instructions and license information](packaging/arch/deskwaifu-git/README.md).
 The recipe is usable locally; this does not imply it has been published to AUR.
 
 Tagged releases can also provide `deskwaifu-bin` (application and default plugins)

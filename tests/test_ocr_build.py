@@ -163,7 +163,7 @@ add_library(opencv_imgproc INTERFACE IMPORTED)
         self.assertTrue(configurations)
         for command in configurations:
             self.assertIn("-DDESKWAIFU_BUILD_OCR=OFF", command)
-        self.assertIn("-DDESKWAIFU_BUILD_OCR=OFF", (ROOT / "packaging/aur/PKGBUILD").read_text())
+        self.assertIn("-DDESKWAIFU_BUILD_OCR=OFF", (ROOT / "packaging/arch/deskwaifu-git/PKGBUILD").read_text())
 
 
 if __name__ == "__main__":
