@@ -41,9 +41,11 @@ def metadata(text):
 def verify_content(name, info, files, version):
     if info.get("pkgname") != [name] or info.get("pkgver") != [version + "-1"] or info.get("arch") != ["x86_64"]:
         raise ValueError(f"Wrong package identity/version/architecture: {name}")
+    directories = {path.removeprefix("./").rstrip("/") for path in files if path.endswith("/")}
     files = {path.removeprefix("./").rstrip("/") for path in files}
     if any(path.endswith((".onnx", ".pdiparams", ".pdmodel")) or
-           path.startswith("usr/share/deskwaifu/ocr/") or
+           (path.startswith("usr/share/deskwaifu/ocr/") and
+            not (path == "usr/share/deskwaifu/ocr/models" and path in directories)) or
            "dictionary" in path.lower() or Path(path).name in {"inference.yml", "inference.yaml"} for path in files):
         raise ValueError("Models/dictionaries must not be shipped in release packages")
     if name == "deskwaifu-bin":

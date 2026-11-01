@@ -147,6 +147,16 @@ class PackagingTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "yaml-cpp"):
             packaging.verify_content(name, info, fixture_files(True), "1.2.3")
 
+    def test_empty_ocr_model_directory_is_allowed_but_payload_is_not(self):
+        info = {"pkgname": ["deskwaifu-ocr-bin"], "pkgver": ["1.2.3-1"], "arch": ["x86_64"],
+                "depend": ["deskwaifu-bin=1.2.3-1", "opencv", "yaml-cpp"]}
+        directories = {"./usr/share/deskwaifu/ocr/", "./usr/share/deskwaifu/ocr/models/"}
+        packaging.verify_content("deskwaifu-ocr-bin", info, fixture_files(True) | directories, "1.2.3")
+        for payload in ("usr/share/deskwaifu/ocr/models", "usr/share/deskwaifu/ocr/models/model.onnx",
+                        "usr/share/deskwaifu/ocr/models/inference.yml", "usr/share/deskwaifu/ocr/models/README"):
+            with self.subTest(payload=payload), self.assertRaisesRegex(ValueError, "Models/dictionaries"):
+                packaging.verify_content("deskwaifu-ocr-bin", info, fixture_files(True) | {payload}, "1.2.3")
+
     def test_actual_checkout_is_detached_tag_not_dispatch_branch(self):
         with tempfile.TemporaryDirectory(prefix="release-source-", dir=TEMP_ROOT) as temporary:
             root = Path(temporary)
