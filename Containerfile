@@ -25,6 +25,11 @@ RUN { printf 'Server = %s/$repo/os/$arch\n' "${PACMAN_MIRROR}"; \
         libkscreen \
         mesa \
         ninja \
+        opencv \
+        yaml-cpp \
+        psmisc \
+        python \
+        libarchive \
         nodejs \
         noto-fonts \
         pkgconf \
@@ -59,3 +64,6 @@ COPY thirdParty/glew/ /opt/deskwaifu-deps/glew/
 ENV LIBGL_ALWAYS_SOFTWARE=1 \
     GALLIUM_DRIVER=llvmpipe \
     QT_QPA_PLATFORM=wayland
+
+# Shared package metadata, independent of the orchestration host/account.
+RUN printf '\nPACKAGER="DeskWaifu reproducible build"\n' >> /etc/makepkg.conf

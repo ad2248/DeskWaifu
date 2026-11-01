@@ -11,11 +11,15 @@ fi
 root=$(pwd -P)
 tools_root=${RELEASE_TOOLS_DIR:-$root}
 test "$(git rev-parse HEAD)" = "$RELEASE_COMMIT"
-test "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" = "$RELEASE_COMMIT"
+# Release tag selection is enforced by release-source.py. CI may package an
+# untagged commit with an explicit package version using this same entry point.
 test -z "$(git status --porcelain --untracked-files=no)"
 # /tmp is traversable by the temporary nonroot user; RUNNER_TEMP may be below
 # a root-only directory. Do not relax permissions on that directory/workspace.
-work=$(mktemp -d /tmp/deskwaifu-release.XXXXXXXX)
+# Each job has its own container. A stable path/user also stabilizes ELF paths
+# and makepkg's .BUILDINFO; never reuse a directory left by another invocation.
+work=/tmp/deskwaifu-package
+mkdir "$work"
 build_user=
 cleanup() {
     if [[ -n "$build_user" ]]; then
@@ -43,7 +47,7 @@ python3 "$tools_root/scripts/release-packaging.py" prepare "$work" "$RELEASE_TAG
 
 # Never grant the build user write access to the checkout or sudo. Only this new
 # scratch directory is chowned; no broad chmod/chown of the runner workspace.
-candidate="dwrel$$"
+candidate=dwrel
 useradd --system --user-group --no-create-home --home-dir "$work/home" "$candidate"
 # Record ownership only AFTER successful creation. A collision must never
 # cause cleanup to delete an account that existed before this invocation.
@@ -68,7 +72,7 @@ for trusted in "$root" "$tools_root"; do
         trusted=$parent
     done
 done
-runuser -u "$build_user" -- env -i PATH=/usr/bin:/bin HOME="$work/home" SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" \
+runuser -u "$build_user" -- env -i PATH=/usr/bin:/bin HOME="$work/home" SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" TZ=UTC LANG=C.UTF-8 \
     PKGDEST="$work/packages" CMAKE_BUILD_PARALLEL_LEVEL="${CMAKE_BUILD_PARALLEL_LEVEL:-4}" \
     bash -c 'cd "$1"; makepkg --cleanbuild --noconfirm' _ "$work"
 output="$root/release-assets"

@@ -35,6 +35,11 @@ echo "Checking the CI image"
 podman run --rm "$IMAGE" bash -ceu '
     cmake --version
     ninja --version
+    makepkg --version
+    bsdtar --version
+    python3 --version
+    command -v fakeroot runuser useradd userdel fuser
+    pkgconf --modversion opencv4 yaml-cpp
     wayland-scanner --version
     sway --version
     QT_QPA_PLATFORM=offscreen kwin_wayland --version

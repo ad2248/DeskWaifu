@@ -51,6 +51,31 @@ def fixture_files(ocr=False):
 
 
 class PackagingTest(unittest.TestCase):
+    def test_ci_and_release_share_packaging_and_fixed_dependencies(self):
+        ci = (ROOT / ".gitea/workflows/ci.yml").read_text()
+        release = (ROOT / ".gitea/workflows/release.yml").read_text()
+        for workflow in (ci, release):
+            self.assertIn('bash "$RELEASE_TOOLS_DIR/scripts/release-build.sh"', workflow)
+            self.assertNotIn("pacman -", workflow)
+            self.assertIn("runs-on: deskwaifu-arch", workflow)
+        self.assertIn("diff -u package-reference/SHA256SUMS release-assets/SHA256SUMS", ci)
+        self.assertIn('cmp "package-reference/$(basename "$package")" "$package"', ci)
+        self.assertIn("arch-packages", ci)
+        image = (ROOT / "Containerfile").read_text()
+        acceptance = (ROOT / "scripts/rebuild-ci-image.sh").read_text()
+        for dependency in ("opencv", "yaml-cpp", "psmisc", "python", "libarchive"):
+            self.assertIn(f"        {dependency} \\\n", image)
+        self.assertIn("pkgconf --modversion opencv4 yaml-cpp", acceptance)
+
+    def test_package_build_identity_is_independent_of_pid_and_workspace(self):
+        script = (ROOT / "scripts/release-build.sh").read_text()
+        self.assertIn("work=/tmp/deskwaifu-package\nmkdir \"$work\"", script)
+        self.assertIn("candidate=dwrel\n", script)
+        self.assertNotIn("dwrel$$", script)
+        self.assertIn("TZ=UTC LANG=C.UTF-8", script)
+        self.assertIn('SOURCE_DATE_EPOCH=$(git show -s --format=%ct "$RELEASE_COMMIT")', script)
+        self.assertIn('PACKAGER="DeskWaifu reproducible build"', (ROOT / "Containerfile").read_text())
+
     def test_current_tools_survive_checkout_of_historical_tag(self):
         with tempfile.TemporaryDirectory(prefix="release-historical-tools-", dir=TEMP_ROOT) as temporary:
             root = Path(temporary)
@@ -286,6 +311,12 @@ class PackagingTest(unittest.TestCase):
                                     text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
             self.assertEqual(result.returncode, 0, result.stdout)
             packaging.verify(work / "packages", TAG, COMMIT)
+            first_build = {path.name: path.read_bytes() for path in (work / "packages").glob("*.pkg.tar.zst")}
+            result = subprocess.run(["makepkg", "--nodeps", "--cleanbuild", "--force", "--noconfirm"],
+                                    cwd=work, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            self.assertEqual(result.returncode, 0, result.stdout)
+            self.assertEqual(first_build, {path.name: path.read_bytes()
+                                          for path in (work / "packages").glob("*.pkg.tar.zst")})
             assets = upload.load_assets(work / "packages", TAG, COMMIT)
             self.assertEqual(len(assets), 4)
             package = next((work / "packages").glob("deskwaifu-ocr-bin-*.pkg.tar.zst"))
@@ -372,7 +403,7 @@ class PackagingTest(unittest.TestCase):
         # mocked privileged commands. No real account operation is performed.
         script = (ROOT / "scripts/release-build.sh").read_text()
         cleanup = script[script.index("build_user=\n"):script.index("mkdir -p")]
-        root_block = script[script.index('candidate="dwrel'):script.index('output="$root/release-assets"')]
+        root_block = script[script.index('candidate=dwrel'):script.index('output="$root/release-assets"')]
         with tempfile.TemporaryDirectory(prefix="release-user-", dir=TEMP_ROOT) as temporary:
             work = Path(temporary)
             bin_dir = work / "bin"

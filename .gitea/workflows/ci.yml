@@ -4,11 +4,73 @@ on:
   pull_request:
     types: [opened, reopened, synchronize]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Optional existing tag for release-identical package verification'
+        required: false
+        type: string
 
 permissions:
   contents: read
 
 jobs:
+  package:
+    name: Build and reproduce both Arch packages
+    runs-on: deskwaifu-arch
+    timeout-minutes: 60
+    env:
+      http_proxy: http://100.64.0.11:7912
+      https_proxy: http://100.64.0.11:7912
+      ALL_PROXY: http://100.64.0.11:7912
+      no_proxy: 127.0.0.1,localhost
+    steps:
+      - name: Verify runner isolation
+        run: test ! -S /var/run/docker.sock
+
+      - name: Check out repository
+        uses: https://git.kals.top/actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Select package source
+        env:
+          PACKAGE_TAG: ${{ github.event.inputs.tag }}
+        run: |
+          if [[ -n "$PACKAGE_TAG" ]]; then
+            # Use the same trusted tooling and historical-source selection as release.
+            RELEASE_EVENT=push RELEASE_REF="refs/tags/$PACKAGE_TAG" \
+              RELEASE_EVENT_SHA="$(git rev-parse --verify "refs/tags/$PACKAGE_TAG^{commit}")" \
+              python3 scripts/release-source.py
+          else
+            commit=$(git rev-parse HEAD)
+            echo "RELEASE_COMMIT=$commit" >> "$GITHUB_ENV"
+            echo "RELEASE_TAG=0.0.0.r$commit" >> "$GITHUB_ENV"
+            echo "RELEASE_TOOLS_DIR=$PWD" >> "$GITHUB_ENV"
+          fi
+
+      - name: Test packaging contracts
+        run: python3 -B "$RELEASE_TOOLS_DIR/tests/test_release_packaging.py" -v
+
+      - name: Build packages using the release entry point
+        run: bash "$RELEASE_TOOLS_DIR/scripts/release-build.sh"
+
+      - name: Rebuild independently and compare complete package bytes
+        run: |
+          mv release-assets package-reference
+          bash "$RELEASE_TOOLS_DIR/scripts/release-build.sh"
+          diff -u package-reference/SHA256SUMS release-assets/SHA256SUMS
+          for package in release-assets/*.pkg.tar.zst; do
+            cmp "package-reference/$(basename "$package")" "$package"
+          done
+
+      - name: Preserve verified packages
+        uses: https://code.forgejo.org/actions/upload-artifact@ff15f0306b3f739f7b6fd43fb5d26cd321bd4de5 # v3
+        with:
+          name: arch-packages
+          path: release-assets/
+          if-no-files-found: error
+
   test:
     name: Arch build and headless Wayland test
     # 此标签必须映射到按镜像 ID 固定的 deskwaifu-ci 镜像，且 force_pull=false。
