@@ -1,5 +1,7 @@
 # 语音与音频播放
 
+产品行为、凭据与验收边界见[语音与凭据](../../../../../../docs/需求描述/语音与凭据.md)；本页保留模块开发细节。
+
 语音功能集中在本目录，事件适配与播放实现保持分层：
 
 ```text
@@ -28,7 +30,7 @@ speech/
 
 配置由 `SpeechSettings` 管理，路径为 `<configRoot>/plugin/speech/config.json`。缺少凭据允许加载但播报返回领域失败；损坏配置使初始化失败，运行中损坏也拒绝使用缓存密钥或覆盖文件。设置回复只包含 `ok/configured/error`，不返回或广播密钥。
 
-新增的 `src/plugins/speech/tests/SpeechPluginLoadTest.cpp` 接收真实 `speech.so` 路径，使用 PluginManager 验证加载和私有配置；`SpeechEndpointTest.cpp` 使用假源和假音频验证关联、取消、超时、替换及停止。两者都不需要外网或音频设备。
+`platform/tests/SpeechPluginLoadTest.cpp` 接收真实 `speech.so` 路径，使用 PluginManager 验证加载和私有配置；`SpeechEndpointTest.cpp` 使用假源和假音频验证关联、取消、超时、替换及停止。两者都不需要外网或音频设备。
 
 ## 验证
 
