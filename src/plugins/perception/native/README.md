@@ -29,7 +29,7 @@ git clone https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx \
 - `/usr/share/deskwaifu/ocr/models/PP-OCRv6_small_det`
 - `/usr/share/deskwaifu/ocr/models/PP-OCRv6_small_rec`
 
-目录可以只读。自定义目录使用下述主程序配置，不再通过辅助程序命令行传递。
+安装 OCR 组件会创建空的 `${CMAKE_INSTALL_PREFIX}/share/deskwaifu/ocr/models` 目录（安装前缀为 `/usr` 时即上述路径），但不会下载或安装模型。目录可以只读。自定义目录使用下述主程序配置，不再通过辅助程序命令行传递。
 
 ## 构建与安装
 

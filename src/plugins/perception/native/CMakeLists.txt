@@ -26,6 +26,7 @@ endif()
 # 模块按需加载，缺少 OCR 依赖不影响主应用启动。
 set_target_properties(deskwaifu-ocr PROPERTIES INSTALL_RPATH "$ORIGIN")
 install(TARGETS deskwaifu-ocr LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/deskwaifu/ocr COMPONENT DeskWaifuOCR)
+install(DIRECTORY DESTINATION ${CMAKE_INSTALL_DATADIR}/deskwaifu/ocr/models COMPONENT DeskWaifuOCR)
 file(GLOB _ort_libraries "${ONNXRUNTIME_ROOT}/lib/libonnxruntime.so*")
 install(FILES ${_ort_libraries} DESTINATION ${CMAKE_INSTALL_LIBDIR}/deskwaifu/ocr COMPONENT DeskWaifuOCR)
 install(FILES "${ONNXRUNTIME_ROOT}/LICENSE" "${ONNXRUNTIME_ROOT}/ThirdPartyNotices.txt"

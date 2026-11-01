@@ -108,7 +108,9 @@ add_library(opencv_imgproc INTERFACE IMPORTED)
         self.assertIn("lib/deskwaifu/ocr/libonnxruntime.so", paths)
         for name in ("LICENSE", "ThirdPartyNotices.txt"):
             self.assertIn(f"share/licenses/deskwaifu-ocr/onnxruntime/{name}", paths)
-        self.assertFalse((self.prefix / "share/deskwaifu/ocr").exists())
+        models = self.prefix / "share/deskwaifu/ocr/models"
+        self.assertTrue(models.is_dir())
+        self.assertEqual(list(models.iterdir()), [])
         self.assertFalse(any(path.endswith((".onnx", ".json", ".yml")) for path in paths), paths)
 
     def test_default_root_build_includes_optional_module_without_models(self):
@@ -139,6 +141,10 @@ add_library(opencv_imgproc INTERFACE IMPORTED)
         archive, = packages.glob("deskwaifu-ocr-*.tar.xz")
         with tarfile.open(archive) as package:
             names = package.getnames()
+            models = [member for member in package.getmembers()
+                      if member.name.rstrip("/").endswith("share/deskwaifu/ocr/models")]
+            self.assertEqual(len(models), 1, names)
+            self.assertTrue(models[0].isdir())
         self.assertTrue(any(name.endswith("lib/deskwaifu/ocr/deskwaifu-ocr.so") for name in names), names)
         self.assertFalse(any(name.endswith("libexec/deskwaifu-ocr") for name in names), names)
         self.assertFalse(any(name.endswith((".onnx", ".json", ".yml")) for name in names), names)
