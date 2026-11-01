@@ -48,7 +48,7 @@ public:
 int main(int argc, char** argv)
 try {
     QCoreApplication app(argc, argv);
-    Check(argc == 2, "expected native fake OCR helper");
+    Check(argc == 2, "expected native fake OCR module");
     using namespace ProcessorEvents;
     Check(!CreateImageFile(QImage()), "private image factory rejects null images");
     Check(!CreateImageFile(QImage(4097, 1, QImage::Format_ARGB32))
@@ -80,7 +80,7 @@ try {
         loop.Post({Screenshot, &sink, &screenshots}); Wait([&] { return sink.received.size() == 1; });
         Check(sink.received[0].type == ScreenshotReady && qvariant_cast<QImage>(sink.received[0].data.value("image")).size() == QSize(7, 5), "screenshot service event adapter");
     }
-    for (const auto* mode : {"", "load-error", "hang"}) {
+    for (const auto* mode : {"", "load-error", "hang", "delayed-reply"}) {
         qputenv("DESKWAIFU_OCR_TEST_MODE", mode);
         ProcessorEventLoop loop;
         auto client = std::make_unique<OcrClient>(app.arguments()[1], 1000, 50);
@@ -92,8 +92,16 @@ try {
             Wait([&] { return observedClient->Status().value("state") == "pending"; });
             loop.Post({Cancel, &sink, &ocr});
         }
+        if (QString::fromLatin1(mode) == "delayed-reply") {
+            Wait([&] { return observedClient->Status().value("availability_state") == "available"; });
+            QElapsedTimer elapsed; elapsed.start();
+            while (elapsed.elapsed() < 20) { QCoreApplication::processEvents(); QThread::msleep(1); }
+            loop.Post({Cancel, &sink, &ocr});
+        }
         Wait([&] { return sink.received.size() == 1; });
         Check(sink.received[0].sender == &ocr && sink.received[0].type == (QString::fromLatin1(mode).isEmpty() ? Recognized : Failed), "OCR proxy converts wire completion to pointer-routed event");
+        if (QString::fromLatin1(mode) == "delayed-reply")
+            Check(QFileInfo::exists(path) && observedClient->Status().value("busy").toBool(), "cancelled image remains alive until actual inference ends");
         Wait([&] { return !observedClient->Status().value("running").toBool(); });
         Check(!QFileInfo::exists(path), "OCR temporary file released after worker use");
     }

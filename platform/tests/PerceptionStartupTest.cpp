@@ -35,7 +35,7 @@ try {
     QGuiApplication app(argc, argv);
     Check(argc == 3, "expected early requester and real perception module");
     QTemporaryDir directory; Check(directory.isValid(), "temporary installation");
-    qputenv("DESKWAIFU_OCR_HELPER", (directory.path() + "/no-helper").toUtf8());
+    qputenv("DESKWAIFU_OCR_MODULE", (directory.path() + "/no-module").toUtf8());
     const auto root = directory.path() + "/plugins";
     Copy(argv[1], root, "a");
     Copy(argv[2], root, "perception");
@@ -70,7 +70,7 @@ try {
         Check(reply.value("ok").toBool() && !reply.value("available").toBool() &&
               reply.value("state") == "idle" && reply.value("job_id") == "" &&
               reply.value("running") == false, "status is paired with its own request");
-        Check(reply.value("availability_state") == "unavailable" && reply.value("error_code") == "helper_missing",
+        Check(reply.value("availability_state") == "unavailable" && reply.value("error_code") == "module_missing",
               "missing extension disables only OCR and reports its reason");
         Check(reply.value("detection_model_dir") == directory.path() + "/检测 模型" &&
               reply.value("recognition_model_dir") == "/usr/share/deskwaifu/ocr/models/PP-OCRv6_small_rec",

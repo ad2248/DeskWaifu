@@ -37,7 +37,7 @@ try {
     Check(argc == 5, "expected IPC, perception, reading modules and OCR fixture");
     QTemporaryDir directory; Check(directory.isValid(), "private runtime");
     qputenv("XDG_RUNTIME_DIR", directory.path().toUtf8());
-    qputenv("DESKWAIFU_OCR_HELPER", app.arguments()[4].toUtf8());
+    qputenv("DESKWAIFU_OCR_MODULE", app.arguments()[4].toUtf8());
     qputenv("DESKWAIFU_OCR_TEST_MODE", "text");
     const auto modePath = directory.path() + "/ocr-mode";
     qputenv("DESKWAIFU_OCR_TEST_MODE_FILE", modePath.toUtf8());
