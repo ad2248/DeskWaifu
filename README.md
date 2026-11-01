@@ -26,6 +26,7 @@ https://github.com/user-attachments/assets/95dfdedc-4957-4bb7-b79f-f3addd97a6db
 - [IPC API](#ipc-api)
 - [Model Setup](#model-setup)
 - [Architecture](#architecture)
+- [Project documentation](docs/README.md)
 - [Built With](#built-with)
 - [License](#license)
 
@@ -95,7 +96,7 @@ yay -S deskwaifu-ocr-bin
 For manual installation, clone `https://aur.archlinux.org/deskwaifu-bin.git`,
 run `makepkg -s`, and install the desired generated packages with `pacman -U`.
 Both assets are downloaded, but installing OCR is optional.
-See [AUR maintenance](docs/aur-packaging.md) for repository layout and updates.
+See [AUR maintenance](docs/需求描述/AUR打包与维护.md) for repository layout and updates.
 
 ### Arch Linux source package (makepkg)
 
@@ -116,7 +117,7 @@ The recipe is usable locally; this does not imply it has been published to AUR.
 
 Tagged releases can also provide `deskwaifu-bin` (application and default plugins)
 and `deskwaifu-ocr-bin` (OCR helper, without models). See
-[release packaging](docs/release-packaging.md).
+[release packaging](docs/需求描述/发布打包.md).
 
 ### OCR model configuration
 
@@ -209,9 +210,9 @@ The Qt control window will be at `build/bin/deskwaifu-control`.
 
 The model window always uses Qt and LayerShellQt; no backend-selection flag is
 needed. Disabling `DESKWAIFU_BUILD_CONTROL` only omits the control panel, not the
-Qt model window. See [window behavior and validation](docs/qt-window-backend.md).
+Qt model window. See [window behavior and validation](docs/需求描述/Qt窗口.md).
 Lifecycle, dragging, and crop editing are controlled by a
-[hierarchical Qt state machine](docs/model-window-state-machine.md).
+[hierarchical Qt state machine](docs/需求描述/窗口状态机.md).
 
 To install a source build system-wide (default prefix: `/usr/local`):
 
@@ -247,7 +248,7 @@ not migrated automatically:
 
 The control panel loads its system, interaction, model and log tabs from GUI
 plugins. A plugin may export a backend entry, a GUI entry, or both from the same
-`.so`; the speech plugin provides both. See [GUI plugin architecture](docs/gui-plugins.md).
+`.so`; the speech plugin provides both. See [GUI plugin architecture](docs/需求描述/GUI插件.md).
 The control panel uses `plugin_dir` from the main configuration. For a build-tree
 run, set `DESKWAIFU_CONTROL_PLUGIN_DIR=/absolute/path/to/build/plugins`.
 
@@ -256,7 +257,7 @@ run, set `DESKWAIFU_CONTROL_PLUGIN_DIR=/absolute/path/to/build/plugins`.
 Speech is provided by an optional dynamically loaded plugin. The host discovers
 `<plugin_dir>/<name>/<name>.so` on startup, without a manifest. Set `plugin_dir` in
 the main configuration to use a development or custom installation directory.
-See [plugin boundaries and migration](docs/plugin-architecture.md).
+See [plugin boundaries and migration](docs/需求描述/插件架构.md).
 
 With the speech plugin installed, enter and save a MiniMax API Key in the control
 panel's **语音** tab. The plugin stores its configuration under
@@ -527,7 +528,7 @@ clipping; a disabled crop uses the entire current surface without a fixed rectan
 Only the model process writes configuration, using the actual `--config` path
 (or the default path). Every save writes all known configuration fields, including
 defaults, from the configuration value structure; internal metadata is excluded.
-Comments and unknown fields are not preserved. File permissions and existing symbolic links are preserved. A
+Unknown JSON field values are preserved; comments and formatting are not. File permissions and existing symbolic links are preserved. A
 missing configuration is created; invalid documents and duplicate keys are never
 silently overwritten. Files are checked every 0.5 seconds, so external editor
 replacements are detected too. Transform/crop and hover settings are hot-reloaded.
@@ -728,7 +729,7 @@ input for larger values (up to `10`). Changes save on release or numeric confirm
 Both commands return `radius`; failed saves return `ok: false`, `error`, and the
 unchanged effective value. Set requests require a finite non-negative float and
 update runtime state only after an atomic save to the actual configuration path.
-Known unrelated fields are preserved; comments and unknown fields are not.
+Known unrelated fields and unknown JSON values are preserved; comments and formatting are not.
 Queries refresh from disk. After a lost acknowledgement, query instead of replaying
 the set request.
 
@@ -750,7 +751,7 @@ The control window provides independent normal and hover sliders; both save on r
 Even at zero opacity, the model retains its original input silhouette. Supplied
 fields update a configuration value structure loaded from disk, which is then
 serialized in full to the backend's actual configuration path. Other known fields
-are retained; comments and unknown fields are not. Runtime values change only after a successful atomic
+and unknown JSON values are retained; comments and formatting are not. Runtime values change only after a successful atomic
 save. Queries refresh the current settings from disk. Do not automatically retry
 a set request after losing its acknowledgement; query the current settings instead.
 
@@ -1098,7 +1099,7 @@ deskwaifu/
 
 ### Key design decisions
 
-- **Three ownership boundaries** — SDK, platform and plugins have separate build dependencies. Business implementations, including IPC transport, belong to plugins; the platform neither links nor directly assembles them. See [plugin architecture](docs/plugin-architecture.md).
+- **Three ownership boundaries** — SDK, platform and plugins have separate build dependencies. Business implementations, including IPC transport, belong to plugins; the platform neither links nor directly assembles them. See [plugin architecture](docs/需求描述/插件架构.md).
 - **Event processors** — plugin-local processors use queued events; cross-plugin command routing uses SDK capability requests with explicit responses, cancellation, timeout and provider errors. Cubism resources and rendering belong to the desktop plugin's dedicated render thread.
 - **Qt-only windowing** — `QWindow` and LayerShellQt own the overlay window, input and screen lifecycle; the application does not manage raw Wayland surfaces.
 - **OpenGL rendering** — Cubism draws into a Qt-managed context. Qt's Wayland platform plugin may use EGL internally; the application does not create or swap EGL window surfaces.
