@@ -70,7 +70,8 @@ class PackagingTest(unittest.TestCase):
             git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-am", "later")
             env_file = root / "env"
             env = dict(os.environ, RELEASE_EVENT="workflow_dispatch", RELEASE_REF="refs/heads/main",
-                       RELEASE_INPUT_TAG="0.1.0", GITHUB_ENV=str(env_file), RUNNER_TEMP=str(root))
+                       RELEASE_INPUT_TAG="0.1.0", RELEASE_NOTES="## 更新\n- 历史版本发布\n",
+                       GITHUB_ENV=str(env_file), RUNNER_TEMP=str(root))
             result = subprocess.run([sys.executable, "-B", str(ROOT / "scripts/release-source.py")],
                                     cwd=repo, env=env, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -124,6 +125,18 @@ class PackagingTest(unittest.TestCase):
                                      ("pull_request", "refs/tags/v1.2.3", "")]:
             with self.assertRaises(ValueError):
                 source.select_tag(event, ref, explicit)
+
+    def test_manual_release_requires_notes_before_git_or_build(self):
+        for notes in (None, "", " \n\t"):
+            with self.subTest(notes=notes):
+                env = {"RELEASE_EVENT": "workflow_dispatch", "RELEASE_INPUT_TAG": TAG}
+                if notes is not None:
+                    env["RELEASE_NOTES"] = notes
+                with patch.dict(os.environ, env, clear=True), \
+                        patch.object(source, "git", side_effect=AssertionError("git must not run")) as git:
+                    with self.assertRaisesRegex(ValueError, "release_notes"):
+                        source.main()
+                    git.assert_not_called()
 
     def test_payload_and_exact_dependency(self):
         for name, ocr in (("deskwaifu-bin", False), ("deskwaifu-ocr-bin", True)):
@@ -180,7 +193,8 @@ class PackagingTest(unittest.TestCase):
             subprocess.run(["git", "clone", "--quiet", str(origin), str(checkout)], check=True)
             env_file = root / "env"
             env = dict(os.environ, RELEASE_EVENT="workflow_dispatch", RELEASE_REF="refs/heads/main",
-                       RELEASE_INPUT_TAG=TAG, GITHUB_ENV=str(env_file), RUNNER_TEMP=str(root))
+                       RELEASE_INPUT_TAG=TAG, RELEASE_NOTES="发布说明",
+                       GITHUB_ENV=str(env_file), RUNNER_TEMP=str(root))
             command = [sys.executable, "-B", str(ROOT / "scripts/release-source.py")]
             result = subprocess.run(command, cwd=checkout, env=env, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -202,6 +216,10 @@ class PackagingTest(unittest.TestCase):
             result = subprocess.run(command, cwd=checkout, env=env, capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("moved since the push event", result.stderr)
+            env.update(RELEASE_EVENT_SHA=commit, RELEASE_NOTES="")
+            result = subprocess.run(command, cwd=checkout, env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertNotIn("RELEASE_NOTES=", env_file.read_text())
 
     def test_package_split_does_not_leak_runtime_or_plugins(self):
         main_info = {"pkgname": ["deskwaifu-bin"], "pkgver": ["1.2.3-1"], "arch": ["x86_64"]}
@@ -283,6 +301,13 @@ class PackagingTest(unittest.TestCase):
         self.assertIn("tags: ['**']", workflow)
         self.assertIn("https://git.kals.top/actions/checkout@v4", workflow)
         self.assertIn("RELEASE_INPUT_TAG: ${{ github.event.inputs.tag }}", workflow)
+        self.assertIn("      release_notes:\n", workflow)
+        notes_input = workflow.split("      release_notes:\n", 1)[1].split("\n\n", 1)[0]
+        self.assertIn("required: true", notes_input)
+        self.assertIn("type: string", notes_input)
+        self.assertEqual(workflow.count("RELEASE_NOTES: ${{ github.event.inputs.release_notes }}"), 2)
+        self.assertNotIn("${{ github.event.inputs.release_notes }}", "\n".join(
+            line for line in workflow.splitlines() if "RELEASE_NOTES:" not in line))
         self.assertIn('python3 -B "$RELEASE_TOOLS_DIR/tests/test_release_packaging.py"', workflow)
         self.assertIn('bash "$RELEASE_TOOLS_DIR/scripts/release-build.sh"', workflow)
         self.assertIn('python3 "$RELEASE_TOOLS_DIR/scripts/release-upload.py"', workflow)
@@ -429,6 +454,71 @@ upload_module = upload
 
 
 class UploadTest(unittest.TestCase):
+    def test_release_notes_are_preserved_and_identical_rerun_does_not_write(self):
+        notes = '## 更新\n- 修复 "窗口" 与 `快捷键`\n$(touch SHOULD_NOT_EXIST)\nEOF\n'
+        api = FakeAPI()
+        upload.publish(api, TAG, COMMIT, {}, notes)
+        self.assertEqual(api.release["body"], notes)
+        self.assertFalse(api.release["draft"])
+        api.calls.clear()
+        upload.publish(api, TAG, COMMIT, {}, notes)
+        self.assertTrue(all(method == "GET" for method, _, _ in api.calls))
+
+    def test_notes_update_existing_public_release_or_draft(self):
+        for draft in (False, True):
+            with self.subTest(draft=draft):
+                api = FakeAPI()
+                upload.publish(api, TAG, COMMIT, {})
+                api.release["draft"] = draft
+                api.calls.clear()
+                upload.publish(api, TAG, COMMIT, {}, "新说明\n")
+                self.assertEqual(api.release["body"], "新说明\n")
+                self.assertFalse(api.release["draft"])
+                writes = [(method, path, data) for method, path, data in api.calls if method != "GET"]
+                expected = {"body": "新说明\n"}
+                if draft:
+                    expected["draft"] = False
+                self.assertEqual(writes, [("PATCH", "/releases/7", expected)])
+
+    def test_absent_or_blank_notes_preserve_existing_body(self):
+        api = FakeAPI()
+        upload.publish(api, TAG, COMMIT, {})
+        self.assertIn(f"Source commit: `{COMMIT}`", api.release["body"])
+        api.release["body"] = "人工编辑说明"
+        for notes in ("", " \n\t"):
+            api.calls.clear()
+            upload.publish(api, TAG, COMMIT, {}, notes)
+            self.assertEqual(api.release["body"], "人工编辑说明")
+            self.assertTrue(all(method == "GET" for method, _, _ in api.calls))
+
+    def test_notes_are_not_updated_when_asset_or_tag_verification_fails(self):
+        api = FakeAPI()
+        upload.publish(api, TAG, COMMIT, {"a": b"same"}, "原说明")
+        with self.assertRaisesRegex(ValueError, "differs"):
+            upload.publish(api, TAG, COMMIT, {"a": b"different"}, "新说明")
+        self.assertEqual(api.release["body"], "原说明")
+        original = api.request
+
+        def move_tag(method, path, data=None, **kwargs):
+            result = original(method, path, data, **kwargs)
+            if method == "POST" and path.startswith("/releases/7/assets?"):
+                api.commit = OTHER
+            return result
+
+        api.request = move_tag
+        with self.assertRaisesRegex(ValueError, "moved during upload"):
+            upload.publish(api, TAG, COMMIT, {"b": b"new"}, "新说明")
+        self.assertEqual(api.release["body"], "原说明")
+
+    def test_upload_main_reads_notes_from_environment(self):
+        notes = "## 更新\n- 新功能\n"
+        with patch.dict(os.environ, {"RELEASE_UPLOAD": "TEST_TOKEN", "RELEASE_NOTES": notes}, clear=True), \
+                patch.object(sys, "argv", ["release-upload.py", "assets", TAG, COMMIT]), \
+                patch.object(upload, "load_assets", return_value={}), \
+                patch.object(upload, "GitHub") as github, patch.object(upload, "publish") as publish:
+            upload.main()
+            publish.assert_called_once_with(github.return_value, TAG, COMMIT, {}, notes)
+
     def test_arbitrary_github_release_tags_are_not_renamed_or_classified(self):
         for tag in ("nightly", "release/2026-10", "发布", "0.1.0+build"):
             with self.subTest(tag=tag):

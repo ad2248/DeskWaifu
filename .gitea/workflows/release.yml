@@ -9,6 +9,10 @@ on:
         description: 'Exact existing tag name, used unchanged for packaging and upload (never a branch)'
         required: true
         type: string
+      release_notes:
+        description: '版本发布更新说明（Markdown，将作为 GitHub Release 正文）'
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -47,6 +51,7 @@ jobs:
           RELEASE_REF: ${{ github.ref }}
           RELEASE_EVENT_SHA: ${{ github.sha }}
           RELEASE_INPUT_TAG: ${{ github.event.inputs.tag }}
+          RELEASE_NOTES: ${{ github.event.inputs.release_notes }}
         run: python3 scripts/release-source.py
 
       - name: Test preserved release tooling
@@ -69,4 +74,5 @@ jobs:
         # CMake, makepkg, tests, or shell profiles used by the build user.
         env:
           RELEASE_UPLOAD: ${{ secrets.RELEASE_UPLOAD }}
+          RELEASE_NOTES: ${{ github.event.inputs.release_notes }}
         run: python3 "$RELEASE_TOOLS_DIR/scripts/release-upload.py" release-assets "$RELEASE_TAG" "$RELEASE_COMMIT"

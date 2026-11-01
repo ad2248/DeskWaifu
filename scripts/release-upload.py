@@ -165,14 +165,15 @@ def load_assets(directory, tag, commit):
     return assets
 
 
-def publish(api, tag, commit, assets):
+def publish(api, tag, commit, assets, notes=""):
     ensure_tag(api, tag, commit)
     release = find_release(api, tag)
     if release is None:
         try:
             release = api.request("POST", "/releases", {
                 "tag_name": tag, "target_commitish": commit, "name": tag, "draft": True,
-                "body": f"Source commit: `{commit}`\n\nArch x86_64 binary packages. OCR models and dictionaries are not included.",
+                "body": notes if notes.strip() else
+                        f"Source commit: `{commit}`\n\nArch x86_64 binary packages. OCR models and dictionaries are not included.",
             })
         except ApiError as error:
             if error.status != 422:
@@ -210,8 +211,13 @@ def publish(api, tag, commit, assets):
     # Recheck tag immediately before publishing: never knowingly publish a moved tag.
     if tag_commit(api, tag) != commit:
         raise ValueError("GitHub tag moved during upload; release left unpublished")
+    updates = {}
+    if notes.strip() and release.get("body") != notes:
+        updates["body"] = notes
     if release.get("draft"):
-        api.request("PATCH", f"/releases/{release_id}", {"draft": False})
+        updates["draft"] = False
+    if updates:
+        api.request("PATCH", f"/releases/{release_id}", updates)
 
 
 def main():
@@ -224,7 +230,7 @@ def main():
     token = os.environ.get("RELEASE_UPLOAD", "")
     if not token:
         raise ValueError("RELEASE_UPLOAD is required only for the final upload step")
-    publish(GitHub(token), args.tag, args.commit, assets)
+    publish(GitHub(token), args.tag, args.commit, assets, os.environ.get("RELEASE_NOTES", ""))
 
 
 if __name__ == "__main__":
