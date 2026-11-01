@@ -26,6 +26,8 @@ def git(*args):
 
 def main():
     event = os.environ["RELEASE_EVENT"]
+    if event == "workflow_dispatch" and not os.environ.get("RELEASE_NOTES", "").strip():
+        raise ValueError("release_notes is required for manual releases and must not be blank")
     tag = select_tag(event, os.environ.get("RELEASE_REF", ""), os.environ.get("RELEASE_INPUT_TAG", ""))
     # checkout@v4 with fetch-depth: 0 acquired all tags using its own scoped
     # credentials. Resolve only refs/tags, never a same-named branch, and do not
