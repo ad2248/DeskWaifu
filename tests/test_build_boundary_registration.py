@@ -54,7 +54,8 @@ class BuildBoundaryRegistrationTest(unittest.TestCase):
                                  ["BuildBoundaries." + self.expected[test["name"]]])
                 self.assertIn("-v", command)
                 properties = {item["name"]: item["value"] for item in test["properties"]}
-                self.assertEqual(properties["TIMEOUT"], 60)
+                self.assertEqual(properties["TIMEOUT"], 70)
+                self.assertIn("DESKWAIFU_TEST_TIMEOUT=set:60", properties["ENVIRONMENT_MODIFICATION"])
                 self.assertCountEqual(properties["LABELS"], ["architecture", "regression"])
                 self.assertFalse(properties.get("RUN_SERIAL", False))
                 self.assertNotIn("RESOURCE_LOCK", properties)

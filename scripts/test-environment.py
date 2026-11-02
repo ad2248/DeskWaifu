@@ -17,6 +17,7 @@ import tempfile
 def main():
     if len(sys.argv) < 2:
         sys.exit("usage: test-environment.py COMMAND [ARG ...]")
+    timeout = float(os.environ.get("DESKWAIFU_TEST_TIMEOUT", "0"))
     parent = "/tmp/opencode" if Path("/tmp/opencode").is_dir() else None
     with tempfile.TemporaryDirectory(prefix="deskwaifu-test-", dir=parent) as directory:
         root = Path(directory)
@@ -46,7 +47,10 @@ def main():
         for number in (signal.SIGINT, signal.SIGTERM):
             signal.signal(number, interrupted)
         try:
-            result = process.wait()
+            result = process.wait(timeout=timeout if timeout > 0 else None)
+        except subprocess.TimeoutExpired:
+            print(f"Test timed out after {timeout:g} seconds", file=sys.stderr, flush=True)
+            result = 124
         except InterruptedError as error:
             result = 128 + error.args[0]
         finally:
