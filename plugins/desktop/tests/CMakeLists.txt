@@ -108,7 +108,7 @@ add_executable(transform-editor-test TransformEditorTest.cpp ${CONFIG_SOURCE} ${
 add_test(NAME transform-editor COMMAND transform-editor-test)
 add_test(NAME config-temp-directory COMMAND ${CMAKE_COMMAND}
   -DTEST_TEMP_ROOT=${CMAKE_CURRENT_BINARY_DIR}/tmp -DCONFIG_TEST=$<TARGET_FILE:config-store-test>
-  -DEDITOR_TEST=$<TARGET_FILE:transform-editor-test> -P ${CMAKE_SOURCE_DIR}/platform/testing/CheckPortableTemporaryDirectory.cmake)
+  -DEDITOR_TEST=$<TARGET_FILE:transform-editor-test> -P ${CMAKE_SOURCE_DIR}/platform/tests/support/CheckPortableTemporaryDirectory.cmake)
 foreach(pair "lapp-config|LAppConfig" "model-region|ModelRegion" "hover-opacity|HoverOpacity"
     "hover-opacity-settings|HoverOpacitySettings" "mouse-look-settings|MouseLookSettings"
     "render-device-settings|RenderDeviceSettings")

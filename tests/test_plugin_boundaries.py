@@ -35,6 +35,14 @@ class PluginBoundaries(unittest.TestCase):
         native = ROOT / "plugins/perception/native/CMakeLists.txt"
         self.assertIn("../tests/test_ocr_native_models.py", native.read_text())
 
+    def test_shared_checks_follow_platform_support_directory(self):
+        helper = "platform/tests/support/CheckPortableTemporaryDirectory.cmake"
+        self.assertTrue((ROOT / helper).is_file())
+        for entry in ("platform/tests/CMakeLists.txt", "plugins/desktop/tests/CMakeLists.txt"):
+            text = (ROOT / entry).read_text()
+            self.assertIn(helper, text)
+            self.assertNotIn("platform/testing/", text)
+
     def test_host_has_no_speech_adapter(self):
         for relative in (
             "platform/main.cpp", "plugins/desktop/private/app/LAppDelegate.cpp",
