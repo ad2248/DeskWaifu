@@ -13,6 +13,39 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class TestEnvironmentTest(unittest.TestCase):
+    def test_nested_wrapper_does_not_inherit_a_long_temporary_root(self):
+        with tempfile.TemporaryDirectory(prefix="nested-wrapper-") as directory:
+            root = Path(directory)
+            inherited = root / ("parent-" + "x" * 60)
+            inherited.mkdir()
+            report = root / "snapshot.json"
+            probe = root / "probe.py"
+            probe.write_text('''import json, os, socket, sys
+from pathlib import Path
+root = Path(os.environ["TMPDIR"])
+fixture = root / "processor-ownership-test-123456"
+fixture.mkdir()
+with socket.socket(socket.AF_UNIX) as endpoint:
+    endpoint.bind(str(fixture / "deskwaifu.sock"))
+Path(sys.argv[1]).write_text(json.dumps({"tmp": str(root), "runtime": os.environ["XDG_RUNTIME_DIR"]}))
+''')
+            # 安装根不存在 /tmp/opencode；模拟外层包装器留下的长 TMPDIR。
+            launcher = '''import runpy, sys, tempfile
+from unittest.mock import patch
+tempfile.tempdir = sys.argv.pop(1)
+sys.argv = sys.argv[1:]
+with patch("pathlib.Path.is_dir", return_value=False):
+    runpy.run_path(sys.argv[0], run_name="__main__")
+'''
+            result = subprocess.run([sys.executable, "-c", launcher, str(inherited), str(ROOT / "scripts/test-environment.py"),
+                                     sys.executable, str(probe), str(report)],
+                                    capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            snapshot = json.loads(report.read_text())
+            self.assertFalse(Path(snapshot["tmp"]).is_relative_to(inherited))
+            self.assertFalse(Path(snapshot["tmp"]).exists())
+            self.assertFalse(Path(snapshot["runtime"]).exists())
+
     def test_ctest_timeout_cleans_directories_and_processes(self):
         script = '''import json, os, signal, subprocess, sys, time
 from pathlib import Path

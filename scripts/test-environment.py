@@ -36,7 +36,8 @@ def main():
                 prefix.append(command.pop(0))
         command = [*prefix, sys.executable, str(Path(__file__).resolve()), "--expect-failure",
                    os.environ.get("DESKWAIFU_TEST_SKIP_CODE", ""), *command]
-    parent = "/tmp/opencode" if Path("/tmp/opencode").is_dir() else None
+    # 嵌套包装器也从短固定父目录建立私有根，不能叠加继承的 TMPDIR。
+    parent = "/tmp/opencode" if Path("/tmp/opencode").is_dir() else "/tmp"
     with tempfile.TemporaryDirectory(prefix="deskwaifu-test-", dir=parent) as directory:
         root = Path(directory)
         for name in ("home", "runtime", "config", "cache", "data", "tmp"):
