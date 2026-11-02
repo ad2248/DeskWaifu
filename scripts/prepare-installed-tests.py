@@ -42,9 +42,12 @@ def prepare(build, source, tools, ocr=False):
                 while command and "=" in command[0]:
                     environment.append(command.pop(0))
         timeout = properties.get("TIMEOUT", 60)
+        will_fail = bool(properties.get("WILL_FAIL", False))
         for modification in properties.get("ENVIRONMENT_MODIFICATION", []):
             if modification.startswith("DESKWAIFU_TEST_TIMEOUT=set:"):
                 timeout = float(modification.split(":", 1)[1])
+            if modification == "DESKWAIFU_TEST_WILL_FAIL=set:1":
+                will_fail = True
         content = json.dumps({"command": command, "environment": environment}, ensure_ascii=False)
         for old in sorted(mapping, key=len, reverse=True):
             content = content.replace(old, mapping[old])
@@ -57,7 +60,7 @@ def prepare(build, source, tools, ocr=False):
                 raise ValueError(f"Runtime test still depends on source/build paths: {test['name']}")
             excluded.append(test["name"])
             continue
-        item.update(name=test["name"], timeout=timeout,
+        item.update(name=test["name"], timeout=timeout, will_fail=will_fail,
                     skip=properties.get("SKIP_RETURN_CODE"))
         tests.append(item)
     if not tests:

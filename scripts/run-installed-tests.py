@@ -25,6 +25,8 @@ def main():
             # PRoot 的系统调用开销预算不改变源码门禁；外层另留清理宽限。
             timeout = max(60, test["timeout"] * 3)
             env["DESKWAIFU_TEST_TIMEOUT"] = str(timeout)
+            env["DESKWAIFU_TEST_WILL_FAIL"] = "1" if test.get("will_fail", False) else "0"
+            env["DESKWAIFU_TEST_SKIP_CODE"] = "" if test["skip"] is None else str(test["skip"])
             command = [arg.replace("@TEMP@", temporary) for arg in test["command"]]
             # This test intentionally creates a fake sibling executable. Never
             # make the package installation writable to accommodate it.

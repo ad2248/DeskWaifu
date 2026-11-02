@@ -36,36 +36,69 @@ time.sleep(60)
                 'cmake_minimum_required(VERSION 3.25)\nproject(fixture NONE)\ninclude(CTest)\n'
                 f'include("{ROOT}/cmake/TestEnvironment.cmake")\n'
                 f'deskwaifu_add_test(NAME timeout-fixture COMMAND "{sys.executable}" "{child}" "{report}")\n'
-                'set_tests_properties(timeout-fixture PROPERTIES TIMEOUT 1)\n')
+                'set_tests_properties(timeout-fixture PROPERTIES TIMEOUT 1 WILL_FAIL "${EXPECT_FAILURE}")\n')
             build = root / "build"
-            subprocess.run(["cmake", "-S", str(root), "-B", str(build)], capture_output=True, check=True)
             commands = (
                 ["ctest", "--test-dir", str(build), "--output-on-failure"],
                 [sys.executable, str(ROOT / "scripts/run-test-gate.py"), str(build), "--test", "^timeout-fixture$"],
             )
-            for command in commands:
-                with self.subTest(command=command[0]):
-                    result = subprocess.run(command, capture_output=True, text=True, timeout=20)
-                    self.assertNotEqual(result.returncode, 0, "a timeout must fail the test")
-                    self.assertIn("Test timed out after 1 seconds", result.stdout + result.stderr)
-                    snapshot = json.loads(report.read_text())
-                    try:
-                        for key in ("HOME", "XDG_RUNTIME_DIR", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME", "TMPDIR"):
-                            self.assertFalse(Path(snapshot[key]).exists(), f"CTest timeout leaked {key}")
-                        for key in ("pid", "grandchild"):
-                            status = Path(f"/proc/{snapshot[key]}/status")
-                            try:
-                                contents = status.read_text()
-                            except FileNotFoundError:
-                                continue
-                            self.assertIn("State:\tZ", contents, f"CTest timeout left {key} running")
-                    finally:
-                        # 失败的旧实现也只回收本用例记录的进程组与隔离目录。
+            for expected in ("FALSE", "TRUE"):
+                subprocess.run(["cmake", "-S", str(root), "-B", str(build), f"-DEXPECT_FAILURE={expected}"],
+                               capture_output=True, check=True)
+                for command in commands:
+                    with self.subTest(expected_failure=expected, command=command[0]):
+                        result = subprocess.run(command, capture_output=True, text=True, timeout=20)
+                        self.assertNotEqual(result.returncode, 0, "a timeout must fail the test")
+                        self.assertIn("Test timed out after 1 seconds", result.stdout + result.stderr)
+                        snapshot = json.loads(report.read_text())
                         try:
-                            os.killpg(snapshot["group"], signal.SIGKILL)
-                        except ProcessLookupError:
-                            pass
-                        shutil.rmtree(Path(snapshot["HOME"]).parent, ignore_errors=True)
+                            for key in ("HOME", "XDG_RUNTIME_DIR", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME", "TMPDIR"):
+                                self.assertFalse(Path(snapshot[key]).exists(), f"CTest timeout leaked {key}")
+                            for key in ("pid", "grandchild"):
+                                status = Path(f"/proc/{snapshot[key]}/status")
+                                try:
+                                    contents = status.read_text()
+                                except FileNotFoundError:
+                                    continue
+                                self.assertIn("State:\tZ", contents, f"CTest timeout left {key} running")
+                        finally:
+                            # 失败的旧实现也只回收本用例记录的进程组与隔离目录。
+                            try:
+                                os.killpg(snapshot["group"], signal.SIGKILL)
+                            except ProcessLookupError:
+                                pass
+                            shutil.rmtree(Path(snapshot["HOME"]).parent, ignore_errors=True)
+
+    def test_expected_failure_only_inverts_the_test_command(self):
+        with tempfile.TemporaryDirectory(prefix="expected-failure-") as directory:
+            root = Path(directory)
+            (root / "empty-path").mkdir()
+            (root / "CMakeLists.txt").write_text(
+                'cmake_minimum_required(VERSION 3.25)\nproject(fixture NONE)\ninclude(CTest)\n'
+                f'include("{ROOT}/cmake/TestEnvironment.cmake")\n'
+                f'deskwaifu_add_test(NAME expected COMMAND "{sys.executable}" -c "raise SystemExit(7)")\n'
+                f'deskwaifu_add_test(NAME unexpected-success COMMAND "{sys.executable}" -c "pass")\n'
+                'deskwaifu_add_test(NAME missing-command COMMAND /nonexistent/deskwaifu-test)\n'
+                f'deskwaifu_add_test(NAME signal COMMAND "{sys.executable}" -c "import os,signal; os.kill(os.getpid(), signal.SIGTERM)")\n'
+                f'deskwaifu_add_test(NAME setup-error COMMAND "{sys.executable}" -c "raise SystemExit(7)")\n'
+                f'deskwaifu_add_test(NAME expected-skip COMMAND "{sys.executable}" -c "raise SystemExit(77)")\n'
+                'set_tests_properties(expected unexpected-success missing-command signal setup-error PROPERTIES WILL_FAIL TRUE TIMEOUT 2)\n'
+                'set_tests_properties(expected-skip PROPERTIES WILL_FAIL TRUE SKIP_RETURN_CODE 77 TIMEOUT 2)\n'
+                f'set_tests_properties(setup-error PROPERTIES ENVIRONMENT "PATH={root}/empty-path")\n')
+            build = root / "build"
+            subprocess.run(["cmake", "-S", str(root), "-B", str(build)], capture_output=True, check=True)
+            for name in ("expected", "unexpected-success", "missing-command", "signal", "setup-error", "expected-skip"):
+                commands = (
+                    ["ctest", "--test-dir", str(build), "--output-on-failure", "-R", f"^{name}$"],
+                    [sys.executable, str(ROOT / "scripts/run-test-gate.py"), str(build), "--test", f"^{name}$"],
+                )
+                for command in commands:
+                    with self.subTest(test=name, command=command[0]):
+                        result = subprocess.run(command, capture_output=True, text=True, timeout=10)
+                        passed = name == "expected" or (name == "expected-skip" and command[0] == "ctest")
+                        self.assertEqual(result.returncode == 0, passed, result.stdout + result.stderr)
+                        if name == "expected-skip":
+                            self.assertIn("Skipped", result.stdout)
 
     def test_parallel_ctest_has_private_directories_and_bus(self):
         probe = '''import json, os, socket, sys, time

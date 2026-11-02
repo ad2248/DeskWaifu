@@ -188,6 +188,9 @@ if(DESKWAIFU_BUILD_CONTROL AND TARGET ipc_plugin)
     ENVIRONMENT "DESKWAIFU_CONTROL_PLUGIN_DIR=${CMAKE_BINARY_DIR}/plugins")
   if(TARGET desktop-settings-fixture)
   qt_add_executable(main-window-transform-test MainWindowTransformTest.cpp)
+  # 仅约束大型 QtTest 翻译单元的 GCC 垃圾回收峰值，不改变优化级别或编译并发。
+  target_compile_options(main-window-transform-test PRIVATE
+    "$<$<AND:$<CONFIG:Release>,$<CXX_COMPILER_ID:GNU>>:--param=ggc-min-expand=10;--param=ggc-min-heapsize=16384>")
   target_link_libraries(main-window-transform-test PRIVATE Qt6::Test Qt6::Network deskwaifu_test_support deskwaifu_control_shell deskwaifu_plugin_host)
   add_dependencies(main-window-transform-test deskwaifu_control_plugins desktop-settings-fixture)
   target_compile_definitions(main-window-transform-test PRIVATE

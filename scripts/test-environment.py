@@ -17,7 +17,25 @@ import tempfile
 def main():
     if len(sys.argv) < 2:
         sys.exit("usage: test-environment.py COMMAND [ARG ...]")
+    if sys.argv[1] == "--expect-failure":
+        try:
+            code = subprocess.run(sys.argv[3:]).returncode
+        except OSError as error:
+            print(f"Unable to start expected-failure test: {error}", file=sys.stderr)
+            return 1
+        if sys.argv[2] and code == int(sys.argv[2]):
+            return code
+        return 0 if code > 0 else 1
     timeout = float(os.environ.get("DESKWAIFU_TEST_TIMEOUT", "0"))
+    command = sys.argv[1:]
+    if os.environ.get("DESKWAIFU_TEST_WILL_FAIL") == "1":
+        prefix = []
+        if len(command) >= 3 and command[1:3] == ["-E", "env"]:
+            prefix, command = command[:3], command[3:]
+            while command and "=" in command[0]:
+                prefix.append(command.pop(0))
+        command = [*prefix, sys.executable, str(Path(__file__).resolve()), "--expect-failure",
+                   os.environ.get("DESKWAIFU_TEST_SKIP_CODE", ""), *command]
     parent = "/tmp/opencode" if Path("/tmp/opencode").is_dir() else None
     with tempfile.TemporaryDirectory(prefix="deskwaifu-test-", dir=parent) as directory:
         root = Path(directory)
@@ -38,7 +56,7 @@ def main():
             env["__EGL_VENDOR_LIBRARY_FILENAMES"] = str(mesa)
         if "DESKWAIFU_DEPS_DIR" in os.environ:
             env["DESKWAIFU_DEPS_DIR"] = os.environ["DESKWAIFU_DEPS_DIR"]
-        process = subprocess.Popen(["dbus-run-session", "--", *sys.argv[1:]],
+        process = subprocess.Popen(["dbus-run-session", "--", *command],
                                    env=env, start_new_session=True)
 
         def interrupted(number, _frame):

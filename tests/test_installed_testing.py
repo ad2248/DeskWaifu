@@ -39,8 +39,9 @@ class InstalledTestingTest(unittest.TestCase):
             registry = {"tests": [
                 {"name": "unit", "command": ["python3", launcher, "cmake", "-E", "env", "SETTING=fixture", executable],
                  "properties": [{"name": "TIMEOUT", "value": 40},
-                                {"name": "ENVIRONMENT_MODIFICATION", "value": ["DESKWAIFU_TEST_TIMEOUT=set:30"]}]},
-                {"name": "historical-wrapper", "command": ["python3", launcher, executable]},
+                                {"name": "ENVIRONMENT_MODIFICATION", "value": ["DESKWAIFU_TEST_TIMEOUT=set:30", "DESKWAIFU_TEST_WILL_FAIL=set:1"]}]},
+                {"name": "historical-wrapper", "command": ["python3", launcher, executable],
+                 "properties": [{"name": "WILL_FAIL", "value": True}]},
                 {"name": "source-contract", "command": ["python3", launcher, "cmake", "-E", "env",
                                                         "python3", str(source / "check-source.py")]},
             ]}
@@ -51,7 +52,9 @@ class InstalledTestingTest(unittest.TestCase):
             self.assertEqual(result["tests"][0]["command"], [installed])
             self.assertEqual(result["tests"][0]["environment"], ["SETTING=fixture"])
             self.assertEqual(result["tests"][0]["timeout"], 30)
+            self.assertTrue(result["tests"][0]["will_fail"])
             self.assertEqual(result["tests"][1]["command"], [installed])
+            self.assertTrue(result["tests"][1]["will_fail"])
 
     def test_installed_runner_uses_twelve_private_wrappers(self):
         with tempfile.TemporaryDirectory() as directory:

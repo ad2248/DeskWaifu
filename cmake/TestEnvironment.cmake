@@ -18,6 +18,18 @@ function(deskwaifu_finalize_test_timeouts)
     endif()
     set_property(TEST "${name}" APPEND PROPERTY ENVIRONMENT_MODIFICATION
       "DESKWAIFU_TEST_TIMEOUT=set:${timeout}")
+    get_property(will_fail TEST "${name}" PROPERTY WILL_FAIL)
+    get_property(skip_code TEST "${name}" PROPERTY SKIP_RETURN_CODE)
+    if(will_fail)
+      set(expect_failure 1)
+      # 只反转实际命令的正常非零退出，不能反转包装器自身的失败。
+      set_property(TEST "${name}" PROPERTY WILL_FAIL FALSE)
+    else()
+      set(expect_failure 0)
+    endif()
+    set_property(TEST "${name}" APPEND PROPERTY ENVIRONMENT_MODIFICATION
+      "DESKWAIFU_TEST_WILL_FAIL=set:${expect_failure}"
+      "DESKWAIFU_TEST_SKIP_CODE=set:${skip_code}")
     if(timeout GREATER 0)
       # 原测试预算由包装器执行；CTest 仅为进程组和目录清理留出兜底宽限。
       string(REGEX REPLACE "\\..*$" "" seconds "${timeout}")
