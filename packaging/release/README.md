@@ -4,7 +4,7 @@ CI 和 release 都通过 `scripts/release-build.sh` 调用同一份
 `PKGBUILD.in`，以相同参数开启测试目标，生成四个包：
 
 - `deskwaifu-bin`：平台及默认插件。
-- `deskwaifu-ocr-bin`：OCR 扩展和推理运行时，不含模型。
+- `deskwaifu-ocr-bin`：OCR 扩展，依赖系统 `onnxruntime-cpu`，不内置运行库或模型。
 - `deskwaifu-tests`：可安装的平台单元/集成测试及私有测试夹具。
 - `deskwaifu-ocr-tests`：可安装的 OCR 测试，以标准库生成微型 ONNX 夹具。
 
@@ -13,8 +13,9 @@ CI 和 release 都通过 `scripts/release-build.sh` 调用同一份
 
 逐字节一致的前提是源码提交、包版本、打包工具提交和 runner 镜像 ID
 全部相同。镜像固定系统依赖、编译器及 makepkg 配置；流水线不得临时
-升级系统包。ONNX Runtime 下载固定版本并核对 SHA-256，私有依赖来自
-同一镜像。构建脚本固定工作路径、构建用户名、时区和源码时间戳。
+升级系统包。ONNX Runtime 与其他系统依赖一样由固定镜像提供，不再下载
+独立 SDK 或捆绑动态库；私有依赖也来自同一镜像。构建脚本固定工作路径、
+构建用户名、时区和源码时间戳。
 
 手动运行 CI 时传入已有 `tag`，即可构建与 release 相同版本的包；不传
 时构建当前提交，以 `0.0.0.r<完整提交 SHA>` 为临时包版本。CI 依次安装：
@@ -26,7 +27,7 @@ CI 和 release 都通过 `scripts/release-build.sh` 调用同一份
 
 安装环境由固定镜像中的已安装系统包按依赖闭包生成，通过 PRoot 运行，
 不挂载源码、构建树或 `/opt` 私有 SDK；不联网安装或升级系统依赖。
-第一阶段没有 OCR 包及其 OpenCV/yaml-cpp 依赖。测试以 nobody 执行，
+第一阶段没有 OCR 包及其 OpenCV/yaml-cpp/ONNX Runtime 依赖。测试以 nobody 执行，
 测试安装目录只读，所有临时文件写入独立的可清理目录。
 专用 runner 的容器选项为 `/tmp` 配置
 `--tmpfs=/tmp:rw,exec,nosuid,size=4g,mode=1777`，在既有 8 GiB 容器内存

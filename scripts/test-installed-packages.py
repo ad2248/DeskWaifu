@@ -127,7 +127,7 @@ def main():
             print(f"=== Stage {index + 1}/4: {name} ===", flush=True)
             guest.install(args.packages.resolve() / f"{name}-{args.version}-1-x86_64.pkg.tar.zst")
             if index == 0:
-                assert "opencv" not in guest.installed and "yaml-cpp" not in guest.installed
+                assert not {"opencv", "yaml-cpp", "onnxruntime-cpu"} & guest.installed
                 assert not (root / "usr/lib/deskwaifu/ocr/deskwaifu-ocr.so").exists()
             if index < 2:
                 guest.run(["dbus-run-session", "--", "python3", "/smoke/package-smoke.py", "ocr" if index else "platform"])

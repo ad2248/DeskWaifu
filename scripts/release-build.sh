@@ -35,7 +35,7 @@ cp "$tools_root/scripts/prepare-installed-tests.py" "$tools_root/scripts/run-ins
 cp "$tools_root/cmake/InstallTests.cmake" "$work/release-tools/cmake/"
 cp "$tools_root/tests/gate.json" "$work/release-tools/tests/"
 
-# Acquisition stage: the only network download in this script.
+# Prepare sources using system-installed build dependencies.
 # The private SDK/GLEW are already in the runner image, not fetched during build.
 deps_dir=$(bash "$tools_root/scripts/find-deps-dir.sh")
 cp -aL "$deps_dir/CubismSdkForNative-5-r.5" "$deps_dir/glew" "$work/private-deps/"
@@ -46,10 +46,6 @@ tar --sort=name --mtime="@$SOURCE_DATE_EPOCH" --owner=0 --group=0 --numeric-owne
     -czf "$work/private-deps.tar.gz" -C "$work" private-deps
 tar --sort=name --mtime="@$SOURCE_DATE_EPOCH" --owner=0 --group=0 --numeric-owner \
     -czf "$work/release-tools.tar.gz" -C "$work" release-tools
-ort=onnxruntime-linux-x64-1.31.0.tgz
-curl --fail --location --retry 3 --proto '=https' --proto-redir '=https' \
-    "https://github.com/microsoft/onnxruntime/releases/download/v1.31.0/$ort" -o "$work/$ort"
-echo "cc5c72baf5ae5c8238a6841f0897227be2d02826b9cf98eaf02fdefaeeb03a57  $work/$ort" | sha256sum -c -
 python3 "$tools_root/scripts/release-packaging.py" prepare "$work" "$RELEASE_TAG" "$RELEASE_COMMIT"
 
 # Never grant the build user write access to the checkout or sudo. Only this new

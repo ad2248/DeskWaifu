@@ -32,6 +32,7 @@ RUN { printf 'Server = %s/$repo/os/$arch\n' "${PACMAN_MIRROR}"; \
         libarchive \
         nodejs \
         noto-fonts \
+        onnxruntime-cpu \
         pkgconf \
         qt6-base \
         qt6-multimedia \
