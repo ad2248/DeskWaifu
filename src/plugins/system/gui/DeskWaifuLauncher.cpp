@@ -7,10 +7,27 @@
 #include <QObject>
 #include <QProcess>
 #include <QStandardPaths>
+#include <cerrno>
+#include <sys/stat.h>
 #include <unistd.h>
 
 namespace DeskWaifuLauncher
 {
+namespace {
+QString runtimeDirectory(const QByteArray& value)
+{
+    // 与后端 IPC 的默认目录保持一致，不使用 Qt 自己的 runtime 回退目录。
+    return value.isEmpty() ? QStringLiteral("/tmp/deskwaifu-%1").arg(getuid()) : QFile::decodeName(value);
+}
+
+QString runtimeIdentity(const QByteArray& value)
+{
+    const QString path = runtimeDirectory(value);
+    const QString canonical = QFileInfo(path).canonicalFilePath();
+    return canonical.isEmpty() ? QDir::cleanPath(path) : canonical;
+}
+}
+
 QString executablePath(const QString& applicationDirectory)
 {
     const QString executable = QDir(applicationDirectory).absoluteFilePath(QStringLiteral("deskwaifu"));
@@ -21,7 +38,7 @@ QString executablePath(const QString& applicationDirectory)
 
 qint64 runningPid(const QString& procDirectory)
 {
-    const QByteArray runtime = qgetenv("XDG_RUNTIME_DIR");
+    const QString runtime = runtimeIdentity(qgetenv("XDG_RUNTIME_DIR"));
     const QDir processes(procDirectory);
     if (!processes.exists() || !QFileInfo(procDirectory).isReadable())
         return -1;
@@ -57,7 +74,7 @@ qint64 runningPid(const QString& procDirectory)
                 break;
             }
         // IPC 端点由运行目录决定，不能让其他独立环境的后端阻止启动。
-        if (processRuntime == runtime) return pid;
+        if (runtimeIdentity(processRuntime) == runtime) return pid;
     }
     return 0;
 }
@@ -68,10 +85,19 @@ Result spawn(bool connected, const QString& applicationDirectory, const QString&
     if (connected)
         return {State::Connected, QObject::tr("DeskWaifu 已连接。")};
 
-    const QString runtime = lockDirectory.isEmpty()
-        ? QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation) : lockDirectory;
+    const QByteArray configuredRuntime = qgetenv("XDG_RUNTIME_DIR");
+    const QString runtime = lockDirectory.isEmpty() ? runtimeDirectory(configuredRuntime) : lockDirectory;
     if (runtime.isEmpty())
         return {State::Failed, QObject::tr("找不到用于存放 DeskWaifu 启动锁的运行时目录。")};
+    if (lockDirectory.isEmpty() && configuredRuntime.isEmpty()) {
+        const QByteArray path = QFile::encodeName(runtime);
+        if (mkdir(path.constData(), 0700) != 0 && errno != EEXIST)
+            return {State::Failed, QObject::tr("无法创建 DeskWaifu 默认运行目录。")};
+        struct stat directory{};
+        if (lstat(path.constData(), &directory) != 0 || !S_ISDIR(directory.st_mode) ||
+            directory.st_uid != getuid() || (directory.st_mode & 077) != 0)
+            return {State::Failed, QObject::tr("DeskWaifu 默认运行目录不安全。")};
+    }
     QLockFile lock(QDir(runtime).filePath(QStringLiteral("deskwaifu-spawn.lock")));
     lock.setStaleLockTime(0); // 不能因启动缓慢而抢占仍在运行的启动器所持有的锁。
     if (!lock.tryLock(2000))

@@ -151,6 +151,48 @@ private slots:
         QCOMPARE(DeskWaifuLauncher::runningPid(proc()), -1);
         QCOMPARE(DeskWaifuLauncher::spawn(false, app(), proc()).state, State::Failed);
     }
+    void runtimeAliasesIdentifyTheSameBackend_data()
+    {
+        QTest::addColumn<int>("mode");
+        QTest::newRow("trailing-slash") << 0;
+        QTest::newRow("symbolic-link") << 1;
+        QTest::newRow("unset-backend-default") << 2;
+        QTest::newRow("empty-backend-default") << 3;
+        QTest::newRow("unset-launcher-default") << 4;
+    }
+    void runtimeAliasesIdentifyTheSameBackend()
+    {
+        QFETCH(int, mode);
+        QTemporaryDir runtime;
+        QVERIFY(runtime.isValid());
+        QByteArray backendRuntime = runtime.path().toLocal8Bit();
+        QByteArray launcherRuntime = backendRuntime + '/';
+        const auto alias = directory.path() + "/runtime-alias";
+        const auto removeAlias = qScopeGuard([&] { QFile::remove(alias); });
+        if (mode == 1) {
+            QVERIFY(QFile::link(runtime.path(), alias));
+            launcherRuntime = alias.toLocal8Bit();
+        } else if (mode >= 2) {
+            launcherRuntime = QStringLiteral("/tmp/deskwaifu-%1").arg(getuid()).toLocal8Bit();
+            backendRuntime = mode == 4 ? launcherRuntime : QByteArray{};
+        }
+        process("123", "deskwaifu");
+        QFile environment(proc() + "/123/environ");
+        QVERIFY(environment.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        if (mode != 2)
+            environment.write("XDG_RUNTIME_DIR=" + backendRuntime + QByteArray(1, '\0'));
+        environment.close();
+        const auto previous = qgetenv("XDG_RUNTIME_DIR");
+        const bool hadRuntime = qEnvironmentVariableIsSet("XDG_RUNTIME_DIR");
+        const auto restore = qScopeGuard([&] {
+            if (hadRuntime) qputenv("XDG_RUNTIME_DIR", previous);
+            else qunsetenv("XDG_RUNTIME_DIR");
+        });
+        if (mode == 4) qunsetenv("XDG_RUNTIME_DIR");
+        else qputenv("XDG_RUNTIME_DIR", launcherRuntime);
+        QCOMPARE(DeskWaifuLauncher::runningPid(proc()), 123);
+        QCOMPARE(DeskWaifuLauncher::spawn(false, app(), proc(), proc()).state, State::AlreadyRunning);
+    }
     void missingExecutableAndUnreadableProcFail()
     {
         const auto result = DeskWaifuLauncher::spawn(false, app(), proc());

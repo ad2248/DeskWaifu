@@ -14,7 +14,7 @@
     "texture-residency", "SpeechPlayer", "MiniMaxSpeechSource", "AudioPlayer",
     "main-window-transform", "aur-packaging", "ocr-client", "smoke-isolation",
     "test-environment", "test-gate", "mutation-configuration",
-    "build-boundary-registration",
+    "build-boundary-registration", "sdk-configuration",
     "build-boundaries-c-include-ownership", "build-boundaries-compilation-ownership",
     "build-boundaries-forwarded-static-is-scoped-not-global", "build-boundaries-include-ownership",
     "build-boundaries-library-search-respects-static-dynamic-selection",
