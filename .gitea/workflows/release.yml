@@ -58,10 +58,10 @@ jobs:
         run: python3 -B "$RELEASE_TOOLS_DIR/tests/test_release_packaging.py" -v
 
       - name: Acquire system build dependencies
-        # The current fixed runner image lacks OpenCV/yaml-cpp. Do not rebuild or
+        # Older fixed runner images lack OCR system dependencies. Do not rebuild or
         # publish the private image here; perform a full Arch upgrade, not -Sy.
         run: |
-          packages=(base-devel cmake ninja curl git libarchive python opencv yaml-cpp
+          packages=(base-devel cmake ninja curl git libarchive python opencv yaml-cpp onnxruntime-cpu
             qt6-base qt6-wayland qt6-scxml qt6-websockets qt6-multimedia
             layer-shell-qt wayland libglvnd systemd-libs psmisc)
           pacman -Syu --needed --noconfirm "${packages[@]}"
