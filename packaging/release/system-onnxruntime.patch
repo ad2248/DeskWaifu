@@ -1,0 +1,25 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -6,1 +6,0 @@
+-set(ONNXRUNTIME_ROOT "$ENV{ONNXRUNTIME_ROOT}" CACHE PATH "Unpacked CPU ONNX Runtime C/C++ SDK")
+@@ -10,7 +9,1 @@
+-find_path(ORT_INCLUDE_DIR onnxruntime_cxx_api.h PATHS "${ONNXRUNTIME_ROOT}/include" NO_DEFAULT_PATH REQUIRED)
+-find_library(ORT_LIBRARY onnxruntime PATHS "${ONNXRUNTIME_ROOT}/lib" NO_DEFAULT_PATH REQUIRED)
+-foreach(name LICENSE ThirdPartyNotices.txt)
+-  if(NOT EXISTS "${ONNXRUNTIME_ROOT}/${name}")
+-    message(FATAL_ERROR "ONNX Runtime SDK must include ${name}")
+-  endif()
+-endforeach()
++find_package(onnxruntime CONFIG REQUIRED)
+@@ -19,2 +12,2 @@
+-target_include_directories(deskwaifu-ocr PRIVATE "${ORT_INCLUDE_DIR}" ${OpenCV_INCLUDE_DIRS})
+-target_link_libraries(deskwaifu-ocr PRIVATE "${ORT_LIBRARY}" Qt6::Core Qt6::Gui ${OpenCV_LIBS})
++target_include_directories(deskwaifu-ocr PRIVATE ${OpenCV_INCLUDE_DIRS})
++target_link_libraries(deskwaifu-ocr PRIVATE onnxruntime::onnxruntime Qt6::Core Qt6::Gui ${OpenCV_LIBS})
+@@ -27,1 +19,0 @@
+-set_target_properties(deskwaifu-ocr PROPERTIES INSTALL_RPATH "$ORIGIN")
+@@ -30,4 +21,0 @@
+-file(GLOB _ort_libraries "${ONNXRUNTIME_ROOT}/lib/libonnxruntime.so*")
+-install(FILES ${_ort_libraries} DESTINATION ${CMAKE_INSTALL_LIBDIR}/deskwaifu/ocr COMPONENT DeskWaifuOCR)
+-install(FILES "${ONNXRUNTIME_ROOT}/LICENSE" "${ONNXRUNTIME_ROOT}/ThirdPartyNotices.txt"
+-  DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/deskwaifu-ocr/onnxruntime COMPONENT DeskWaifuOCR)

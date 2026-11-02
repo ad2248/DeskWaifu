@@ -176,15 +176,17 @@ cd DeskWaifu
 
 #### 3. Build
 
-The default full build includes the OCR module. Install OpenCV and yaml-cpp
-development packages, then unpack the ONNX Runtime CPU SDK as described in
-[the OCR build instructions](src/plugins/perception/native/README.md). Set its
-location before running either build method:
+The default full build includes the OCR module. Install system OpenCV, yaml-cpp
+and ONNX Runtime development packages, including ONNX Runtime's CMake config.
+On Arch Linux:
 
 ```bash
-export ONNXRUNTIME_ROOT=/absolute/path/to/onnxruntime-linux-x64-1.31.0
+sudo pacman -S --needed opencv yaml-cpp onnxruntime-cpu
 ```
 
+Development, builds and installed modules all use the system ONNX Runtime;
+no standalone SDK or bundled runtime is used. See
+[the OCR build instructions](src/plugins/perception/native/README.md).
 OCR models are **not** required for compiling or packaging. To explicitly omit
 the OCR module, configure with `-DDESKWAIFU_BUILD_OCR=OFF` instead.
 
