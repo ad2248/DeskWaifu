@@ -198,6 +198,10 @@ private slots:
         QFile status(proc() + "/123/status");
         QVERIFY(status.open(QIODevice::WriteOnly));
         status.write("Name:\tdeskwaifu\nState:\tS (sleeping)\n");
+        QFile environment(proc() + "/123/environ");
+        QVERIFY(environment.open(QIODevice::WriteOnly));
+        environment.write("XDG_RUNTIME_DIR=" + qgetenv("XDG_RUNTIME_DIR") + QByteArray(1, '\0'));
+        environment.close();
         status.close();
         QLocalServer server;
         LoadedGuiTransport client;

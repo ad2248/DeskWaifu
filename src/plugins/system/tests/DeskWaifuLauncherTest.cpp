@@ -5,6 +5,7 @@
 #include <QFile>
 #include <QLockFile>
 #include <QProcess>
+#include <QProcessEnvironment>
 #include <QScopeGuard>
 #include <QTemporaryDir>
 #include <QTextStream>
@@ -30,6 +31,9 @@ private:
         QFile status(proc() + "/" + pid + "/status");
         QVERIFY(status.open(QIODevice::WriteOnly));
         status.write("Name:\t" + name + "\nState:\t" + state + "\n");
+        QFile environment(proc() + "/" + pid + "/environ");
+        QVERIFY(environment.open(QIODevice::WriteOnly));
+        environment.write("XDG_RUNTIME_DIR=" + qgetenv("XDG_RUNTIME_DIR") + QByteArray(1, '\0'));
     }
     void installBackend(const QString& target)
     {
@@ -109,6 +113,42 @@ private slots:
         process("123", "deskwaifu", "Z (zombie)");
         process("124", "deskwaifu-ctl");
         process("125", "deskwaifu-other");
+        QCOMPARE(DeskWaifuLauncher::spawn(false, app(), proc()).state, State::Failed);
+    }
+    void backendInAnotherRuntimeDoesNotBlockSpawn()
+    {
+        QTemporaryDir otherRuntime;
+        QVERIFY(otherRuntime.isValid());
+        QProcess backend;
+        auto environment = QProcessEnvironment::systemEnvironment();
+        environment.insert("XDG_RUNTIME_DIR", otherRuntime.path());
+        backend.setProcessEnvironment(environment);
+        backend.start(QStringLiteral(SPAWN_BACKEND_FIXTURE), QStringList{});
+        QVERIFY(backend.waitForStarted());
+        const auto stopOther = qScopeGuard([&] { backend.kill(); backend.waitForFinished(); });
+        QVERIFY(QFile::link(QStringLiteral("/proc/%1").arg(backend.processId()), proc() + "/123"));
+        QCOMPARE(DeskWaifuLauncher::runningPid(proc()), 0);
+        QCOMPARE(DeskWaifuLauncher::runningPid(), 0);
+        // init() 的 PATH 中没有 unshare；独立运行目录不应要求 namespace 权限。
+        QProcess launcher;
+        launcher.start(QCoreApplication::applicationFilePath(), {"connectedDoesNotInspectOrSpawn"});
+        QVERIFY(launcher.waitForFinished(5000));
+        QCOMPARE(launcher.exitStatus(), QProcess::NormalExit);
+        QCOMPARE(launcher.exitCode(), 0);
+        installBackend(app());
+        const auto result = DeskWaifuLauncher::spawn(false, app(), proc());
+        const auto stop = qScopeGuard([&] {
+            if (result.state == State::Started) stopBackend(result.pid);
+        });
+        QCOMPARE(result.state, State::Started);
+        QVERIFY(result.pid > 0);
+        QVERIFY(kill(backend.processId(), 0) == 0);
+    }
+    void unreadableBackendEnvironmentFailsClosed()
+    {
+        process("123", "deskwaifu");
+        QVERIFY(QFile::remove(proc() + "/123/environ"));
+        QCOMPARE(DeskWaifuLauncher::runningPid(proc()), -1);
         QCOMPARE(DeskWaifuLauncher::spawn(false, app(), proc()).state, State::Failed);
     }
     void missingExecutableAndUnreadableProcFail()
@@ -260,9 +300,8 @@ int main(int argc, char** argv)
     const bool privateProc = arguments.removeOne("--private-proc");
     if (!privateProc && DeskWaifuLauncher::runningPid("/proc") > 0)
     {
-        // A real desktop companion must neither be stopped nor turn a required
-        // concurrency case into a skip. CI's container already has a private
-        // process view; on a busy host create one for this executable only.
+        // 只在当前运行目录已有后端时隔离进程视图，不与用户桌宠交互。
+        // 其他运行目录中的并行测试后端不应触发 namespace 权限要求。
         QProcess isolated;
         isolated.setProcessChannelMode(QProcess::ForwardedChannels);
         isolated.start("unshare", QStringList{"--user", "--map-root-user", "--pid", "--fork", "--mount-proc",

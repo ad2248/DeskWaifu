@@ -21,6 +21,7 @@ QString executablePath(const QString& applicationDirectory)
 
 qint64 runningPid(const QString& procDirectory)
 {
+    const QByteArray runtime = qgetenv("XDG_RUNTIME_DIR");
     const QDir processes(procDirectory);
     if (!processes.exists() || !QFileInfo(procDirectory).isReadable())
         return -1;
@@ -42,8 +43,21 @@ qint64 runningPid(const QString& procDirectory)
             if (line.startsWith("State:")) zombie = line.mid(6).trimmed().startsWith('Z');
         }
         const QString executable = QFileInfo(entry.filePath() + QStringLiteral("/exe")).symLinkTarget();
-        if (!zombie && (namedDeskWaifu || QFileInfo(executable).fileName() == QStringLiteral("deskwaifu")))
-            return pid;
+        if (zombie || (!namedDeskWaifu && QFileInfo(executable).fileName() != QStringLiteral("deskwaifu")))
+            continue;
+        QFile environment(entry.filePath() + QStringLiteral("/environ"));
+        if (!environment.open(QIODevice::ReadOnly)) {
+            if (!QFileInfo(entry.filePath()).exists()) continue; // 进程可能在检查期间退出。
+            return -1;
+        }
+        QByteArray processRuntime;
+        for (const auto& variable : environment.readAll().split('\0'))
+            if (variable.startsWith("XDG_RUNTIME_DIR=")) {
+                processRuntime = variable.mid(sizeof("XDG_RUNTIME_DIR=") - 1);
+                break;
+            }
+        // IPC 端点由运行目录决定，不能让其他独立环境的后端阻止启动。
+        if (processRuntime == runtime) return pid;
     }
     return 0;
 }
@@ -63,7 +77,7 @@ Result spawn(bool connected, const QString& applicationDirectory, const QString&
     if (!lock.tryLock(2000))
         return {State::Failed, QObject::tr("无法获取 DeskWaifu 启动锁，可能有另一个启动操作正在进行。")};
 
-    // 当前用户的所有 GUI 共用此锁；获取锁后重新检查进程，
+    // 当前运行目录的 GUI 共用此锁；获取锁后重新检查本环境的进程，
     // 并持锁直到 startDetached 完成 exec 成功握手。
     const qint64 running = runningPid(procDirectory);
     if (running < 0)
