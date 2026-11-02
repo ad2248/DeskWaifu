@@ -1,6 +1,6 @@
 # 进程内原生 OCR 模块
 
-产品范围、能力组合与验收边界见[图像识别与剪贴板朗读](../../../../docs/需求描述/图像识别与剪贴板朗读.md)；本页保留模型部署、构建与 helper 协议细节。
+产品范围、能力组合与验收边界见[图像识别与剪贴板朗读](../../../docs/需求描述/图像识别与剪贴板朗读.md)；本页保留模型部署、构建与 helper 协议细节。
 
 `deskwaifu-ocr` 是 C++/ONNX Runtime CPU 辅助进程。主程序只链接 QtCore 客户端，不链接 ONNX Runtime、Paddle 或 OpenCV。构建、安装辅助程序**不需要模型文件**；未配置模型时主程序仍可启动，OCR 状态会报告不可用原因。
 
@@ -45,7 +45,7 @@ curl -fL --retry 3 \
 echo 'cc5c72baf5ae5c8238a6841f0897227be2d02826b9cf98eaf02fdefaeeb03a57  /tmp/opencode/ocr-sdk/onnxruntime-linux-x64-1.31.0.tgz' | sha256sum -c -
 tar -xzf /tmp/opencode/ocr-sdk/onnxruntime-linux-x64-1.31.0.tgz -C /tmp/opencode/ocr-sdk
 
-cmake -S src/plugins/perception/native -B build-ocr -G Ninja \
+cmake -S plugins/perception/native -B build-ocr -G Ninja \
   -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib \
   -DONNXRUNTIME_ROOT=/tmp/opencode/ocr-sdk/onnxruntime-linux-x64-1.31.0
 cmake --build build-ocr --parallel 4
@@ -118,7 +118,7 @@ OCR_MODULE_PROBE="$PWD/build-ocr/ocr-module-probe" \
 无 OCR 依赖的生命周期测试：
 
 ```bash
-cmake -S src/plugins/perception/tests/ocr-client -B build-ocr-client -G Ninja
+cmake -S plugins/perception/tests/ocr-client -B build-ocr-client -G Ninja
 cmake --build build-ocr-client
 ctest --test-dir build-ocr-client --output-on-failure
 ```
@@ -128,7 +128,7 @@ ctest --test-dir build-ocr-client --output-on-failure
 ```bash
 uv run --no-project --with pillow python research/ocr/make_samples.py \
   --font /usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc --output /tmp/opencode/ocr-samples
-python src/plugins/perception/tests/native_smoke.py \
+python plugins/perception/tests/native_smoke.py \
   --probe build-ocr/ocr-module-probe --module build-ocr/deskwaifu-ocr.so \
   --samples /tmp/opencode/ocr-samples \
   --detection-model-dir "$HOME/.local/share/deskwaifu/ocr/models/PP-OCRv6_small_det" \
@@ -140,4 +140,4 @@ python src/plugins/perception/tests/native_smoke.py \
 
 不承诺文档排版还原、任意来源图片安全沙箱或实时看屏性能。文件由本用户授权读取；合成图验证不代表真实桌面准确率。
 
-本次迁移的测试范围、性能对照及局限见 [进程内化验证记录](../../../../docs/ocr-in-process-validation.md)。
+本次迁移的测试范围、性能对照及局限见 [进程内化验证记录](../../../docs/ocr-in-process-validation.md)。

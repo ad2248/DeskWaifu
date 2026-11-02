@@ -7,15 +7,19 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class PluginBoundaries(unittest.TestCase):
+    def test_plugins_live_at_repository_root(self):
+        self.assertFalse((ROOT / "src").exists())
+        self.assertTrue((ROOT / "plugins/CMakeLists.txt").is_file())
+
     def test_host_has_no_speech_adapter(self):
         for relative in (
-            "platform/main.cpp", "src/plugins/desktop/private/app/LAppDelegate.cpp",
-            "src/plugins/desktop/private/app/LAppDelegate.hpp",
-            "src/plugins/ipc/private/processor/command/CommandProcessor.hpp",
-            "src/plugins/desktop/private/processor/interaction/InteractionProcessor.cpp",
-            "src/plugins/desktop/private/processor/interaction/InteractionProcessor.hpp",
-            "src/plugins/desktop/private/processor/interaction/InteractionContext.cpp",
-            "src/plugins/desktop/private/processor/interaction/InteractionContext.hpp",
+            "platform/main.cpp", "plugins/desktop/private/app/LAppDelegate.cpp",
+            "plugins/desktop/private/app/LAppDelegate.hpp",
+            "plugins/ipc/private/processor/command/CommandProcessor.hpp",
+            "plugins/desktop/private/processor/interaction/InteractionProcessor.cpp",
+            "plugins/desktop/private/processor/interaction/InteractionProcessor.hpp",
+            "plugins/desktop/private/processor/interaction/InteractionContext.cpp",
+            "plugins/desktop/private/processor/interaction/InteractionContext.hpp",
         ):
             with self.subTest(path=relative):
                 text = (ROOT / relative).read_text()
@@ -30,7 +34,7 @@ class PluginBoundaries(unittest.TestCase):
                     self.assertNotRegex(path.read_text(), r'#include\s+"(?:contracts|processor/(?!Processor.hpp))/' )
 
     def test_application_does_not_link_speech(self):
-        for relative in ("platform/CMakeLists.txt", "src/plugins/desktop/CMakeLists.txt"):
+        for relative in ("platform/CMakeLists.txt", "plugins/desktop/CMakeLists.txt"):
             text = (ROOT / relative).read_text()
             links = re.findall(r"target_link_libraries\([^)]*\)", text, re.S)
             for link in links:
@@ -48,7 +52,7 @@ class PluginBoundaries(unittest.TestCase):
             self.assertNotIn(widget, (ROOT / "platform/control/MainWindow.ui").read_text())
 
     def test_gui_pages_do_not_reach_into_shell(self):
-        paths = list((ROOT / "src/plugins").glob("*/gui/*"))
+        paths = list((ROOT / "plugins").glob("*/gui/*"))
         self.assertTrue(paths, "GUI code must live under its owning plugin")
         for path in paths:
             if path.suffix in (".hpp", ".cpp"):
@@ -62,10 +66,10 @@ class PluginBoundaries(unittest.TestCase):
         self.assertNotIn("target_sources(speech_plugin", text)
         self.assertNotIn("Tab.cpp", text)
         for domain in ("system", "interaction", "model", "log", "speech"):
-            self.assertTrue((ROOT / "src/plugins" / domain / "gui").is_dir())
+            self.assertTrue((ROOT / "plugins" / domain / "gui").is_dir())
 
     def test_each_plugin_owns_its_build_definition(self):
-        plugins = ROOT / "src/plugins"
+        plugins = ROOT / "plugins"
         parent = (plugins / "CMakeLists.txt").read_text()
         self.assertNotIn(".cpp", parent)
         self.assertNotIn("target_sources(", parent)

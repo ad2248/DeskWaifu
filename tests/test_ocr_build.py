@@ -14,7 +14,7 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-NATIVE = Path("src/plugins/perception/native")
+NATIVE = Path("plugins/perception/native")
 
 
 class OcrBuildTest(unittest.TestCase):
@@ -57,7 +57,7 @@ class OcrBuildTest(unittest.TestCase):
                          "platform/tooling/check_link_dependencies.py"):
             self.write(self.source / relative, (ROOT / relative).read_text())
         self.write(self.source / "sdk/CMakeLists.txt", "")
-        self.write(self.source / "src/plugins/CMakeLists.txt", "")
+        self.write(self.source / "plugins/CMakeLists.txt", "")
         self.write(self.source / "platform/CMakeLists.txt", """add_executable(deskwaifu main.cpp)
 install(TARGETS deskwaifu RUNTIME DESTINATION bin COMPONENT DeskWaifu)
 file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/app-links.txt" CONTENT "$<TARGET_PROPERTY:deskwaifu,LINK_LIBRARIES>")
@@ -167,6 +167,11 @@ add_library(opencv_imgproc INTERFACE IMPORTED)
                 result = self.configure(standalone=True, success=False)
                 self.assertIn(f"ONNX Runtime SDK must include {name}", result.stdout)
                 path.write_text(original)
+
+    def test_release_build_uses_root_plugin_source(self):
+        recipe = (ROOT / "packaging/release/PKGBUILD.in").read_text()
+        self.assertIn(f'cmake -S "$srcdir/deskwaifu/{NATIVE}"', recipe)
+        self.assertTrue((ROOT / NATIVE / "CMakeLists.txt").is_file())
 
     def test_legacy_ci_and_aur_explicitly_disable_native_dependencies(self):
         workflow = (ROOT / ".gitea/workflows/ci.yml").read_text()

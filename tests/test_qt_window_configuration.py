@@ -5,7 +5,7 @@ import unittest
 from qt_headless_smoke import assert_keyboard_capability
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = ROOT / "src/plugins/desktop/private"
+SOURCE = ROOT / "plugins/desktop/private"
 
 
 class QtWindowConfigurationTest(unittest.TestCase):

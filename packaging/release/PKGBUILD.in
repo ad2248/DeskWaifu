@@ -24,7 +24,7 @@ build() {
     -DSDK_ROOT_PATH="$srcdir/private-deps/CubismSdkForNative-5-r.5" \
     -DGLEW_PATH="$srcdir/private-deps/glew"
   cmake --build "$srcdir/build-main" --parallel "${CMAKE_BUILD_PARALLEL_LEVEL:-4}"
-  cmake -S "$srcdir/deskwaifu/src/plugins/perception/native" -B "$srcdir/build-ocr" -G Ninja \
+  cmake -S "$srcdir/deskwaifu/plugins/perception/native" -B "$srcdir/build-ocr" -G Ninja \
     -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib \
     -DBUILD_TESTING=OFF \
     -DONNXRUNTIME_ROOT="$srcdir/onnxruntime-linux-x64-1.31.0"

@@ -1,6 +1,6 @@
 # 语音与音频播放
 
-产品行为、凭据与验收边界见[语音与凭据](../../../../../../docs/需求描述/语音与凭据.md)；本页保留模块开发细节。
+产品行为、凭据与验收边界见[语音与凭据](../../../../../docs/需求描述/语音与凭据.md)；本页保留模块开发细节。
 
 语音功能集中在本目录，事件适配与播放实现保持分层：
 
@@ -24,7 +24,7 @@ speech/
 
 ## 动态插件
 
-`src/plugins/speech/SpeechPlugin.cpp` 导出 SDK v1 入口。它提供 `speech.speak/v1`、`command.get_speech_settings/v1`、`command.set_speech_settings/v1`，并订阅 `interaction.double_click/v1`；双击问候和 replace 策略只存在于插件。能力正文使用共享的 `ProcessorEvent::type/data`，领域常量见 `contracts/SpeechEvents.hpp`。
+`plugins/speech/SpeechPlugin.cpp` 导出 SDK v1 入口。它提供 `speech.speak/v1`、`command.get_speech_settings/v1`、`command.set_speech_settings/v1`，并订阅 `interaction.double_click/v1`；双击问候和 replace 策略只存在于插件。能力正文使用共享的 `ProcessorEvent::type/data`，领域常量见 `contracts/SpeechEvents.hpp`。
 
 `SpeechEndpoint` 复用 `SpeechProcessor`，不额外注册能力，也不自发起一次能力请求。可选 `request_id` 随旧处理器的终态回复传递；取消按指针及 ID 匹配，既能移除待启动替换，又不会使迟到取消打断新播报。不含该字段的旧调用继续使用原有指针协议。
 

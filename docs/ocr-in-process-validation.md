@@ -11,7 +11,7 @@
 - 插件停用/应用退出时等待后台调用结束，再释放输入及卸载模块。不会强杀线程；原生崩溃可能带退出应用，永久卡死可能阻止正常退出。
 - 主包不直接链接 ORT/OpenCV/yaml-cpp；OCR 包继续可选、严格依赖同版本主包，不包含模型。旧 helper 环境变量不再生效。
 
-配置、构建、升级和故障处理见 [原生 OCR 模块说明](../src/plugins/perception/native/README.md)。
+配置、构建、升级和故障处理见 [原生 OCR 模块说明](../plugins/perception/native/README.md)。
 
 ## 自动化及集成验证
 
@@ -57,7 +57,7 @@
 构建和 smoke 命令见模块说明。客户端 sanitizer 构建可增加：
 
 ```bash
-cmake -S src/plugins/perception/tests/ocr-client -B /tmp/opencode/ocr-asan -G Ninja \
+cmake -S plugins/perception/tests/ocr-client -B /tmp/opencode/ocr-asan -G Ninja \
   -DCMAKE_BUILD_TYPE=Debug \
   -DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer -fno-gnu-unique' \
   -DCMAKE_EXE_LINKER_FLAGS='-fsanitize=address,undefined' \

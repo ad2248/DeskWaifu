@@ -44,7 +44,7 @@ def main():
     parser.add_argument("--logs", type=Path, required=True)
     parser.add_argument("--compositor", choices=("sway", "kwin"), default="sway")
     args = parser.parse_args()
-    root = Path(__file__).resolve().parents[4]
+    root = Path(__file__).resolve().parents[3]
     args.logs.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="ocr-smoke-", dir="/tmp/opencode") as temporary:
         runtime = Path(temporary)

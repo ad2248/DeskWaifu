@@ -48,9 +48,9 @@ TAB 是导航分组，不是插件边界；SDK 允许一个插件注册多个 TA
 | 无 TAB | `perception/perception.so` | 仅后端 | 图像读取、OCR 和截图 |
 | 无 TAB | `ipc/ipc.so` | 后端 + GUI | Unix socket、命令网关和 GUI 传输客户端 |
 
-源码与构建归属以模块为准：`src/plugins/<name>/gui/` 保存所属页面及专用辅助类，
-`src/plugins/<name>/CMakeLists.txt` 组装各模块的后端/GUI 角色，
-`src/plugins/CMakeLists.txt` 保留公共构建规则与子目录选择。`platform/control/` 只组装控制端宿主，
+源码与构建归属以模块为准：`plugins/<name>/gui/` 保存所属页面及专用辅助类，
+`plugins/<name>/CMakeLists.txt` 组装各模块的后端/GUI 角色，
+`plugins/CMakeLists.txt` 保留公共构建规则与子目录选择。`platform/control/` 只组装控制端宿主，
 不再反向给语音模块追加 GUI 文件。进程启动/重启辅助类归 `system/gui`，
 模型快捷键控件归 `interaction/gui`。模型、窗口、输入等后台能力由 `desktop`
 插件拥有，不由同名 GUI 模块或平台组装。
