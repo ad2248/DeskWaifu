@@ -44,8 +44,8 @@ RGBA 从模型 context 读回 CPU 再上传窗口 FBO；不是共享纹理。窗
 
 ```sh
 ctest --test-dir build-qt --output-on-failure
-python3 tests/qt_headless_smoke.py build-qt /path/to/CubismSdkForNative-5-r.5
-python3 tests/qt_headless_smoke.py build-qt /path/to/CubismSdkForNative-5-r.5 --scale 1.5
+python3 plugins/desktop/tests/qt_headless_smoke.py build-qt /path/to/CubismSdkForNative-5-r.5
+python3 plugins/desktop/tests/qt_headless_smoke.py build-qt /path/to/CubismSdkForNative-5-r.5 --scale 1.5
 ```
 
 这些是可执行入口，不是本次通过记录。smoke 要求 BUILD_TESTING、Python、支持虚拟输出/fake-input v3 的 kwin_wayland、dbus-run-session 和 SDK Haru 模型；它创建私有 D-Bus、双虚拟输出、runtime/config 并使用软件渲染。非 1 倍缩放必须有 kscreen-doctor；存在该命令时还执行输出禁用/重启。输入仅注入私有合成器，不能连接用户桌面。日志在 `BUILD_DIR/qt-smoke-logs/<scale>/run-*/`。

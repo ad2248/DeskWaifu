@@ -13,8 +13,21 @@ options=('!debug')
 source=('deskwaifu.tar.gz' 'private-deps.tar.gz' 'system-onnxruntime.patch')
 sha256sums=('@SOURCE_SHA@' '@PRIVATE_SHA@' '@ORT_PATCH_SHA@')
 
+_ocr_source_dir() {
+  local native="$srcdir/deskwaifu/plugins/perception/native"
+  if [[ ! -f "$native/CMakeLists.txt" ]]; then
+    native="$srcdir/deskwaifu/src/plugins/perception/native"
+  fi
+  if [[ ! -f "$native/CMakeLists.txt" ]]; then
+    printf '%s\n' 'OCR source CMakeLists.txt not found in selected release tag' >&2
+    return 1
+  fi
+  printf '%s\n' "$native"
+}
+
 prepare() {
-  local native="$srcdir/deskwaifu/src/plugins/perception/native"
+  local native
+  native=$(_ocr_source_dir) || return
   # Distribution build patch for historical tags, never modify the tag checkout
   # or restore its private SDK dependency. Current tags already use system ORT.
   if grep -q 'set(ONNXRUNTIME_ROOT ' "$native/CMakeLists.txt"; then
@@ -23,6 +36,8 @@ prepare() {
 }
 
 build() {
+  local ocr_source
+  ocr_source=$(_ocr_source_dir) || return
   cmake -S "$srcdir/deskwaifu" -B "$srcdir/build-main" -G Ninja \
     -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib \
     -DBUILD_TESTING=OFF -DDESKWAIFU_BUILD_OCR=OFF \
@@ -33,7 +48,7 @@ build() {
     -DSDK_ROOT_PATH="$srcdir/private-deps/CubismSdkForNative-5-r.5" \
     -DGLEW_PATH="$srcdir/private-deps/glew"
   cmake --build "$srcdir/build-main" --parallel "${CMAKE_BUILD_PARALLEL_LEVEL:-4}"
-  cmake -S "$srcdir/deskwaifu/src/plugins/perception/native" -B "$srcdir/build-ocr" -G Ninja \
+  cmake -S "$ocr_source" -B "$srcdir/build-ocr" -G Ninja \
     -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib \
     -DBUILD_TESTING=OFF
   cmake --build "$srcdir/build-ocr" --parallel "${CMAKE_BUILD_PARALLEL_LEVEL:-4}"

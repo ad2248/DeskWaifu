@@ -31,11 +31,11 @@
 
 ## 现行设计与证据边界
 
-[LAppIPC](../../src/plugins/ipc/private/processor/ipc/LAppIPC.cpp)负责传输；[CommandProcessor](../../src/plugins/ipc/private/processor/command/CommandProcessor.hpp)通过 `command.<name>/v1` 路由 SDK 请求并关联原连接。断线取消待决请求，但不能撤销领域已发生的副作用。GUI 传输由 IPC 插件提供，页面只使用公开 SDK 服务。
+[LAppIPC](../../plugins/ipc/private/processor/ipc/LAppIPC.cpp)负责传输；[CommandProcessor](../../plugins/ipc/private/processor/command/CommandProcessor.hpp)通过 `command.<name>/v1` 路由 SDK 请求并关联原连接。断线取消待决请求，但不能撤销领域已发生的副作用。GUI 传输由 IPC 插件提供，页面只使用公开 SDK 服务。
 
-- [IpcTransportTest.cpp](../../src/plugins/ipc/tests/IpcTransportTest.cpp)、[IpcBoundedTransportTest.cpp](../../src/plugins/ipc/tests/IpcBoundedTransportTest.cpp)：真实 Unix socket 的分片、半关闭、预算、背压、析构和其他连接进展。
-- [CommandGatewayTest.cpp](../../src/plugins/ipc/tests/CommandGatewayTest.cpp)、[JsonCommandTest.cpp](../../platform/tests/JsonCommandTest.cpp)：公开能力路由、非法输入、请求/响应关联。
-- [CLI 测试](../../tests/test_ctl.py)、[DeskWaifuClientTest.cpp](../../src/plugins/ipc/tests/DeskWaifuClientTest.cpp)：退出码、序列化、重连、修改结果未知等客户端语义。
-- [DesktopOwnershipTest.cpp](../../src/plugins/desktop/tests/DesktopOwnershipTest.cpp)及私有 compositor smoke：控制源仲裁、模型切换和实际命令管线。
+- [IpcTransportTest.cpp](../../plugins/ipc/tests/IpcTransportTest.cpp)、[IpcBoundedTransportTest.cpp](../../plugins/ipc/tests/IpcBoundedTransportTest.cpp)：真实 Unix socket 的分片、半关闭、预算、背压、析构和其他连接进展。
+- [CommandGatewayTest.cpp](../../plugins/ipc/tests/CommandGatewayTest.cpp)、[JsonCommandTest.cpp](../../platform/tests/JsonCommandTest.cpp)：公开能力路由、非法输入、请求/响应关联。
+- [CLI 测试](../../plugins/ipc/tests/test_ctl.py)、[DeskWaifuClientTest.cpp](../../plugins/ipc/tests/DeskWaifuClientTest.cpp)：退出码、序列化、重连、修改结果未知等客户端语义。
+- [DesktopOwnershipTest.cpp](../../plugins/desktop/tests/DesktopOwnershipTest.cpp)及私有 compositor smoke：控制源仲裁、模型切换和实际命令管线。
 
 单测或合成提供者通过不证明所有领域命令正确；本机 socket 和进程锁不是远程认证或完整安全边界。当前预算是实现约束，不对未知未来版本客户端承诺无限兼容。

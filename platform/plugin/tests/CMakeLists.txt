@@ -1,4 +1,15 @@
 find_package(Threads REQUIRED)
+if(TARGET deskwaifu AND CMAKE_READELF AND CMAKE_NM)
+  add_test(NAME plugin-host-link COMMAND ${CMAKE_COMMAND}
+    -DHOST=$<TARGET_FILE:deskwaifu> -DREADELF=${CMAKE_READELF} -DNM=${CMAKE_NM}
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckPluginHostLink.cmake)
+endif()
+find_package(Python3 COMPONENTS Interpreter)
+if(Python3_Interpreter_FOUND)
+  add_test(NAME plugin-host-standalone-configure COMMAND ${Python3_EXECUTABLE} -B
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_host_configuration.py)
+  set_tests_properties(plugin-host-standalone-configure PROPERTIES TIMEOUT 60)
+endif()
 
 foreach(kind good consumer init_fail start_fail bad_abi bad_build_abi bad_entry bad_debug_abi)
   add_library(plugin-fixture-${kind} MODULE Fixture.cpp)

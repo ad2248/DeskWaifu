@@ -42,7 +42,7 @@ https://github.com/user-attachments/assets/95dfdedc-4957-4bb7-b79f-f3addd97a6db
 - **Configurable model directory** — load models from any path via CLI flag or XDG config
 - **JSON configuration** — customize behavior via `config.json` (default model, emotion timeout, additional model dirs, scale/position, window size)
 - **IPC control** — Unix domain socket API for external control (model switching, expressions, motions, lipsync, zoom, position, look-at direction)
-- **Optional local OCR (experimental)** — a C++/ONNX Runtime module owned by the perception plugin, running on a background thread inside the application process. The platform does not directly link OCR engine dependencies. Builds include the module by default; models are not bundled. See [OCR package and lifecycle](src/plugins/perception/native/README.md).
+- **Optional local OCR (experimental)** — a C++/ONNX Runtime module owned by the perception plugin, running on a background thread inside the application process. The platform does not directly link OCR engine dependencies. Builds include the module by default; models are not bundled. See [OCR package and lifecycle](plugins/perception/native/README.md).
 
 ## Prerequisites
 
@@ -169,7 +169,7 @@ cd DeskWaifu
    DeskWaifu/
    ├── CubismSdkForNative-5-r.5/   <-- extracted SDK here
    ├── CMakeLists.txt
-   ├── src/
+   ├── plugins/
    └── ...
    ```
 4. If the folder name differs from `CubismSdkForNative-5-r.5`, update `SDK_ROOT_PATH` in `CMakeLists.txt`.
@@ -186,7 +186,7 @@ sudo pacman -S --needed opencv yaml-cpp onnxruntime-cpu
 
 Development, builds and installed modules all use the system ONNX Runtime;
 no standalone SDK or bundled runtime is used. See
-[the OCR build instructions](src/plugins/perception/native/README.md).
+[the OCR build instructions](plugins/perception/native/README.md).
 OCR models are **not** required for compiling or packaging. To explicitly omit
 the OCR module, configure with `-DDESKWAIFU_BUILD_OCR=OFF` instead.
 
@@ -362,7 +362,7 @@ actual window back buffer before swapping, and switches outputs when available.
 The control window exposes the same model, expression, motion, lip-sync,
 transform, visibility, skin, and look-at commands as `deskwaifu-ctl`. Its
 shell layout is stored in `platform/control/MainWindow.ui`; plugin pages live in
-`src/plugins/<name>/gui/` and can be edited with Qt Designer.
+`plugins/<name>/gui/` and can be edited with Qt Designer.
 
 The five top-level tabs are:
 
@@ -1087,7 +1087,7 @@ The default models directory is `$XDG_CONFIG_HOME/deskwaifu/models/` (fallback: 
 deskwaifu/
 ├── sdk/                    # Public plugin APIs, event runtime and shared contracts
 ├── platform/               # Process/GUI hosts, discovery, lifecycle and platform tests
-├── src/plugins/            # Independently built business modules and their tests
+├── plugins/                # Independently built business modules and their tests
 │   ├── desktop/            # Model, rendering, window, interaction and input
 │   ├── perception/         # Image/OCR/screenshot services; optional in-process OCR module
 │   ├── ipc/                # Backend socket transport, command gateway and GUI client
