@@ -67,3 +67,10 @@ ENV LIBGL_ALWAYS_SOFTWARE=1 \
 
 # Shared package metadata, independent of the orchestration host/account.
 RUN printf '\nPACKAGER="DeskWaifu reproducible build"\n' >> /etc/makepkg.conf
+
+# PRoot is not in Arch's official repositories. Pin the upstream static binary;
+# it permits dependency-only install roots inside the unprivileged CI container.
+RUN curl --fail --location --retry 3 --proto '=https' --proto-redir '=https' \
+      https://github.com/proot-me/proot/releases/download/v5.5.0/proot -o /usr/local/bin/proot \
+    && echo 'db185300a9daabbce86aca7632d8c7fdc4249f6f153171954013b70c5f491ec0  /usr/local/bin/proot' | sha256sum -c - \
+    && chmod 755 /usr/local/bin/proot

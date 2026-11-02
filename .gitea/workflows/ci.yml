@@ -55,6 +55,9 @@ jobs:
       - name: Build packages using the release entry point
         run: bash "$RELEASE_TOOLS_DIR/scripts/release-build.sh"
 
+      - name: Test four installed packages in order
+        run: python3 "$RELEASE_TOOLS_DIR/scripts/test-installed-packages.py" release-assets "$RELEASE_TAG"
+
       - name: Rebuild independently and compare complete package bytes
         run: |
           mv release-assets package-reference
@@ -64,12 +67,9 @@ jobs:
             cmp "package-reference/$(basename "$package")" "$package"
           done
 
-      - name: Preserve verified packages
-        uses: https://code.forgejo.org/actions/upload-artifact@ff15f0306b3f739f7b6fd43fb5d26cd321bd4de5 # v3
-        with:
-          name: arch-packages
-          path: release-assets/
-          if-no-files-found: error
+      - name: Clean temporary packages
+        if: always()
+        run: rm -f release-assets/*.pkg.tar.zst package-reference/*.pkg.tar.zst
 
   test:
     name: Arch build and headless Wayland test

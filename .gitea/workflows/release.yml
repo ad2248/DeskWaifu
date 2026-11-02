@@ -59,12 +59,13 @@ jobs:
           RELEASE_NOTES: ${{ github.event.inputs.release_notes }}
         run: python3 scripts/release-source.py
 
-      - name: Test preserved release tooling
-        run: python3 -B "$RELEASE_TOOLS_DIR/tests/test_release_packaging.py" -v
-
       - name: Acquire verified sources and build unprivileged Arch packages
         if: ${{ github.event.inputs.notes_only != 'true' }}
         run: bash "$RELEASE_TOOLS_DIR/scripts/release-build.sh"
+
+      - name: Discard test packages without executing tests
+        if: ${{ github.event.inputs.notes_only != 'true' }}
+        run: python3 "$RELEASE_TOOLS_DIR/scripts/release-packaging.py" prune-tests release-assets "$RELEASE_TAG" "$RELEASE_COMMIT"
 
       - name: Upload verified packages to GitHub release
         # Never expose this credential to checkout, dependency acquisition,
@@ -77,3 +78,7 @@ jobs:
           args=()
           if [[ "$RELEASE_NOTES_ONLY" == true ]]; then args+=(--notes-only); fi
           python3 "$RELEASE_TOOLS_DIR/scripts/release-upload.py" release-assets "$RELEASE_TAG" "$RELEASE_COMMIT" "${args[@]}"
+
+      - name: Clean temporary packages
+        if: always()
+        run: rm -f release-assets/*.pkg.tar.zst

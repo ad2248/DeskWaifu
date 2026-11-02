@@ -39,6 +39,8 @@ podman run --rm "$IMAGE" bash -ceu '
     bsdtar --version
     python3 --version
     command -v fakeroot runuser useradd userdel fuser
+    proot --version
+    runuser -u nobody -- proot -r / -w /tmp /usr/bin/true
     pkgconf --modversion yaml-cpp
     ocr_check=$(mktemp -d)
     printf "%s\n" "cmake_minimum_required(VERSION 3.25)" \
@@ -67,7 +69,7 @@ podman run --rm "$IMAGE" bash -ceu '
 IMAGE_ID=$(podman image inspect "$IMAGE" --format '{{.Id}}')
 IMAGE_ID="sha256:${IMAGE_ID#sha256:}"
 echo "Transferring $IMAGE privately to $RUNNER_HOST"
-podman save --format oci-archive "$IMAGE" | ssh "$RUNNER_HOST" podman load
+podman save --format oci-archive "$IMAGE" | gzip -1 | ssh "$RUNNER_HOST" 'gzip -d | podman load'
 ssh "$RUNNER_HOST" podman image exists "$IMAGE_ID"
 echo "Configure the runner label as (force_pull must remain false):"
 echo "  deskwaifu-arch:docker://$IMAGE_ID"

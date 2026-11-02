@@ -29,6 +29,11 @@ cleanup() {
 }
 trap cleanup EXIT
 mkdir -p "$work/home" "$work/packages" "$work/private-deps"
+mkdir -p "$work/release-tools/scripts" "$work/release-tools/cmake" "$work/release-tools/tests"
+cp "$tools_root/scripts/prepare-installed-tests.py" "$tools_root/scripts/run-installed-tests.py" \
+    "$tools_root/scripts/test-environment.py" "$work/release-tools/scripts/"
+cp "$tools_root/cmake/InstallTests.cmake" "$work/release-tools/cmake/"
+cp "$tools_root/tests/gate.json" "$work/release-tools/tests/"
 
 # Acquisition stage: the only network download in this script.
 # The private SDK/GLEW are already in the runner image, not fetched during build.
@@ -39,6 +44,8 @@ export SOURCE_DATE_EPOCH
 SOURCE_DATE_EPOCH=$(git show -s --format=%ct "$RELEASE_COMMIT")
 tar --sort=name --mtime="@$SOURCE_DATE_EPOCH" --owner=0 --group=0 --numeric-owner \
     -czf "$work/private-deps.tar.gz" -C "$work" private-deps
+tar --sort=name --mtime="@$SOURCE_DATE_EPOCH" --owner=0 --group=0 --numeric-owner \
+    -czf "$work/release-tools.tar.gz" -C "$work" release-tools
 ort=onnxruntime-linux-x64-1.31.0.tgz
 curl --fail --location --retry 3 --proto '=https' --proto-redir '=https' \
     "https://github.com/microsoft/onnxruntime/releases/download/v1.31.0/$ort" -o "$work/$ort"

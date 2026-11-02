@@ -51,6 +51,22 @@ def fixture_files(ocr=False):
 
 
 class PackagingTest(unittest.TestCase):
+    def test_test_packages_are_exact_versioned_and_do_not_leak_into_runtime(self):
+        for name, runtime, directory in (("deskwaifu-tests", "deskwaifu-bin", "tests"),
+                                         ("deskwaifu-ocr-tests", "deskwaifu-ocr-bin", "ocr-tests")):
+            info = {"pkgname": [name], "pkgver": ["1.2.3-1"], "arch": ["x86_64"],
+                    "depend": [f"{runtime}=1.2.3-1"]}
+            files = {f"usr/lib/deskwaifu/{directory}/run.py", f"usr/lib/deskwaifu/{directory}/installed-tests.json"}
+            packaging.verify_content(name, info, files, "1.2.3")
+            with self.assertRaisesRegex(ValueError, "exact runtime"):
+                packaging.verify_content(name, dict(info, depend=[]), files, "1.2.3")
+            with self.assertRaisesRegex(ValueError, "must not duplicate"):
+                packaging.verify_content(name, info, files | {"usr/bin/deskwaifu"}, "1.2.3")
+        info = {"pkgname": ["deskwaifu-bin"], "pkgver": ["1.2.3-1"], "arch": ["x86_64"],
+                "depend": sorted(packaging.MAIN_DEPENDS)}
+        with self.assertRaisesRegex(ValueError, "must not contain tests"):
+            packaging.verify_content("deskwaifu-bin", info, fixture_files() | {"usr/lib/deskwaifu/tests/run.py"}, "1.2.3")
+
     def test_ci_and_release_share_packaging_and_fixed_dependencies(self):
         ci = (ROOT / ".gitea/workflows/ci.yml").read_text()
         release = (ROOT / ".gitea/workflows/release.yml").read_text()
@@ -60,7 +76,11 @@ class PackagingTest(unittest.TestCase):
             self.assertIn("runs-on: deskwaifu-arch", workflow)
         self.assertIn("diff -u package-reference/SHA256SUMS release-assets/SHA256SUMS", ci)
         self.assertIn('cmp "package-reference/$(basename "$package")" "$package"', ci)
-        self.assertIn("arch-packages", ci)
+        self.assertIn('scripts/test-installed-packages.py" release-assets', ci)
+        self.assertNotIn("name: arch-packages", ci)
+        self.assertIn("Clean temporary packages", ci)
+        self.assertNotIn("Test preserved release tooling", release)
+        self.assertIn("Discard test packages without executing tests", release)
         image = (ROOT / "Containerfile").read_text()
         acceptance = (ROOT / "scripts/rebuild-ci-image.sh").read_text()
         for dependency in ("opencv", "yaml-cpp", "psmisc", "python", "libarchive"):
@@ -109,6 +129,7 @@ class PackagingTest(unittest.TestCase):
             acquired.mkdir()
             (acquired / "deskwaifu.tar.gz").write_bytes(b"source")
             (acquired / "private-deps.tar.gz").write_bytes(b"deps")
+            (acquired / "release-tools.tar.gz").write_bytes(b"tools")
             subprocess.run([sys.executable, "-B", str(tools / "scripts/release-packaging.py"),
                             "prepare", str(acquired), "0.1.0", commit], check=True)
             self.assertIn("pkgver=0.1.0\n", (acquired / "PKGBUILD").read_text())
@@ -124,6 +145,7 @@ class PackagingTest(unittest.TestCase):
                     work = Path(temporary)
                     (work / "deskwaifu.tar.gz").write_bytes(b"source")
                     (work / "private-deps.tar.gz").write_bytes(b"deps")
+                    (work / "release-tools.tar.gz").write_bytes(b"tools")
                     packaging.prepare(work, tag, COMMIT)
                     result = subprocess.check_output(["bash", "-c", '. "$1"; printf "%s" "$pkgver"',
                                                       "_", str(work / "PKGBUILD")], cwd=work, text=True)
@@ -136,6 +158,7 @@ class PackagingTest(unittest.TestCase):
             work = Path(temporary)
             (work / "deskwaifu.tar.gz").write_bytes(b"source")
             (work / "private-deps.tar.gz").write_bytes(b"deps")
+            (work / "release-tools.tar.gz").write_bytes(b"tools")
             for tag in ("release/2026", "v1.2.3-rc.1", "发布"):
                 with self.subTest(tag=tag):
                     packaging.prepare(work, tag, COMMIT)
@@ -283,6 +306,11 @@ class PackagingTest(unittest.TestCase):
                 "private-deps/glew/LICENSE.txt": "fixture"})
             sdk = work / "onnxruntime-linux-x64-1.31.0.tgz"
             archive(sdk, {"onnxruntime-linux-x64-1.31.0/LICENSE": "fixture"})
+            archive(work / "release-tools.tar.gz", {
+                "release-tools/scripts/test-environment.py": "# fixture\n",
+                "release-tools/scripts/prepare-installed-tests.py":
+                    "import pathlib,sys\np=pathlib.Path(sys.argv[1]);p.mkdir(exist_ok=True)\n"
+                    "(p/'installed-scripts').mkdir(exist_ok=True)\n"})
             packaging.prepare(work, TAG, COMMIT)
             pkgbuild = work / "PKGBUILD"
             # Only the fixture SDK checksum is substituted. Production remains
@@ -294,13 +322,16 @@ class PackagingTest(unittest.TestCase):
             self.assertIn(f"depends = deskwaifu-bin={TAG}-1", srcinfo)
             self.assertIn("depends = yaml-cpp", srcinfo)
             self.assertIn("makedepends = opencv", srcinfo)
-            self.assertEqual(srcinfo.count("pkgname = "), 2)
+            self.assertEqual(srcinfo.count("pkgname = "), 4)
             bin_dir = work / "bin"
             bin_dir.mkdir()
             fake = bin_dir / "cmake"
             fake.write_text("#!/usr/bin/env python3\nimport os, pathlib, sys\n"
                             "if '--install' not in sys.argv: sys.exit(0)\n"
                             f"files = {sorted(fixture_files())!r} if 'build-main' in sys.argv[2] else {sorted(fixture_files(True))!r}\n"
+                            "if sys.argv[-1] in ('DeskWaifuTests','DeskWaifuOCRTests'):\n"
+                            " prefix='usr/lib/deskwaifu/' + ('ocr-tests' if sys.argv[-1]=='DeskWaifuOCRTests' else 'tests')\n"
+                            " files=[prefix+'/run.py',prefix+'/installed-tests.json']\n"
                             "for name in files:\n"
                             " p = pathlib.Path(os.environ['DESTDIR']) / name\n"
                             " p.parent.mkdir(parents=True, exist_ok=True)\n"
@@ -311,13 +342,14 @@ class PackagingTest(unittest.TestCase):
             result = subprocess.run(["makepkg", "--nodeps", "--noconfirm"], cwd=work, env=env,
                                     text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
             self.assertEqual(result.returncode, 0, result.stdout)
-            packaging.verify(work / "packages", TAG, COMMIT)
+            packaging.verify(work / "packages", TAG, COMMIT, include_tests=True)
             first_build = {path.name: path.read_bytes() for path in (work / "packages").glob("*.pkg.tar.zst")}
             result = subprocess.run(["makepkg", "--nodeps", "--cleanbuild", "--force", "--noconfirm"],
                                     cwd=work, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
             self.assertEqual(result.returncode, 0, result.stdout)
             self.assertEqual(first_build, {path.name: path.read_bytes()
                                           for path in (work / "packages").glob("*.pkg.tar.zst")})
+            packaging.prune_tests(work / "packages", TAG, COMMIT)
             assets = upload.load_assets(work / "packages", TAG, COMMIT)
             self.assertEqual(len(assets), 4)
             package = next((work / "packages").glob("deskwaifu-ocr-bin-*.pkg.tar.zst"))
@@ -340,7 +372,7 @@ class PackagingTest(unittest.TestCase):
         self.assertEqual(workflow.count("RELEASE_NOTES: ${{ github.event.inputs.release_notes }}"), 2)
         self.assertNotIn("${{ github.event.inputs.release_notes }}", "\n".join(
             line for line in workflow.splitlines() if "RELEASE_NOTES:" not in line))
-        self.assertIn('python3 -B "$RELEASE_TOOLS_DIR/tests/test_release_packaging.py"', workflow)
+        self.assertNotIn('python3 -B "$RELEASE_TOOLS_DIR/tests/test_release_packaging.py"', workflow)
         self.assertIn('bash "$RELEASE_TOOLS_DIR/scripts/release-build.sh"', workflow)
         self.assertIn('python3 "$RELEASE_TOOLS_DIR/scripts/release-upload.py"', workflow)
         job_env = workflow.split("    env:\n", 1)[1].split("    steps:", 1)[0]

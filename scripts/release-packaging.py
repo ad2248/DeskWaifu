@@ -14,6 +14,7 @@ MAIN_DEPENDS = {"glibc", "gcc-libs", "wayland", "libglvnd", "systemd-libs", "qt6
                 "layer-shell-qt>=6.6", "bash", "python", "psmisc"}
 SDK_LIBRARIES = {f"usr/lib/libdeskwaifu_{name}.so.{version}" for name in ("events", "plugin_sdk", "gui_plugin_sdk")
                  for version in ("2", "2.0")}
+PACKAGE_NAMES = ("deskwaifu-bin", "deskwaifu-ocr-bin", "deskwaifu-tests", "deskwaifu-ocr-tests")
 
 
 def digest(path):
@@ -24,6 +25,7 @@ def digest(path):
 def prepare(directory, tag, commit):
     template = (ROOT / "packaging/release/PKGBUILD.in").read_text()
     for key, value in {"SOURCE_SHA": digest(directory / "deskwaifu.tar.gz"),
+                       "TOOLS_SHA": digest(directory / "release-tools.tar.gz"),
                        "PRIVATE_SHA": digest(directory / "private-deps.tar.gz"), "PKGVER": shlex.quote(tag)}.items():
         template = template.replace(f"@{key}@", value)
     (directory / "PKGBUILD").write_text(template)
@@ -43,6 +45,19 @@ def verify_content(name, info, files, version):
         raise ValueError(f"Wrong package identity/version/architecture: {name}")
     directories = {path.removeprefix("./").rstrip("/") for path in files if path.endswith("/")}
     files = {path.removeprefix("./").rstrip("/") for path in files}
+    if name in ("deskwaifu-tests", "deskwaifu-ocr-tests"):
+        ocr = name == "deskwaifu-ocr-tests"
+        prefix = "usr/lib/deskwaifu/" + ("ocr-tests" if ocr else "tests")
+        dependency = "deskwaifu-ocr-bin" if ocr else "deskwaifu-bin"
+        if f"{dependency}={version}-1" not in info.get("depend", []):
+            raise ValueError("Test package needs the exact runtime package version")
+        if not {f"{prefix}/run.py", f"{prefix}/installed-tests.json"} <= files:
+            raise ValueError("Missing installed test runner/registry")
+        if any(path.startswith("usr/bin/") or path.startswith("usr/lib/deskwaifu/plugins/") for path in files):
+            raise ValueError("Test packages must not duplicate production files")
+        return
+    if any("/tests/" in path or "/ocr-tests/" in path for path in files):
+        raise ValueError("Runtime packages must not contain tests")
     if any(path.endswith((".onnx", ".pdiparams", ".pdmodel")) or
            (path.startswith("usr/share/deskwaifu/ocr/") and
             not (path == "usr/share/deskwaifu/ocr/models" and path in directories)) or
@@ -70,12 +85,12 @@ def verify_content(name, info, files, version):
         raise ValueError(f"Missing package files: {sorted(required - files)}")
 
 
-def verify(directory, tag, commit):
+def verify(directory, tag, commit, include_tests=False):
     version = tag
     packages = sorted(directory.glob("*.pkg.tar.zst"))
-    expected = {f"{name}-{version}-1-x86_64.pkg.tar.zst": name for name in ("deskwaifu-bin", "deskwaifu-ocr-bin")}
+    expected = {f"{name}-{version}-1-x86_64.pkg.tar.zst": name for name in (PACKAGE_NAMES if include_tests else PACKAGE_NAMES[:2])}
     if {path.name for path in packages} != expected.keys():
-        raise ValueError("Expected exactly the two versioned x86_64 release packages")
+        raise ValueError("Unexpected or missing versioned x86_64 packages")
     for path in packages:
         info = metadata(subprocess.check_output(["bsdtar", "-xOf", str(path), ".PKGINFO"], text=True))
         files = subprocess.check_output(["bsdtar", "-tf", str(path)], text=True).splitlines()
@@ -83,15 +98,24 @@ def verify(directory, tag, commit):
     manifest = directory / "release-metadata.json"
     manifest.write_text(json.dumps({"tag": tag, "commit": commit, "pkgver": version, "pkgrel": 1,
                                     "ocr_models_included": False}, sort_keys=True, indent=2) + "\n")
-    assets = sorted([*packages, manifest])
+    assets = sorted([*(path for path in packages if expected[path.name] in PACKAGE_NAMES[:2]), manifest])
     (directory / "SHA256SUMS").write_text("".join(f"{digest(path)}  {path.name}\n" for path in assets))
+
+
+def prune_tests(directory, tag, commit):
+    verify(directory, tag, commit, include_tests=True)
+    for name in PACKAGE_NAMES[2:]:
+        (directory / f"{name}-{tag}-1-x86_64.pkg.tar.zst").unlink()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("prepare", "verify"))
+    parser.add_argument("command", choices=("prepare", "verify", "prune-tests"))
     parser.add_argument("directory", type=Path)
     parser.add_argument("tag")
     parser.add_argument("commit")
     args = parser.parse_args()
-    {"prepare": prepare, "verify": verify}[args.command](args.directory, args.tag, args.commit)
+    if args.command == "verify":
+        verify(args.directory, args.tag, args.commit, include_tests=True)
+    else:
+        {"prepare": prepare, "prune-tests": prune_tests}[args.command](args.directory, args.tag, args.commit)
