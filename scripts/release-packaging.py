@@ -5,6 +5,7 @@ import hashlib
 import json
 from pathlib import Path
 import shlex
+import shutil
 import subprocess
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -22,9 +23,12 @@ def digest(path):
 
 
 def prepare(directory, tag, commit):
+    ort_patch = directory / "system-onnxruntime.patch"
+    shutil.copy2(ROOT / "packaging/release/system-onnxruntime.patch", ort_patch)
     template = (ROOT / "packaging/release/PKGBUILD.in").read_text()
     for key, value in {"SOURCE_SHA": digest(directory / "deskwaifu.tar.gz"),
-                       "PRIVATE_SHA": digest(directory / "private-deps.tar.gz"), "PKGVER": shlex.quote(tag)}.items():
+                       "PRIVATE_SHA": digest(directory / "private-deps.tar.gz"),
+                       "ORT_PATCH_SHA": digest(ort_patch), "PKGVER": shlex.quote(tag)}.items():
         template = template.replace(f"@{key}@", value)
     (directory / "PKGBUILD").write_text(template)
 
@@ -43,6 +47,9 @@ def verify_content(name, info, files, version):
         raise ValueError(f"Wrong package identity/version/architecture: {name}")
     directories = {path.removeprefix("./").rstrip("/") for path in files if path.endswith("/")}
     files = {path.removeprefix("./").rstrip("/") for path in files}
+    if any(Path(path).name.startswith("libonnxruntime") or
+           path.startswith("usr/share/licenses/deskwaifu-ocr/onnxruntime/") for path in files):
+        raise ValueError("ONNX Runtime must be a system dependency, not bundled")
     if any(path.endswith((".onnx", ".pdiparams", ".pdmodel")) or
            (path.startswith("usr/share/deskwaifu/ocr/") and
             not (path == "usr/share/deskwaifu/ocr/models" and path in directories)) or
@@ -59,11 +66,11 @@ def verify_content(name, info, files, version):
         if not MAIN_DEPENDS <= set(info.get("depend", [])):
             raise ValueError(f"Missing main runtime dependencies: {sorted(MAIN_DEPENDS - set(info.get('depend', [])))}")
     else:
-        required = {"usr/lib/deskwaifu/ocr/deskwaifu-ocr.so", "usr/lib/deskwaifu/ocr/libonnxruntime.so.1"}
+        required = {"usr/lib/deskwaifu/ocr/deskwaifu-ocr.so"}
         if "usr/libexec/deskwaifu-ocr" in files:
             raise ValueError("OCR package must not contain the retired helper executable")
-        if not {f"deskwaifu-bin={version}-1", "opencv", "yaml-cpp"} <= set(info.get("depend", [])):
-            raise ValueError("OCR package needs the exact main package version, OpenCV and yaml-cpp")
+        if not {f"deskwaifu-bin={version}-1", "opencv", "yaml-cpp", "onnxruntime-cpu"} <= set(info.get("depend", [])):
+            raise ValueError("OCR package needs the exact main package version, OpenCV, yaml-cpp and system onnxruntime-cpu")
         if any(path.startswith("usr/lib/deskwaifu/plugins/") for path in files):
             raise ValueError("OCR package must not duplicate main plugins")
     if not required <= files:

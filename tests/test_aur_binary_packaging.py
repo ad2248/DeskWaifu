@@ -75,8 +75,8 @@ class AssetTest(unittest.TestCase):
                 files.update(PRODUCER.SDK_LIBRARIES)
                 depends = PRODUCER.MAIN_DEPENDS
             else:
-                files = {"usr/lib/deskwaifu/ocr/deskwaifu-ocr.so", "usr/lib/deskwaifu/ocr/libonnxruntime.so.1"}
-                depends = {"deskwaifu-bin=0.1.0-1", "opencv", "yaml-cpp"}
+                files = {"usr/lib/deskwaifu/ocr/deskwaifu-ocr.so"}
+                depends = {"deskwaifu-bin=0.1.0-1", "opencv", "yaml-cpp", "onnxruntime-cpu"}
             info = f"pkgname = {name}\npkgver = 0.1.0-1\narch = x86_64\n"
             info += "".join(f"depend = {dependency}\n" for dependency in sorted(depends))
             archive = self.directory / f"{name}-0.1.0-1-x86_64.pkg.tar.zst"

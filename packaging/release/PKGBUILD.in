@@ -8,10 +8,19 @@ pkgdesc='DeskWaifu application and all default plugins'
 arch=('x86_64')
 url='https://github.com/ad2248/DeskWaifu'
 license=('LicenseRef-Live2D-Open-Software' 'LicenseRef-Live2D-Proprietary' 'BSD-3-Clause' 'MIT' 'Unlicense')
-makedepends=('cmake' 'ninja' 'qt6-base' 'qt6-wayland' 'qt6-scxml' 'qt6-websockets' 'qt6-multimedia' 'layer-shell-qt' 'wayland' 'libglvnd' 'systemd-libs' 'opencv' 'yaml-cpp')
+makedepends=('cmake' 'ninja' 'qt6-base' 'qt6-wayland' 'qt6-scxml' 'qt6-websockets' 'qt6-multimedia' 'layer-shell-qt' 'wayland' 'libglvnd' 'systemd-libs' 'opencv' 'yaml-cpp' 'onnxruntime-cpu')
 options=('!debug')
-source=('deskwaifu.tar.gz' 'private-deps.tar.gz' 'onnxruntime-linux-x64-1.31.0.tgz')
-sha256sums=('@SOURCE_SHA@' '@PRIVATE_SHA@' 'cc5c72baf5ae5c8238a6841f0897227be2d02826b9cf98eaf02fdefaeeb03a57')
+source=('deskwaifu.tar.gz' 'private-deps.tar.gz' 'system-onnxruntime.patch')
+sha256sums=('@SOURCE_SHA@' '@PRIVATE_SHA@' '@ORT_PATCH_SHA@')
+
+prepare() {
+  local native="$srcdir/deskwaifu/src/plugins/perception/native"
+  # Distribution build patch for historical tags, never modify the tag checkout
+  # or restore its private SDK dependency. Current tags already use system ORT.
+  if grep -q 'set(ONNXRUNTIME_ROOT ' "$native/CMakeLists.txt"; then
+    patch --batch --forward -p1 -d "$native" -i "$srcdir/system-onnxruntime.patch"
+  fi
+}
 
 build() {
   cmake -S "$srcdir/deskwaifu" -B "$srcdir/build-main" -G Ninja \
@@ -26,8 +35,7 @@ build() {
   cmake --build "$srcdir/build-main" --parallel "${CMAKE_BUILD_PARALLEL_LEVEL:-4}"
   cmake -S "$srcdir/deskwaifu/src/plugins/perception/native" -B "$srcdir/build-ocr" -G Ninja \
     -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib \
-    -DBUILD_TESTING=OFF \
-    -DONNXRUNTIME_ROOT="$srcdir/onnxruntime-linux-x64-1.31.0"
+    -DBUILD_TESTING=OFF
   cmake --build "$srcdir/build-ocr" --parallel "${CMAKE_BUILD_PARALLEL_LEVEL:-4}"
 }
 
@@ -46,9 +54,9 @@ package_deskwaifu-bin() {
 }
 
 package_deskwaifu-ocr-bin() {
-  pkgdesc='DeskWaifu in-process OCR module and ONNX Runtime CPU runtime (no models or dictionaries)'
+  pkgdesc='DeskWaifu in-process OCR module using system ONNX Runtime (no models or dictionaries)'
   license=('MIT' 'Apache-2.0')
-  depends=("deskwaifu-bin=$pkgver-$pkgrel" 'glibc' 'gcc-libs' 'qt6-base>=6.5' 'opencv' 'yaml-cpp')
+  depends=("deskwaifu-bin=$pkgver-$pkgrel" 'glibc' 'gcc-libs' 'qt6-base>=6.5' 'opencv' 'yaml-cpp' 'onnxruntime-cpu')
   provides=("deskwaifu-ocr=$pkgver")
   conflicts=('deskwaifu-ocr')
   DESTDIR="$pkgdir" cmake --install "$srcdir/build-ocr" --component DeskWaifuOCR
