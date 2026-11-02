@@ -13,11 +13,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class BuildBoundaries(unittest.TestCase):
-    def fixture(self, directory, body="int main() { return 0; }", link="", sources="main.cpp"):
+    def fixture(self, directory, body="int main() { return 0; }", link="", sources="main.cpp", languages="CXX"):
         root = Path(directory)
         files = {
-            "CMakeLists.txt": """cmake_minimum_required(VERSION 3.25)
-project(ownership_fixture LANGUAGES C CXX)
+            "CMakeLists.txt": f"""cmake_minimum_required(VERSION 3.25)
+project(ownership_fixture LANGUAGES {languages})
 include(cmake/PluginBoundaries.cmake)
 add_subdirectory(sdk)
 add_subdirectory(plugins/b)
@@ -49,6 +49,15 @@ target_include_directories(a PRIVATE ${{PROJECT_SOURCE_DIR}}/sdk ${{CMAKE_CURREN
     @staticmethod
     def run_command(*arguments):
         return subprocess.run(arguments, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+
+    def test_cpp_only_fixture_does_not_probe_unused_c_compiler(self):
+        with tempfile.TemporaryDirectory(prefix="dw-compiler-probe-") as directory:
+            root = self.fixture(directory)
+            result = self.run_command("cmake", "-S", str(root), "-B", str(root / "build"))
+            self.assertEqual(result.returncode, 0, result.stdout)
+            cache = (root / "build/CMakeCache.txt").read_text()
+            self.assertNotRegex(cache, r"(?m)^CMAKE_C_COMPILER:")
+            self.assertIn("CMAKE_CXX_COMPILER:", cache)
 
     def test_compilation_ownership(self):
         with tempfile.TemporaryDirectory(prefix="dw-compile-boundary-") as directory:
@@ -85,7 +94,7 @@ target_include_directories(a PRIVATE ${{PROJECT_SOURCE_DIR}}/sdk ${{CMAKE_CURREN
 
     def test_c_include_ownership(self):
         with tempfile.TemporaryDirectory(prefix="dw-c-boundary-") as directory:
-            root = self.fixture(directory, sources="main.c")
+            root = self.fixture(directory, sources="main.c", languages="C CXX")
             (root / "plugins/a/main.c").write_text('#include "../b/private/Foreign.h"\nint main(void) { return 0; }\n')
             (root / "plugins/b/private/Foreign.h").write_text("typedef int Foreign;\n")
             configured = self.run_command("cmake", "-S", str(root), "-B", str(root / "build"))
@@ -246,7 +255,7 @@ target_link_libraries(a PRIVATE {flags})
     def test_same_owner_archives_and_existing_launchers_are_allowed(self):
         for language, source in (("C", "main.c"), ("CXX", "main.cpp")):
             with self.subTest(language=language), tempfile.TemporaryDirectory(prefix="dw-launcher-boundary-") as directory:
-                root = self.fixture(directory, sources=source)
+                root = self.fixture(directory, sources=source, languages="C CXX")
                 (root / "plugins/a" / source).write_text("int main(void) { return 0; }\n")
                 wrapper = root / "linker.sh"
                 wrapper.write_text('#!/bin/sh\ntouch "' + str(root / "linked") + '"\nexec "$@"\n')
