@@ -1,6 +1,6 @@
 """Exercise the real OCR build/install rules with dependency and source stubs.
 
-These fixtures test CMake integration without Qt/OpenCV/ORT SDKs or OCR models;
+These fixtures test CMake integration without real Qt/OpenCV/ORT libraries or OCR models;
 they do not substitute for compiling the native inference implementation.
 """
 
@@ -78,9 +78,12 @@ add_library(opencv_imgproc INTERFACE IMPORTED)
 """)
         self.write(self.dependencies / "yaml-cpp/yaml-cpp-config.cmake",
                    f"add_library({yaml_target} INTERFACE IMPORTED)\n")
-        self.write(self.dependencies / "ort/include/onnxruntime_cxx_api.h", "// SDK header stub\n")
-        self.write(self.dependencies / "ort/LICENSE", "ORT license fixture\n")
-        self.write(self.dependencies / "ort/ThirdPartyNotices.txt", "ORT notices fixture\n")
+        self.write(self.dependencies / "ort/include/onnxruntime/onnxruntime_cxx_api.h", "// System header stub\n")
+        self.write(self.dependencies / "onnxruntime/onnxruntimeConfig.cmake", """add_library(onnxruntime::onnxruntime SHARED IMPORTED)
+set_target_properties(onnxruntime::onnxruntime PROPERTIES
+  IMPORTED_LOCATION "${CMAKE_CURRENT_LIST_DIR}/../ort/lib/libonnxruntime.so"
+  INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_LIST_DIR}/../ort/include/onnxruntime")
+""")
         library = self.dependencies / "ort/lib/libonnxruntime.so"
         library.parent.mkdir(parents=True)
         stub = self.dependencies / "ort/stub.cpp"
@@ -92,8 +95,7 @@ add_library(opencv_imgproc INTERFACE IMPORTED)
                      "-B", str(self.build), "-G", "Ninja",
                      f"-DCMAKE_INSTALL_PREFIX={self.prefix}", "-DCMAKE_INSTALL_LIBDIR=lib", "-DBUILD_TESTING=OFF"]
         if ocr:
-            arguments += [f"-DCMAKE_PREFIX_PATH={self.dependencies}",
-                          f"-DONNXRUNTIME_ROOT={self.dependencies / 'ort'}"]
+            arguments += [f"-DCMAKE_PREFIX_PATH={self.dependencies}"]
         if not standalone:
             arguments += ["-DBUILD_TESTING=OFF", "-DDESKWAIFU_BUILD_CONTROL=OFF",
                           "-DDESKWAIFU_BUILD_GUI_PLUGIN_SDK=OFF"]
@@ -105,9 +107,7 @@ add_library(opencv_imgproc INTERFACE IMPORTED)
         paths = {str(path.relative_to(self.prefix)) for path in self.prefix.rglob("*") if path.is_file()}
         self.assertIn("lib/deskwaifu/ocr/deskwaifu-ocr.so", paths)
         self.assertNotIn("libexec/deskwaifu-ocr", paths)
-        self.assertIn("lib/deskwaifu/ocr/libonnxruntime.so", paths)
-        for name in ("LICENSE", "ThirdPartyNotices.txt"):
-            self.assertIn(f"share/licenses/deskwaifu-ocr/onnxruntime/{name}", paths)
+        self.assertFalse(any("libonnxruntime" in path or "/onnxruntime/" in path for path in paths), paths)
         models = self.prefix / "share/deskwaifu/ocr/models"
         self.assertTrue(models.is_dir())
         self.assertEqual(list(models.iterdir()), [])
@@ -122,6 +122,7 @@ add_library(opencv_imgproc INTERFACE IMPORTED)
         self.assertTrue((self.build / "bin/deskwaifu").is_file())
         self.assertEqual((self.build / "app-links.txt").read_text(), "")
         self.assertIn("yaml-cpp::yaml-cpp", (self.build / "helper-links.txt").read_text())
+        self.assertIn("onnxruntime::onnxruntime", (self.build / "helper-links.txt").read_text())
         self.assertFalse((self.build / "CPackConfig.cmake").exists())
         self.run_command("cmake", "--install", str(self.build), "--component", "DeskWaifu")
         self.assertTrue((self.prefix / "bin/deskwaifu").is_file())
@@ -146,6 +147,7 @@ add_library(opencv_imgproc INTERFACE IMPORTED)
             self.assertEqual(len(models), 1, names)
             self.assertTrue(models[0].isdir())
         self.assertTrue(any(name.endswith("lib/deskwaifu/ocr/deskwaifu-ocr.so") for name in names), names)
+        self.assertFalse(any("libonnxruntime" in name or "/onnxruntime/" in name for name in names), names)
         self.assertFalse(any(name.endswith("libexec/deskwaifu-ocr") for name in names), names)
         self.assertFalse(any(name.endswith((".onnx", ".json", ".yml")) for name in names), names)
 
@@ -157,16 +159,15 @@ add_library(opencv_imgproc INTERFACE IMPORTED)
         self.assertTrue((self.build / "bin/deskwaifu").is_file())
         self.assertFalse((self.build / NATIVE / "deskwaifu-ocr.so").exists())
 
-    def test_runtime_sdk_licenses_are_still_required(self):
+    def test_missing_system_onnxruntime_is_reported(self):
         self.fixture()
-        for name in ("LICENSE", "ThirdPartyNotices.txt"):
-            with self.subTest(name=name):
-                path = self.dependencies / "ort" / name
-                original = path.read_text()
-                path.unlink()
-                result = self.configure(standalone=True, success=False)
-                self.assertIn(f"ONNX Runtime SDK must include {name}", result.stdout)
-                path.write_text(original)
+        # Disable discovery explicitly so the host's installed package cannot
+        # mask a missing dependency in the fixture.
+        result = self.run_command("cmake", "-S", str(self.source / NATIVE), "-B", str(self.build),
+                                  f"-DCMAKE_PREFIX_PATH={self.dependencies}",
+                                  "-DCMAKE_DISABLE_FIND_PACKAGE_onnxruntime=ON", success=False)
+        self.assertIn("onnxruntime", result.stdout)
+        self.assertIn("REQUIRED", result.stdout)
 
     def test_legacy_ci_and_aur_explicitly_disable_native_dependencies(self):
         workflow = (ROOT / ".gitea/workflows/ci.yml").read_text()
