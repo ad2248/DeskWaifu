@@ -1,4 +1,10 @@
 find_package(Qt6 REQUIRED COMPONENTS Test Multimedia WebSockets StateMachine)
+if(DESKWAIFU_BUILD_DESKTOP_PLUGIN)
+  add_test(NAME plugin-no-speech-configure COMMAND ${CMAKE_COMMAND}
+    -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -DBINARY_DIR=${CMAKE_BINARY_DIR}/no-speech-configure
+    -DSDK_ROOT=${SDK_ROOT_PATH} -DGLEW_ROOT=${GLEW_PATH} -DGENERATOR=${CMAKE_GENERATOR}
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckNoSpeechConfiguration.cmake)
+endif()
 foreach(speech_test SpeechPlayer MiniMaxSpeechSource AudioPlayer)
   qt_add_executable(${speech_test}-test ${speech_test}Test.cpp)
   set_target_properties(${speech_test}-test PROPERTIES AUTOMOC ON)

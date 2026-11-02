@@ -2,7 +2,7 @@ find_package(Threads REQUIRED)
 find_package(Qt6 6.5 REQUIRED COMPONENTS Gui OpenGL WaylandClient StateMachine)
 find_package(LayerShellQt 6.6 REQUIRED)
 set(PRIVATE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../private")
-set(TEST_SCRIPTS "${CMAKE_SOURCE_DIR}/tests")
+set(TEST_SCRIPTS "${CMAKE_CURRENT_SOURCE_DIR}")
 
 add_executable(model-input-region-test ModelInputRegionTest.cpp)
 add_test(NAME model-input-region COMMAND model-input-region-test)
@@ -91,6 +91,10 @@ if(NODE_EXECUTABLE)
     ${TEST_SCRIPTS}/test_kwin_cursor_script.js $<TARGET_FILE:kwin-cursor-tracker-test>)
 endif()
 find_package(Python3 COMPONENTS Interpreter)
+if(Python3_Interpreter_FOUND)
+  add_test(NAME qt-window-configuration COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_qt_window_configuration.py)
+endif()
 if(Python3_Interpreter_FOUND AND DBUS_RUN_SESSION)
   add_test(NAME kwin-cursor-locale COMMAND ${Python3_EXECUTABLE}
     ${TEST_SCRIPTS}/test_kwin_cursor_locale.py $<TARGET_FILE:kwin-cursor-tracker-test>
@@ -104,7 +108,7 @@ add_executable(transform-editor-test TransformEditorTest.cpp ${CONFIG_SOURCE} ${
 add_test(NAME transform-editor COMMAND transform-editor-test)
 add_test(NAME config-temp-directory COMMAND ${CMAKE_COMMAND}
   -DTEST_TEMP_ROOT=${CMAKE_CURRENT_BINARY_DIR}/tmp -DCONFIG_TEST=$<TARGET_FILE:config-store-test>
-  -DEDITOR_TEST=$<TARGET_FILE:transform-editor-test> -P ${TEST_SCRIPTS}/CheckPortableTemporaryDirectory.cmake)
+  -DEDITOR_TEST=$<TARGET_FILE:transform-editor-test> -P ${CMAKE_SOURCE_DIR}/platform/testing/CheckPortableTemporaryDirectory.cmake)
 foreach(pair "lapp-config|LAppConfig" "model-region|ModelRegion" "hover-opacity|HoverOpacity"
     "hover-opacity-settings|HoverOpacitySettings" "mouse-look-settings|MouseLookSettings"
     "render-device-settings|RenderDeviceSettings")

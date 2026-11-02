@@ -11,6 +11,30 @@ class PluginBoundaries(unittest.TestCase):
         self.assertFalse((ROOT / "src").exists())
         self.assertTrue((ROOT / "plugins/CMakeLists.txt").is_file())
 
+    def test_root_tests_have_no_domain_scripts(self):
+        for path in (ROOT / "tests").iterdir():
+            with self.subTest(path=path.name):
+                self.assertNotRegex(path.name, r"^(?:Check.*\.cmake|fake-input\.xml|"
+                                    r"(?:qt_headless|hotkey|output)_smoke\.py|"
+                                    r"test_(?:ctl|ocr_.*|qt_window_.*|kwin_.*)\.(?:py|js))$")
+
+    def test_domain_script_entrypoints_are_local(self):
+        for owner, scripts in {
+            "desktop": ("test_qt_window_configuration.py", "CheckComponentDirection.cmake",
+                        "test_kwin_cursor_script.js", "test_kwin_cursor_locale.py", "fake-input.xml"),
+            "ipc": ("test_ctl.py", "CheckIpcTransportHeader.cmake"),
+            "perception": ("test_ocr_build.py",),
+            "speech": ("CheckNoSpeechConfiguration.cmake",),
+        }.items():
+            directory = ROOT / "plugins" / owner / "tests"
+            cmake = (directory / "CMakeLists.txt").read_text()
+            for script in scripts:
+                with self.subTest(owner=owner, script=script):
+                    self.assertTrue((directory / script).is_file())
+                    self.assertIn(script, cmake)
+        native = ROOT / "plugins/perception/native/CMakeLists.txt"
+        self.assertIn("../tests/test_ocr_native_models.py", native.read_text())
+
     def test_host_has_no_speech_adapter(self):
         for relative in (
             "platform/main.cpp", "plugins/desktop/private/app/LAppDelegate.cpp",

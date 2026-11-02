@@ -1,4 +1,9 @@
 find_package(Threads REQUIRED)
+if(CMAKE_READELF AND CMAKE_NM)
+  add_test(NAME plugin-host-link COMMAND ${CMAKE_COMMAND}
+    -DHOST=$<TARGET_FILE:deskwaifu> -DREADELF=${CMAKE_READELF} -DNM=${CMAKE_NM}
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckPluginHostLink.cmake)
+endif()
 
 foreach(kind good consumer init_fail start_fail bad_abi bad_build_abi bad_entry bad_debug_abi)
   add_library(plugin-fixture-${kind} MODULE Fixture.cpp)

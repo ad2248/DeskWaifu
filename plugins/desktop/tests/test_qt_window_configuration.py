@@ -4,7 +4,7 @@ from pathlib import Path
 import unittest
 from qt_headless_smoke import assert_keyboard_capability
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[3]
 SOURCE = ROOT / "plugins/desktop/private"
 
 

@@ -1,4 +1,8 @@
 find_package(Qt6 6.5 REQUIRED COMPONENTS Gui DBus Concurrent)
+if(Python3_Interpreter_FOUND)
+  add_test(NAME ocr-build COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/test_ocr_build.py)
+  set_tests_properties(ocr-build PROPERTIES TIMEOUT 30)
+endif()
 add_library(processor-ocr-fixture MODULE OcrTestModule.cpp)
 set_target_properties(processor-ocr-fixture PROPERTIES AUTOMOC ON PREFIX "")
 target_link_libraries(processor-ocr-fixture PRIVATE Qt6::Core)

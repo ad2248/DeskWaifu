@@ -8,7 +8,7 @@ import tempfile
 import threading
 import unittest
 
-CLI = Path(__file__).resolve().parents[1] / "deskwaifu-ctl"
+CLI = Path(__file__).resolve().parents[3] / "deskwaifu-ctl"
 
 
 class CliTest(unittest.TestCase):

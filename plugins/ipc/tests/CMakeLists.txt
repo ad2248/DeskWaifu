@@ -1,4 +1,7 @@
 find_package(Qt6 6.5 REQUIRED COMPONENTS Network)
+if(Python3_Interpreter_FOUND)
+  add_test(NAME ctl COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_ctl.py)
+endif()
 add_executable(command-processor-test CommandProcessorTest.cpp)
 target_link_libraries(command-processor-test PRIVATE deskwaifu_ipc_core)
 deskwaifu_domain_test(command-processor-test ipc)
@@ -21,7 +24,7 @@ set_tests_properties(ipc-readiness PROPERTIES TIMEOUT 30)
 add_test(NAME ipc-transport-header COMMAND ${CMAKE_COMMAND}
   -DAPP_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/../private -DSDK_SOURCE=${CMAKE_SOURCE_DIR}/sdk
   -DCXX_COMPILER=${CMAKE_CXX_COMPILER} -DFIXTURE_SOURCE=${CMAKE_CURRENT_BINARY_DIR}/transport-header
-  -P ${CMAKE_SOURCE_DIR}/tests/CheckIpcTransportHeader.cmake)
+  -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckIpcTransportHeader.cmake)
 if(DESKWAIFU_BUILD_CONTROL)
   find_package(Qt6 REQUIRED COMPONENTS Test)
   qt_add_executable(deskwaifu-client-test DeskWaifuClientTest.cpp

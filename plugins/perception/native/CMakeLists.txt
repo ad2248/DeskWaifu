@@ -44,6 +44,14 @@ if(PROJECT_IS_TOP_LEVEL)
   include(CPack)
 endif()
 if(BUILD_TESTING)
+  find_package(Python3 COMPONENTS Interpreter)
+  if(Python3_Interpreter_FOUND)
+    add_test(NAME ocr-native-models COMMAND ${CMAKE_COMMAND} -E env
+      "OCR_NATIVE_MODULE=$<TARGET_FILE:deskwaifu-ocr>"
+      "OCR_MODULE_PROBE=$<TARGET_FILE:ocr-module-probe>"
+      ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/../tests/test_ocr_native_models.py)
+    set_tests_properties(ocr-native-models PROPERTIES TIMEOUT 60)
+  endif()
   add_executable(ocr-module-probe ../tests/OcrModuleProbe.cpp
     ../private/processor/ocr/OcrClient.cpp ../private/processor/ocr/OcrClient.hpp)
   set_target_properties(ocr-module-probe PROPERTIES AUTOMOC ON)

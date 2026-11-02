@@ -195,11 +195,11 @@ if(DESKWAIFU_BUILD_CONTROL AND TARGET ipc_plugin)
   add_test(NAME main-window-transform COMMAND main-window-transform-test)
   add_test(NAME main-window-temp-directory COMMAND ${CMAKE_COMMAND}
     -DTEST_TEMP_ROOT=${CMAKE_CURRENT_BINARY_DIR}/tmp -DWINDOW_TEST=$<TARGET_FILE:main-window-transform-test>
-    -P ${CMAKE_SOURCE_DIR}/tests/CheckPortableTemporaryDirectory.cmake)
+    -P ${CMAKE_SOURCE_DIR}/platform/testing/CheckPortableTemporaryDirectory.cmake)
   string(REPEAT "long-build-path-" 10 LONG_TEMP_SUFFIX)
   add_test(NAME main-window-long-temp-directory COMMAND ${CMAKE_COMMAND}
     -DTEST_TEMP_ROOT=${CMAKE_CURRENT_BINARY_DIR}/tmp/${LONG_TEMP_SUFFIX} -DEXPECT_LONG_TEMP=ON
-    -DWINDOW_TEST=$<TARGET_FILE:main-window-transform-test> -P ${CMAKE_SOURCE_DIR}/tests/CheckPortableTemporaryDirectory.cmake)
+    -DWINDOW_TEST=$<TARGET_FILE:main-window-transform-test> -P ${CMAKE_SOURCE_DIR}/platform/testing/CheckPortableTemporaryDirectory.cmake)
   set_tests_properties(main-window-transform main-window-temp-directory main-window-long-temp-directory
     PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;DESKWAIFU_CONTROL_PLUGIN_DIR=${CMAKE_BINARY_DIR}/plugins")
   endif()

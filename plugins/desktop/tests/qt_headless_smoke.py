@@ -1,6 +1,6 @@
 """Opt-in Qt backend smoke test on a private two-output KWin and D-Bus session.
 
-Usage: python3 tests/qt_headless_smoke.py BUILD_DIR SDK_ROOT [--scale 1.5]
+Usage: python3 plugins/desktop/tests/qt_headless_smoke.py BUILD_DIR SDK_ROOT [--scale 1.5]
 Logs are retained in BUILD_DIR/qt-smoke-logs. No user's desktop/config is touched.
 """
 
@@ -51,7 +51,7 @@ def main():
     parser.add_argument("--installed", action="store_true", help="install the application component into a private prefix before running")
     args = parser.parse_args()
     if os.environ.get("DESKWAIFU_TEST_ISOLATED") != "1":
-        return subprocess.call([sys.executable, str(Path(__file__).resolve().parents[1] / "scripts/test-environment.py"),
+        return subprocess.call([sys.executable, str(Path(__file__).resolve().parents[3] / "scripts/test-environment.py"),
                                 sys.executable, str(Path(__file__).resolve()), *sys.argv[1:]])
     for program in ("kwin_wayland", "dbus-run-session"):
         if not shutil.which(program):
@@ -75,7 +75,7 @@ def main():
         root = Path(directory)
         binaries = build / "bin"
         plugin_root = build / "plugins"
-        cli = Path(__file__).resolve().parents[1] / "deskwaifu-ctl"
+        cli = Path(__file__).resolve().parents[3] / "deskwaifu-ctl"
         if args.installed:
             prefix = root / "prefix"
             with (logs / "install.log").open("w") as log:
