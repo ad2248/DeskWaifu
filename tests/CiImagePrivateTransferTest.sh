@@ -28,7 +28,7 @@ printf 'ssh %s\n' "$*" >>"$CI_TRANSFER_LOG"
 [[ $1 == ci-host ]]
 shift
 case "$*" in
-    'podman load') cat >"$CI_TRANSFER_DATA" ;;
+    'gzip -d | podman load') gzip -d >"$CI_TRANSFER_DATA" ;;
     "podman image exists sha256:$(printf '%064d' 1)") ;;
     *) exit 1 ;;
 esac

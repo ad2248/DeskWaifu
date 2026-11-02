@@ -36,8 +36,8 @@ function(deskwaifu_add_test)
   if(TARGET "${executable}")
     set(executable "$<TARGET_FILE:${executable}>")
   endif()
-  add_test(NAME "${TEST_NAME}" COMMAND "${Python3_EXECUTABLE}"
-    "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../scripts/test-environment.py"
+  get_filename_component(launcher "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../scripts/test-environment.py" ABSOLUTE)
+  add_test(NAME "${TEST_NAME}" COMMAND "${Python3_EXECUTABLE}" "${launcher}"
     "${CMAKE_COMMAND}" -E env ${TEST_ENVIRONMENT} "${executable}" ${TEST_COMMAND})
   set_property(TEST "${TEST_NAME}" PROPERTY DESKWAIFU_ISOLATED TRUE)
   get_property(scheduled DIRECTORY PROPERTY DESKWAIFU_TEST_TIMEOUTS_SCHEDULED)

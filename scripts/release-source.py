@@ -46,7 +46,11 @@ def main():
     for relative in ("scripts/release-source.py", "scripts/release-build.sh", "scripts/release-packaging.py",
                      "scripts/release-upload.py", "scripts/find-deps-dir.sh", "packaging/release/PKGBUILD.in",
                      "packaging/release/system-onnxruntime.patch",
-                     "tests/test_release_packaging.py", ".gitea/workflows/release.yml"):
+                     "tests/test_release_packaging.py", ".gitea/workflows/release.yml",
+                     ".gitea/workflows/ci.yml", "Containerfile", "scripts/rebuild-ci-image.sh",
+                     "scripts/prepare-installed-tests.py", "scripts/run-installed-tests.py", "scripts/test-environment.py",
+                     "scripts/test-installed-packages.py", "scripts/package-smoke.py", "plugins/perception/tests/test_ocr_native_models.py",
+                     "cmake/InstallTests.cmake", "tests/gate.json"):
         target = tools / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(tool_source / relative, target)

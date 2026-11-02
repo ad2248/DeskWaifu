@@ -14,7 +14,7 @@
     "texture-residency", "SpeechPlayer", "MiniMaxSpeechSource", "AudioPlayer",
     "main-window-transform", "aur-packaging", "ocr-client", "smoke-isolation",
     "test-environment", "test-gate", "mutation-configuration",
-    "build-boundary-registration", "sdk-configuration", "plugin-host-standalone-configure",
+    "build-boundary-registration", "sdk-configuration", "plugin-host-standalone-configure", "installed-testing",
     "build-boundaries-c-include-ownership", "build-boundaries-compilation-ownership",
     "build-boundaries-cpp-only-fixture-does-not-probe-unused-c-compiler",
     "build-boundaries-forwarded-static-is-scoped-not-global", "build-boundaries-include-ownership",

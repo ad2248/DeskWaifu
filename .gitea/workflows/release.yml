@@ -13,6 +13,11 @@ on:
         description: '版本发布更新说明（Markdown，将作为 GitHub Release 正文）'
         required: true
         type: string
+      notes_only:
+        description: 'Only update the existing published release body; never rebuild or change assets'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -54,20 +59,13 @@ jobs:
           RELEASE_NOTES: ${{ github.event.inputs.release_notes }}
         run: python3 scripts/release-source.py
 
-      - name: Test preserved release tooling
-        run: python3 -B "$RELEASE_TOOLS_DIR/tests/test_release_packaging.py" -v
-
-      - name: Acquire system build dependencies
-        # Older fixed runner images lack OCR system dependencies. Do not rebuild or
-        # publish the private image here; perform a full Arch upgrade, not -Sy.
-        run: |
-          packages=(base-devel cmake ninja curl git libarchive python opencv yaml-cpp onnxruntime-cpu
-            qt6-base qt6-wayland qt6-scxml qt6-websockets qt6-multimedia
-            layer-shell-qt wayland libglvnd systemd-libs psmisc)
-          pacman -Syu --needed --noconfirm "${packages[@]}"
-
       - name: Acquire verified sources and build unprivileged Arch packages
+        if: ${{ github.event.inputs.notes_only != 'true' }}
         run: bash "$RELEASE_TOOLS_DIR/scripts/release-build.sh"
+
+      - name: Discard test packages without executing tests
+        if: ${{ github.event.inputs.notes_only != 'true' }}
+        run: python3 "$RELEASE_TOOLS_DIR/scripts/release-packaging.py" prune-tests release-assets "$RELEASE_TAG" "$RELEASE_COMMIT"
 
       - name: Upload verified packages to GitHub release
         # Never expose this credential to checkout, dependency acquisition,
@@ -75,4 +73,12 @@ jobs:
         env:
           RELEASE_UPLOAD: ${{ secrets.RELEASE_UPLOAD }}
           RELEASE_NOTES: ${{ github.event.inputs.release_notes }}
-        run: python3 "$RELEASE_TOOLS_DIR/scripts/release-upload.py" release-assets "$RELEASE_TAG" "$RELEASE_COMMIT"
+          RELEASE_NOTES_ONLY: ${{ github.event.inputs.notes_only }}
+        run: |
+          args=()
+          if [[ "$RELEASE_NOTES_ONLY" == true ]]; then args+=(--notes-only); fi
+          python3 "$RELEASE_TOOLS_DIR/scripts/release-upload.py" release-assets "$RELEASE_TAG" "$RELEASE_COMMIT" "${args[@]}"
+
+      - name: Clean temporary packages
+        if: always()
+        run: rm -f release-assets/*.pkg.tar.zst

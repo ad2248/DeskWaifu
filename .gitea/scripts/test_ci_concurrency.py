@@ -5,6 +5,10 @@ import unittest
 
 
 class CiConcurrencyTest(unittest.TestCase):
+    def test_package_builds_use_twenty_four_compiler_jobs(self):
+        workflow = pathlib.Path(__file__).resolve().parents[1] / "workflows/ci.yml"
+        self.assertIn("CMAKE_BUILD_PARALLEL_LEVEL: 24", workflow.read_text())
+
     def test_all_builds_use_twenty_four_compiler_jobs(self):
         workflow = pathlib.Path(__file__).resolve().parents[1] / "workflows/ci.yml"
         commands = workflow.read_text().replace("\\\n", " ")

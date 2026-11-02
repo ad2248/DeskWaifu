@@ -176,7 +176,7 @@ set_target_properties(onnxruntime::onnxruntime PROPERTIES
         native.write_text((Path(__file__).parent / "fixtures/ocr-sdk-CMakeLists.txt").read_text() +
                           '\nset_target_properties(deskwaifu-ocr PROPERTIES AUTOMOC OFF)\n')
         (self.directory / "deskwaifu").symlink_to(self.source, target_is_directory=True)
-        for name in ("deskwaifu.tar.gz", "private-deps.tar.gz"):
+        for name in ("deskwaifu.tar.gz", "private-deps.tar.gz", "release-tools.tar.gz"):
             (self.directory / name).write_bytes(b"checksum fixture")
         self.run_command(sys.executable, "-B", str(ROOT / "scripts/release-packaging.py"),
                          "prepare", str(self.directory), "0.2.0", "a" * 40)
@@ -218,6 +218,11 @@ set_target_properties(onnxruntime::onnxruntime PROPERTIES
                 source = Path(directory)
                 stub = "cmake_minimum_required(VERSION 3.25)\nproject(release_fixture NONE)\n"
                 self.write(source / "deskwaifu/CMakeLists.txt", stub)
+                # This fixture checks source selection. Runtime registry export
+                # is tested separately with real CTest registrations.
+                self.write(source / "release-tools/scripts/prepare-installed-tests.py",
+                           "from pathlib import Path\nimport sys\n"
+                           "(Path(sys.argv[1]) / 'export-called').touch()\n")
                 for layout in layouts:
                     self.write(source / "deskwaifu" / layout / "perception/native/CMakeLists.txt", stub)
                 result = subprocess.run([
@@ -229,6 +234,8 @@ set_target_properties(onnxruntime::onnxruntime PROPERTIES
                     cache = (source / "build-ocr/CMakeCache.txt").read_text()
                     expected = source / "deskwaifu" / layouts[0] / "perception/native"
                     self.assertIn(f"CMAKE_HOME_DIRECTORY:INTERNAL={expected}\n", cache)
+                    self.assertTrue((source / "build-main/export-called").is_file())
+                    self.assertTrue((source / "build-ocr/export-called").is_file())
                 else:
                     self.assertNotEqual(result.returncode, 0)
                     self.assertIn("OCR source CMakeLists.txt not found", result.stderr)

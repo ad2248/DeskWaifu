@@ -51,6 +51,55 @@ def fixture_files(ocr=False):
 
 
 class PackagingTest(unittest.TestCase):
+    def test_test_packages_are_exact_versioned_and_do_not_leak_into_runtime(self):
+        for name, runtime, directory in (("deskwaifu-tests", "deskwaifu-bin", "tests"),
+                                         ("deskwaifu-ocr-tests", "deskwaifu-ocr-bin", "ocr-tests")):
+            info = {"pkgname": [name], "pkgver": ["1.2.3-1"], "arch": ["x86_64"],
+                    "depend": [f"{runtime}=1.2.3-1"]}
+            files = {f"usr/lib/deskwaifu/{directory}/run.py", f"usr/lib/deskwaifu/{directory}/installed-tests.json"}
+            packaging.verify_content(name, info, files, "1.2.3")
+            with self.assertRaisesRegex(ValueError, "exact runtime"):
+                packaging.verify_content(name, dict(info, depend=[]), files, "1.2.3")
+            with self.assertRaisesRegex(ValueError, "must not duplicate"):
+                packaging.verify_content(name, info, files | {"usr/bin/deskwaifu"}, "1.2.3")
+            with self.assertRaisesRegex(ValueError, "system dependency, not bundled"):
+                packaging.verify_content(name, info, files | {f"usr/lib/deskwaifu/{directory}/libonnxruntime.so.1"}, "1.2.3")
+        info = {"pkgname": ["deskwaifu-bin"], "pkgver": ["1.2.3-1"], "arch": ["x86_64"],
+                "depend": sorted(packaging.MAIN_DEPENDS)}
+        with self.assertRaisesRegex(ValueError, "must not contain tests"):
+            packaging.verify_content("deskwaifu-bin", info, fixture_files() | {"usr/lib/deskwaifu/tests/run.py"}, "1.2.3")
+
+    def test_ci_and_release_share_packaging_and_fixed_dependencies(self):
+        ci = (ROOT / ".gitea/workflows/ci.yml").read_text()
+        release = (ROOT / ".gitea/workflows/release.yml").read_text()
+        for workflow in (ci, release):
+            self.assertIn('bash "$RELEASE_TOOLS_DIR/scripts/release-build.sh"', workflow)
+            self.assertNotIn("pacman -", workflow)
+            self.assertIn("runs-on: deskwaifu-arch", workflow)
+        self.assertIn("diff -u package-reference/SHA256SUMS release-assets/SHA256SUMS", ci)
+        self.assertIn('cmp "package-reference/$(basename "$package")" "$package"', ci)
+        self.assertIn('scripts/test-installed-packages.py" release-assets', ci)
+        self.assertNotIn("name: arch-packages", ci)
+        self.assertIn("Clean temporary packages", ci)
+        self.assertNotIn("Test preserved release tooling", release)
+        self.assertIn("Discard test packages without executing tests", release)
+        image = (ROOT / "Containerfile").read_text()
+        acceptance = (ROOT / "scripts/rebuild-ci-image.sh").read_text()
+        for dependency in ("opencv", "yaml-cpp", "onnxruntime-cpu", "psmisc", "python", "libarchive"):
+            self.assertIn(f"        {dependency} \\\n", image)
+        self.assertIn("find_package(OpenCV REQUIRED COMPONENTS core imgproc)", acceptance)
+        self.assertIn("find_package(yaml-cpp REQUIRED)", acceptance)
+        self.assertIn("find_package(onnxruntime CONFIG REQUIRED)", acceptance)
+
+    def test_package_build_identity_is_independent_of_pid_and_workspace(self):
+        script = (ROOT / "scripts/release-build.sh").read_text()
+        self.assertIn("work=/tmp/deskwaifu-package\nmkdir \"$work\"", script)
+        self.assertIn("candidate=dwrel\n", script)
+        self.assertNotIn("dwrel$$", script)
+        self.assertIn("TZ=UTC LANG=C.UTF-8", script)
+        self.assertIn('SOURCE_DATE_EPOCH=$(git show -s --format=%ct "$RELEASE_COMMIT")', script)
+        self.assertIn('PACKAGER="DeskWaifu reproducible build"', (ROOT / "Containerfile").read_text())
+
     def test_current_tools_survive_checkout_of_historical_tag(self):
         with tempfile.TemporaryDirectory(prefix="release-historical-tools-", dir=TEMP_ROOT) as temporary:
             root = Path(temporary)
@@ -83,6 +132,7 @@ class PackagingTest(unittest.TestCase):
             acquired.mkdir()
             (acquired / "deskwaifu.tar.gz").write_bytes(b"source")
             (acquired / "private-deps.tar.gz").write_bytes(b"deps")
+            (acquired / "release-tools.tar.gz").write_bytes(b"tools")
             subprocess.run([sys.executable, "-B", str(tools / "scripts/release-packaging.py"),
                             "prepare", str(acquired), "0.1.0", commit], check=True)
             self.assertIn("pkgver=0.1.0\n", (acquired / "PKGBUILD").read_text())
@@ -98,6 +148,7 @@ class PackagingTest(unittest.TestCase):
                     work = Path(temporary)
                     (work / "deskwaifu.tar.gz").write_bytes(b"source")
                     (work / "private-deps.tar.gz").write_bytes(b"deps")
+                    (work / "release-tools.tar.gz").write_bytes(b"tools")
                     packaging.prepare(work, tag, COMMIT)
                     result = subprocess.check_output(["bash", "-c", '. "$1"; printf "%s" "$pkgver"',
                                                       "_", str(work / "PKGBUILD")], cwd=work, text=True)
@@ -110,6 +161,7 @@ class PackagingTest(unittest.TestCase):
             work = Path(temporary)
             (work / "deskwaifu.tar.gz").write_bytes(b"source")
             (work / "private-deps.tar.gz").write_bytes(b"deps")
+            (work / "release-tools.tar.gz").write_bytes(b"tools")
             for tag in ("release/2026", "v1.2.3-rc.1", "发布"):
                 with self.subTest(tag=tag):
                     packaging.prepare(work, tag, COMMIT)
@@ -265,6 +317,11 @@ class PackagingTest(unittest.TestCase):
                 "private-deps/CubismSdkForNative-5-r.5/Core/LICENSE.md": "fixture",
                 "private-deps/CubismSdkForNative-5-r.5/Framework/LICENSE.md": "fixture",
                 "private-deps/glew/LICENSE.txt": "fixture"})
+            archive(work / "release-tools.tar.gz", {
+                "release-tools/scripts/test-environment.py": "# fixture\n",
+                "release-tools/scripts/prepare-installed-tests.py":
+                    "import pathlib,sys\np=pathlib.Path(sys.argv[1]);p.mkdir(exist_ok=True)\n"
+                    "(p/'installed-scripts').mkdir(exist_ok=True)\n"})
             packaging.prepare(work, TAG, COMMIT)
             pkgbuild = work / "PKGBUILD"
             subprocess.run(["bash", "-n", str(pkgbuild)], check=True)
@@ -275,13 +332,16 @@ class PackagingTest(unittest.TestCase):
             self.assertIn("makedepends = onnxruntime-cpu", srcinfo)
             self.assertNotIn("onnxruntime-linux", srcinfo)
             self.assertIn("makedepends = opencv", srcinfo)
-            self.assertEqual(srcinfo.count("pkgname = "), 2)
+            self.assertEqual(srcinfo.count("pkgname = "), 4)
             bin_dir = work / "bin"
             bin_dir.mkdir()
             fake = bin_dir / "cmake"
             fake.write_text("#!/usr/bin/env python3\nimport os, pathlib, sys\n"
                             "if '--install' not in sys.argv: sys.exit(0)\n"
                             f"files = {sorted(fixture_files())!r} if 'build-main' in sys.argv[2] else {sorted(fixture_files(True))!r}\n"
+                            "if sys.argv[-1] in ('DeskWaifuTests','DeskWaifuOCRTests'):\n"
+                            " prefix='usr/lib/deskwaifu/' + ('ocr-tests' if sys.argv[-1]=='DeskWaifuOCRTests' else 'tests')\n"
+                            " files=[prefix+'/run.py',prefix+'/installed-tests.json']\n"
                             "for name in files:\n"
                             " p = pathlib.Path(os.environ['DESTDIR']) / name\n"
                             " p.parent.mkdir(parents=True, exist_ok=True)\n"
@@ -292,7 +352,14 @@ class PackagingTest(unittest.TestCase):
             result = subprocess.run(["makepkg", "--nodeps", "--noconfirm"], cwd=work, env=env,
                                     text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
             self.assertEqual(result.returncode, 0, result.stdout)
-            packaging.verify(work / "packages", TAG, COMMIT)
+            packaging.verify(work / "packages", TAG, COMMIT, include_tests=True)
+            first_build = {path.name: path.read_bytes() for path in (work / "packages").glob("*.pkg.tar.zst")}
+            result = subprocess.run(["makepkg", "--nodeps", "--cleanbuild", "--force", "--noconfirm"],
+                                    cwd=work, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            self.assertEqual(result.returncode, 0, result.stdout)
+            self.assertEqual(first_build, {path.name: path.read_bytes()
+                                          for path in (work / "packages").glob("*.pkg.tar.zst")})
+            packaging.prune_tests(work / "packages", TAG, COMMIT)
             assets = upload.load_assets(work / "packages", TAG, COMMIT)
             self.assertEqual(len(assets), 4)
             package = next((work / "packages").glob("deskwaifu-ocr-bin-*.pkg.tar.zst"))
@@ -315,7 +382,7 @@ class PackagingTest(unittest.TestCase):
         self.assertEqual(workflow.count("RELEASE_NOTES: ${{ github.event.inputs.release_notes }}"), 2)
         self.assertNotIn("${{ github.event.inputs.release_notes }}", "\n".join(
             line for line in workflow.splitlines() if "RELEASE_NOTES:" not in line))
-        self.assertIn('python3 -B "$RELEASE_TOOLS_DIR/tests/test_release_packaging.py"', workflow)
+        self.assertNotIn('python3 -B "$RELEASE_TOOLS_DIR/tests/test_release_packaging.py"', workflow)
         self.assertIn('bash "$RELEASE_TOOLS_DIR/scripts/release-build.sh"', workflow)
         self.assertIn('python3 "$RELEASE_TOOLS_DIR/scripts/release-upload.py"', workflow)
         job_env = workflow.split("    env:\n", 1)[1].split("    steps:", 1)[0]
@@ -379,7 +446,7 @@ class PackagingTest(unittest.TestCase):
         # mocked privileged commands. No real account operation is performed.
         script = (ROOT / "scripts/release-build.sh").read_text()
         cleanup = script[script.index("build_user=\n"):script.index("mkdir -p")]
-        root_block = script[script.index('candidate="dwrel'):script.index('output="$root/release-assets"')]
+        root_block = script[script.index('candidate=dwrel'):script.index('output="$root/release-assets"')]
         with tempfile.TemporaryDirectory(prefix="release-user-", dir=TEMP_ROOT) as temporary:
             work = Path(temporary)
             bin_dir = work / "bin"
@@ -461,6 +528,32 @@ upload_module = upload
 
 
 class UploadTest(unittest.TestCase):
+    def test_notes_only_never_changes_assets_or_creates_a_release(self):
+        api = FakeAPI()
+        upload.publish(api, TAG, COMMIT, {"package": b"keep"})
+        api.calls.clear()
+        upload.update_notes(api, TAG, COMMIT, "新说明\n")
+        self.assertEqual(api.assets["package"]["data"], b"keep")
+        self.assertEqual([(method, path, data) for method, path, data in api.calls if method != "GET"],
+                         [("PATCH", "/releases/7", {"body": "新说明\n"})])
+        for state in ("missing", "draft", "wrong-tag", "blank"):
+            api = FakeAPI()
+            if state == "draft":
+                api.release = {"id": 7, "tag_name": TAG, "draft": True}
+            if state == "wrong-tag":
+                api.commit = OTHER
+            with self.subTest(state=state), self.assertRaises(ValueError):
+                upload.update_notes(api, TAG, COMMIT, "" if state == "blank" else "说明")
+            self.assertTrue(all(method == "GET" for method, _, _ in api.calls))
+
+    def test_notes_only_cli_does_not_require_local_packages(self):
+        with patch.dict(os.environ, {"RELEASE_UPLOAD": "TEST", "RELEASE_NOTES": "说明"}, clear=True), \
+                patch.object(sys, "argv", ["release-upload.py", "missing", TAG, COMMIT, "--notes-only"]), \
+                patch.object(upload, "load_assets", side_effect=AssertionError("must not read packages")), \
+                patch.object(upload, "GitHub") as github, patch.object(upload, "update_notes") as update:
+            upload.main()
+            update.assert_called_once_with(github.return_value, TAG, COMMIT, "说明")
+
     def test_release_notes_are_preserved_and_identical_rerun_does_not_write(self):
         notes = '## 更新\n- 修复 "窗口" 与 `快捷键`\n$(touch SHOULD_NOT_EXIST)\nEOF\n'
         api = FakeAPI()

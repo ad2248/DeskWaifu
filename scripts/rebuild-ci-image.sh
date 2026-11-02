@@ -35,6 +35,21 @@ echo "Checking the CI image"
 podman run --rm "$IMAGE" bash -ceu '
     cmake --version
     ninja --version
+    makepkg --version
+    bsdtar --version
+    python3 --version
+    command -v fakeroot runuser useradd userdel fuser
+    proot --version
+    runuser -u nobody -- proot -r / -w /tmp /usr/bin/true
+    pkgconf --modversion yaml-cpp
+    ocr_check=$(mktemp -d)
+    printf "%s\n" "cmake_minimum_required(VERSION 3.25)" \
+        "project(ocr_dependencies LANGUAGES CXX)" \
+        "find_package(OpenCV REQUIRED COMPONENTS core imgproc)" \
+        "find_package(yaml-cpp REQUIRED)" \
+        "find_package(onnxruntime CONFIG REQUIRED)" > "$ocr_check/CMakeLists.txt"
+    cmake -S "$ocr_check" -B "$ocr_check/build" -G Ninja
+    rm -rf "$ocr_check"
     wayland-scanner --version
     sway --version
     QT_QPA_PLATFORM=offscreen kwin_wayland --version
@@ -55,7 +70,7 @@ podman run --rm "$IMAGE" bash -ceu '
 IMAGE_ID=$(podman image inspect "$IMAGE" --format '{{.Id}}')
 IMAGE_ID="sha256:${IMAGE_ID#sha256:}"
 echo "Transferring $IMAGE privately to $RUNNER_HOST"
-podman save --format oci-archive "$IMAGE" | ssh "$RUNNER_HOST" podman load
+podman save --format oci-archive "$IMAGE" | gzip -1 | ssh "$RUNNER_HOST" 'gzip -d | podman load'
 ssh "$RUNNER_HOST" podman image exists "$IMAGE_ID"
 echo "Configure the runner label as (force_pull must remain false):"
 echo "  deskwaifu-arch:docker://$IMAGE_ID"
