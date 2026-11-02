@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run ordinary tests with private files, D-Bus and no inherited desktop/credentials.
+"""Run one ordinary test with private files, D-Bus and no desktop/credentials.
 
 This is environment isolation, not a network/filesystem security sandbox. Tests
 must still replace cloud/clipboard/audio boundaries; live tests use separate,

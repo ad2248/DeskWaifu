@@ -3,15 +3,15 @@ if(TARGET speech_plugin)
   add_executable(speech-plugin-load-test SpeechPluginLoadTest.cpp)
   target_link_libraries(speech-plugin-load-test PRIVATE deskwaifu_plugin_host)
   add_dependencies(speech-plugin-load-test speech_plugin)
-  add_test(NAME speech-plugin-load COMMAND speech-plugin-load-test $<TARGET_FILE:speech_plugin>)
+  deskwaifu_add_test(NAME speech-plugin-load COMMAND speech-plugin-load-test $<TARGET_FILE:speech_plugin>)
   set_tests_properties(speech-plugin-load PROPERTIES TIMEOUT 30 LABELS "contract;plugin")
 endif()
 find_package(Python3 COMPONENTS Interpreter)
 if(Python3_Interpreter_FOUND)
-  add_test(NAME processor-pipeline-script COMMAND ${Python3_EXECUTABLE} -B
+  deskwaifu_add_test(NAME processor-pipeline-script COMMAND ${Python3_EXECUTABLE} -B
     ${CMAKE_CURRENT_SOURCE_DIR}/ProcessorPipelineScriptTest.py ${CMAKE_COMMAND})
   set_tests_properties(processor-pipeline-script PROPERTIES TIMEOUT 30 LABELS "regression")
-  add_test(NAME plugin-cli COMMAND ${Python3_EXECUTABLE} -B
+  deskwaifu_add_test(NAME plugin-cli COMMAND ${Python3_EXECUTABLE} -B
     ${CMAKE_CURRENT_SOURCE_DIR}/PluginCommandTest.py $<TARGET_FILE:deskwaifu>)
   set_tests_properties(plugin-cli PROPERTIES TIMEOUT 15 LABELS "contract;regression")
 endif()
@@ -49,7 +49,7 @@ if(DESKWAIFU_ENABLE_SANITIZERS)
     message(FATAL_ERROR "The sanitizer regression fixture requires Python")
   endif()
   add_executable(sanitizer-failure-fixture SanitizerFailureFixture.cpp)
-  add_test(NAME sanitizer-failure-gate COMMAND ${Python3_EXECUTABLE}
+  deskwaifu_add_test(NAME sanitizer-failure-gate COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_SOURCE_DIR}/tests/test_sanitizer_failure.py $<TARGET_FILE:sanitizer-failure-fixture>)
   set_tests_properties(sanitizer-failure-gate PROPERTIES TIMEOUT 30)
 endif()
@@ -62,13 +62,13 @@ if(TARGET reading_clip_plugin AND TARGET speech-contract-fixture)
   # every speech-contract-* scenario, including the dynamic integration cases.
   add_dependencies(speech-processor-contract-test reading-speech-contract-test)
   foreach(scenario reading-cancel reading-complete)
-    add_test(NAME speech-contract-${scenario} COMMAND reading-speech-contract-test ${scenario}
+    deskwaifu_add_test(NAME speech-contract-${scenario} COMMAND reading-speech-contract-test ${scenario}
       $<TARGET_FILE:reading_clip_plugin> $<TARGET_FILE:speech-contract-fixture>)
     set_tests_properties(speech-contract-${scenario} PROPERTIES TIMEOUT 15 LABELS "contract;async")
   endforeach()
 endif()
 if(Python3_Interpreter_FOUND)
-  add_test(NAME plugin-build-boundaries COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/platform/tooling/BoundaryTest.py)
+  deskwaifu_add_test(NAME plugin-build-boundaries COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/platform/tooling/BoundaryTest.py)
   set_tests_properties(plugin-build-boundaries PROPERTIES TIMEOUT 60 LABELS "architecture;regression")
   if(TARGET ipc_plugin)
     set(BACKEND_MODULES $<TARGET_FILE:ipc_plugin>)
@@ -77,13 +77,14 @@ if(Python3_Interpreter_FOUND)
         list(APPEND BACKEND_MODULES $<TARGET_FILE:${owner}_plugin>)
       endif()
     endforeach()
-    add_test(NAME backend-capabilities COMMAND ${Python3_EXECUTABLE}
-      ${CMAKE_SOURCE_DIR}/scripts/test-environment.py ${Python3_EXECUTABLE}
+    deskwaifu_add_test(NAME backend-capabilities COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/BackendCapabilitiesTest.py $<TARGET_FILE:deskwaifu> ${BACKEND_MODULES})
-    add_test(NAME backend-ipc-only COMMAND ${Python3_EXECUTABLE}
-      ${CMAKE_SOURCE_DIR}/scripts/test-environment.py ${Python3_EXECUTABLE}
+    deskwaifu_add_test(NAME backend-ipc-only COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/BackendCapabilitiesTest.py $<TARGET_FILE:deskwaifu> $<TARGET_FILE:ipc_plugin>)
-    set_tests_properties(backend-capabilities backend-ipc-only PROPERTIES TIMEOUT 30 LABELS "contract;plugin")
+    deskwaifu_add_test(NAME backend-multi-instance COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/BackendMultiInstanceTest.py $<TARGET_FILE:deskwaifu> $<TARGET_FILE:ipc_plugin>)
+    set_tests_properties(backend-capabilities backend-ipc-only backend-multi-instance
+      PROPERTIES TIMEOUT 30 LABELS "contract;plugin")
   endif()
 endif()
 
@@ -91,13 +92,13 @@ if(TARGET desktop-commands-fixture)
   add_executable(desktop-commands-fairness-test DesktopCommandsFairnessTest.cpp)
   target_link_libraries(desktop-commands-fairness-test PRIVATE deskwaifu_plugin_host)
   add_dependencies(desktop-commands-fairness-test desktop-commands-fixture)
-  add_test(NAME desktop-commands-fairness COMMAND desktop-commands-fairness-test $<TARGET_FILE:desktop-commands-fixture>)
+  deskwaifu_add_test(NAME desktop-commands-fairness COMMAND desktop-commands-fairness-test $<TARGET_FILE:desktop-commands-fixture>)
   set_tests_properties(desktop-commands-fairness PROPERTIES TIMEOUT 30 LABELS "contract;plugin;async")
   add_library(desktop-early-client-fixture MODULE DesktopEarlyClientFixture.cpp)
   target_link_libraries(desktop-early-client-fixture PRIVATE deskwaifu_plugin_sdk)
   set_target_properties(desktop-early-client-fixture PROPERTIES PREFIX "")
   add_dependencies(desktop-commands-fairness-test desktop-early-client-fixture)
-  add_test(NAME desktop-commands-early-start COMMAND desktop-commands-fairness-test
+  deskwaifu_add_test(NAME desktop-commands-early-start COMMAND desktop-commands-fairness-test
     $<TARGET_FILE:desktop-commands-fixture> $<TARGET_FILE:desktop-early-client-fixture>)
   set_tests_properties(desktop-commands-early-start PROPERTIES TIMEOUT 30 LABELS "contract;plugin;async")
 endif()
@@ -107,21 +108,21 @@ if(TARGET desktop-keyboard-fixture AND TARGET ipc_plugin AND TARGET speech_plugi
   target_link_libraries(delegate-plugin-commands-test PRIVATE deskwaifu_plugin_host deskwaifu_contracts Qt6::Network)
   target_compile_definitions(delegate-plugin-commands-test PRIVATE SDK_RESOURCES="${SDK_ROOT_PATH}/Samples/Resources")
   add_dependencies(delegate-plugin-commands-test desktop-keyboard-fixture ipc_plugin speech_plugin)
-  add_test(NAME delegate-plugin-commands COMMAND delegate-plugin-commands-test
+  deskwaifu_add_test(NAME delegate-plugin-commands COMMAND delegate-plugin-commands-test
     $<TARGET_FILE:desktop-keyboard-fixture> $<TARGET_FILE:ipc_plugin> $<TARGET_FILE:speech_plugin>)
   set_tests_properties(delegate-plugin-commands PROPERTIES ENVIRONMENT "EGL_PLATFORM=surfaceless" TIMEOUT 30 LABELS "contract;plugin")
 endif()
 
 add_executable(json-command-test JsonCommandTest.cpp)
 target_link_libraries(json-command-test PRIVATE deskwaifu_test_support)
-add_test(NAME json-command COMMAND json-command-test)
+deskwaifu_add_test(NAME json-command COMMAND json-command-test)
 add_executable(config-store-test ConfigStoreTest.cpp)
 target_link_libraries(config-store-test PRIVATE deskwaifu_test_support)
 target_link_options(config-store-test PRIVATE -Wl,--wrap=rename)
-add_test(NAME config-store COMMAND config-store-test)
+deskwaifu_add_test(NAME config-store COMMAND config-store-test)
 add_executable(processor-event-loop-test ProcessorEventLoopTest.cpp)
 target_link_libraries(processor-event-loop-test PRIVATE deskwaifu_test_support)
-add_test(NAME processor-event-loop COMMAND processor-event-loop-test)
+deskwaifu_add_test(NAME processor-event-loop COMMAND processor-event-loop-test)
 set_tests_properties(processor-event-loop PROPERTIES TIMEOUT 30)
 
 if(TARGET perception_plugin)
@@ -131,7 +132,7 @@ if(TARGET perception_plugin)
   add_executable(perception-startup-test PerceptionStartupTest.cpp)
   target_link_libraries(perception-startup-test PRIVATE deskwaifu_plugin_host Qt6::Gui)
   add_dependencies(perception-startup-test perception-startup-fixture perception_plugin)
-  add_test(NAME perception-startup COMMAND perception-startup-test
+  deskwaifu_add_test(NAME perception-startup COMMAND perception-startup-test
     $<TARGET_FILE:perception-startup-fixture> $<TARGET_FILE:perception_plugin>)
   set_tests_properties(perception-startup PROPERTIES TIMEOUT 15 ENVIRONMENT "QT_QPA_PLATFORM=offscreen" LABELS "contract;plugin")
 endif()
@@ -140,7 +141,7 @@ if(TARGET reading_clip_plugin AND TARGET perception_plugin)
 add_executable(reading-plugin-test ReadingPluginTest.cpp)
 target_link_libraries(reading-plugin-test PRIVATE deskwaifu_test_support deskwaifu_plugin_host Qt6::Gui)
 add_dependencies(reading-plugin-test reading_clip_plugin perception_plugin processor-ocr-fixture)
-add_test(NAME reading-plugin COMMAND reading-plugin-test $<TARGET_FILE:reading_clip_plugin>
+deskwaifu_add_test(NAME reading-plugin COMMAND reading-plugin-test $<TARGET_FILE:reading_clip_plugin>
   $<TARGET_FILE:perception_plugin> $<TARGET_FILE:processor-ocr-fixture>)
 set_tests_properties(reading-plugin PROPERTIES TIMEOUT 30 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
@@ -148,20 +149,21 @@ if(TARGET reading_clip_plugin AND TARGET perception_plugin AND TARGET ipc_plugin
 add_executable(processor-ownership-test ProcessorOwnershipTest.cpp)
 target_link_libraries(processor-ownership-test PRIVATE deskwaifu_backend_test_support Qt6::Gui Qt6::Network)
 add_dependencies(processor-ownership-test ipc_plugin perception_plugin reading_clip_plugin processor-ocr-fixture)
-add_test(NAME processor-ownership COMMAND processor-ownership-test $<TARGET_FILE:ipc_plugin>
+deskwaifu_add_test(NAME processor-ownership COMMAND processor-ownership-test $<TARGET_FILE:ipc_plugin>
   $<TARGET_FILE:perception_plugin> $<TARGET_FILE:reading_clip_plugin> $<TARGET_FILE:processor-ocr-fixture>)
 set_tests_properties(processor-ownership PROPERTIES TIMEOUT 30 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 add_custom_target(processor-pipeline-test DEPENDS reading-pipeline-test perception-adapters-test ipc-readiness-test reading-plugin-test)
-add_test(NAME processor-pipeline COMMAND ${CMAKE_COMMAND}
+set(PIPELINE_TEST_ENVIRONMENT)
+if(TARGET speech-adapter-failure-test)
+  add_dependencies(processor-pipeline-test speech-adapter-failure-test)
+  set(PIPELINE_TEST_ENVIRONMENT "DESKWAIFU_PIPELINE_SPEECH=$<TARGET_FILE:speech-adapter-failure-test>")
+endif()
+deskwaifu_add_test(NAME processor-pipeline COMMAND ${CMAKE_COMMAND}
   -DREADING=$<TARGET_FILE:reading-pipeline-test> -DPERCEPTION=$<TARGET_FILE:perception-adapters-test>
   -DIPC=$<TARGET_FILE:ipc-readiness-test> -DDYNAMIC=$<TARGET_FILE:reading-plugin-test>
   -DREADING_PLUGIN=$<TARGET_FILE:reading_clip_plugin> -DPERCEPTION_PLUGIN=$<TARGET_FILE:perception_plugin>
-  -DOCR_MODULE=$<TARGET_FILE:processor-ocr-fixture> -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckProcessorPipeline.cmake)
-if(TARGET speech-adapter-failure-test)
-  add_dependencies(processor-pipeline-test speech-adapter-failure-test)
-  set_property(TEST processor-pipeline APPEND PROPERTY ENVIRONMENT
-    "DESKWAIFU_PIPELINE_SPEECH=$<TARGET_FILE:speech-adapter-failure-test>")
-endif()
+  -DOCR_MODULE=$<TARGET_FILE:processor-ocr-fixture> -P ${CMAKE_CURRENT_SOURCE_DIR}/CheckProcessorPipeline.cmake
+  ENVIRONMENT ${PIPELINE_TEST_ENVIRONMENT})
 set_tests_properties(processor-pipeline PROPERTIES TIMEOUT 30)
 set_property(TEST processor-pipeline APPEND PROPERTY ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
@@ -174,7 +176,7 @@ if(DESKWAIFU_BUILD_CONTROL AND TARGET ipc_plugin)
     SYSTEM_RESPAWNER_FIXTURE="$<TARGET_FILE:system-respawner-fixture>")
   add_dependencies(deskwaifu-respawner-test spawn-backend-fixture system-respawner-fixture)
   set_target_properties(deskwaifu-respawner-test PROPERTIES AUTOMOC ON)
-  add_test(NAME deskwaifu-respawner COMMAND deskwaifu-respawner-test)
+  deskwaifu_add_test(NAME deskwaifu-respawner COMMAND deskwaifu-respawner-test)
   set_tests_properties(deskwaifu-respawner PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
   add_subdirectory(gui)
   qt_add_executable(control-theme-test ControlThemeTest.cpp)
@@ -182,8 +184,8 @@ if(DESKWAIFU_BUILD_CONTROL AND TARGET ipc_plugin)
   add_dependencies(control-theme-test deskwaifu_control_plugins)
   target_compile_definitions(control-theme-test PRIVATE DESKWAIFU_TEST_SPEECH_PLUGIN=$<BOOL:${DESKWAIFU_BUILD_SPEECH_PLUGIN}>)
   set_target_properties(control-theme-test PROPERTIES AUTOMOC ON)
-  add_test(NAME control-theme COMMAND control-theme-test)
-  set_tests_properties(control-theme PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;DESKWAIFU_CONTROL_PLUGIN_DIR=${CMAKE_BINARY_DIR}/plugins")
+  deskwaifu_add_test(NAME control-theme COMMAND control-theme-test
+    ENVIRONMENT "DESKWAIFU_CONTROL_PLUGIN_DIR=${CMAKE_BINARY_DIR}/plugins")
   if(TARGET desktop-settings-fixture)
   qt_add_executable(main-window-transform-test MainWindowTransformTest.cpp)
   target_link_libraries(main-window-transform-test PRIVATE Qt6::Test Qt6::Network deskwaifu_test_support deskwaifu_control_shell deskwaifu_plugin_host)
@@ -192,15 +194,16 @@ if(DESKWAIFU_BUILD_CONTROL AND TARGET ipc_plugin)
     DESKWAIFU_TEST_SPEECH_PLUGIN=$<BOOL:${DESKWAIFU_BUILD_SPEECH_PLUGIN}>
     DESKTOP_SETTINGS_FIXTURE="$<TARGET_FILE:desktop-settings-fixture>")
   set_target_properties(main-window-transform-test PROPERTIES AUTOMOC ON)
-  add_test(NAME main-window-transform COMMAND main-window-transform-test)
-  add_test(NAME main-window-temp-directory COMMAND ${CMAKE_COMMAND}
+  deskwaifu_add_test(NAME main-window-transform COMMAND main-window-transform-test
+    ENVIRONMENT "DESKWAIFU_CONTROL_PLUGIN_DIR=${CMAKE_BINARY_DIR}/plugins")
+  deskwaifu_add_test(NAME main-window-temp-directory COMMAND ${CMAKE_COMMAND}
     -DTEST_TEMP_ROOT=${CMAKE_CURRENT_BINARY_DIR}/tmp -DWINDOW_TEST=$<TARGET_FILE:main-window-transform-test>
-    -P ${CMAKE_SOURCE_DIR}/tests/CheckPortableTemporaryDirectory.cmake)
+    -P ${CMAKE_SOURCE_DIR}/tests/CheckPortableTemporaryDirectory.cmake
+    ENVIRONMENT "DESKWAIFU_CONTROL_PLUGIN_DIR=${CMAKE_BINARY_DIR}/plugins")
   string(REPEAT "long-build-path-" 10 LONG_TEMP_SUFFIX)
-  add_test(NAME main-window-long-temp-directory COMMAND ${CMAKE_COMMAND}
+  deskwaifu_add_test(NAME main-window-long-temp-directory COMMAND ${CMAKE_COMMAND}
     -DTEST_TEMP_ROOT=${CMAKE_CURRENT_BINARY_DIR}/tmp/${LONG_TEMP_SUFFIX} -DEXPECT_LONG_TEMP=ON
-    -DWINDOW_TEST=$<TARGET_FILE:main-window-transform-test> -P ${CMAKE_SOURCE_DIR}/tests/CheckPortableTemporaryDirectory.cmake)
-  set_tests_properties(main-window-transform main-window-temp-directory main-window-long-temp-directory
-    PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;DESKWAIFU_CONTROL_PLUGIN_DIR=${CMAKE_BINARY_DIR}/plugins")
+    -DWINDOW_TEST=$<TARGET_FILE:main-window-transform-test> -P ${CMAKE_SOURCE_DIR}/tests/CheckPortableTemporaryDirectory.cmake
+    ENVIRONMENT "DESKWAIFU_CONTROL_PLUGIN_DIR=${CMAKE_BINARY_DIR}/plugins")
   endif()
 endif()

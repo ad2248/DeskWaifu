@@ -12,7 +12,7 @@ target_compile_definitions(plugin-fixture-bad_debug_abi PRIVATE _GLIBCXX_DEBUG)
 add_executable(plugin-manager-test ManagerTest.cpp)
 add_dependencies(plugin-manager-test ${backend_fixtures})
 target_link_libraries(plugin-manager-test PRIVATE deskwaifu_plugin_host Threads::Threads)
-add_test(NAME plugin-manager COMMAND plugin-manager-test
+deskwaifu_add_test(NAME plugin-manager COMMAND plugin-manager-test
   $<TARGET_FILE:plugin-fixture-good>
   $<TARGET_FILE:plugin-fixture-consumer>
   $<TARGET_FILE:plugin-fixture-init_fail>
@@ -34,7 +34,7 @@ if(DESKWAIFU_BUILD_GUI_PLUGIN_SDK)
   add_executable(gui-plugin-manager-test GuiManagerTest.cpp)
   add_dependencies(gui-plugin-manager-test ${gui_fixtures})
   target_link_libraries(gui-plugin-manager-test PRIVATE deskwaifu_gui_plugin_host deskwaifu_plugin_host Threads::Threads)
-  add_test(NAME gui-plugin-manager COMMAND gui-plugin-manager-test
+  deskwaifu_add_test(NAME gui-plugin-manager COMMAND gui-plugin-manager-test
     $<TARGET_FILE:gui-plugin-fixture-good>
     $<TARGET_FILE:gui-plugin-fixture-dual>
     $<TARGET_FILE:gui-plugin-fixture-backend_only>
@@ -60,7 +60,7 @@ if(DESKWAIFU_BUILD_GUI_PLUGIN_SDK)
   add_executable(gui-transport-manager-test GuiTransportManagerTest.cpp)
   add_dependencies(gui-transport-manager-test ${transport_fixtures})
   target_link_libraries(gui-transport-manager-test PRIVATE deskwaifu_gui_plugin_host)
-  add_test(NAME gui-transport-manager COMMAND gui-transport-manager-test
+  deskwaifu_add_test(NAME gui-transport-manager COMMAND gui-transport-manager-test
     $<TARGET_FILE:gui-transport-fixture-good>
     $<TARGET_FILE:gui-transport-fixture-init_fail>
     $<TARGET_FILE:gui-transport-fixture-start_fail>

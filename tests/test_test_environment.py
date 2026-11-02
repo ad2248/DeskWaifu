@@ -5,12 +5,66 @@ import subprocess
 import signal
 import tempfile
 import unittest
+import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class TestEnvironmentTest(unittest.TestCase):
+    def test_parallel_ctest_has_private_directories_and_bus(self):
+        probe = '''import json, os, socket, sys, time
+from pathlib import Path
+output, name = Path(sys.argv[1]), sys.argv[2]
+assert "TEST_ENV_PROBE_SECRET" not in os.environ
+assert os.environ["DESKWAIFU_SCREENSHOT_TEST_BUS"] == "1"
+keys = ("HOME", "XDG_RUNTIME_DIR", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME", "TMPDIR", "DBUS_SESSION_BUS_ADDRESS")
+with socket.socket(socket.AF_UNIX) as endpoint:
+    endpoint.bind(str(Path(os.environ["XDG_RUNTIME_DIR"]) / "same.sock"))
+    state = Path(os.environ["HOME"]) / "same-state"
+    state.write_text(name)
+    (output / name).write_text(json.dumps({key: os.environ[key] for key in keys}))
+    deadline = time.monotonic() + 8
+    while len(list(output.iterdir())) != 4:
+        assert time.monotonic() < deadline, "CTest did not run four tests concurrently"
+        time.sleep(.01)
+    assert state.read_text() == name, "another test overwrote HOME"
+'''
+        with tempfile.TemporaryDirectory(prefix="parallel-environment-") as directory:
+            root = Path(directory)
+            output = root / "results with spaces"
+            output.mkdir()
+            script = root / "probe.py"
+            script.write_text(probe)
+            (root / "CMakeLists.txt").write_text(
+                'cmake_minimum_required(VERSION 3.25)\nproject(fixture NONE)\ninclude(CTest)\n'
+                f'include("{ROOT}/cmake/TestEnvironment.cmake")\n'
+                'add_executable(probe IMPORTED)\n'
+                f'set_target_properties(probe PROPERTIES IMPORTED_LOCATION "{sys.executable}")\n'
+                'foreach(name RANGE 1 4)\n'
+                f'  deskwaifu_add_test(NAME isolation-${{name}} COMMAND probe "{script}" "{output}" ${{name}} ENVIRONMENT "DESKWAIFU_SCREENSHOT_TEST_BUS=1")\n'
+                '  set_tests_properties(isolation-${name} PROPERTIES TIMEOUT 12)\n'
+                'endforeach()\n')
+            build = root / "build"
+            subprocess.run(["cmake", "-S", str(root), "-B", str(build)], capture_output=True, check=True)
+            commands = (
+                [sys.executable, str(ROOT / "scripts/run-test-gate.py"), str(build), "--test", "^isolation-"],
+                ["ctest", "--test-dir", str(build), "--parallel", "4", "--output-on-failure"],
+            )
+            for command in commands:
+                with self.subTest(command=command[0]):
+                    result = subprocess.run(command, env=dict(os.environ, TEST_ENV_PROBE_SECRET="secret"),
+                                            capture_output=True, text=True, timeout=20)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    snapshots = [json.loads(path.read_text()) for path in output.iterdir()]
+                    self.assertEqual(len(snapshots), 4)
+                    for key in snapshots[0]:
+                        self.assertEqual(len({env[key] for env in snapshots}), 4, f"shared {key}")
+                        if key != "DBUS_SESSION_BUS_ADDRESS":
+                            self.assertTrue(all(not Path(env[key]).exists() for env in snapshots), f"leaked {key}")
+                    for path in output.iterdir():
+                        path.unlink()
+
     def test_boundary_fixtures_honor_tmpdir(self):
         script = """import os, runpy, sys, tempfile
 from pathlib import Path
@@ -60,8 +114,9 @@ runpy.run_path(path, run_name="__main__")
             with self.subTest(code=code):
                 env = dict(os.environ, MINIMAX_API_KEY="do-not-inherit",
                            DESKWAIFU_AUDIO_TEST="1", DESKWAIFU_TTS_LIVE_KEY_FILE="secret",
-                           WAYLAND_DISPLAY="desktop", SWAYSOCK="desktop", DISPLAY=":0",
-                           HYPRLAND_INSTANCE_SIGNATURE="desktop", QT_PLUGIN_PATH="desktop")
+                            WAYLAND_DISPLAY="desktop", SWAYSOCK="desktop", DISPLAY=":0",
+                            HYPRLAND_INSTANCE_SIGNATURE="desktop", QT_PLUGIN_PATH="desktop",
+                            DESKWAIFU_PLUGIN_DIR="host-plugins", DESKWAIFU_CONTROL_PLUGIN_DIR="host-plugins")
                 script = "import json, os, sys; print(json.dumps(dict(os.environ))); sys.exit(" + str(code) + ")"
                 result = subprocess.run(["python3", str(ROOT / "scripts/test-environment.py"),
                                          "python3", "-c", script], env=env,
@@ -69,7 +124,8 @@ runpy.run_path(path, run_name="__main__")
                 self.assertEqual(result.returncode, code, result.stderr)
                 child = json.loads(result.stdout)
                 for key in ("MINIMAX_API_KEY", "DESKWAIFU_AUDIO_TEST", "DESKWAIFU_TTS_LIVE_KEY_FILE",
-                            "WAYLAND_DISPLAY", "SWAYSOCK", "DISPLAY", "HYPRLAND_INSTANCE_SIGNATURE", "QT_PLUGIN_PATH"):
+                             "WAYLAND_DISPLAY", "SWAYSOCK", "DISPLAY", "HYPRLAND_INSTANCE_SIGNATURE", "QT_PLUGIN_PATH",
+                             "DESKWAIFU_PLUGIN_DIR", "DESKWAIFU_CONTROL_PLUGIN_DIR"):
                     self.assertNotIn(key, child)
                 self.assertIn("DBUS_SESSION_BUS_ADDRESS", child)
                 self.assertNotEqual(child["HOME"], os.environ["HOME"])

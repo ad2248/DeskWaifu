@@ -20,7 +20,8 @@ class TestGateTest(unittest.TestCase):
             script.write_text('print("x" * 4096)\nprint("SKIP   : T::late() critical protection absent")\n')
             (root / "CMakeLists.txt").write_text(
                 'cmake_minimum_required(VERSION 3.25)\nproject(fixture NONE)\nenable_testing()\n'
-                f'add_test(NAME fixture COMMAND [=[{sys.executable}]=] [=[{script}]=])\n')
+                f'include("{gate.ROOT}/cmake/TestEnvironment.cmake")\n'
+                f'deskwaifu_add_test(NAME fixture COMMAND [=[{sys.executable}]=] [=[{script}]=])\n')
             build = root / "build"
             subprocess.run(["cmake", "-S", str(root), "-B", str(build)], capture_output=True, check=True)
             result = subprocess.run([sys.executable, str(gate.ROOT / "scripts/run-test-gate.py"),
