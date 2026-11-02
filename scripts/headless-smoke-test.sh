@@ -47,7 +47,7 @@ LOG_DIR=$(mktemp -d "$BUILD_DIR/test-logs/sway-XXXXXX")
 export XDG_RUNTIME_DIR="$RUNTIME_DIR"
 CONFIG_DIR=$(mktemp -d "$RUNTIME_DIR/hotkey-config.XXXXXX")
 export XDG_CONFIG_HOME="$CONFIG_DIR"
-python3 tests/hotkey_smoke.py prepare "$DEPS_DIR/CubismSdkForNative-5-r.5/Samples/Resources/Haru"
+python3 plugins/desktop/tests/hotkey_smoke.py prepare "$DEPS_DIR/CubismSdkForNative-5-r.5/Samples/Resources/Haru"
 export WLR_BACKENDS=headless
 export WLR_LIBINPUT_NO_DEVICES=1
 export WLR_RENDERER=pixman
@@ -245,7 +245,7 @@ with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
 PY
 assert_ok prev_model
 assert_ok set_model --name Haru
-python3 tests/hotkey_smoke.py check
+python3 plugins/desktop/tests/hotkey_smoke.py check
 
 kill -0 "$APP_PID"
 timeout 20 "$BUILD_DIR/bin/deskwaifu-control" --smoke-test \
@@ -282,12 +282,12 @@ kill -0 "$APP_PID"
     if (( after <= before + 1 )); then cat "$LOG_DIR/deskwaifu.log" >&2; exit 1; fi
     assert_ok get_status
 }
-python3 tests/output_smoke.py
+python3 plugins/desktop/tests/output_smoke.py
 WAYLAND_DEBUG=client timeout 30 "$BUILD_DIR/bin/qt-desktop-window-test" --no-keyboard \
     >"$LOG_DIR/qt-window.log" 2>&1
 python3 - "$LOG_DIR/qt-window.log" <<'PY'
 import pathlib, sys
-sys.path.insert(0, "tests")
+sys.path.insert(0, "plugins/desktop/tests")
 from qt_headless_smoke import assert_layer_shell, assert_keyboard_capability
 trace = pathlib.Path(sys.argv[1]).read_text()
 assert_layer_shell(trace)

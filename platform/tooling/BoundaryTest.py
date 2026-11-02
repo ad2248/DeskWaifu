@@ -17,18 +17,18 @@ set(CMAKE_CXX_STANDARD 17)
 {launcher}
 include("{ROOT}/cmake/PluginBoundaries.cmake")
 add_subdirectory(sdk)
-add_subdirectory(src/plugins/a)
-add_subdirectory(src/plugins/b)
+add_subdirectory(plugins/a)
+add_subdirectory(plugins/b)
 deskwaifu_validate_boundaries()
 ''',
             "sdk/CMakeLists.txt": "add_library(sdk STATIC api.cpp)\n",
             "sdk/api.cpp": "int api() { return 1; }\n",
-            "src/plugins/a/CMakeLists.txt": "add_library(a STATIC a.cpp)\nadd_library(alias_a ALIAS a)\n",
-            "src/plugins/a/a.cpp": "int private_api() { return 2; }\n",
-            "src/plugins/a/private.hpp": "inline int secret() { return 2; }\n",
-            "src/plugins/b/CMakeLists.txt": f"add_library(b STATIC b.cpp)\n{link}\n",
-            "src/plugins/b/own.hpp": "inline int own() { return 3; }\n",
-            "src/plugins/b/b.cpp": f"#include {include}\nint b() {{ return 1; }}\n",
+            "plugins/a/CMakeLists.txt": "add_library(a STATIC a.cpp)\nadd_library(alias_a ALIAS a)\n",
+            "plugins/a/a.cpp": "int private_api() { return 2; }\n",
+            "plugins/a/private.hpp": "inline int secret() { return 2; }\n",
+            "plugins/b/CMakeLists.txt": f"add_library(b STATIC b.cpp)\n{link}\n",
+            "plugins/b/own.hpp": "inline int own() { return 3; }\n",
+            "plugins/b/b.cpp": f"#include {include}\nint b() {{ return 1; }}\n",
         }
         for relative, text in files.items():
             path = root / relative
@@ -57,7 +57,7 @@ deskwaifu_validate_boundaries()
         for absolute in (False, True):
             with self.subTest(absolute=absolute), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
-                include = str(root / "src/plugins/a/private.hpp") if absolute else "../a/private.hpp"
+                include = str(root / "plugins/a/private.hpp") if absolute else "../a/private.hpp"
                 self.fixture(root, include=f'"{include}"')
                 result = self.build(root)
                 self.assertNotEqual(result.returncode, 0)
@@ -76,7 +76,7 @@ deskwaifu_validate_boundaries()
 
     def test_foreign_links_fail(self):
         for dependency in ("a", "alias_a", "$<BUILD_INTERFACE:a>", "indirect",
-                           "${CMAKE_BINARY_DIR}/src/plugins/a/liba.a"):
+                           "${CMAKE_BINARY_DIR}/plugins/a/liba.a"):
             with self.subTest(dependency=dependency), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 link = ""

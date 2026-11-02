@@ -17,8 +17,8 @@ def owner(path, root):
         return "sdk"
     if parts and parts[0] == "platform":
         return "platform"
-    if len(parts) > 2 and parts[:2] == ("src", "plugins"):
-        return "plugin:" + parts[2]
+    if len(parts) > 1 and parts[0] == "plugins":
+        return "plugin:" + parts[1]
     if parts[0] in ("cmake", "scripts", "tests", "packaging", ".gitea") or parts == ("install.sh",):
         return "platform"
     if len(parts) > 1 and parts[:2] == ("research", "ocr"):

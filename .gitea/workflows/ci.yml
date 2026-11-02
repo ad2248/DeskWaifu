@@ -74,7 +74,7 @@ jobs:
           import json, shlex, sys
           commands = json.load(open(sys.argv[1]))
           expected = '-D' + sys.argv[2]
-          assert any(entry['file'].endswith('/src/plugins/desktop/private/processor/model/LAppLive2DManager.cpp') and
+          assert any(entry['file'].endswith('/plugins/desktop/private/processor/model/LAppLive2DManager.cpp') and
                      expected in shlex.split(entry['command']) for entry in commands), expected
           PY
             cmake --build "$build_dir" --parallel 24
@@ -91,8 +91,8 @@ jobs:
 
       - name: Test KWin actual click-through, outputs and installed application
         run: |
-          python3 tests/qt_headless_smoke.py build-ci "$DESKWAIFU_DEPS_DIR/CubismSdkForNative-5-r.5"
-          python3 tests/qt_headless_smoke.py build-ci "$DESKWAIFU_DEPS_DIR/CubismSdkForNative-5-r.5" --scale 1.5 --installed
+          python3 plugins/desktop/tests/qt_headless_smoke.py build-ci "$DESKWAIFU_DEPS_DIR/CubismSdkForNative-5-r.5"
+          python3 plugins/desktop/tests/qt_headless_smoke.py build-ci "$DESKWAIFU_DEPS_DIR/CubismSdkForNative-5-r.5" --scale 1.5 --installed
 
       - name: Test core contracts with ASan and UBSan
         run: |

@@ -35,12 +35,12 @@ add_subdirectory(support)
 foreach(owner desktop perception ipc reading_clip speech)
   string(TOUPPER "${owner}" option)
   if(DESKWAIFU_BUILD_${option}_PLUGIN)
-    add_subdirectory(${CMAKE_SOURCE_DIR}/src/plugins/${owner}/tests ${CMAKE_CURRENT_BINARY_DIR}/${owner})
+    add_subdirectory(${CMAKE_SOURCE_DIR}/plugins/${owner}/tests ${CMAKE_CURRENT_BINARY_DIR}/${owner})
   endif()
 endforeach()
 if(DESKWAIFU_BUILD_CONTROL)
   foreach(owner system interaction)
-    add_subdirectory(${CMAKE_SOURCE_DIR}/src/plugins/${owner}/tests ${CMAKE_CURRENT_BINARY_DIR}/${owner})
+    add_subdirectory(${CMAKE_SOURCE_DIR}/plugins/${owner}/tests ${CMAKE_CURRENT_BINARY_DIR}/${owner})
   endforeach()
 endif()
 add_subdirectory(${CMAKE_SOURCE_DIR}/tests ${CMAKE_CURRENT_BINARY_DIR}/gates)
@@ -198,12 +198,12 @@ if(DESKWAIFU_BUILD_CONTROL AND TARGET ipc_plugin)
     ENVIRONMENT "DESKWAIFU_CONTROL_PLUGIN_DIR=${CMAKE_BINARY_DIR}/plugins")
   deskwaifu_add_test(NAME main-window-temp-directory COMMAND ${CMAKE_COMMAND}
     -DTEST_TEMP_ROOT=${CMAKE_CURRENT_BINARY_DIR}/tmp -DWINDOW_TEST=$<TARGET_FILE:main-window-transform-test>
-    -P ${CMAKE_SOURCE_DIR}/tests/CheckPortableTemporaryDirectory.cmake
+    -P ${CMAKE_SOURCE_DIR}/platform/tests/support/CheckPortableTemporaryDirectory.cmake
     ENVIRONMENT "DESKWAIFU_CONTROL_PLUGIN_DIR=${CMAKE_BINARY_DIR}/plugins")
   string(REPEAT "long-build-path-" 10 LONG_TEMP_SUFFIX)
   deskwaifu_add_test(NAME main-window-long-temp-directory COMMAND ${CMAKE_COMMAND}
     -DTEST_TEMP_ROOT=${CMAKE_CURRENT_BINARY_DIR}/tmp/${LONG_TEMP_SUFFIX} -DEXPECT_LONG_TEMP=ON
-    -DWINDOW_TEST=$<TARGET_FILE:main-window-transform-test> -P ${CMAKE_SOURCE_DIR}/tests/CheckPortableTemporaryDirectory.cmake
+    -DWINDOW_TEST=$<TARGET_FILE:main-window-transform-test> -P ${CMAKE_SOURCE_DIR}/platform/tests/support/CheckPortableTemporaryDirectory.cmake
     ENVIRONMENT "DESKWAIFU_CONTROL_PLUGIN_DIR=${CMAKE_BINARY_DIR}/plugins")
   endif()
 endif()

@@ -6,9 +6,9 @@ add_library(deskwaifu_backend_test_support STATIC LoadedBackendPlugins.cpp)
 target_link_libraries(deskwaifu_backend_test_support PUBLIC deskwaifu_test_support PRIVATE deskwaifu_plugin_host)
 
 function(deskwaifu_domain_test target owner)
-  if(IS_DIRECTORY "${CMAKE_SOURCE_DIR}/src/plugins/${owner}/private")
+  if(IS_DIRECTORY "${CMAKE_SOURCE_DIR}/plugins/${owner}/private")
     target_include_directories(${target} PRIVATE
-      "${CMAKE_SOURCE_DIR}/src/plugins/${owner}/private")
+      "${CMAKE_SOURCE_DIR}/plugins/${owner}/private")
   endif()
   target_link_libraries(${target} PRIVATE deskwaifu_plugin_sdk)
 endfunction()

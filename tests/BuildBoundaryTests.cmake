@@ -2,6 +2,7 @@
 foreach(case IN ITEMS
     c_include_ownership
     compilation_ownership
+    cpp_only_fixture_does_not_probe_unused_c_compiler
     forwarded_static_is_scoped_not_global
     include_ownership
     library_search_respects_static_dynamic_selection
