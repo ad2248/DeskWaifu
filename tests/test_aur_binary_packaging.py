@@ -2,6 +2,7 @@
 import importlib.util
 import io
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tarfile
@@ -165,8 +166,10 @@ class ConsumerTest(unittest.TestCase):
     def test_separate_payloads_preserve_permissions_links_and_license(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
+            recipe = ROOT / "packaging/aur/PKGBUILD"
+            version = re.search(r"^pkgver=(\S+)$", recipe.read_text(), re.M).group(1)
             for package in updater.PACKAGES:
-                source = root / f"upstream-{package}-0.1.0-1-x86_64.pkg.tar.zst"
+                source = root / f"upstream-{package}-{version}-1-x86_64.pkg.tar.zst"
                 with tarfile.open(source, "w") as stream:
                     entries = [(".PKGINFO", b"upstream metadata"), (f"usr/bin/{package}", b"binary")]
                     if package == "deskwaifu-ocr-bin":
@@ -192,6 +195,7 @@ class ConsumerTest(unittest.TestCase):
                 self.assertFalse((output / f"usr/bin/{other}").exists())
                 if package == "deskwaifu-ocr-bin":
                     self.assertTrue((output / "usr/share/licenses/deskwaifu-ocr-bin/onnxruntime/LICENSE").is_file())
+                    self.assertEqual((output / "usr/share/licenses/deskwaifu-ocr-bin/LICENSE").read_bytes(), b"MIT")
 
     def test_binary_recipe_has_no_build_or_sdk_download(self):
         text = (ROOT / "packaging/aur/PKGBUILD").read_text()
@@ -205,13 +209,14 @@ class ConsumerTest(unittest.TestCase):
         recipe = ROOT / "packaging/aur"
         actual = subprocess.check_output(["makepkg", "--printsrcinfo"], cwd=recipe, text=True)
         self.assertEqual(actual, (recipe / ".SRCINFO").read_text())
+        version = re.search(r"^\s*pkgver = (\S+)$", actual, re.M).group(1)
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary)
             text = (recipe / "PKGBUILD").read_text().replace("pkgrel=1\n", "pkgrel=2\n", 1)
             (path / "PKGBUILD").write_text(text)
             info = subprocess.check_output(["makepkg", "--printsrcinfo"], cwd=path, text=True)
-            self.assertIn("depends = deskwaifu-bin=0.1.0-2", info)
-            self.assertIn("upstream-deskwaifu-bin-0.1.0-1-x86_64.pkg.tar.zst", info)
+            self.assertIn(f"depends = deskwaifu-bin={version}-2", info)
+            self.assertIn(f"upstream-deskwaifu-bin-{version}-1-x86_64.pkg.tar.zst", info)
 
 
 if __name__ == "__main__":
