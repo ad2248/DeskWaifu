@@ -39,7 +39,14 @@ podman run --rm "$IMAGE" bash -ceu '
     bsdtar --version
     python3 --version
     command -v fakeroot runuser useradd userdel fuser
-    pkgconf --modversion opencv4 yaml-cpp
+    pkgconf --modversion yaml-cpp
+    ocr_check=$(mktemp -d)
+    printf "%s\n" "cmake_minimum_required(VERSION 3.25)" \
+        "project(ocr_dependencies LANGUAGES CXX)" \
+        "find_package(OpenCV REQUIRED COMPONENTS core imgproc)" \
+        "find_package(yaml-cpp REQUIRED)" > "$ocr_check/CMakeLists.txt"
+    cmake -S "$ocr_check" -B "$ocr_check/build" -G Ninja
+    rm -rf "$ocr_check"
     wayland-scanner --version
     sway --version
     QT_QPA_PLATFORM=offscreen kwin_wayland --version

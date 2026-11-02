@@ -220,17 +220,39 @@ def publish(api, tag, commit, assets, notes=""):
         api.request("PATCH", f"/releases/{release_id}", updates)
 
 
+def update_notes(api, tag, commit, notes):
+    if not notes.strip():
+        raise ValueError("Release notes must not be blank")
+    if tag_commit(api, tag) != commit:
+        raise ValueError("GitHub tag points to a different commit")
+    release = find_release(api, tag)
+    if release is None or release.get("draft") or release["tag_name"] != tag:
+        raise ValueError("Notes-only updates require an existing published release")
+    target = release.get("target_commitish", "")
+    if re.fullmatch(r"[0-9a-f]{40}", target) and target != commit:
+        raise ValueError("Release target_commitish disagrees with source commit")
+    if tag_commit(api, tag) != commit:
+        raise ValueError("GitHub tag moved before notes update")
+    if release.get("body") != notes:
+        api.request("PATCH", f"/releases/{int(release['id'])}", {"body": notes})
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("directory", type=Path)
     parser.add_argument("tag")
     parser.add_argument("commit")
+    parser.add_argument("--notes-only", action="store_true")
     args = parser.parse_args()
-    assets = load_assets(args.directory, args.tag, args.commit)
+    assets = None if args.notes_only else load_assets(args.directory, args.tag, args.commit)
     token = os.environ.get("RELEASE_UPLOAD", "")
     if not token:
         raise ValueError("RELEASE_UPLOAD is required only for the final upload step")
-    publish(GitHub(token), args.tag, args.commit, assets, os.environ.get("RELEASE_NOTES", ""))
+    notes = os.environ.get("RELEASE_NOTES", "")
+    if args.notes_only:
+        update_notes(GitHub(token), args.tag, args.commit, notes)
+    else:
+        publish(GitHub(token), args.tag, args.commit, assets, notes)
 
 
 if __name__ == "__main__":

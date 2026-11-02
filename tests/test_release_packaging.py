@@ -65,7 +65,8 @@ class PackagingTest(unittest.TestCase):
         acceptance = (ROOT / "scripts/rebuild-ci-image.sh").read_text()
         for dependency in ("opencv", "yaml-cpp", "psmisc", "python", "libarchive"):
             self.assertIn(f"        {dependency} \\\n", image)
-        self.assertIn("pkgconf --modversion opencv4 yaml-cpp", acceptance)
+        self.assertIn("find_package(OpenCV REQUIRED COMPONENTS core imgproc)", acceptance)
+        self.assertIn("find_package(yaml-cpp REQUIRED)", acceptance)
 
     def test_package_build_identity_is_independent_of_pid_and_workspace(self):
         script = (ROOT / "scripts/release-build.sh").read_text()
@@ -485,6 +486,32 @@ upload_module = upload
 
 
 class UploadTest(unittest.TestCase):
+    def test_notes_only_never_changes_assets_or_creates_a_release(self):
+        api = FakeAPI()
+        upload.publish(api, TAG, COMMIT, {"package": b"keep"})
+        api.calls.clear()
+        upload.update_notes(api, TAG, COMMIT, "新说明\n")
+        self.assertEqual(api.assets["package"]["data"], b"keep")
+        self.assertEqual([(method, path, data) for method, path, data in api.calls if method != "GET"],
+                         [("PATCH", "/releases/7", {"body": "新说明\n"})])
+        for state in ("missing", "draft", "wrong-tag", "blank"):
+            api = FakeAPI()
+            if state == "draft":
+                api.release = {"id": 7, "tag_name": TAG, "draft": True}
+            if state == "wrong-tag":
+                api.commit = OTHER
+            with self.subTest(state=state), self.assertRaises(ValueError):
+                upload.update_notes(api, TAG, COMMIT, "" if state == "blank" else "说明")
+            self.assertTrue(all(method == "GET" for method, _, _ in api.calls))
+
+    def test_notes_only_cli_does_not_require_local_packages(self):
+        with patch.dict(os.environ, {"RELEASE_UPLOAD": "TEST", "RELEASE_NOTES": "说明"}, clear=True), \
+                patch.object(sys, "argv", ["release-upload.py", "missing", TAG, COMMIT, "--notes-only"]), \
+                patch.object(upload, "load_assets", side_effect=AssertionError("must not read packages")), \
+                patch.object(upload, "GitHub") as github, patch.object(upload, "update_notes") as update:
+            upload.main()
+            update.assert_called_once_with(github.return_value, TAG, COMMIT, "说明")
+
     def test_release_notes_are_preserved_and_identical_rerun_does_not_write(self):
         notes = '## 更新\n- 修复 "窗口" 与 `快捷键`\n$(touch SHOULD_NOT_EXIST)\nEOF\n'
         api = FakeAPI()

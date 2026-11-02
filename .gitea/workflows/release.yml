@@ -13,6 +13,11 @@ on:
         description: '版本发布更新说明（Markdown，将作为 GitHub Release 正文）'
         required: true
         type: string
+      notes_only:
+        description: 'Only update the existing published release body; never rebuild or change assets'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -58,6 +63,7 @@ jobs:
         run: python3 -B "$RELEASE_TOOLS_DIR/tests/test_release_packaging.py" -v
 
       - name: Acquire verified sources and build unprivileged Arch packages
+        if: ${{ github.event.inputs.notes_only != 'true' }}
         run: bash "$RELEASE_TOOLS_DIR/scripts/release-build.sh"
 
       - name: Upload verified packages to GitHub release
@@ -66,4 +72,8 @@ jobs:
         env:
           RELEASE_UPLOAD: ${{ secrets.RELEASE_UPLOAD }}
           RELEASE_NOTES: ${{ github.event.inputs.release_notes }}
-        run: python3 "$RELEASE_TOOLS_DIR/scripts/release-upload.py" release-assets "$RELEASE_TAG" "$RELEASE_COMMIT"
+          RELEASE_NOTES_ONLY: ${{ github.event.inputs.notes_only }}
+        run: |
+          args=()
+          if [[ "$RELEASE_NOTES_ONLY" == true ]]; then args+=(--notes-only); fi
+          python3 "$RELEASE_TOOLS_DIR/scripts/release-upload.py" release-assets "$RELEASE_TAG" "$RELEASE_COMMIT" "${args[@]}"
