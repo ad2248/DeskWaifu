@@ -67,7 +67,7 @@ def main():
     (logs / "registry.json").write_text(json.dumps(registry, indent=2))
     report = logs / "ctest.xml"
     report.unlink(missing_ok=True)
-    command = ["ctest", "--test-dir", str(build), "--parallel", "4", "--output-on-failure", "--no-tests=error",
+    command = ["ctest", "--test-dir", str(build), "--parallel", "12", "--output-on-failure", "--no-tests=error",
                "--test-output-size-passed", "10485760", "--test-output-size-failed", "10485760",
                "--output-junit", str(report)]
     if args.test:

@@ -25,8 +25,8 @@ with socket.socket(socket.AF_UNIX) as endpoint:
     state.write_text(name)
     (output / name).write_text(json.dumps({key: os.environ[key] for key in keys}))
     deadline = time.monotonic() + 8
-    while len(list(output.iterdir())) != 4:
-        assert time.monotonic() < deadline, "CTest did not run four tests concurrently"
+    while len(list(output.iterdir())) != 12:
+        assert time.monotonic() < deadline, "CTest did not run twelve tests concurrently"
         time.sleep(.01)
     assert state.read_text() == name, "another test overwrote HOME"
 '''
@@ -41,7 +41,7 @@ with socket.socket(socket.AF_UNIX) as endpoint:
                 f'include("{ROOT}/cmake/TestEnvironment.cmake")\n'
                 'add_executable(probe IMPORTED)\n'
                 f'set_target_properties(probe PROPERTIES IMPORTED_LOCATION "{sys.executable}")\n'
-                'foreach(name RANGE 1 4)\n'
+                'foreach(name RANGE 1 12)\n'
                 f'  deskwaifu_add_test(NAME isolation-${{name}} COMMAND probe "{script}" "{output}" ${{name}} ENVIRONMENT "DESKWAIFU_SCREENSHOT_TEST_BUS=1")\n'
                 '  set_tests_properties(isolation-${name} PROPERTIES TIMEOUT 12)\n'
                 'endforeach()\n')
@@ -49,7 +49,7 @@ with socket.socket(socket.AF_UNIX) as endpoint:
             subprocess.run(["cmake", "-S", str(root), "-B", str(build)], capture_output=True, check=True)
             commands = (
                 [sys.executable, str(ROOT / "scripts/run-test-gate.py"), str(build), "--test", "^isolation-"],
-                ["ctest", "--test-dir", str(build), "--parallel", "4", "--output-on-failure"],
+                ["ctest", "--test-dir", str(build), "--parallel", "12", "--output-on-failure"],
             )
             for command in commands:
                 with self.subTest(command=command[0]):
@@ -57,9 +57,9 @@ with socket.socket(socket.AF_UNIX) as endpoint:
                                             capture_output=True, text=True, timeout=20)
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                     snapshots = [json.loads(path.read_text()) for path in output.iterdir()]
-                    self.assertEqual(len(snapshots), 4)
+                    self.assertEqual(len(snapshots), 12)
                     for key in snapshots[0]:
-                        self.assertEqual(len({env[key] for env in snapshots}), 4, f"shared {key}")
+                        self.assertEqual(len({env[key] for env in snapshots}), 12, f"shared {key}")
                         if key != "DBUS_SESSION_BUS_ADDRESS":
                             self.assertTrue(all(not Path(env[key]).exists() for env in snapshots), f"leaked {key}")
                     for path in output.iterdir():
