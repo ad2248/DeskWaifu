@@ -309,7 +309,9 @@ class PackagingTest(unittest.TestCase):
         # installer. This is a packaging test, NOT an ELF/real application build.
         with tempfile.TemporaryDirectory(prefix="release-packaging-", dir=TEMP_ROOT) as temporary:
             work = Path(temporary)
-            archive(work / "deskwaifu.tar.gz", {"deskwaifu/README.md": "fixture"})
+            archive(work / "deskwaifu.tar.gz", {
+                "deskwaifu/README.md": "fixture",
+                "deskwaifu/plugins/perception/native/CMakeLists.txt": "# fixture"})
             archive(work / "private-deps.tar.gz", {
                 "private-deps/CubismSdkForNative-5-r.5/LICENSE.md": "fixture",
                 "private-deps/CubismSdkForNative-5-r.5/Core/LICENSE.md": "fixture",

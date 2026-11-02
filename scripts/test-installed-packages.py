@@ -15,6 +15,7 @@ import tempfile
 import uuid
 
 HERE = Path(__file__).resolve().parent
+OCR_MODEL_TEST = HERE.parent / "plugins/perception/tests/test_ocr_native_models.py"
 PACKAGES = ("deskwaifu-bin", "deskwaifu-ocr-bin", "deskwaifu-tests", "deskwaifu-ocr-tests")
 
 
@@ -122,7 +123,7 @@ def main():
         smoke = root / "smoke"
         smoke.mkdir()
         shutil.copy2(HERE / "package-smoke.py", smoke)
-        shutil.copy2(HERE.parent / "tests/test_ocr_native_models.py", smoke)
+        shutil.copy2(OCR_MODEL_TEST, smoke)
         for index, name in enumerate(PACKAGES):
             print(f"=== Stage {index + 1}/4: {name} ===", flush=True)
             guest.install(args.packages.resolve() / f"{name}-{args.version}-1-x86_64.pkg.tar.zst")

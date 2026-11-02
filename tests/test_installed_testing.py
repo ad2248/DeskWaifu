@@ -23,6 +23,11 @@ installation = load("test-installed-packages")
 
 
 class InstalledTestingTest(unittest.TestCase):
+    def test_migrated_ocr_fixture_is_preserved_for_installed_smoke_tests(self):
+        self.assertTrue(installation.OCR_MODEL_TEST.is_file())
+        relative = installation.OCR_MODEL_TEST.relative_to(ROOT).as_posix()
+        self.assertIn(relative, (ROOT / "scripts/release-source.py").read_text())
+
     def test_export_relocates_runtime_targets_and_keeps_source_checks_explicit(self):
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "source"
