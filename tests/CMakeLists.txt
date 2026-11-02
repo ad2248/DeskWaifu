@@ -2,7 +2,7 @@
 # the root test entry point is platform/tests.
 
 if(Python3_Interpreter_FOUND)
-  foreach(script smoke_isolation test_environment test_gate aur_packaging aur_binary_packaging ocr_build release_packaging mutation_configuration documentation_links)
+  foreach(script smoke_isolation test_environment test_gate build_boundary_registration aur_packaging aur_binary_packaging ocr_build release_packaging mutation_configuration documentation_links)
     string(REPLACE "_" "-" test_name ${script})
     deskwaifu_add_test(NAME ${test_name} COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/test_${script}.py)
     set_tests_properties(${test_name} PROPERTIES TIMEOUT 30)
@@ -18,8 +18,7 @@ if(Python3_Interpreter_FOUND)
     string(REPLACE "_" "-" test_name ${script})
     deskwaifu_add_test(NAME ${test_name} COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_${script}.py)
   endforeach()
-  deskwaifu_add_test(NAME build-boundaries COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_build_boundaries.py)
-  set_tests_properties(build-boundaries PROPERTIES TIMEOUT 60 LABELS "architecture;regression")
+  include(BuildBoundaryTests.cmake)
   deskwaifu_add_test(NAME opencode-review-cli COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/.gitea/scripts/test_opencode_review_cli.py)
   deskwaifu_add_test(NAME opencode-review-extraction COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/.gitea/scripts/test_extract_opencode_review.py)
 endif()
