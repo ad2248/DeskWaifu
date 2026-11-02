@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
 import unittest
@@ -168,6 +169,34 @@ set_target_properties(onnxruntime::onnxruntime PROPERTIES
                                   "-DCMAKE_DISABLE_FIND_PACKAGE_onnxruntime=ON", success=False)
         self.assertIn("onnxruntime", result.stdout)
         self.assertIn("REQUIRED", result.stdout)
+
+    def test_release_patches_historical_sdk_recipe_to_system_ort(self):
+        self.fixture()
+        native = self.source / NATIVE / "CMakeLists.txt"
+        native.write_text((ROOT / "tests/fixtures/ocr-sdk-CMakeLists.txt").read_text() +
+                          '\nset_target_properties(deskwaifu-ocr PROPERTIES AUTOMOC OFF)\n')
+        (self.directory / "deskwaifu").symlink_to(self.source, target_is_directory=True)
+        for name in ("deskwaifu.tar.gz", "private-deps.tar.gz"):
+            (self.directory / name).write_bytes(b"checksum fixture")
+        self.run_command(sys.executable, "-B", str(ROOT / "scripts/release-packaging.py"),
+                         "prepare", str(self.directory), "0.2.0", "a" * 40)
+        self.run_command("bash", "-euc", 'source "$1"; srcdir=$2; prepare', "bash",
+                         str(self.directory / "PKGBUILD"), str(self.directory))
+        self.assertNotIn("ONNXRUNTIME_ROOT", native.read_text())
+        self.assertNotIn("$ORIGIN", native.read_text())
+        self.configure(standalone=True)
+        self.run_command("cmake", "--build", str(self.build))
+        self.run_command("cmake", "--install", str(self.build))
+        self.assert_model_free_install()
+
+    def test_release_leaves_current_system_recipe_unchanged(self):
+        self.fixture()
+        native = self.source / NATIVE / "CMakeLists.txt"
+        original = native.read_text()
+        (self.directory / "deskwaifu").symlink_to(self.source, target_is_directory=True)
+        self.run_command("bash", "-euc", 'source "$1"; srcdir=$2; prepare', "bash",
+                         str(ROOT / "packaging/release/PKGBUILD.in"), str(self.directory))
+        self.assertEqual(native.read_text(), original)
 
     def test_legacy_ci_and_aur_explicitly_disable_native_dependencies(self):
         workflow = (ROOT / ".gitea/workflows/ci.yml").read_text()

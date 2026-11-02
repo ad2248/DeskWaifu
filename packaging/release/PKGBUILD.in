@@ -10,8 +10,17 @@ url='https://github.com/ad2248/DeskWaifu'
 license=('LicenseRef-Live2D-Open-Software' 'LicenseRef-Live2D-Proprietary' 'BSD-3-Clause' 'MIT' 'Unlicense')
 makedepends=('cmake' 'ninja' 'qt6-base' 'qt6-wayland' 'qt6-scxml' 'qt6-websockets' 'qt6-multimedia' 'layer-shell-qt' 'wayland' 'libglvnd' 'systemd-libs' 'opencv' 'yaml-cpp' 'onnxruntime-cpu')
 options=('!debug')
-source=('deskwaifu.tar.gz' 'private-deps.tar.gz')
-sha256sums=('@SOURCE_SHA@' '@PRIVATE_SHA@')
+source=('deskwaifu.tar.gz' 'private-deps.tar.gz' 'system-onnxruntime.patch')
+sha256sums=('@SOURCE_SHA@' '@PRIVATE_SHA@' '@ORT_PATCH_SHA@')
+
+prepare() {
+  local native="$srcdir/deskwaifu/src/plugins/perception/native"
+  # Distribution build patch for historical tags, never modify the tag checkout
+  # or restore its private SDK dependency. Current tags already use system ORT.
+  if grep -q 'set(ONNXRUNTIME_ROOT ' "$native/CMakeLists.txt"; then
+    patch --batch --forward -p1 -d "$native" -i "$srcdir/system-onnxruntime.patch"
+  fi
+}
 
 build() {
   cmake -S "$srcdir/deskwaifu" -B "$srcdir/build-main" -G Ninja \

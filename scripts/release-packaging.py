@@ -5,6 +5,7 @@ import hashlib
 import json
 from pathlib import Path
 import shlex
+import shutil
 import subprocess
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -22,9 +23,12 @@ def digest(path):
 
 
 def prepare(directory, tag, commit):
+    ort_patch = directory / "system-onnxruntime.patch"
+    shutil.copy2(ROOT / "packaging/release/system-onnxruntime.patch", ort_patch)
     template = (ROOT / "packaging/release/PKGBUILD.in").read_text()
     for key, value in {"SOURCE_SHA": digest(directory / "deskwaifu.tar.gz"),
-                       "PRIVATE_SHA": digest(directory / "private-deps.tar.gz"), "PKGVER": shlex.quote(tag)}.items():
+                       "PRIVATE_SHA": digest(directory / "private-deps.tar.gz"),
+                       "ORT_PATCH_SHA": digest(ort_patch), "PKGVER": shlex.quote(tag)}.items():
         template = template.replace(f"@{key}@", value)
     (directory / "PKGBUILD").write_text(template)
 

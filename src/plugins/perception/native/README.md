@@ -35,7 +35,11 @@ git clone https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx \
 
 运行依赖 glibc、C++ 运行库、Qt6 Core/Gui（含所需图片格式插件）、OpenCV core/imgproc（OpenCV 5 还需 geometry）、yaml-cpp 和 ONNX Runtime CPU。不需要 Python、Paddle、CUDA 或 Live2D SDK。模型是单独部署的数据，不属于模块构建输入，也不会被自动安装。整个项目可用 `-DDESKWAIFU_BUILD_OCR=OFF` 跳过推理依赖；这不影响主程序和 perception 插件构建。
 
-开发、构建和运行统一使用系统包管理器提供的 ONNX Runtime，不下载或捆绑独立 SDK。开发包必须提供 `onnxruntimeConfig.cmake` 和 `onnxruntime::onnxruntime` target。Arch Linux 示例：
+开发、构建和运行统一使用系统包管理器提供的 ONNX Runtime，不下载或捆绑独立 SDK。开发包必须提供 `onnxruntimeConfig.cmake` 和 `onnxruntime::onnxruntime` target。
+
+发布历史版本时，若其进程内 OCR 构建规则仍依赖独立 SDK，发布配方会在解包后的构建副本应用系统依赖补丁；不会修改原标签或恢复 SDK 下载、运行库捆绑。
+
+Arch Linux 示例：
 
 ```bash
 sudo pacman -S --needed opencv yaml-cpp onnxruntime-cpu
