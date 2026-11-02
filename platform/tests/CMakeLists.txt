@@ -1,4 +1,7 @@
 find_package(Threads REQUIRED)
+# 24 路构建时控制测试编译器的合计内存，不改变优化级别或生产目标。
+add_compile_options(
+  "$<$<AND:$<CONFIG:Release>,$<CXX_COMPILER_ID:GNU>>:--param=ggc-min-expand=10;--param=ggc-min-heapsize=16384>")
 if(TARGET speech_plugin)
   add_executable(speech-plugin-load-test SpeechPluginLoadTest.cpp)
   target_link_libraries(speech-plugin-load-test PRIVATE deskwaifu_plugin_host)
@@ -188,9 +191,9 @@ if(DESKWAIFU_BUILD_CONTROL AND TARGET ipc_plugin)
     ENVIRONMENT "DESKWAIFU_CONTROL_PLUGIN_DIR=${CMAKE_BINARY_DIR}/plugins")
   if(TARGET desktop-settings-fixture)
   qt_add_executable(main-window-transform-test MainWindowTransformTest.cpp)
-  # 仅约束大型 QtTest 翻译单元的 GCC 垃圾回收峰值，不改变优化级别或编译并发。
+  # 此大型 QtTest 单元进一步收紧回收，并省去宏展开诊断跟踪占用。
   target_compile_options(main-window-transform-test PRIVATE
-    "$<$<AND:$<CONFIG:Release>,$<CXX_COMPILER_ID:GNU>>:--param=ggc-min-expand=10;--param=ggc-min-heapsize=16384>")
+    "$<$<AND:$<CONFIG:Release>,$<CXX_COMPILER_ID:GNU>>:--param=ggc-min-expand=1;--param=ggc-min-heapsize=4096;-ftrack-macro-expansion=0>")
   target_link_libraries(main-window-transform-test PRIVATE Qt6::Test Qt6::Network deskwaifu_test_support deskwaifu_control_shell deskwaifu_plugin_host)
   add_dependencies(main-window-transform-test deskwaifu_control_plugins desktop-settings-fixture)
   target_compile_definitions(main-window-transform-test PRIVATE
