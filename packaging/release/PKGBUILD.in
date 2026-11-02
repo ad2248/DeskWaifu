@@ -94,7 +94,7 @@ package_deskwaifu-tests() {
 
 package_deskwaifu-ocr-tests() {
   pkgdesc='DeskWaifu installed OCR unit/integration tests (CI only, generated ONNX fixtures)'
-  depends=("deskwaifu-ocr-bin=$pkgver-$pkgrel" 'python' 'cmake')
+  depends=("deskwaifu-ocr-bin=$pkgver-$pkgrel" 'python' 'cmake' 'dbus')
   DESTDIR="$pkgdir" cmake --install "$srcdir/build-ocr" --component DeskWaifuOCRTests
   install -d "$pkgdir/usr/lib/deskwaifu/ocr-tests/scripts"
   cp -a "$srcdir/build-ocr/installed-scripts/." "$pkgdir/usr/lib/deskwaifu/ocr-tests/scripts/"

@@ -49,7 +49,7 @@ void DeskWaifuRespawner::start(const QString& procDirectory, const QString& lock
         }
         if (!_disconnected) return;
         // IPC 套接字关闭不代表旧进程已清理完成。
-        // 启动时的进程检查和共享锁可防止多个实例重叠运行。
+        // 启动时的进程检查和共享锁只约束当前运行目录的后端。
         const auto result = DeskWaifuLauncher::spawn(false, _applicationDirectory, procDirectory, lockDirectory);
         if (result.state == DeskWaifuLauncher::State::AlreadyRunning) return;
         finish(result.state == DeskWaifuLauncher::State::Started, result.message);

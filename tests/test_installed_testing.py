@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import subprocess
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -23,6 +24,66 @@ installation = load("test-installed-packages")
 
 
 class InstalledTestingTest(unittest.TestCase):
+    def test_export_unwraps_isolation_and_preserves_the_original_timeout(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, build = root / "source", root / "build"
+            (source / "scripts").mkdir(parents=True)
+            (source / "scripts/test-environment.py").write_text("# isolation launcher\n")
+            build.mkdir()
+            executable = str(build / "bin/unit-test")
+            installed = "/usr/lib/deskwaifu/tests/targets/unit/unit-test"
+            (build / "test-targets.json").write_text(json.dumps([
+                {"build": executable, "installed": installed}, None]))
+            launcher = str(source / "cmake/../scripts/test-environment.py")
+            registry = {"tests": [
+                {"name": "unit", "command": ["python3", launcher, "cmake", "-E", "env", "SETTING=fixture", executable],
+                 "properties": [{"name": "TIMEOUT", "value": 40},
+                                {"name": "ENVIRONMENT_MODIFICATION", "value": ["DESKWAIFU_TEST_TIMEOUT=set:30", "DESKWAIFU_TEST_WILL_FAIL=set:1"]}]},
+                {"name": "historical-wrapper", "command": ["python3", launcher, executable],
+                 "properties": [{"name": "WILL_FAIL", "value": True}]},
+                {"name": "source-contract", "command": ["python3", launcher, "cmake", "-E", "env",
+                                                        "python3", str(source / "check-source.py")]},
+            ]}
+            with patch.object(exporter.subprocess, "check_output", return_value=json.dumps(registry)):
+                exporter.prepare(build, source, ROOT / "scripts")
+            result = json.loads((build / "installed-tests.json").read_text())
+            self.assertEqual(result["source_gates"], ["source-contract"])
+            self.assertEqual(result["tests"][0]["command"], [installed])
+            self.assertEqual(result["tests"][0]["environment"], ["SETTING=fixture"])
+            self.assertEqual(result["tests"][0]["timeout"], 30)
+            self.assertTrue(result["tests"][0]["will_fail"])
+            self.assertEqual(result["tests"][1]["command"], [installed])
+            self.assertTrue(result["tests"][1]["will_fail"])
+
+    def test_installed_runner_uses_twelve_private_wrappers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            tests = [{"name": f"unit-{index}", "command": [f"unit-{index}"],
+                      "environment": ["SETTING=fixture"], "timeout": 1, "skip": None} for index in range(12)]
+            (root / "installed-tests.json").write_text(json.dumps({
+                "tests": tests, "optional_processes": {}, "optional_cases": {}}))
+            barrier = threading.Barrier(12, timeout=3)
+            directories = set()
+            lock = threading.Lock()
+
+            def run(command, **kwargs):
+                self.assertEqual(command[:2], [runner.sys.executable, str(root / "test-environment.py")])
+                self.assertIn("SETTING=fixture", command)
+                self.assertEqual(kwargs["env"]["DESKWAIFU_TEST_TIMEOUT"], "60")
+                self.assertEqual(kwargs["timeout"], 70)
+                with lock:
+                    directories.add(kwargs["cwd"])
+                barrier.wait()
+                return subprocess.CompletedProcess(command, 0, "passed")
+
+            with patch.object(runner, "__file__", str(root / "run.py")), \
+                    patch.object(runner.subprocess, "run", side_effect=run), \
+                    patch("sys.stdout", new_callable=io.StringIO):
+                self.assertFalse(runner.main())
+            self.assertEqual(len(directories), 12)
+            self.assertTrue(all(not Path(path).exists() for path in directories))
+
     def test_migrated_ocr_fixture_is_preserved_for_installed_smoke_tests(self):
         self.assertTrue(installation.OCR_MODEL_TEST.is_file())
         relative = installation.OCR_MODEL_TEST.relative_to(ROOT).as_posix()

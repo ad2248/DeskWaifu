@@ -32,20 +32,35 @@ def prepare(build, source, tools, ocr=False):
     registry = json.loads(subprocess.check_output(["ctest", "--test-dir", str(build), "--show-only=json-v1"], text=True))
     for test in registry["tests"]:
         properties = {item["name"]: item["value"] for item in test.get("properties", [])}
-        content = json.dumps({"command": test.get("command", []),
-                              "environment": properties.get("ENVIRONMENT", [])}, ensure_ascii=False)
+        command = list(test.get("command", []))
+        environment = list(properties.get("ENVIRONMENT", []))
+        # 安装后的运行器会逐项建立隔离环境；导出实际命令而非源码中的包装器路径。
+        if len(command) >= 2 and Path(command[1]).name == "test-environment.py":
+            command = command[2:]
+            if len(command) >= 3 and command[1:3] == ["-E", "env"]:
+                command = command[3:]
+                while command and "=" in command[0]:
+                    environment.append(command.pop(0))
+        timeout = properties.get("TIMEOUT", 60)
+        will_fail = bool(properties.get("WILL_FAIL", False))
+        for modification in properties.get("ENVIRONMENT_MODIFICATION", []):
+            if modification.startswith("DESKWAIFU_TEST_TIMEOUT=set:"):
+                timeout = float(modification.split(":", 1)[1])
+            if modification == "DESKWAIFU_TEST_WILL_FAIL=set:1":
+                will_fail = True
+        content = json.dumps({"command": command, "environment": environment}, ensure_ascii=False)
         for old in sorted(mapping, key=len, reverse=True):
             content = content.replace(old, mapping[old])
         item = json.loads(content)
         item["command"] = ["-DTEST_TEMP_ROOT=@TEMP@/fixture" if arg.startswith("-DTEST_TEMP_ROOT=") else arg
                            for arg in item["command"]]
         content = json.dumps(item)
-        if str(source) in content or str(build) in content or not test.get("command"):
-            if test.get("command") and test["command"][0] in mapping:
+        if str(source) in content or str(build) in content or not command:
+            if command and command[0] in mapping:
                 raise ValueError(f"Runtime test still depends on source/build paths: {test['name']}")
             excluded.append(test["name"])
             continue
-        item.update(name=test["name"], timeout=properties.get("TIMEOUT", 60),
+        item.update(name=test["name"], timeout=timeout, will_fail=will_fail,
                     skip=properties.get("SKIP_RETURN_CODE"))
         tests.append(item)
     if not tests:

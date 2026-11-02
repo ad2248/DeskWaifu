@@ -387,6 +387,10 @@ private slots:
         QVERIFY(status.open(QIODevice::WriteOnly));
         status.write("Name:\tdeskwaifu\nState:\tS (sleeping)\n");
         status.close();
+        QFile environment(directory.path() + "/123/environ");
+        QVERIFY(environment.open(QIODevice::WriteOnly));
+        environment.write("XDG_RUNTIME_DIR=" + qgetenv("XDG_RUNTIME_DIR") + QByteArray(1, '\0'));
+        environment.close();
         MainWindow window(nullptr, directory.path());
         auto* button = window.findChild<QPushButton*>("spawnButton");
         QVERIFY(button);

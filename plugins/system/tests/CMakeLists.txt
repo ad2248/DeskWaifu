@@ -5,7 +5,7 @@ deskwaifu_domain_test(deskwaifu-launcher-test system)
 target_compile_definitions(deskwaifu-launcher-test PRIVATE SPAWN_BACKEND_FIXTURE="$<TARGET_FILE:spawn-backend-fixture>")
 add_dependencies(deskwaifu-launcher-test spawn-backend-fixture)
 set_target_properties(deskwaifu-launcher-test PROPERTIES AUTOMOC ON)
-add_test(NAME deskwaifu-launcher COMMAND deskwaifu-launcher-test)
+deskwaifu_add_test(NAME deskwaifu-launcher COMMAND deskwaifu-launcher-test)
 add_library(system-respawner-fixture MODULE SystemRespawnerFixture.cpp
   ../gui/DeskWaifuRespawner.cpp ../gui/DeskWaifuRespawner.hpp ../gui/DeskWaifuLauncher.cpp)
 target_include_directories(system-respawner-fixture PRIVATE ../gui)

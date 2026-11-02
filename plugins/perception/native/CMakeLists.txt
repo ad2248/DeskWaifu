@@ -33,10 +33,13 @@ if(PROJECT_IS_TOP_LEVEL)
   include(CPack)
 endif()
 if(BUILD_TESTING)
+  if(NOT COMMAND deskwaifu_add_test)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/../../../cmake/TestEnvironment.cmake)
+  endif()
   find_package(Python3 COMPONENTS Interpreter)
   if(Python3_Interpreter_FOUND)
     get_filename_component(_ocr_model_tests "${CMAKE_CURRENT_SOURCE_DIR}/../tests/test_ocr_native_models.py" ABSOLUTE)
-    add_test(NAME ocr-native-models COMMAND ${CMAKE_COMMAND} -E env
+    deskwaifu_add_test(NAME ocr-native-models COMMAND ${CMAKE_COMMAND} -E env
       "OCR_NATIVE_MODULE=$<TARGET_FILE:deskwaifu-ocr>"
       "OCR_MODULE_PROBE=$<TARGET_FILE:ocr-module-probe>"
       ${Python3_EXECUTABLE} -B "${_ocr_model_tests}")

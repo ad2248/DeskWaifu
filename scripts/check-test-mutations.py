@@ -68,7 +68,7 @@ def main():
                 sys.exit(f"mutation {name}: expected exactly one anchor")
             path.write_text(clean.replace(old, new))
             try:
-                compiled = run(["cmake", "--build", str(build), "--target", target, "--parallel", "8"], logs / f"{name}-build.log") == 0
+                compiled = run(["cmake", "--build", str(build), "--target", target, "--parallel", "24"], logs / f"{name}-build.log") == 0
                 code = run([sys.executable, str(source / "scripts/run-test-gate.py"), str(build), "--test", f"^{test}$"], logs / f"{name}-test.log") if compiled else None
                 text = (logs / f"{name}-test.log").read_text() if compiled else ""
                 caught = compiled and code != 0 and assertion in text
@@ -78,7 +78,7 @@ def main():
                 path.write_text(clean)
             # A successful restored run distinguishes behavioral interception
             # from broken fixtures, missing capability or unrelated crashes.
-            restored = run(["cmake", "--build", str(build), "--target", target, "--parallel", "8"], logs / f"{name}-restored-build.log") == 0
+            restored = run(["cmake", "--build", str(build), "--target", target, "--parallel", "24"], logs / f"{name}-restored-build.log") == 0
             if restored:
                 restored = run([sys.executable, str(source / "scripts/run-test-gate.py"), str(build), "--test", f"^{test}$"], logs / f"{name}-restored-test.log") == 0
             results[-1]["restored_passed"] = restored

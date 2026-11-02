@@ -19,6 +19,7 @@ jobs:
     runs-on: deskwaifu-arch
     timeout-minutes: 60
     env:
+      CMAKE_BUILD_PARALLEL_LEVEL: 24
       http_proxy: http://100.64.0.11:7912
       https_proxy: http://100.64.0.11:7912
       ALL_PROXY: http://100.64.0.11:7912
@@ -119,7 +120,7 @@ jobs:
             -DDESKWAIFU_TEST_GATE=ON
 
       - name: Build
-        run: cmake --build build-ci --parallel 16
+        run: cmake --build build-ci --parallel 24
 
       - name: Compile render-target variants
         run: |
@@ -139,11 +140,11 @@ jobs:
           assert any(entry['file'].endswith('/plugins/desktop/private/processor/model/LAppLive2DManager.cpp') and
                      expected in shlex.split(entry['command']) for entry in commands), expected
           PY
-            cmake --build "$build_dir" --parallel 16
+            cmake --build "$build_dir" --parallel 24
           done
 
       - name: Test Qt model window, rendering, and IPC client
-        run: python3 scripts/test-environment.py python3 scripts/run-test-gate.py build-ci
+        run: python3 scripts/run-test-gate.py build-ci
 
       - name: Verify behavioral mutation interception
         run: python3 scripts/test-environment.py python3 scripts/check-test-mutations.py build-ci
@@ -162,10 +163,10 @@ jobs:
             -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON \
             -DDESKWAIFU_BUILD_OCR=OFF \
             -DDESKWAIFU_ENABLE_SANITIZERS=ON -DDESKWAIFU_TEST_GATE=ON
-          cmake --build build-sanitize --parallel 16 --target \
+          cmake --build build-sanitize --parallel 24 --target \
             processor-event-loop-test speech-processor-contract-test interaction-processor-test \
             config-store-test ipc-bounded-transport-test sanitizer-failure-fixture
-          python3 scripts/test-environment.py python3 scripts/run-test-gate.py build-sanitize \
+          python3 scripts/run-test-gate.py build-sanitize \
             --test '^(processor-event-loop|speech-contract-.*|interaction-opacity|config-store|ipc-bounded-transport|sanitizer-failure-gate)$'
 
       - name: Preserve test evidence

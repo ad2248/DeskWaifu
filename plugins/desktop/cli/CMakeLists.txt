@@ -6,7 +6,7 @@ foreach(command toggle --toggle focus --focus)
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/deskwaifu/plugins/desktop/commands RENAME "${command}" COMPONENT DeskWaifu)
 endforeach()
 if(BUILD_TESTING)
-  add_test(NAME desktop-cli COMMAND ${Python3_EXECUTABLE} -B
+  deskwaifu_add_test(NAME desktop-cli COMMAND ${Python3_EXECUTABLE} -B
     ${CMAKE_CURRENT_SOURCE_DIR}/../tests/DesktopControlTest.py $<TARGET_FILE:deskwaifu> ${CMAKE_BINARY_DIR}/plugins)
   set_tests_properties(desktop-cli PROPERTIES TIMEOUT 15 LABELS "contract;regression")
 endif()

@@ -21,7 +21,7 @@ container:
 
 ## 仓库可证实的行为
 
-[`.gitea/workflows/ci.yml`](../../.gitea/workflows/ci.yml) 选择 `deskwaifu-arch`，并在注释中要求使用镜像 ID 固定的镜像及 `force_pull: false`；它不配置运行器。主构建、渲染目标变体构建及 sanitizer 构建显式使用 `cmake --build ... --parallel 16`。不要从 `nproc` 推导编译并行度：此任务数有意超过预期的 8 CPU 配额。
+[`.gitea/workflows/ci.yml`](../../.gitea/workflows/ci.yml) 选择 `deskwaifu-arch`，并在注释中要求使用镜像 ID 固定的镜像及 `force_pull: false`；它不配置运行器。主构建、渲染目标变体、sanitizer 和故障植入构建显式使用 24 路，包构建设置 `CMAKE_BUILD_PARALLEL_LEVEL=24`。不要从 `nproc` 推导编译并行度：此任务数有意超过预期的 8 CPU 配额。测试目录的 GCC Release 编译使用较积极的 GCC 垃圾回收参数，降低多个编译器的合计内存；大型 `main-window-transform-test` 进一步收紧回收并关闭宏展开诊断跟踪（编译错误仍报告，但不展开宏来源链）。这不降低优化级别、不改变生产目标编译参数或全局并发。
 
 [`scripts/rebuild-ci-image.sh`](../../scripts/rebuild-ci-image.sh) 从 `Containerfile` 构建 `ci` 目标，检查镜像并私下传输到 `${DESKWAIFU_RUNNER_HOST:-st}`。镜像包含专有依赖，必须保持私有。脚本检查目标主机存在该镜像 ID，并打印 `deskwaifu-arch:docker://sha256:...` 标签；它不更新运行器配置或重启服务。更新运行器时，手动应用该标签并设置 `force_pull: false`。
 
