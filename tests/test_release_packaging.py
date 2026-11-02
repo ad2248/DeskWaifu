@@ -44,7 +44,7 @@ def archive(path, files):
 
 def fixture_files(ocr=False):
     if ocr:
-        return {"usr/lib/deskwaifu/ocr/deskwaifu-ocr.so", "usr/lib/deskwaifu/ocr/libonnxruntime.so.1"}
+        return {"usr/lib/deskwaifu/ocr/deskwaifu-ocr.so"}
     return {"usr/bin/deskwaifu", "usr/bin/deskwaifu-control", "usr/bin/deskwaifu-ctl", "usr/bin/deskwaifu-cursor-guard",
             *(f"usr/lib/deskwaifu/plugins/{name}/{name}.so" for name in packaging.PLUGINS),
             *packaging.SDK_LIBRARIES}
@@ -141,9 +141,17 @@ class PackagingTest(unittest.TestCase):
     def test_payload_and_exact_dependency(self):
         for name, ocr in (("deskwaifu-bin", False), ("deskwaifu-ocr-bin", True)):
             info = {"pkgname": [name], "pkgver": ["1.2.3-1"], "arch": ["x86_64"],
-                    "depend": ["deskwaifu-bin=1.2.3-1", "opencv", "yaml-cpp"] if ocr else sorted(packaging.MAIN_DEPENDS)}
+                    "depend": ["deskwaifu-bin=1.2.3-1", "opencv", "yaml-cpp", "onnxruntime-cpu"] if ocr else sorted(packaging.MAIN_DEPENDS)}
             packaging.verify_content(name, info, fixture_files(ocr), "1.2.3")
             if ocr:
+                for bundled in ("usr/lib/deskwaifu/ocr/libonnxruntime.so.1",
+                                "usr/lib/libonnxruntime_providers_shared.so",
+                                "usr/share/licenses/deskwaifu-ocr/onnxruntime/LICENSE"):
+                    with self.subTest(bundled=bundled), self.assertRaisesRegex(ValueError, "not bundled"):
+                        packaging.verify_content(name, info, fixture_files(True) | {bundled}, "1.2.3")
+                with self.assertRaisesRegex(ValueError, "system onnxruntime-cpu"):
+                    packaging.verify_content(name, dict(info, depend=["deskwaifu-bin=1.2.3-1", "opencv", "yaml-cpp"]),
+                                             fixture_files(True), "1.2.3")
                 with self.assertRaisesRegex(ValueError, "retired helper"):
                     packaging.verify_content(name, info, fixture_files(True) | {"usr/libexec/deskwaifu-ocr"}, "1.2.3")
                 with self.assertRaisesRegex(ValueError, "Missing package files"):
@@ -162,7 +170,7 @@ class PackagingTest(unittest.TestCase):
 
     def test_empty_ocr_model_directory_is_allowed_but_payload_is_not(self):
         info = {"pkgname": ["deskwaifu-ocr-bin"], "pkgver": ["1.2.3-1"], "arch": ["x86_64"],
-                "depend": ["deskwaifu-bin=1.2.3-1", "opencv", "yaml-cpp"]}
+                "depend": ["deskwaifu-bin=1.2.3-1", "opencv", "yaml-cpp", "onnxruntime-cpu"]}
         directories = {"./usr/share/deskwaifu/ocr/", "./usr/share/deskwaifu/ocr/models/"}
         packaging.verify_content("deskwaifu-ocr-bin", info, fixture_files(True) | directories, "1.2.3")
         for payload in ("usr/share/deskwaifu/ocr/models", "usr/share/deskwaifu/ocr/models/model.onnx",
@@ -257,18 +265,15 @@ class PackagingTest(unittest.TestCase):
                 "private-deps/CubismSdkForNative-5-r.5/Core/LICENSE.md": "fixture",
                 "private-deps/CubismSdkForNative-5-r.5/Framework/LICENSE.md": "fixture",
                 "private-deps/glew/LICENSE.txt": "fixture"})
-            sdk = work / "onnxruntime-linux-x64-1.31.0.tgz"
-            archive(sdk, {"onnxruntime-linux-x64-1.31.0/LICENSE": "fixture"})
             packaging.prepare(work, TAG, COMMIT)
             pkgbuild = work / "PKGBUILD"
-            # Only the fixture SDK checksum is substituted. Production remains
-            # pinned to the official SDK and makepkg verifies every fixture hash.
-            pkgbuild.write_text(pkgbuild.read_text().replace(
-                "cc5c72baf5ae5c8238a6841f0897227be2d02826b9cf98eaf02fdefaeeb03a57", packaging.digest(sdk)))
             subprocess.run(["bash", "-n", str(pkgbuild)], check=True)
             srcinfo = subprocess.check_output(["makepkg", "--printsrcinfo"], cwd=work, text=True)
             self.assertIn(f"depends = deskwaifu-bin={TAG}-1", srcinfo)
             self.assertIn("depends = yaml-cpp", srcinfo)
+            self.assertIn("depends = onnxruntime-cpu", srcinfo)
+            self.assertIn("makedepends = onnxruntime-cpu", srcinfo)
+            self.assertNotIn("onnxruntime-linux", srcinfo)
             self.assertIn("makedepends = opencv", srcinfo)
             self.assertEqual(srcinfo.count("pkgname = "), 2)
             bin_dir = work / "bin"

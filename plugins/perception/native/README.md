@@ -35,26 +35,24 @@ git clone https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx \
 
 运行依赖 glibc、C++ 运行库、Qt6 Core/Gui（含所需图片格式插件）、OpenCV core/imgproc（OpenCV 5 还需 geometry）、yaml-cpp 和 ONNX Runtime CPU。不需要 Python、Paddle、CUDA 或 Live2D SDK。模型是单独部署的数据，不属于模块构建输入，也不会被自动安装。整个项目可用 `-DDESKWAIFU_BUILD_OCR=OFF` 跳过推理依赖；这不影响主程序和 perception 插件构建。
 
-以下为已校验的 ONNX Runtime 1.31.0 Linux x86_64 SDK 下载方式；其他架构需使用相应 SDK 并独立核验：
+开发、构建和运行统一使用系统包管理器提供的 ONNX Runtime，不下载或捆绑独立 SDK。开发包必须提供 `onnxruntimeConfig.cmake` 和 `onnxruntime::onnxruntime` target。
+
+发布历史版本时，若其进程内 OCR 构建规则仍依赖独立 SDK，发布配方会在解包后的构建副本应用系统依赖补丁；不会修改原标签或恢复 SDK 下载、运行库捆绑。
+
+Arch Linux 示例：
 
 ```bash
-mkdir -p /tmp/opencode/ocr-sdk
-curl -fL --retry 3 \
-  https://github.com/microsoft/onnxruntime/releases/download/v1.31.0/onnxruntime-linux-x64-1.31.0.tgz \
-  -o /tmp/opencode/ocr-sdk/onnxruntime-linux-x64-1.31.0.tgz
-echo 'cc5c72baf5ae5c8238a6841f0897227be2d02826b9cf98eaf02fdefaeeb03a57  /tmp/opencode/ocr-sdk/onnxruntime-linux-x64-1.31.0.tgz' | sha256sum -c -
-tar -xzf /tmp/opencode/ocr-sdk/onnxruntime-linux-x64-1.31.0.tgz -C /tmp/opencode/ocr-sdk
+sudo pacman -S --needed opencv yaml-cpp onnxruntime-cpu
 
 cmake -S plugins/perception/native -B build-ocr -G Ninja \
-  -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib \
-  -DONNXRUNTIME_ROOT=/tmp/opencode/ocr-sdk/onnxruntime-linux-x64-1.31.0
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib
 cmake --build build-ocr --parallel 4
 
 # 只安装到私有暂存目录，不修改本机 /usr。
 DESTDIR="$PWD/stage-ocr" cmake --install build-ocr --component DeskWaifuOCR
 ```
 
-安装内容为 `usr/lib/deskwaifu/ocr/deskwaifu-ocr.so`、同目录 ORT 运行库及许可证，不包含可执行辅助程序或模型。模块通过 `$ORIGIN` RPATH 查找 ORT；模型仍使用配置中的绝对路径。Qt/OpenCV/yaml-cpp 是系统依赖；模块与主程序需匹配 Qt/C++ ABI 和私有接口版本，正式 OCR 包严格依赖同版本主包。不能据此声称跨发行版 ABI 兼容。
+安装内容为 `usr/lib/deskwaifu/ocr/deskwaifu-ocr.so`、模块文档及模型许可证，不包含 ORT 运行库副本、ORT 许可证副本、可执行辅助程序或模型。模块通过系统动态链接器加载 ORT；模型仍使用配置中的绝对路径。Qt/OpenCV/yaml-cpp/ONNX Runtime 都是系统依赖，正式 OCR 包声明 `onnxruntime-cpu` 运行依赖；模块与主程序需匹配 Qt/C++ ABI 和私有接口版本，正式 OCR 包严格依赖同版本主包。不能据此声称跨发行版 ABI 兼容。
 
 ## 配置与升级
 

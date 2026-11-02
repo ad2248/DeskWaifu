@@ -27,6 +27,8 @@ RUN { printf 'Server = %s/$repo/os/$arch\n' "${PACMAN_MIRROR}"; \
         ninja \
         nodejs \
         noto-fonts \
+        onnxruntime-cpu \
+        opencv \
         pkgconf \
         qt6-base \
         qt6-multimedia \
@@ -41,6 +43,7 @@ RUN { printf 'Server = %s/$repo/os/$arch\n' "${PACMAN_MIRROR}"; \
         wayland \
         wayland-protocols \
         wayland-utils \
+        yaml-cpp \
     && setcap -r /usr/bin/sway \
     && pacman -Scc --noconfirm
 

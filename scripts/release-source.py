@@ -45,6 +45,7 @@ def main():
     tool_source = Path(__file__).resolve().parents[1]
     for relative in ("scripts/release-source.py", "scripts/release-build.sh", "scripts/release-packaging.py",
                      "scripts/release-upload.py", "scripts/find-deps-dir.sh", "packaging/release/PKGBUILD.in",
+                     "packaging/release/system-onnxruntime.patch",
                      "tests/test_release_packaging.py", ".gitea/workflows/release.yml"):
         target = tools / relative
         target.parent.mkdir(parents=True, exist_ok=True)
