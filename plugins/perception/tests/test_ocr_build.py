@@ -168,10 +168,27 @@ add_library(opencv_imgproc INTERFACE IMPORTED)
                 self.assertIn(f"ONNX Runtime SDK must include {name}", result.stdout)
                 path.write_text(original)
 
-    def test_release_build_uses_root_plugin_source(self):
-        recipe = (ROOT / "packaging/release/PKGBUILD.in").read_text()
-        self.assertIn(f'cmake -S "$srcdir/deskwaifu/{NATIVE}"', recipe)
-        self.assertTrue((ROOT / NATIVE / "CMakeLists.txt").is_file())
+    def test_release_build_selects_checked_out_tag_layout(self):
+        for layouts in (("plugins",), ("src/plugins",), ("plugins", "src/plugins"), ()):
+            with self.subTest(layouts=layouts), tempfile.TemporaryDirectory() as directory:
+                source = Path(directory)
+                stub = "cmake_minimum_required(VERSION 3.25)\nproject(release_fixture NONE)\n"
+                self.write(source / "deskwaifu/CMakeLists.txt", stub)
+                for layout in layouts:
+                    self.write(source / "deskwaifu" / layout / "perception/native/CMakeLists.txt", stub)
+                result = subprocess.run([
+                    "bash", "-euc", 'source "$1"; srcdir="$2"; build', "bash",
+                    str(ROOT / "packaging/release/PKGBUILD.in"), str(source),
+                ], capture_output=True, text=True)
+                if layouts:
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    cache = (source / "build-ocr/CMakeCache.txt").read_text()
+                    expected = source / "deskwaifu" / layouts[0] / "perception/native"
+                    self.assertIn(f"CMAKE_HOME_DIRECTORY:INTERNAL={expected}\n", cache)
+                else:
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("OCR source CMakeLists.txt not found", result.stderr)
+                    self.assertFalse((source / "build-main").exists())
 
     def test_legacy_ci_and_aur_explicitly_disable_native_dependencies(self):
         workflow = (ROOT / ".gitea/workflows/ci.yml").read_text()

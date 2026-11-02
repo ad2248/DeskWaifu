@@ -14,6 +14,14 @@ source=('deskwaifu.tar.gz' 'private-deps.tar.gz' 'onnxruntime-linux-x64-1.31.0.t
 sha256sums=('@SOURCE_SHA@' '@PRIVATE_SHA@' 'cc5c72baf5ae5c8238a6841f0897227be2d02826b9cf98eaf02fdefaeeb03a57')
 
 build() {
+  local ocr_source="$srcdir/deskwaifu/plugins/perception/native"
+  if [[ ! -f "$ocr_source/CMakeLists.txt" ]]; then
+    ocr_source="$srcdir/deskwaifu/src/plugins/perception/native"
+  fi
+  if [[ ! -f "$ocr_source/CMakeLists.txt" ]]; then
+    printf '%s\n' 'OCR source CMakeLists.txt not found in selected release tag' >&2
+    return 1
+  fi
   cmake -S "$srcdir/deskwaifu" -B "$srcdir/build-main" -G Ninja \
     -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib \
     -DBUILD_TESTING=OFF -DDESKWAIFU_BUILD_OCR=OFF \
@@ -24,7 +32,7 @@ build() {
     -DSDK_ROOT_PATH="$srcdir/private-deps/CubismSdkForNative-5-r.5" \
     -DGLEW_PATH="$srcdir/private-deps/glew"
   cmake --build "$srcdir/build-main" --parallel "${CMAKE_BUILD_PARALLEL_LEVEL:-4}"
-  cmake -S "$srcdir/deskwaifu/plugins/perception/native" -B "$srcdir/build-ocr" -G Ninja \
+  cmake -S "$ocr_source" -B "$srcdir/build-ocr" -G Ninja \
     -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib \
     -DBUILD_TESTING=OFF \
     -DONNXRUNTIME_ROOT="$srcdir/onnxruntime-linux-x64-1.31.0"
