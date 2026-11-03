@@ -102,6 +102,12 @@ jobs:
         if: always()
         run: rm -f release-assets/*.pkg.tar.zst package-reference/*.pkg.tar.zst
 
+      - name: Report CI failure to OpenHands
+        if: failure()
+        env:
+          PIPELINE_WEBHOOK_SECRET: ${{ secrets.PIPELINE_WEBHOOK_SECRET }}
+        run: python3 -B .gitea/scripts/report-ci-failure.py
+
   test:
     name: Arch build and headless Wayland test
     # 此标签必须映射到按镜像 ID 固定的 deskwaifu-ci 镜像，且 force_pull=false。
@@ -249,3 +255,9 @@ jobs:
           test ! -d build-ci/test-logs || find build-ci/test-logs -type f \
             \( -name sway.log -o -name deskwaifu.log -o -name deskwaifu-control.log -o -name qt-window.log \) \
             -exec cat {} \;
+
+      - name: Report CI failure to OpenHands
+        if: failure()
+        env:
+          PIPELINE_WEBHOOK_SECRET: ${{ secrets.PIPELINE_WEBHOOK_SECRET }}
+        run: python3 -B .gitea/scripts/report-ci-failure.py

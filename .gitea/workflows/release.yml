@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Exact existing tag name, used unchanged for packaging and upload (never a branch)'
+        description: 'Tag name used unchanged for packaging and upload (never a branch); created on the latest main commit when it does not exist'
         required: true
         type: string
       release_notes:
@@ -20,7 +20,7 @@ on:
         default: false
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: deskwaifu-release
@@ -50,13 +50,15 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Select and check out the exact release tag
+      - name: Resolve release tag, creating it on main when missing
         env:
           RELEASE_EVENT: ${{ github.event_name }}
           RELEASE_REF: ${{ github.ref }}
           RELEASE_EVENT_SHA: ${{ github.sha }}
           RELEASE_INPUT_TAG: ${{ github.event.inputs.tag }}
           RELEASE_NOTES: ${{ github.event.inputs.release_notes }}
+          RELEASE_NOTES_ONLY: ${{ github.event.inputs.notes_only }}
+          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
         run: python3 scripts/release-source.py
 
       - name: Acquire verified sources and build unprivileged Arch packages

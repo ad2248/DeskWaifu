@@ -294,6 +294,128 @@ class PackagingTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertNotIn("RELEASE_NOTES=", env_file.read_text())
 
+    def test_dispatch_creates_missing_tag_on_latest_main(self):
+        with tempfile.TemporaryDirectory(prefix="release-create-tag-", dir=TEMP_ROOT) as temporary:
+            root = Path(temporary)
+            origin = root / "origin"
+            origin.mkdir()
+
+            def git(*args):
+                return subprocess.check_output(["git", "-C", str(origin), *args], text=True,
+                                               stderr=subprocess.PIPE).strip()
+
+            git("init", "--initial-branch=main")
+            (origin / "version").write_text("older source")
+            git("add", "version")
+            git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "first")
+            git("tag", "0.1.0")
+            (origin / "version").write_text("latest main source")
+            git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-am", "second")
+            main_head = git("rev-parse", "HEAD")
+            checkout = root / "checkout"
+            subprocess.run(["git", "clone", "--quiet", str(origin), str(checkout)], check=True)
+            env_file = root / "env"
+            env = dict(os.environ, RELEASE_EVENT="workflow_dispatch", RELEASE_REF="refs/heads/main",
+                       RELEASE_INPUT_TAG="0.2.0", RELEASE_NOTES="发布说明",
+                       RELEASE_NOTES_ONLY="false", GITEA_TOKEN="", GITHUB_TOKEN="",
+                       GITHUB_ENV=str(env_file), RUNNER_TEMP=str(root))
+            result = subprocess.run([sys.executable, "-B", str(ROOT / "scripts/release-source.py")],
+                                    cwd=checkout, env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(git("rev-parse", "0.2.0"), main_head)
+            self.assertEqual((checkout / "version").read_text(), "latest main source")
+            self.assertIn(f"RELEASE_TAG=0.2.0\nRELEASE_COMMIT={main_head}", env_file.read_text())
+            symbolic = subprocess.run(["git", "symbolic-ref", "-q", "HEAD"], cwd=checkout, capture_output=True)
+            self.assertNotEqual(symbolic.returncode, 0)
+
+    def test_dispatch_existing_tag_is_never_moved_by_main_progress(self):
+        with tempfile.TemporaryDirectory(prefix="release-existing-tag-", dir=TEMP_ROOT) as temporary:
+            root = Path(temporary)
+            origin = root / "origin"
+            origin.mkdir()
+
+            def git(*args):
+                return subprocess.check_output(["git", "-C", str(origin), *args], text=True,
+                                               stderr=subprocess.PIPE).strip()
+
+            git("init", "--initial-branch=main")
+            (origin / "version").write_text("tagged source")
+            git("add", "version")
+            git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "release")
+            tagged = git("rev-parse", "HEAD")
+            git("tag", TAG)
+            (origin / "version").write_text("newer main source, must not be released")
+            git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-am", "later")
+            checkout = root / "checkout"
+            subprocess.run(["git", "clone", "--quiet", str(origin), str(checkout)], check=True)
+            env_file = root / "env"
+            env = dict(os.environ, RELEASE_EVENT="workflow_dispatch", RELEASE_REF="refs/heads/main",
+                       RELEASE_INPUT_TAG=TAG, RELEASE_NOTES="发布说明",
+                       GITHUB_ENV=str(env_file), RUNNER_TEMP=str(root))
+            result = subprocess.run([sys.executable, "-B", str(ROOT / "scripts/release-source.py")],
+                                    cwd=checkout, env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(git("rev-parse", TAG), tagged)
+            self.assertEqual((checkout / "version").read_text(), "tagged source")
+
+    def test_push_event_and_notes_only_never_create_missing_tag(self):
+        with tempfile.TemporaryDirectory(prefix="release-missing-tag-", dir=TEMP_ROOT) as temporary:
+            root = Path(temporary)
+            origin = root / "origin"
+            origin.mkdir()
+
+            def git(*args):
+                return subprocess.check_output(["git", "-C", str(origin), *args], text=True,
+                                               stderr=subprocess.PIPE).strip()
+
+            git("init", "--initial-branch=main")
+            (origin / "version").write_text("source")
+            git("add", "version")
+            git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "only")
+            head = git("rev-parse", "HEAD")
+            checkout = root / "checkout"
+            subprocess.run(["git", "clone", "--quiet", str(origin), str(checkout)], check=True)
+            env_file = root / "env"
+            env = dict(os.environ, RELEASE_EVENT="push", RELEASE_REF="refs/tags/0.9.0",
+                       RELEASE_EVENT_SHA=head, RELEASE_NOTES="",
+                       GITHUB_ENV=str(env_file), RUNNER_TEMP=str(root))
+            command = [sys.executable, "-B", str(ROOT / "scripts/release-source.py")]
+            result = subprocess.run(command, cwd=checkout, env=env, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("does not exist", result.stderr)
+            env.update(RELEASE_EVENT="workflow_dispatch", RELEASE_REF="refs/heads/main",
+                       RELEASE_INPUT_TAG="0.9.0", RELEASE_NOTES="发布说明", RELEASE_NOTES_ONLY="true")
+            result = subprocess.run(command, cwd=checkout, env=env, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("existing tag", result.stderr)
+            self.assertEqual(git("tag", "--list", "0.9.0"), "")
+
+    def test_dispatch_tag_creation_survives_special_characters(self):
+        tag = "0.2.0-rc.1"
+        with tempfile.TemporaryDirectory(prefix="release-tag-chars-", dir=TEMP_ROOT) as temporary:
+            root = Path(temporary)
+            origin = root / "origin"
+            origin.mkdir()
+
+            def git(*args):
+                return subprocess.check_output(["git", "-C", str(origin), *args], text=True,
+                                               stderr=subprocess.PIPE).strip()
+
+            git("init", "--initial-branch=main")
+            (origin / "version").write_text("source")
+            git("add", "version")
+            git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "only")
+            head = git("rev-parse", "HEAD")
+            checkout = root / "checkout"
+            subprocess.run(["git", "clone", "--quiet", str(origin), str(checkout)], check=True)
+            env = dict(os.environ, RELEASE_EVENT="workflow_dispatch", RELEASE_REF="refs/heads/main",
+                       RELEASE_INPUT_TAG=tag, RELEASE_NOTES="发布说明",
+                       GITHUB_ENV=str(root / "env"), RUNNER_TEMP=str(root))
+            result = subprocess.run([sys.executable, "-B", str(ROOT / "scripts/release-source.py")],
+                                    cwd=checkout, env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(git("rev-parse", tag), head)
+
     def test_package_split_does_not_leak_runtime_or_plugins(self):
         main_info = {"pkgname": ["deskwaifu-bin"], "pkgver": ["1.2.3-1"], "arch": ["x86_64"]}
         with self.assertRaisesRegex(ValueError, "must not contain OCR"):
