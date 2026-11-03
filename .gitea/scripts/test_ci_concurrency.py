@@ -25,6 +25,24 @@ class CiConcurrencyTest(unittest.TestCase):
         parallelism = re.findall(r'"--parallel", "(\d+)"', script.read_text())
         self.assertEqual(parallelism, ["24", "24"], "Check both mutated and restored builds")
 
+    def test_dispatch_exposes_clean_build_opt_out(self):
+        workflow = pathlib.Path(__file__).resolve().parents[1] / "workflows/ci.yml"
+        text = workflow.read_text()
+        self.assertRegex(text, r"clean:\s*\n\s*description: '[^']*编译缓存'")
+        self.assertIn("type: boolean", text)
+        self.assertEqual(text.count("DESKWAIFU_CLEAN_BUILD: ${{ github.event.inputs.clean }}"), 2,
+                         "Both CI jobs must honor the clean build option")
+
+    def test_all_configures_use_the_persistent_compiler_cache(self):
+        workflow = pathlib.Path(__file__).resolve().parents[1] / "workflows/ci.yml"
+        text = workflow.read_text()
+        self.assertEqual(text.count("-DCMAKE_CXX_COMPILER_LAUNCHER=ccache"), 3,
+                         "Check the main build, render-target variants and sanitizer build")
+        self.assertIn('echo "CCACHE_DIR=/cache/ccache"', text)
+        self.assertIn('echo "CCACHE_DIR=/cache/ccache-makepkg"', text)
+        self.assertIn("CCACHE_DISABLE=1", text)
+        self.assertNotIn("pacman -", text, "CI must use the pinned image instead of mid-job installs")
+
 
 if __name__ == "__main__":
     unittest.main()

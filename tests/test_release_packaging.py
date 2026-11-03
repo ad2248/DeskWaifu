@@ -100,6 +100,19 @@ class PackagingTest(unittest.TestCase):
         self.assertIn('SOURCE_DATE_EPOCH=$(git show -s --format=%ct "$RELEASE_COMMIT")', script)
         self.assertIn('PACKAGER="DeskWaifu reproducible build"', (ROOT / "Containerfile").read_text())
 
+    def test_release_build_uses_persistent_cache_only_when_mounted_and_not_clean(self):
+        script = (ROOT / "scripts/release-build.sh").read_text()
+        self.assertIn('if [[ "${DESKWAIFU_CLEAN_BUILD:-false}" != "true" && -d /cache && -x /usr/bin/ccache ]]', script)
+        self.assertIn("/etc/makepkg.conf.d/zz-deskwaifu-ccache.conf", script)
+        self.assertIn("export DESKWAIFU_CCACHE=1", script)
+        self.assertIn("export CCACHE_DIR=/cache/ccache-makepkg", script)
+        self.assertIn('chown "$build_user:$build_user" /cache/ccache-makepkg', script)
+        pkgbuild = (ROOT / "packaging/release/PKGBUILD.in").read_text()
+        self.assertEqual(pkgbuild.count('if [[ -n "${DESKWAIFU_CCACHE:-}" ]]; then'), 1)
+        self.assertEqual(pkgbuild.count("-DCMAKE_CXX_COMPILER_LAUNCHER=ccache"), 1,
+                         "The launcher array must feed both the main and OCR configures")
+        self.assertIn("ccache \\\n", (ROOT / "Containerfile").read_text())
+
     def test_current_tools_survive_checkout_of_historical_tag(self):
         with tempfile.TemporaryDirectory(prefix="release-historical-tools-", dir=TEMP_ROOT) as temporary:
             root = Path(temporary)

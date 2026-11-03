@@ -75,6 +75,21 @@ for trusted in "$root" "$tools_root"; do
         trusted=$parent
     done
 done
+# Optionally route compiler caching to the runner's persistent cache volume.
+# The workflow's clean option, a missing /cache volume, or a missing ccache
+# binary each fall back to the previous uncached release build.
+if [[ "${DESKWAIFU_CLEAN_BUILD:-false}" != "true" && -d /cache && -x /usr/bin/ccache ]]; then
+    install -d -m 0777 /cache/ccache-makepkg
+    chown "$build_user:$build_user" /cache/ccache-makepkg
+    cat > /etc/makepkg.conf.d/zz-deskwaifu-ccache.conf <<'EOF'
+# Managed by scripts/release-build.sh: enable compiler caching only for
+# non-clean CI builds whose runner mounts the persistent cache volume.
+export DESKWAIFU_CCACHE=1
+export CCACHE_DIR=/cache/ccache-makepkg
+export CCACHE_UMASK=000
+export CCACHE_MAXSIZE=8G
+EOF
+fi
 runuser -u "$build_user" -- env -i PATH=/usr/bin:/bin HOME="$work/home" SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" TZ=UTC LANG=C.UTF-8 \
     PKGDEST="$work/packages" CMAKE_BUILD_PARALLEL_LEVEL="${CMAKE_BUILD_PARALLEL_LEVEL:-4}" \
     bash -c 'cd "$1"; makepkg --cleanbuild --noconfirm' _ "$work"

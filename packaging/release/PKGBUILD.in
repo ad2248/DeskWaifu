@@ -40,7 +40,14 @@ prepare() {
 build() {
   local ocr_source
   ocr_source=$(_ocr_source_dir) || return
+  # scripts/release-build.sh exports DESKWAIFU_CCACHE only when the runner
+  # mounts the persistent cache volume and the build is not clean.
+  local ccache_launcher=()
+  if [[ -n "${DESKWAIFU_CCACHE:-}" ]]; then
+    ccache_launcher=(-DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache)
+  fi
   cmake -S "$srcdir/deskwaifu" -B "$srcdir/build-main" -G Ninja \
+    "${ccache_launcher[@]}" \
     -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib \
     -DBUILD_TESTING=ON -DDESKWAIFU_BUILD_OCR=OFF -DDESKWAIFU_PACKAGE_TESTS=ON \
     -DDESKWAIFU_TEST_TOOLS="$srcdir/release-tools/scripts" \
@@ -52,6 +59,7 @@ build() {
     -DGLEW_PATH="$srcdir/private-deps/glew"
   cmake --build "$srcdir/build-main" --parallel "${CMAKE_BUILD_PARALLEL_LEVEL:-4}"
   cmake -S "$ocr_source" -B "$srcdir/build-ocr" -G Ninja \
+    "${ccache_launcher[@]}" \
     -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib \
     -DBUILD_TESTING=ON -DDESKWAIFU_PACKAGE_TESTS=ON \
     -DDESKWAIFU_TEST_TOOLS="$srcdir/release-tools/scripts"

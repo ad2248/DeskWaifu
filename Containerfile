@@ -15,6 +15,7 @@ RUN { printf 'Server = %s/$repo/os/$arch\n' "${PACMAN_MIRROR}"; \
     } > /etc/pacman.d/mirrorlist \
     && sed -i 's/^#ParallelDownloads.*/ParallelDownloads = 5/' /etc/pacman.conf \
     && pacman -Syu --noconfirm \
+        ccache \
         cmake \
         curl \
         git \
