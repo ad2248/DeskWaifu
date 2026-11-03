@@ -16,23 +16,42 @@ EVENTS_URL = (
 )
 
 
-def build_payload(event: dict) -> dict | None:
-    """按事件构造 ci_failed 载荷；非 PR 事件返回 None。"""
+def sign(body: bytes, secret: bytes) -> str:
+    return hmac.new(secret, body, hashlib.sha256).hexdigest()
+
+
+def build_payload(event: dict, env: dict | None = None) -> dict | None:
+    """按事件构造 ci_failed 载荷；非 PR 事件返回 None。
+
+    自动化用 pull_request_number 选会话、用 logs 拼提示词，两者都不能缺：
+    logs 为 null 时上游的 join() 会抛类型错误，事件根本到不了会话。
+    """
+    env = os.environ if env is None else env
     pull_request = event.get("pull_request") or {}
     number = pull_request.get("number") or 0
     if not number:
         return None
+
+    repository = env["GITHUB_REPOSITORY"]
+    server = env.get("GITHUB_SERVER_URL", "")
+    run_id = env.get("GITHUB_RUN_ID", "")
+    run_url = "{}/{}/actions/runs/{}".format(server, repository, run_id)
+    job = env.get("GITHUB_JOB", "")
     return {
         "action": "ci_failed",
-        "repository": {"full_name": os.environ["GITHUB_REPOSITORY"]},
+        "repository": {"full_name": repository},
         "pull_request": {"number": number},
+        "pull_request_number": number,
         "branch": (pull_request.get("head") or {}).get("ref", ""),
-        "run_url": "{}/{}/actions/runs/{}".format(
-            os.environ.get("GITHUB_SERVER_URL", ""),
-            os.environ["GITHUB_REPOSITORY"],
-            os.environ.get("GITHUB_RUN_ID", ""),
+        "run_url": run_url,
+        "workflow": env.get("GITHUB_WORKFLOW", "ci.yml"),
+        "job": job,
+        # 智能体需要能自行取回日志：给出运行页与作业列表 API，避免在载荷里塞整份日志
+        "logs": "作业「{}」的日志见 {} ；可用 {} 列出作业后取 /actions/jobs/<id>/logs".format(
+            job or "CI",
+            run_url,
+            "{}/api/v1/repos/{}/actions/runs/{}/jobs".format(server, repository, run_id),
         ),
-        "workflow": os.environ.get("GITHUB_WORKFLOW", "ci.yml"),
         "status": "failure",
     }
 
@@ -46,14 +65,20 @@ def main() -> int:
         print("非 PR 事件，跳过回调")
         return 0
 
-    body = json.dumps(payload, separators=(",", ":")).encode()
-    secret = os.environ["PIPELINE_WEBHOOK_SECRET"].encode()
-    signature = hmac.new(secret, body, hashlib.sha256).hexdigest()
+    secret = os.environ.get("PIPELINE_WEBHOOK_SECRET", "")
+    if not secret:
+        # 未配密钥时宁可显式失败，也不要发出无法验证的请求
+        print("未配置 PIPELINE_WEBHOOK_SECRET，跳过回调（事件未上报）", file=sys.stderr)
+        return 1
 
+    body = json.dumps(payload, separators=(",", ":")).encode()
     request = urllib.request.Request(
         EVENTS_URL,
         data=body,
-        headers={"Content-Type": "application/json", "X-Gitea-Signature": signature},
+        headers={
+            "Content-Type": "application/json",
+            "X-Gitea-Signature": sign(body, secret.encode()),
+        },
     )
     with urllib.request.urlopen(request, timeout=30) as response:
         print("回调返回", response.status, response.read().decode()[:200])
