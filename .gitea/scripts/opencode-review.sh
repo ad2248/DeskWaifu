@@ -178,7 +178,7 @@ EOF
     "$prompt" \
     "${server_args[@]}" \
     --agent build \
-    --model openai/gpt-6.1-sol \
+    --model gpt-6.1-sol \
     --format json \
     --file "$workdir/context.md" \
     --file "$workdir/diff.patch"
