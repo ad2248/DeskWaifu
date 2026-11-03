@@ -36,6 +36,7 @@ podman run --rm "$IMAGE" bash -ceu '
     cmake --version
     ninja --version
     makepkg --version
+    ccache --version
     bsdtar --version
     python3 --version
     command -v fakeroot runuser useradd userdel fuser

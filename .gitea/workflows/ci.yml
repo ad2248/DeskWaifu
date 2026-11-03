@@ -9,6 +9,11 @@ on:
         description: 'Optional existing tag for release-identical package verification'
         required: false
         type: string
+      clean:
+        description: '干净构建：不使用宿主机持久化的编译缓存'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -20,6 +25,7 @@ jobs:
     timeout-minutes: 60
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: 24
+      DESKWAIFU_CLEAN_BUILD: ${{ github.event.inputs.clean }}
       http_proxy: http://100.64.0.11:7912
       https_proxy: http://100.64.0.11:7912
       ALL_PROXY: http://100.64.0.11:7912
@@ -53,6 +59,21 @@ jobs:
       - name: Test packaging contracts
         run: python3 -B "$RELEASE_TOOLS_DIR/tests/test_release_packaging.py" -v
 
+      - name: Select compiler cache
+        run: |
+          if [[ "${DESKWAIFU_CLEAN_BUILD:-false}" == "true" ]]; then
+            echo "CCACHE_DISABLE=1" >> "$GITHUB_ENV"
+            echo "Clean build requested; persistent compiler cache disabled"
+          elif [[ -d /cache ]]; then
+            {
+              echo "CCACHE_DIR=/cache/ccache-makepkg"
+              echo "CCACHE_MAXSIZE=8G"
+            } >> "$GITHUB_ENV"
+          else
+            echo "CCACHE_DISABLE=1" >> "$GITHUB_ENV"
+            echo "Runner cache volume not mounted; building without persistent cache"
+          fi
+
       - name: Build packages using the release entry point
         run: bash "$RELEASE_TOOLS_DIR/scripts/release-build.sh"
 
@@ -68,6 +89,15 @@ jobs:
             cmp "package-reference/$(basename "$package")" "$package"
           done
 
+      - name: Report compiler cache statistics
+        if: always()
+        run: |
+          if [[ -n "${CCACHE_DISABLE:-}" ]]; then
+            echo "Compiler cache disabled for this run"
+          else
+            ccache -s
+          fi
+
       - name: Clean temporary packages
         if: always()
         run: rm -f release-assets/*.pkg.tar.zst package-reference/*.pkg.tar.zst
@@ -78,12 +108,29 @@ jobs:
     # 使用 scripts/rebuild-ci-image.sh 重建并私下传输镜像。
     runs-on: deskwaifu-arch
     timeout-minutes: 30
+    env:
+      DESKWAIFU_CLEAN_BUILD: ${{ github.event.inputs.clean }}
     steps:
       - name: Verify runner isolation
         run: test ! -S /var/run/docker.sock
 
       - name: Check out repository
         uses: https://git.kals.top/actions/checkout@v4
+
+      - name: Select compiler cache
+        run: |
+          if [[ "${DESKWAIFU_CLEAN_BUILD:-false}" == "true" ]]; then
+            echo "CCACHE_DISABLE=1" >> "$GITHUB_ENV"
+            echo "Clean build requested; persistent compiler cache disabled"
+          elif [[ -d /cache ]]; then
+            {
+              echo "CCACHE_DIR=/cache/ccache"
+              echo "CCACHE_MAXSIZE=8G"
+            } >> "$GITHUB_ENV"
+          else
+            echo "CCACHE_DISABLE=1" >> "$GITHUB_ENV"
+            echo "Runner cache volume not mounted; building without persistent cache"
+          fi
 
       - name: Verify renamed identifiers
         run: |
@@ -114,6 +161,8 @@ jobs:
         run: |
           cmake -S . -B build-ci -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DBUILD_TESTING=ON \
             -DDESKWAIFU_BUILD_OCR=OFF \
             -DDESKWAIFU_BUILD_CONTROL=ON \
@@ -128,6 +177,8 @@ jobs:
             build_dir="build-ci-$definition"
             cmake -S . -B "$build_dir" -G Ninja \
               -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+              -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
               -DBUILD_TESTING=OFF \
               -DDESKWAIFU_BUILD_OCR=OFF \
               -DDESKWAIFU_BUILD_CONTROL=OFF \
@@ -161,6 +212,8 @@ jobs:
         run: |
           cmake -S . -B build-sanitize -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DDESKWAIFU_BUILD_OCR=OFF \
             -DDESKWAIFU_ENABLE_SANITIZERS=ON -DDESKWAIFU_TEST_GATE=ON
           cmake --build build-sanitize --parallel 24 --target \
@@ -168,6 +221,15 @@ jobs:
             config-store-test ipc-bounded-transport-test sanitizer-failure-fixture
           python3 scripts/run-test-gate.py build-sanitize \
             --test '^(processor-event-loop|speech-contract-.*|interaction-opacity|config-store|ipc-bounded-transport|sanitizer-failure-gate)$'
+
+      - name: Report compiler cache statistics
+        if: always()
+        run: |
+          if [[ -n "${CCACHE_DISABLE:-}" ]]; then
+            echo "Compiler cache disabled for this run"
+          else
+            ccache -s
+          fi
 
       - name: Preserve test evidence
         if: always()
