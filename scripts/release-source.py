@@ -24,15 +24,45 @@ def git(*args):
     return subprocess.check_output(["git", *args], text=True).strip()
 
 
+def existing_tag_commit(tag):
+    result = subprocess.run(["git", "rev-parse", "--verify", f"refs/tags/{tag}^{{commit}}"],
+                            text=True, capture_output=True)
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip()
+
+
+def push_tag(tag):
+    url = git("remote", "get-url", "origin")
+    token = os.environ.get("GITEA_TOKEN") or os.environ.get("GITHUB_TOKEN") or ""
+    if token and re.match(r"https?://", url):
+        # checkout uses persist-credentials: false, so inject the job token for
+        # this push only. Git redacts the password in its own diagnostics.
+        scheme, _, rest = url.partition("://")
+        url = f"{scheme}://x:{token}@{rest}"
+    subprocess.run(["git", "push", url, f"refs/tags/{tag}"], check=True)
+
+
 def main():
     event = os.environ["RELEASE_EVENT"]
     if event == "workflow_dispatch" and not os.environ.get("RELEASE_NOTES", "").strip():
         raise ValueError("release_notes is required for manual releases and must not be blank")
     tag = select_tag(event, os.environ.get("RELEASE_REF", ""), os.environ.get("RELEASE_INPUT_TAG", ""))
+    commit = existing_tag_commit(tag)
+    if commit is None:
+        # Only a manual release may create the tag, and only on the current tip
+        # of main; tag pushes and notes-only updates never move repository refs.
+        if event != "workflow_dispatch":
+            raise ValueError(f"Release tag does not exist: {tag}")
+        if os.environ.get("RELEASE_NOTES_ONLY", "") == "true":
+            raise ValueError(f"Notes-only releases require an existing tag: {tag}")
+        commit = git("rev-parse", "--verify", "refs/remotes/origin/main^{commit}")
+        git("tag", tag, commit)
+        push_tag(tag)
+        print(f"Created missing release tag {tag} at main HEAD {commit}")
     # checkout@v4 with fetch-depth: 0 acquired all tags using its own scoped
     # credentials. Resolve only refs/tags, never a same-named branch, and do not
     # require persisted checkout credentials for a second private-repo fetch.
-    commit = git("rev-parse", "--verify", f"refs/tags/{tag}^{{commit}}")
     if event == "push":
         event_sha = os.environ.get("RELEASE_EVENT_SHA", "")
         if not re.fullmatch(r"[0-9a-f]{40}", event_sha):
