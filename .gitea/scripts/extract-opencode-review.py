@@ -1,37 +1,38 @@
 #!/usr/bin/env python3
+"""取 OpenCode 审查会话的最后一条消息，原文作为评审正文。
+
+模型会在工具调用之间输出过程叙述（“先确认基线”“开始核验并批准”等），
+且每条消息是一组 text part。只发布最后一条消息，既不会把叙述混进评审，
+也不需要校验标题格式或截断正文。
+"""
 import json
 import sys
 from pathlib import Path
 
 
 def extract_review(source: Path) -> str:
-    parts = []
+    messages: dict[str, list[str]] = {}
+    order: list[str] = []
     with source.open(encoding="utf-8") as stream:
         for line in stream:
             event = json.loads(line)
-            if event.get("type") == "text":
-                text = event.get("part", {}).get("text", "")
-                if text:
-                    parts.append(text)
+            if event.get("type") != "text":
+                continue
+            part = event.get("part") or {}
+            text = part.get("text") or ""
+            if not text:
+                continue
+            # 缺少 messageID 的旧版输出把每个 text part 当作独立消息，仍然取最后一段。
+            key = part.get("messageID") or f"part-{len(order)}"
+            if key not in messages:
+                messages[key] = []
+                order.append(key)
+            messages[key].append(text)
 
-    review = "\n".join(parts).strip()
-    if not review:
+    if not order:
         raise ValueError("OpenCode returned no review text")
 
-    if len(review) > 60_000:
-        review = review[:60_000] + "\n\n[评审内容因长度限制被截断]"
-
-    headings = ("## 结论", "## 阻塞问题", "## 非阻塞建议")
-    lines = review.splitlines()
-    positions = [lines.index(heading) if heading in lines else -1 for heading in headings]
-    if any(position < 0 for position in positions) or positions != sorted(positions):
-        raise ValueError(
-            "OpenCode returned an incomplete review; expected ordered headings: "
-            + ", ".join(headings)
-        )
-
-    # 模型常在结论前输出过程叙述，只保留从 `## 结论` 开始的评审正文。
-    return "\n".join(lines[positions[0]:]).strip()
+    return "\n".join(messages[order[-1]])
 
 
 def main() -> None:

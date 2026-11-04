@@ -35,52 +35,74 @@ def review_event_values(script: str) -> list[str]:
 
 
 class ExtractReviewTest(unittest.TestCase):
-    def write_events(self, *texts: str) -> Path:
+    def write_events(self, *messages: object) -> Path:
+        """按消息写 JSONL；每条消息是一个字符串或若干 text part 的列表。"""
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         path = Path(directory.name) / "opencode.jsonl"
-        events = [json.dumps({"type": "text", "part": {"text": text}}) for text in texts]
+        events = []
+        for index, message in enumerate(messages):
+            texts = [message] if isinstance(message, str) else message
+            for text in texts:
+                part = {"messageID": f"msg-{index:04d}", "text": text}
+                events.append(json.dumps({"type": "text", "part": part}))
         path.write_text("\n".join(events), encoding="utf-8")
         return path
 
-    def test_extracts_complete_review(self):
-        source = self.write_events(
-            "## 结论\n可以合并。",
-            "## 阻塞问题\n未发现阻塞问题。\n\n## 非阻塞建议\n无。",
-        )
-
-        review = MODULE.extract_review(source)
-
-        self.assertIn("## 结论", review)
-        self.assertIn("## 阻塞问题", review)
-        self.assertIn("## 非阻塞建议", review)
-
-    def test_discards_progress_narration_before_review(self):
+    def test_publishes_last_message_verbatim(self):
+        review_text = "## 结论\n可以合并。\n\n## 阻塞问题\n未发现阻塞问题。\n\n## 非阻塞建议\n无。"
         source = self.write_events(
             "目标分支 checkout 的 base 与 head 内容均已确认。",
             "环境变量齐备，开始执行核验与批准流程。",
-            "## 结论\n可以合并。\n\n## 阻塞问题\n未发现阻塞问题。\n\n## 非阻塞建议\n无。",
+            review_text,
         )
 
         review = MODULE.extract_review(source)
 
-        self.assertTrue(review.startswith("## 结论"))
-        self.assertNotIn("目标分支 checkout", review)
-        self.assertNotIn("环境变量齐备", review)
-        self.assertIn("## 非阻塞建议", review)
+        self.assertEqual(review_text, review)
 
-    def test_rejects_intermediate_progress_text(self):
-        source = self.write_events("阅读剩余的 diff 部分以完成审查。")
+    def test_publishes_last_message_without_format_checks(self):
+        # 不校验章节标题与顺序：最后一条消息无论写成什么都原样发布。
+        source = self.write_events("先看基线。", "阻塞问题：无。可以合并。")
 
-        with self.assertRaisesRegex(ValueError, "incomplete review"):
-            MODULE.extract_review(source)
+        self.assertEqual("阻塞问题：无。可以合并。", MODULE.extract_review(source))
 
-    def test_rejects_misordered_review_sections(self):
+    def test_joins_all_text_parts_of_the_last_message(self):
         source = self.write_events(
-            "## 结论\n可以合并。\n\n## 非阻塞建议\n无。\n\n## 阻塞问题\n未发现阻塞问题。"
+            "过程叙述，不应发布。",
+            ["第一段。", "第二段。"],
         )
 
-        with self.assertRaisesRegex(ValueError, "incomplete review"):
+        self.assertEqual("第一段。\n第二段。", MODULE.extract_review(source))
+
+    def test_publishes_long_review_without_truncation(self):
+        long_review = "## 结论\n" + "很长的评审正文。\n" * 20_000
+        source = self.write_events("过程叙述。", long_review)
+
+        review = MODULE.extract_review(source)
+
+        self.assertEqual(long_review, review)
+        self.assertNotIn("被截断", review)
+
+    def test_keeps_events_without_message_id_separate(self):
+        # 旧版输出没有 messageID：每个 text part 各自成段，取最后一段。
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = Path(directory.name) / "opencode.jsonl"
+        path.write_text(
+            "\n".join(
+                json.dumps({"type": "text", "part": {"text": text}})
+                for text in ("过程叙述。", "## 结论\n可以合并。")
+            ),
+            encoding="utf-8",
+        )
+
+        self.assertEqual("## 结论\n可以合并。", MODULE.extract_review(path))
+
+    def test_rejects_output_without_text(self):
+        source = self.write_events()
+
+        with self.assertRaisesRegex(ValueError, "no review text"):
             MODULE.extract_review(source)
 
     def test_review_agent_can_approve_pull_requests(self):
