@@ -24,13 +24,14 @@ def extract_review(source: Path) -> str:
     headings = ("## 结论", "## 阻塞问题", "## 非阻塞建议")
     lines = review.splitlines()
     positions = [lines.index(heading) if heading in lines else -1 for heading in headings]
-    if positions[0] != 0 or any(position < 0 for position in positions) or positions != sorted(positions):
+    if any(position < 0 for position in positions) or positions != sorted(positions):
         raise ValueError(
             "OpenCode returned an incomplete review; expected ordered headings: "
             + ", ".join(headings)
         )
 
-    return review
+    # 模型常在结论前输出过程叙述，只保留从 `## 结论` 开始的评审正文。
+    return "\n".join(lines[positions[0]:]).strip()
 
 
 def main() -> None:

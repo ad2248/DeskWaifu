@@ -55,8 +55,30 @@ class ExtractReviewTest(unittest.TestCase):
         self.assertIn("## 阻塞问题", review)
         self.assertIn("## 非阻塞建议", review)
 
+    def test_discards_progress_narration_before_review(self):
+        source = self.write_events(
+            "目标分支 checkout 的 base 与 head 内容均已确认。",
+            "环境变量齐备，开始执行核验与批准流程。",
+            "## 结论\n可以合并。\n\n## 阻塞问题\n未发现阻塞问题。\n\n## 非阻塞建议\n无。",
+        )
+
+        review = MODULE.extract_review(source)
+
+        self.assertTrue(review.startswith("## 结论"))
+        self.assertNotIn("目标分支 checkout", review)
+        self.assertNotIn("环境变量齐备", review)
+        self.assertIn("## 非阻塞建议", review)
+
     def test_rejects_intermediate_progress_text(self):
         source = self.write_events("阅读剩余的 diff 部分以完成审查。")
+
+        with self.assertRaisesRegex(ValueError, "incomplete review"):
+            MODULE.extract_review(source)
+
+    def test_rejects_misordered_review_sections(self):
+        source = self.write_events(
+            "## 结论\n可以合并。\n\n## 非阻塞建议\n无。\n\n## 阻塞问题\n未发现阻塞问题。"
+        )
 
         with self.assertRaisesRegex(ValueError, "incomplete review"):
             MODULE.extract_review(source)
