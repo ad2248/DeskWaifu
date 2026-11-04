@@ -21,6 +21,7 @@ https://github.com/user-attachments/assets/95dfdedc-4957-4bb7-b79f-f3addd97a6db
 - [Features](#features)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
+- [Running the test suite locally](#running-the-test-suite-locally)
 - [Upgrading from Waifuland](#upgrading-from-waifuland)
 - [Usage](#usage)
 - [IPC API](#ipc-api)
@@ -224,6 +225,71 @@ sudo cmake --install build --component DeskWaifu
 
 The component selects only the application commands and desktop entry, excluding
 third-party development files. `install.sh` itself only builds the project.
+
+## Running the test suite locally
+
+Tests are registered with CTest, mirroring the `test` job in
+[`.gitea/workflows/ci.yml`](.gitea/workflows/ci.yml). Run from the repository
+root; `build-ci` is only CI's convention for the build directory.
+
+```bash
+cmake -S . -B build-ci -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DBUILD_TESTING=ON -DDESKWAIFU_BUILD_OCR=OFF \
+  -DDESKWAIFU_BUILD_CONTROL=ON -DDESKWAIFU_TEST_GATE=ON
+cmake --build build-ci --parallel "$(nproc)"
+ctest --test-dir build-ci --output-on-failure
+```
+
+`DESKWAIFU_TEST_GATE=ON` fails configuration unless `BUILD_TESTING` and all five
+backend plugins are enabled, and it requires `dbus-run-session` and `node`. CI
+then runs the same suite through the gate wrapper, which checks
+`tests/gate.json` and fails on a missing or skipped required test:
+
+```bash
+python3 scripts/run-test-gate.py build-ci
+```
+
+No display is needed. Tests registered through `deskwaifu_add_test` are launched
+by `scripts/test-environment.py`, which provides private
+`HOME`/`XDG_*`/`TMPDIR` directories and a private D-Bus session, and sets
+`QT_QPA_PLATFORM=offscreen` with `LIBGL_ALWAYS_SOFTWARE=1` and
+`GALLIUM_DRIVER=llvmpipe`. Narrow a debugging run with CTest's regex filter:
+
+```bash
+ctest --test-dir build-ci --output-on-failure -R '^interaction-opacity$'
+```
+
+The Wayland/Qt smoke stages are separate CI steps, not CTest entries, and need
+Sway or KWin installed locally:
+
+```bash
+# Headless Sway: two outputs, real app, IPC and control clients
+DESKWAIFU_DEPS_DIR=/path/to/deps bash scripts/headless-smoke-test.sh build-ci
+
+# KWin virtual outputs: layer-shell, focus, click-through, optional real scaling
+python3 plugins/desktop/tests/qt_headless_smoke.py build-ci \
+  "$DESKWAIFU_DEPS_DIR/CubismSdkForNative-5-r.5"
+python3 plugins/desktop/tests/qt_headless_smoke.py build-ci \
+  "$DESKWAIFU_DEPS_DIR/CubismSdkForNative-5-r.5" --scale 1.5 --installed
+```
+
+The scripts set `WLR_BACKENDS=headless`, `WLR_RENDERER=pixman` and
+`QT_QPA_PLATFORM=wayland` themselves, so no display or GPU is needed.
+`DESKWAIFU_DEPS_DIR` must contain `CubismSdkForNative-5-r.5` and `glew`;
+`scripts/find-deps-dir.sh` locates such a directory under `/opt/*-deps`. The
+Sway stage also needs `wayland-info` and `swaymsg`; the KWin stage needs
+`kwin_wayland`, and `--scale 1.5` needs `kscreen-doctor`. Logs stay under
+`build-ci/test-logs/sway-*/` and `build-ci/qt-smoke-logs/`.
+
+Some CI stages are impractical to reproduce locally and are not covered by the
+commands above: the package job (`scripts/release-build.sh`,
+`scripts/test-installed-packages.py`) needs root with a separate build user,
+`makepkg`/`bsdtar`/`fakeroot` and a PRoot; the render-target variant builds and
+the ASan+UBSan subset are additional build directories defined in the workflow;
+ccache and runner-image behavior are CI-side only. `kwin-cursor-locale` needs a
+machine that can create a private locale and returns 77 elsewhere, which fails
+the gate. See [testing requirements](docs/需求描述/测试与门禁.md) for the
+evidence each stage provides.
 
 ## Upgrading from Waifuland
 
