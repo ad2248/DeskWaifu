@@ -121,14 +121,12 @@ cmake --build build-ocr-client
 ctest --test-dir build-ocr-client --output-on-failure
 ```
 
-真实模型测试（仅开发时用 Python/Pillow 生成合成图，不进入运行包）：
+真实模型测试（需要自备合成图样本目录，样本不进入运行包）：
 
 ```bash
-uv run --no-project --with pillow python research/ocr/make_samples.py \
-  --font /usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc --output /tmp/opencode/ocr-samples
 python plugins/perception/tests/native_smoke.py \
   --probe build-ocr/ocr-module-probe --module build-ocr/deskwaifu-ocr.so \
-  --samples /tmp/opencode/ocr-samples \
+  --samples <样本目录> \
   --detection-model-dir "$HOME/.local/share/deskwaifu/ocr/models/PP-OCRv6_small_det" \
   --recognition-model-dir "$HOME/.local/share/deskwaifu/ocr/models/PP-OCRv6_small_rec" \
   --output /tmp/opencode/ocr-smoke
