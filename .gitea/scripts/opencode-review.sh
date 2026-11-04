@@ -104,6 +104,7 @@ cp "$repo_root/.gitea/scripts/opencode-review-action.sh" "$workdir/.gitea/script
 # 只探测帮助，不启动模型；不通过失败后重试来切换，避免重复自动操作。
 run_help="$("$opencode_bin" run --help)"
 server_args=()
+# 自定义 provider 的模型必须在项目配置中声明，否则 CLI 直接报 Model unavailable。
 if grep -q -- '--standalone' <<< "$run_help"; then
   server_args=(--standalone)
 cat > "$workdir/opencode.json" <<'JSON'
@@ -116,6 +117,16 @@ cat > "$workdir/opencode.json" <<'JSON'
         {"action": "*", "resource": "*", "effect": "allow"}
       ]
     }
+  },
+  "provider": {
+    "new_api": {
+      "models": {
+        "large": {
+          "name": "large",
+          "limit": {"context": 256000, "output": 32000}
+        }
+      }
+    }
   }
 }
 JSON
@@ -127,6 +138,16 @@ cat > "$workdir/opencode.json" <<'JSON'
   "agent": {
     "build": {
       "permission": {"*": "allow"}
+    }
+  },
+  "provider": {
+    "new_api": {
+      "models": {
+        "large": {
+          "name": "large",
+          "limit": {"context": 256000, "output": 32000}
+        }
+      }
     }
   }
 }
@@ -178,7 +199,7 @@ EOF
     "$prompt" \
     "${server_args[@]}" \
     --agent build \
-    --model new_api/gpt-6.1-sol \
+    --model new_api/large \
     --format json \
     --file "$workdir/context.md" \
     --file "$workdir/diff.patch"
