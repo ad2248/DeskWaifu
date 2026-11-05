@@ -93,10 +93,17 @@ def select(changed):
 
 
 def changed_paths(base):
-    """Changed paths against a merge base, or None when they cannot be determined."""
+    """Changed paths against a base commit, or None when they cannot be determined.
+
+    A two-dot diff needs no merge base, so it works under the shallow clone CI uses.
+    When the base has moved ahead this lists more paths than the PR touched, which
+    only widens the selection; it never hides a mutation that could be affected.
+    """
     if not base:
         return None
-    command = ["git", "-C", str(ROOT), "diff", "--name-only", f"{base}...HEAD"]
+    # core.quotePath=false keeps non-ASCII paths literal, so prefix matching holds.
+    command = ["git", "-C", str(ROOT), "-c", "core.quotePath=false",
+               "diff", "--name-only", base, "HEAD"]
     result = subprocess.run(command, capture_output=True, text=True)
     if result.returncode != 0:
         return None

@@ -199,7 +199,7 @@ jobs:
           args=()
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             git fetch --no-tags --depth=50 origin "${{ github.base_ref }}"
-            args+=(--base "origin/${{ github.base_ref }}")
+            args+=(--base FETCH_HEAD)
           fi
           python3 scripts/test-environment.py python3 scripts/check-test-mutations.py build-ci "${args[@]}"
 

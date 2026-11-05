@@ -61,6 +61,30 @@ class MutationConfigurationTest(unittest.TestCase):
                 self.invoke(source, build, ["--base", "no-such-ref"])
             self.assertIn("cannot diff against no-such-ref", str(error.exception))
 
+    def test_changed_paths_keeps_non_ascii_paths_literal(self):
+        import subprocess
+        with tempfile.TemporaryDirectory(prefix="mutation-diff-") as directory:
+            repo = Path(directory)
+            def git(*args):
+                return subprocess.run(["git", "-C", str(repo), *args], check=True,
+                                      capture_output=True, text=True).stdout
+            git("init", "--initial-branch=main")
+            git("config", "user.name", "Test")
+            git("config", "user.email", "test@example.invalid")
+            (repo / "docs").mkdir()
+            (repo / "docs/需求描述").mkdir()
+            (repo / "docs/需求描述/发布打包.md").write_text("base\n")
+            git("add", ".")
+            git("commit", "-m", "base")
+            base = git("rev-parse", "HEAD").strip()
+            (repo / "docs/需求描述/发布打包.md").write_text("changed\n")
+            git("commit", "-am", "change")
+            with patch.object(mutations, "ROOT", repo):
+                paths = mutations.changed_paths(base)
+            self.assertEqual(paths, ["docs/需求描述/发布打包.md"],
+                             "Quoted paths would defeat prefix matching and widen the selection")
+            self.assertEqual(mutations.select(paths), [])
+
 
 class MutationSelectionTest(unittest.TestCase):
     def select(self, *changed):
