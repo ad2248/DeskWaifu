@@ -44,6 +44,7 @@ public:
     void Stop() noexcept override;
     bool Captured() const { return _input.IsCaptured(); }
     // 每次用当前布局重新计算，静止光标也能响应变换、缩放和配置变化。
+    // 悬停与静止透明度由调用方给出，帧内只做选择。
     void ApplyLook(ModelRenderState& state, const OutputSnapshot* output,
         float centerX, float centerY, float radius) const;
     ModelHitResult HitAt(double x, double y);
