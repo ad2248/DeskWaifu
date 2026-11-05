@@ -136,6 +136,38 @@ python plugins/perception/tests/native_smoke.py \
 
 真实图对比使用 NFKC 归一化并忽略空白；例如 JPEG 可能将全角 `！` 识别成 `!`，不声称逐字节一致。`app_smoke.py --app … --module … --live2d-models … --samples … --logs …` 同样接受两个模型目录参数，在私有无头合成器中验证 IPC、模块映射、无 OCR 子进程及取消后恢复。测试权重和产物不应提交或发布。历史 [RESULTS.md](RESULTS.md) 使用旧 small+medium 转换模型，仅作历史记录，不能作为当前模型的准确率或性能结论。
 
+### 真实模型样本目录
+
+`--samples` 指向自备样本目录，`native_smoke.py` 与 `app_smoke.py` 共用同一套文件；样本不进入仓库或发布包。样本可用任意绘图工具生成，例如用 Pillow 以 CJK 字体绘制同一组文字并另存为 JPEG，不需要专门的生成脚本。
+
+`native_smoke.py` 按固定文件名发起请求，目录必须同时满足：
+
+| 文件 | 要求 |
+| --- | --- |
+| `expected.json` | 必需。JSON 对象，键为样本文件名，值为该图的期望文字行数组；必须含 `light.png`。 |
+| `light.png` | 必需。单帧 PNG，识别结果须与 `expected.json` 的 `light.png` 项一致；`app_smoke.py` 另断言恰好 3 行。 |
+| `light.jpg` | 必需。内容同 `light.png`，只作 JPEG 解码对照，期望文本取 `light.png` 项。 |
+| `blank.png` | `app_smoke.py` 必需。无文字，`expected.json` 对应项为 `[]`。 |
+| `dense.png` | `app_smoke.py` 必需。多行文字图，用于取消后恢复场景，内容不参与断言。 |
+| `oversized.png` | 必需。任一边超过 4096 像素的单帧图片，断言被拒绝；不必写入 `expected.json`。 |
+| `animated.gif` | 必需。多帧 GIF，断言被拒绝；不必写入 `expected.json`。 |
+| `missing.png` | 必须不存在，用于断言缺失文件被拒绝。 |
+
+`expected.json` 的每个键都会按文件名请求 3 次，键名必须是目录中真实存在的图片，未列出的图片不会被识别；`missing.png`、`oversized.png`、`animated.gif` 不得作为键。比较时行序与空白不敏感：逐行 NFKC 归一化并去除全部空白后排序比较，重复行计数仍参与。最小示例：
+
+```json
+{
+  "light.png": [
+    "姐姐，你好！桌宠 OCR 本地测试。",
+    "DeskWaifu OCR 1234567890",
+    "CPU only / no cloud upload"
+  ],
+  "blank.png": []
+}
+```
+
+样本须为模型可识别的单帧高对比度图片，并遵守每边 4096 像素、文件 64 MiB 的限制。`native_smoke.py` 只向探针传递 `PATH` 和 `LANG`，不继承 `LD_LIBRARY_PATH` 等变量，系统动态链接器须能直接找到 ONNX Runtime。测试还会复制识别模型目录并清空 `inference.yml` 的 `character_dict`，要求以 `model_incompatible` 拒绝，故该字段必须保留。
+
 不承诺文档排版还原、任意来源图片安全沙箱或实时看屏性能。文件由本用户授权读取；合成图验证不代表真实桌面准确率。
 
 本次迁移的测试范围、性能对照及局限见 [进程内化验证记录](../../../docs/ocr-in-process-validation.md)。
