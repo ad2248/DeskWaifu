@@ -25,6 +25,29 @@ class CiConcurrencyTest(unittest.TestCase):
         parallelism = re.findall(r'"--parallel", "(\d+)"', script.read_text())
         self.assertEqual(parallelism, ["24", "24"], "Check both mutated and restored builds")
 
+    def test_mutation_step_scopes_the_selection_to_the_pull_request_merge_base(self):
+        """锁定选择基线：去掉 --base 或改用 merge-base 会静默退化为全集或空集。"""
+        workflow = pathlib.Path(__file__).resolve().parents[1] / "workflows/ci.yml"
+        text = workflow.read_text()
+        step = re.search(
+            r"- name: Verify behavioral mutation interception\n(?:.*\n)*?(?=\n {6}- name: )", text)
+        self.assertIsNotNone(step, "the mutation step must stay a single named step")
+        body = step.group(0)
+
+        self.assertIn('[[ "${{ github.event_name }}" == "pull_request" ]]', body,
+                      "Only pull requests have a base branch to diff against")
+        self.assertIn('merge_base="$(git merge-base "$base_ref" HEAD)"', body,
+                      "The baseline must be the merge base, not the base branch tip")
+        self.assertIn('args+=(--base "$merge_base")', body,
+                      "The mutation script needs --base, or it silently runs everything")
+        # depth 抓取会把完整克隆重新变成浅克隆，脚本随即拒绝选择。
+        self.assertNotIn("--depth", body)
+
+    def test_mutation_checkout_keeps_full_history(self):
+        workflow = pathlib.Path(__file__).resolve().parents[1] / "workflows/ci.yml"
+        text = workflow.read_text()
+        self.assertRegex(text, r"fetch-depth: 0")
+
     def test_dispatch_exposes_clean_build_opt_out(self):
         workflow = pathlib.Path(__file__).resolve().parents[1] / "workflows/ci.yml"
         text = workflow.read_text()
