@@ -1,6 +1,7 @@
 import contextlib
 import importlib.util
 import io
+import json
 from pathlib import Path
 import sys
 import tempfile
@@ -129,13 +130,49 @@ class MutationSelectionTest(unittest.TestCase):
             build = Path(directory)
             (build / "CMakeCache.txt").write_text(
                 "SDK_ROOT_PATH:PATH=/unused/sdk\nGLEW_PATH:PATH=/unused/glew\n")
+            summary = build / "step-summary.md"
             with patch.object(mutations, "ROOT", build), \
                     patch.object(sys, "argv", ["check-test-mutations.py", str(build)]), \
+                    patch.dict("os.environ", {"GITHUB_STEP_SUMMARY": str(summary)}), \
                     patch.object(mutations, "changed_paths", lambda base: ["README.md"]):
                 output = io.StringIO()
                 with contextlib.redirect_stdout(output):
                     self.assertEqual(mutations.main(), 0)
+            self.assertIn("已选 0 项", summary.read_text(),
+                          "通过时不上传产物，日志摘要要说明为何没跑")
             self.assertIn('"selected": 0', output.getvalue())
+            record = json.loads((build / "test-logs/mutations/selection.json").read_text())
+            self.assertFalse(record["full"])
+            self.assertEqual(record["selected"], [])
+            self.assertEqual(record["changed"], ["README.md"])
+            self.assertEqual(record["reason"], "no changed path affects a mutation")
+            self.assertEqual(list((build / "test-logs/mutations").glob("run-*")), [],
+                             "跳过的运行不留下 run 目录")
+
+    def test_selection_is_written_even_when_the_run_never_builds(self):
+        def failing(command, log):
+            log.write_text("configure failed\n")
+            return 1
+
+        with tempfile.TemporaryDirectory(prefix="mutation-select-") as directory:
+            source, build = Path(directory) / "source", Path(directory) / "parent"
+            source.mkdir()
+            build.mkdir()
+            (source / "CMakeLists.txt").write_text(
+                "cmake_minimum_required(VERSION 3.25)\nproject(mutation_fixture NONE)\n")
+            (build / "CMakeCache.txt").write_text(
+                "SDK_ROOT_PATH:PATH=/unused/sdk\nGLEW_PATH:PATH=/unused/glew\n")
+            with patch.object(mutations, "ROOT", source), \
+                    patch.object(mutations, "MUTATIONS", []), \
+                    patch.object(mutations, "run", failing), \
+                    patch.object(sys, "argv", ["check-test-mutations.py", str(build)]):
+                with contextlib.redirect_stdout(io.StringIO()), \
+                        self.assertRaises(SystemExit):
+                    mutations.main()
+            record = json.loads((build / "test-logs/mutations/selection.json").read_text())
+            self.assertTrue(record["full"])
+            self.assertIsNone(record["base"])
+            self.assertEqual(record["reason"], "no base commit; only the full set is provable")
 
 
 if __name__ == "__main__":
