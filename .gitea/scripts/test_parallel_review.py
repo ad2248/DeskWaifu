@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import unittest
@@ -12,6 +13,20 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts/opencode-review.sh"
 
 
+def job_blocks(text):
+    """按两空格缩进的作业名切分 ci.yml，无需 PyYAML 依赖。"""
+    jobs: dict = {}
+    current = None
+    for line in text.split("\njobs:\n", 1)[1].splitlines():
+        header = re.match(r"^  ([A-Za-z0-9_-]+):\s*$", line)
+        if header:
+            current = header.group(1)
+            jobs[current] = []
+        elif current:
+            jobs[current].append(line)
+    return {name: "\n".join(lines) for name, lines in jobs.items()}
+
+
 class ParallelReviewTest(unittest.TestCase):
     def test_review_starts_on_pr_events_without_waiting_for_ci(self):
         review = (ROOT / "workflows/opencode-review.yml").read_text()
@@ -19,7 +34,12 @@ class ParallelReviewTest(unittest.TestCase):
         self.assertIn("  pull_request_target:\n", review)
         for workflow in (review, ci):
             self.assertIn("types: [opened, reopened, synchronize]", workflow)
-            self.assertNotIn("needs:", workflow)
+        self.assertNotIn("needs:", review)
+        # 构建与测试作业必须并行启动；只有汇总上报作业可以等待它们。
+        jobs = job_blocks(ci)
+        for name in ("package", "test"):
+            self.assertNotIn("needs:", jobs[name], "{} 不能等待其他作业".format(name))
+        self.assertIn("needs:", jobs["report"])
         self.assertNotIn("workflow_run", review)
         self.assertIn("ref: ${{ gitea.event.pull_request.base.sha }}", review)
         self.assertNotIn("ref: main", review)
