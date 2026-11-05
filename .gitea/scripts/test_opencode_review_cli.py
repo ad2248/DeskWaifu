@@ -190,12 +190,12 @@ class ReviewCliTest(unittest.TestCase):
             self.assertEqual(invocation["repo"], "/trusted/repository")
             self.assertEqual(invocation["args"], [
                 "run", "Review fixture", *(["--standalone"] if standalone else []), "--agent", "build",
-                "--model", "kedaya/deepseek-flash", "--format", "json",
+                "--model", "sub/large", "--format", "json",
                 "--file", str(work / "context.md"), "--file", str(work / "diff.patch"),
             ])
             config = invocation["config"]
             # 自定义 provider 的模型必须在配置中声明，否则 CLI 报 Model unavailable。
-            self.assertIn("deepseek-flash", config["provider"]["kedaya"]["models"])
+            self.assertIn("large", config["provider"]["sub"]["models"])
             if standalone:
                 self.assertIn("permissions", config)
                 self.assertNotIn("permission", config)

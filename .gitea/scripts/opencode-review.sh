@@ -119,11 +119,11 @@ cat > "$workdir/opencode.json" <<'JSON'
     }
   },
   "provider": {
-    "kedaya": {
+    "sub": {
       "models": {
-        "deepseek-flash": {
-          "name": "deepseek-flash",
-          "limit": {"context": 300000, "output": 24000}
+        "large": {
+          "name": "large",
+          "limit": {"context": 256000, "output": 32000}
         }
       }
     }
@@ -141,11 +141,11 @@ cat > "$workdir/opencode.json" <<'JSON'
     }
   },
   "provider": {
-    "kedaya": {
+    "sub": {
       "models": {
-        "deepseek-flash": {
-          "name": "deepseek-flash",
-          "limit": {"context": 300000, "output": 24000}
+        "large": {
+          "name": "large",
+          "limit": {"context": 256000, "output": 32000}
         }
       }
     }
@@ -199,7 +199,7 @@ EOF
     "$prompt" \
     "${server_args[@]}" \
     --agent build \
-    --model kedaya/deepseek-flash \
+    --model sub/large \
     --format json \
     --file "$workdir/context.md" \
     --file "$workdir/diff.patch"
