@@ -60,6 +60,32 @@ class CiConcurrencyTest(unittest.TestCase):
         self.assertIn('test -n "$merge_base"', body,
                       "An empty merge base must not reach the script as --base ''")
 
+    def test_mutation_step_passes_the_baseline_only_from_a_complete_pull_request_event(self):
+        """锁定调用方式：非 PR 事件不得带 --base，PR 事件缺 base_ref 也不得静默跑全集。"""
+        workflow = pathlib.Path(__file__).resolve().parents[1] / "workflows/ci.yml"
+        step = re.search(r"- name: Verify behavioral mutation interception\n(?:.*\n)*?(?=\n {6}- name: )",
+                         workflow.read_text())
+        self.assertIsNotNone(step)
+        body = step.group(0)
+
+        guard_start = body.index('if [[ "${{ github.event_name }}" == "pull_request" ]]; then')
+        guard_end = body.index("\n          fi\n", guard_start)
+        guarded = body[guard_start:guard_end]
+        outside = body[:guard_start] + body[guard_end:]
+
+        self.assertIn('test -n "${{ github.base_ref }}"', guarded,
+                      "A pull_request event without base_ref must fail instead of running everything")
+        self.assertLess(guarded.index('test -n "${{ github.base_ref }}"'), guarded.index("git fetch"),
+                        "The base_ref check must run before the fetch that consumes it")
+        self.assertIn('args+=(--base "$merge_base")', guarded)
+        self.assertEqual(body.count("--base"), 1, "The guarded selection is the only caller that may pass --base")
+        self.assertNotIn("--base", outside,
+                         "Outside the event guard there is no baseline; passing one would be empty")
+        self.assertLess(body.index("git fetch"), body.index("check-test-mutations.py"),
+                        "The baseline must exist before the selection runs")
+        self.assertNotIn("--depth", body,
+                         "Fetching with a depth turns the full clone shallow and breaks the merge base")
+
     def test_mutation_checkout_keeps_full_history(self):
         workflow = pathlib.Path(__file__).resolve().parents[1] / "workflows/ci.yml"
         text = workflow.read_text()

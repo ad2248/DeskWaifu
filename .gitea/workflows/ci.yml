@@ -196,6 +196,11 @@ jobs:
         run: |
           args=()
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            # pull_request 事件理应带 base_ref；缺失时宁可失败，也不能空着 args 跑全集。
+            test -n "${{ github.base_ref }}" || {
+              echo "::error::pull_request event has no github.base_ref; refusing to guess the mutation scope"
+              exit 1
+            }
             # 基线用 PR 的 merge-base，而不是基线分支的当前 tip：tip 之后落在基线分支
             # 上的提交不属于本 PR，两点式会把它们算进改动路径。
             base_ref="origin/${{ github.base_ref }}"
