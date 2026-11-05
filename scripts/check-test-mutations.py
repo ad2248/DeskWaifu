@@ -9,6 +9,7 @@ mutations and nothing outside the selection, and a partial report says so.
 
 import argparse
 import json
+import os
 from pathlib import Path
 import shlex
 import shutil
@@ -96,9 +97,9 @@ class UnprovableDiff(Exception):
     """The branch's own changes cannot be separated from the base branch."""
 
 
-def merge_base(base):
-    """The fork point of base and HEAD, or None when git cannot name one."""
-    command = ["git", "-C", str(ROOT), "merge-base", base, "HEAD"]
+def merge_base(ref):
+    """The fork point of ref and HEAD, or None when git cannot name one."""
+    command = ["git", "-C", str(ROOT), "merge-base", ref, "HEAD"]
     result = subprocess.run(command, capture_output=True, text=True)
     if result.returncode != 0:
         return None
@@ -133,6 +134,38 @@ def changed_paths(base):
     return [line for line in result.stdout.splitlines() if line]
 
 
+def write_selection(build, record):
+    """Record the selection at a fixed path; the `run-*` directory needs a run to exist.
+
+    CI uploads evidence only on failure, so a passing run needs this file to answer
+    why no mutation ran without reading the job log. The job summary gets the same
+    selection because the log line alone scrolls away.
+    """
+    path = Path(build).resolve() / "test-logs/mutations/selection.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(record, indent=2, ensure_ascii=False) + "\n")
+    print(f"Mutation selection: {path} {json.dumps(record, ensure_ascii=False)}")
+    summary = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary:
+        with open(summary, "a") as output:
+            output.write(f"- 变异测试选择：{record['reason']}；"
+                         f"已选 {len(record['selected'])} 项，改动 {record['changed']}\n")
+    return path
+
+
+def selection_record(base, changed, selected):
+    if changed is None:
+        reason = "no base commit; only the full set is provable"
+    elif not selected:
+        reason = "no changed path affects a mutation"
+    elif len(selected) == len(MUTATIONS):
+        reason = "changed paths can affect every mutation"
+    else:
+        reason = "only mutations affected by the changed paths ran"
+    return {"full": len(selected) == len(MUTATIONS), "base": base, "changed": changed or [],
+            "selected": [mutation["mutation"] for mutation in selected], "reason": reason}
+
+
 def run(command, log):
     with log.open("w") as output:
         return subprocess.run(command, stdout=output, stderr=subprocess.STDOUT).returncode
@@ -148,11 +181,13 @@ def main():
     except UnprovableDiff as error:
         sys.exit(f"cannot select mutations for {arguments.base}: {error}; a partial run would be unproven")
     selected = select(changed)
+    record = selection_record(arguments.base, changed, selected)
     if changed is not None and not selected:
-        print(json.dumps({"selected": 0, "reason": "no changed path affects a mutation",
-                          "changed": changed}, ensure_ascii=False))
+        write_selection(arguments.build, record)
+        print(json.dumps({"selected": 0, "reason": record["reason"], "changed": changed},
+                         ensure_ascii=False))
         return 0
-    full = len(selected) == len(MUTATIONS)
+    full = record["full"]
 
     original_build = Path(arguments.build).resolve()
     cache = {}
@@ -163,6 +198,7 @@ def main():
     log_root = original_build / "test-logs/mutations"
     log_root.mkdir(parents=True, exist_ok=True)
     logs = Path(tempfile.mkdtemp(prefix="run-", dir=log_root))
+    write_selection(original_build, record)
     parent = "/tmp/opencode" if Path("/tmp/opencode").is_dir() else None
     results = []
     with tempfile.TemporaryDirectory(prefix="deskwaifu-mutations-", dir=parent) as directory:
@@ -200,8 +236,7 @@ def main():
                 restored = run([sys.executable, str(source / "scripts/run-test-gate.py"), str(build), "--test", f"^{test}$"], logs / f"{name}-restored-test.log") == 0
             results[-1]["restored_passed"] = restored
             print(json.dumps(results[-1], ensure_ascii=False))
-    summary = {"full": full, "selected": [m["mutation"] for m in selected],
-               "changed": changed or [], "results": results}
+    summary = {**record, "results": results}
     (logs / "summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n")
     print(f"Mutation report: {logs / 'summary.json'}")
     if not full:
