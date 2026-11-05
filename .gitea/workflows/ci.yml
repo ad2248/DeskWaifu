@@ -93,12 +93,6 @@ jobs:
         if: always()
         run: rm -f release-assets/*.pkg.tar.zst
 
-      - name: Report CI failure to OpenHands
-        if: failure()
-        env:
-          PIPELINE_WEBHOOK_SECRET: ${{ secrets.PIPELINE_WEBHOOK_SECRET }}
-        run: python3 -B .gitea/scripts/report-ci-failure.py
-
   test:
     name: Arch build and headless Wayland test
     # 此标签必须映射到按镜像 ID 固定的 deskwaifu-ci 镜像，且 force_pull=false。
@@ -274,8 +268,31 @@ jobs:
             \( -name sway.log -o -name deskwaifu.log -o -name deskwaifu-control.log -o -name qt-window.log \) \
             -exec cat {} \;
 
+  report:
+    name: Report CI failure to OpenHands
+    # 两个作业可能同时失败。若各自上报，同一次 CI 失败会创建两个智能体运行
+    # （见运行 722/710：一次失败产生两条 runs_created），此处集中上报一次。
+    needs: [package, test]
+    # 用 always() 而不是 failure()：漏报一次失败就没人在 PR 上修，
+    # 代价高于多跑一个几秒的空作业。是否真的失败由下面的步骤自己判断。
+    if: always()
+    runs-on: deskwaifu-arch
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: https://git.kals.top/actions/checkout@v4
+
       - name: Report CI failure to OpenHands
-        if: failure()
         env:
           PIPELINE_WEBHOOK_SECRET: ${{ secrets.PIPELINE_WEBHOOK_SECRET }}
-        run: python3 -B .gitea/scripts/report-ci-failure.py
+          PACKAGE_RESULT: ${{ needs.package.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+        run: |
+          failed=()
+          if [[ "$PACKAGE_RESULT" == "failure" ]]; then failed+=("package"); fi
+          if [[ "$TEST_RESULT" == "failure" ]]; then failed+=("test"); fi
+          if [[ ${#failed[@]} -eq 0 ]]; then
+            echo "CI 未失败，跳过回调"
+            exit 0
+          fi
+          CI_FAILED_JOBS="${failed[*]}" python3 -B .gitea/scripts/report-ci-failure.py

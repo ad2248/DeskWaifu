@@ -230,6 +230,29 @@ runpy.run_path(path, run_name="__main__")
                 process.kill()
                 process.communicate()
 
+    def test_job_summary_is_forwarded_without_opening_the_rest_of_the_host(self):
+        script = "import json, os; print(json.dumps(dict(os.environ)))"
+        with tempfile.TemporaryDirectory(prefix="job-summary-") as directory:
+            summary = Path(directory) / "summary.md"
+            env = dict(os.environ, GITHUB_STEP_SUMMARY=str(summary), TEST_ENV_PROBE_SECRET="secret")
+            result = subprocess.run([sys.executable, str(ROOT / "scripts/test-environment.py"),
+                                     sys.executable, "-c", script], env=env,
+                                    capture_output=True, text=True, timeout=15)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            child = json.loads(result.stdout)
+            self.assertEqual(child["GITHUB_STEP_SUMMARY"], str(summary),
+                             "CI 的报告没有传进隔离环境就只能翻 job 日志")
+            self.assertNotIn("TEST_ENV_PROBE_SECRET", child)
+
+    def test_absent_job_summary_does_not_become_an_empty_entry(self):
+        script = "import json, os; print(json.dumps(dict(os.environ)))"
+        env = {key: value for key, value in os.environ.items() if key != "GITHUB_STEP_SUMMARY"}
+        result = subprocess.run([sys.executable, str(ROOT / "scripts/test-environment.py"),
+                                 sys.executable, "-c", script], env=env,
+                                capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("GITHUB_STEP_SUMMARY", json.loads(result.stdout))
+
     def test_allowlist_and_cleanup_on_success_and_failure(self):
         for code in (0, 12):
             with self.subTest(code=code):
