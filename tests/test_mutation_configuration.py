@@ -186,6 +186,53 @@ class MutationSelectionTest(unittest.TestCase):
         self.assertEqual(self.select("plugins/desktop/tests/ModelPointerTest.cpp"),
                          ["cursor-timer", "cursor-assembly"])
 
+    def test_test_helper_header_selects_every_mutation_whose_target_compiles_it(self):
+        for path, expected in (
+            ("plugins/desktop/tests/ModelProcessorTestHelpers.hpp",
+             ["gpu-release", "cursor-timer", "cursor-assembly", "gpu-context-guard"]),
+            ("plugins/desktop/tests/TestApplication.hpp", ["cursor-timer", "cursor-assembly"]),
+            ("plugins/desktop/tests/DispatchedInput.hpp", ["cursor-timer", "cursor-assembly"]),
+            ("plugins/desktop/tests/EventLoopFence.hpp", ["hover"]),
+            ("plugins/speech/tests/EventLoopFence.hpp", ["late-speech"]),
+        ):
+            with self.subTest(path=path):
+                self.assertEqual(self.select(path), expected)
+
+    def test_support_paths_exist_so_a_rename_cannot_leave_a_stale_mapping(self):
+        # support 既可能是单个头文件，也可能是整个目录前缀，两者都必须真实存在
+        for mutation in mutations.MUTATIONS:
+            for path in mutation.get("support", ()):
+                with self.subTest(mutation=mutation["mutation"], path=path):
+                    target = ROOT / path.rstrip("/")
+                    self.assertTrue(target.exists(), f"{path} no longer exists")
+                    if path.endswith("/"):
+                        self.assertTrue(target.is_dir(), f"{path} should be a directory prefix")
+                    else:
+                        self.assertTrue(target.is_file(), f"{path} should be a single file")
+
+    def test_linked_application_source_selects_mutations_whose_target_links_it(self):
+        # model-pointer-test 与 interaction-processor-test 都链接 deskwaifu_application，
+        # 被这两个测试源码包含的头文件改动，必须让相关 mutation 一并运行，
+        # 而不是依赖 unmapped → 全集 的隐式兜底
+        for path, expected in (
+                # 模型目录被 interaction 与 render-thread 两个测试目标包含
+                ("plugins/desktop/private/processor/model/ModelCatalog.cpp",
+                 ["hover", "gpu-release", "gpu-context-guard"]),
+                ("plugins/desktop/private/processor/model/ModelProcessor.hpp",
+                 ["hover", "gpu-release", "gpu-context-guard"]),
+                # 输入目录只被 interaction 与 model-pointer 包含，不含 render-thread
+                ("plugins/desktop/private/processor/input/InputListener.hpp",
+                 ["hover", "cursor-timer", "cursor-assembly"]),
+                # 两个应用库测试目标都包含的渲染头文件，三项全部受影响
+                ("plugins/desktop/private/render/ModelRenderTarget.hpp",
+                 ["hover", "gpu-release", "cursor-timer", "cursor-assembly",
+                  "gpu-context-guard"])):
+            with self.subTest(path=path):
+                selected = self.select(path)
+                self.assertEqual(selected, expected)
+                self.assertLess(len(selected), len(mutations.MUTATIONS),
+                                "已映射的依赖不应回落到全集")
+
     def test_shared_target_selection_cannot_prove_a_mapping_and_runs_everything(self):
         for path in ("platform/plugin/PluginManager.cpp", "cmake/DeskWaifuTest.cmake",
                      "sdk/include/EventLoop.hpp", "CMakeLists.txt", "thirdParty/glew/src/glew.c"):
