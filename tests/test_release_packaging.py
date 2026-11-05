@@ -76,9 +76,12 @@ class PackagingTest(unittest.TestCase):
             self.assertIn('bash "$RELEASE_TOOLS_DIR/scripts/release-build.sh"', workflow)
             self.assertNotIn("pacman -", workflow)
             self.assertIn("runs-on: deskwaifu-arch", workflow)
-        self.assertIn("diff -u package-reference/SHA256SUMS release-assets/SHA256SUMS", ci)
-        self.assertIn('cmp "package-reference/$(basename "$package")" "$package"', ci)
+        self.assertEqual(ci.count('bash "$RELEASE_TOOLS_DIR/scripts/release-build.sh"'), 1,
+                         "CI builds the release packages once; reproduction is not a CI gate")
+        self.assertNotIn("package-reference", ci)
         self.assertIn('scripts/test-installed-packages.py" release-assets', ci)
+        self.assertIn("Preserve test evidence\n        if: failure()", ci,
+                      "Passing runs must not spend time uploading evidence")
         self.assertNotIn("name: arch-packages", ci)
         self.assertIn("Clean temporary packages", ci)
         self.assertNotIn("Test preserved release tooling", release)

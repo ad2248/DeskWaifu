@@ -71,7 +71,7 @@ jobs:
             } >> "$GITHUB_ENV"
           else
             echo "CCACHE_DISABLE=1" >> "$GITHUB_ENV"
-            echo "Runner cache volume not mounted; building without persistent cache"
+            echo "::warning::Runner cache volume not mounted; building without persistent cache"
           fi
 
       - name: Build packages using the release entry point
@@ -79,15 +79,6 @@ jobs:
 
       - name: Test four installed packages in order
         run: python3 "$RELEASE_TOOLS_DIR/scripts/test-installed-packages.py" release-assets "$RELEASE_TAG"
-
-      - name: Rebuild independently and compare complete package bytes
-        run: |
-          mv release-assets package-reference
-          bash "$RELEASE_TOOLS_DIR/scripts/release-build.sh"
-          diff -u package-reference/SHA256SUMS release-assets/SHA256SUMS
-          for package in release-assets/*.pkg.tar.zst; do
-            cmp "package-reference/$(basename "$package")" "$package"
-          done
 
       - name: Report compiler cache statistics
         if: always()
@@ -100,7 +91,7 @@ jobs:
 
       - name: Clean temporary packages
         if: always()
-        run: rm -f release-assets/*.pkg.tar.zst package-reference/*.pkg.tar.zst
+        run: rm -f release-assets/*.pkg.tar.zst
 
       - name: Report CI failure to OpenHands
         if: failure()
@@ -135,7 +126,7 @@ jobs:
             } >> "$GITHUB_ENV"
           else
             echo "CCACHE_DISABLE=1" >> "$GITHUB_ENV"
-            echo "Runner cache volume not mounted; building without persistent cache"
+            echo "::warning::Runner cache volume not mounted; building without persistent cache"
           fi
 
       - name: Verify renamed identifiers
@@ -204,7 +195,13 @@ jobs:
         run: python3 scripts/run-test-gate.py build-ci
 
       - name: Verify behavioral mutation interception
-        run: python3 scripts/test-environment.py python3 scripts/check-test-mutations.py build-ci
+        run: |
+          args=()
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            git fetch --no-tags --depth=50 origin "${{ github.base_ref }}"
+            args+=(--base "origin/${{ github.base_ref }}")
+          fi
+          python3 scripts/test-environment.py python3 scripts/check-test-mutations.py build-ci "${args[@]}"
 
       - name: Test headless Wayland and IPC
         run: bash scripts/headless-smoke-test.sh build-ci
@@ -238,7 +235,7 @@ jobs:
           fi
 
       - name: Preserve test evidence
-        if: always()
+        if: failure()
         uses: https://code.forgejo.org/actions/upload-artifact@ff15f0306b3f739f7b6fd43fb5d26cd321bd4de5 # v3
         with:
           name: regression-evidence

@@ -10,10 +10,14 @@
 runner:
   capacity: 4
 container:
+  valid_volumes:
+    - "**"
   options: --cpus=8 --memory=8g --memory-swap=8g --tmpfs=/tmp:rw,exec,nosuid,size=4g,mode=1777 -v /srv/cache/deskwaifu-ci:/cache
 ```
 
-这些只是片段，不能替换完整配置。保留已注册的运行器身份、通过镜像 ID 固定的 `deskwaifu-arch` 标签、`force_pull: false`、`docker_host: "-"`、`privileged: false` 和 `valid_volumes: []`。其中 `/srv/cache/deskwaifu-ci:/cache` 是唯一的宿主机持久化挂载，仅供编译器缓存（ccache）使用；它由运行器配置统一施加，工作流无法通过 `valid_volumes` 自行挂载其他宿主路径。
+这些只是片段，不能替换完整配置。保留已注册的运行器身份、通过镜像 ID 固定的 `deskwaifu-arch` 标签、`force_pull: false`、`docker_host: "-"`、`privileged: false`。运行器默认把 `/srv/cache/deskwaifu-ci` 挂到 `/cache` 供编译器缓存（ccache）使用；该挂载由运行器配置统一施加，工作流无需声明。
+
+`valid_volumes` 为 `"**"`，即不做挂载白名单限制。此运行器只服务自有仓库，宿主机与代码均由同一人控制，白名单没有需要隔离的第三方。**不要写成空列表**：act_runner 3.5.0 的 `sanitizeConfig`（`act/container/docker_run.go`）在列表为空时会驳回全部 bind，包括运行器自己 `container.options` 里的 `-v`；日志出现 `[/srv/cache/deskwaifu-ci] is not a valid volume, will be ignored`，容器内没有 `/cache`，工作流的缓存探测全部回退为 `CCACHE_DISABLE=1`，且任务不报错。该状态曾在 `488cf96` 之后的每次构建中持续存在：ccache 从未生效，构建时长回到无缓存水平。空列表表示“不允许任何宿主挂载”，不是“不做限制”；`privileged: false` 此时也帮不上忙。
 
 仓库不包含已部署的服务单元或完整运行器配置。线上服务、无根执行、限制、标签映射及上述其他设置均未在此验证。
 
@@ -33,7 +37,7 @@ CI 编译通过 `CMAKE_<LANG>_COMPILER_LAUNCHER=ccache` 复用宿主机持久缓
 
 ## 隔离与线上验证
 
-任务必须保持独立工作区、进程命名空间及运行时目录。不得添加共享可写构建目录挂载、主机网络、主机 PID 命名空间、固定主机端口映射或主机桌面/音频套接字。唯一的例外是上述运行器托管的编译缓存卷：它只存放编译器缓存（无源码、无工作区数据、无凭据），不进入测试运行时环境，也不削弱逐项 HOME/XDG/D-Bus 隔离；其余共享挂载仍然禁止。仅在满足所需隔离时，容器内相同套接字路径才安全。
+任务必须保持独立工作区、进程命名空间及运行时目录。运行器不对宿主挂载做白名单限制（`valid_volumes: "**"`），因此工作流自带的挂载不会被裁剪；仍不应随意添加共享可写构建目录、主机桌面/音频套接字等会破坏逐项 HOME/XDG/D-Bus 隔离的挂载。编译缓存卷只存放编译器缓存（无源码、无工作区数据、无凭据），不进入测试运行时环境。
 
 CI 隔离检查只验证 `/var/run/docker.sock` 不是套接字。[`scripts/test-environment.py`](../../scripts/test-environment.py) 为其启动的测试创建私有运行时目录和 D-Bus 会话；它不是网络/文件系统安全沙箱。这些检查不证明容器工作区、挂载、网络或 PID 隔离。必须针对线上运行器及容器验证这些属性。
 

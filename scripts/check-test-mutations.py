@@ -1,8 +1,16 @@
 #!/usr/bin/env python3
-"""Bounded behavioral mutations in an owned source copy, never the checkout."""
+"""Bounded behavioral mutations in an owned source copy, never the checkout.
 
+A mutation runs when a changed path can affect its production file or the test that
+must catch it. A clean tree or a selection wide enough to touch `deskwaifu-core`
+cannot prove a mapping, so the full set runs instead. Every run checks the selected
+mutations and nothing outside the selection, and a partial report says so.
+"""
+
+import argparse
 import json
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 import sys
@@ -10,26 +18,89 @@ import tempfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+# The production targets every mutation build links, owned by paths that cannot be
+# mapped to one mutation. A change there may break any expectation, so it selects all.
+SHARED_OWNERS = ("CMakeLists.txt", "cmake/", "platform/", "sdk/", "thirdParty/")
+
+# Paths that no compilation reads. Only these may skip every mutation.
+INERT = ("docs/", ".gitea/", "README.md")
+
 MUTATIONS = [
-    ("late-speech", "plugins/speech/private/processor/speech/SpeechPlayer.cpp",
-     "return _id && e.id == _id;", "return bool(_id);",
-     "speech-processor-contract-test", "speech-contract-replace", "old results cannot affect the new request"),
-    ("hover", "plugins/desktop/private/processor/interaction/InteractionProcessor.cpp",
-     "? hoverOpacity : idleOpacity;", "? idleOpacity : idleOpacity;",
-     "interaction-processor-test", "interaction-opacity", "frame.opacity == hovered"),
-    ("gpu-release", "plugins/desktop/private/processor/model/ModelProcessor.cpp",
-     "_stoppedCleanly = _runtime->Shutdown(_target->MakeCurrent());", "_stoppedCleanly = true;",
-     "model-render-thread-test", "model-render-thread", "calls.created == calls.deleted"),
-    ("cursor-timer", "plugins/desktop/private/processor/input/InputListener.cpp",
-     "_cursorTimer.start(16);", ";",
-     "model-pointer-test", "model-pointer-cursor", "periodic cursor sampling must progress without presentation frames"),
-    ("cursor-assembly", "plugins/desktop/private/app/LAppDelegate.cpp",
-     "if (!_input->StartCursor())", "if (false)",
-     "model-pointer-test", "model-pointer-cursor", "cursorStarts == 1"),
-    ("gpu-context-guard", "plugins/desktop/private/processor/model/ModelRuntime.cpp",
-     "if (!contextCurrent && (_view || _manager || _textures))", "if (false)",
-     "model-render-thread-test", "model-shutdown-context", "calls.forbiddenDeletes == 0"),
+    {"mutation": "late-speech",
+     "owned": ["plugins/speech/private/processor/speech/"],
+     "tests": ["plugins/speech/tests/SpeechProcessorContractTest.cpp"],
+     "relative": "plugins/speech/private/processor/speech/SpeechPlayer.cpp",
+     "old": "return _id && e.id == _id;", "new": "return bool(_id);",
+     "target": "speech-processor-contract-test", "test": "speech-contract-replace",
+     "assertion": "old results cannot affect the new request"},
+    {"mutation": "hover",
+     "owned": ["plugins/desktop/private/processor/interaction/"],
+     "tests": ["plugins/desktop/tests/InteractionProcessorTest.cpp"],
+     "relative": "plugins/desktop/private/processor/interaction/InteractionProcessor.cpp",
+     "old": "? hoverOpacity : idleOpacity;", "new": "? idleOpacity : idleOpacity;",
+     "target": "interaction-processor-test", "test": "interaction-opacity",
+     "assertion": "frame.opacity == hovered"},
+    {"mutation": "gpu-release",
+     "owned": ["plugins/desktop/private/processor/model/"],
+     "tests": ["plugins/desktop/tests/ModelRenderThreadTest.cpp"],
+     "relative": "plugins/desktop/private/processor/model/ModelProcessor.cpp",
+     "old": "_stoppedCleanly = _runtime->Shutdown(_target->MakeCurrent());", "new": "_stoppedCleanly = true;",
+     "target": "model-render-thread-test", "test": "model-render-thread",
+     "assertion": "calls.created == calls.deleted"},
+    {"mutation": "cursor-timer",
+     "owned": ["plugins/desktop/private/processor/input/"],
+     "tests": ["plugins/desktop/tests/ModelPointerTest.cpp"],
+     "relative": "plugins/desktop/private/processor/input/InputListener.cpp",
+     "old": "_cursorTimer.start(16);", "new": ";",
+     "target": "model-pointer-test", "test": "model-pointer-cursor",
+     "assertion": "periodic cursor sampling must progress without presentation frames"},
+    {"mutation": "cursor-assembly",
+     "owned": ["plugins/desktop/private/app/"],
+     "tests": ["plugins/desktop/tests/ModelPointerTest.cpp"],
+     "relative": "plugins/desktop/private/app/LAppDelegate.cpp",
+     "old": "if (!_input->StartCursor())", "new": "if (false)",
+     "target": "model-pointer-test", "test": "model-pointer-cursor",
+     "assertion": "cursorStarts == 1"},
+    {"mutation": "gpu-context-guard",
+     "owned": ["plugins/desktop/private/processor/model/"],
+     "tests": ["plugins/desktop/tests/ModelRenderThreadTest.cpp"],
+     "relative": "plugins/desktop/private/processor/model/ModelRuntime.cpp",
+     "old": "if (!contextCurrent && (_view || _manager || _textures))", "new": "if (false)",
+     "target": "model-render-thread-test", "test": "model-shutdown-context",
+     "assertion": "calls.forbiddenDeletes == 0"},
 ]
+
+
+def select(changed):
+    """Return the mutations a changed-path list can affect, or all when unprovable.
+
+    Anything that is not inert may alter a shared target, so a single unmapped path
+    selects every mutation. Only a diff made entirely of inert paths runs none.
+    """
+    if not changed:
+        return list(MUTATIONS)
+    if all(path.startswith(INERT) for path in changed):
+        return []
+    if any(path.startswith(SHARED_OWNERS) for path in changed):
+        return list(MUTATIONS)
+    selected = [m for m in MUTATIONS
+                if any(path.startswith(tuple(m["owned"] + m["tests"])) for path in changed)]
+    mapped = {path for m in MUTATIONS for path in m["owned"] + m["tests"]}
+    unmapped = [path for path in changed
+                if not path.startswith(tuple(mapped)) and not path.startswith(INERT)]
+    return selected if not unmapped else list(MUTATIONS)
+
+
+def changed_paths(base):
+    """Changed paths against a merge base, or None when they cannot be determined."""
+    if not base:
+        return None
+    command = ["git", "-C", str(ROOT), "diff", "--name-only", f"{base}...HEAD"]
+    result = subprocess.run(command, capture_output=True, text=True)
+    if result.returncode != 0:
+        return None
+    return [line for line in result.stdout.splitlines() if line]
 
 
 def run(command, log):
@@ -38,9 +109,21 @@ def run(command, log):
 
 
 def main():
-    if len(sys.argv) != 2:
-        sys.exit("usage: check-test-mutations.py CONFIGURED_BUILD")
-    original_build = Path(sys.argv[1]).resolve()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("build", help="a configured build directory")
+    parser.add_argument("--base", help="run only mutations the diff from this commit can affect")
+    arguments = parser.parse_args()
+    changed = changed_paths(arguments.base)
+    if arguments.base and changed is None:
+        sys.exit(f"cannot diff against {arguments.base}; a partial run would be unproven")
+    selected = select(changed)
+    if changed is not None and not selected:
+        print(json.dumps({"selected": 0, "reason": "no changed path affects a mutation",
+                          "changed": changed}, ensure_ascii=False))
+        return 0
+    full = len(selected) == len(MUTATIONS)
+
+    original_build = Path(arguments.build).resolve()
     cache = {}
     for line in (original_build / "CMakeCache.txt").read_text().splitlines():
         if line and not line.startswith(("#", "//")) and "=" in line:
@@ -61,7 +144,10 @@ def main():
         # These mutations exercise application/plugin behavior, not the optional native OCR engine.
         if run(configure, logs / "configure.log"):
             sys.exit(f"mutation configuration failed; see {logs}\n{(logs / 'configure.log').read_text()}")
-        for name, relative, old, new, target, test, assertion in MUTATIONS:
+        for mutation in selected:
+            name, relative = mutation["mutation"], mutation["relative"]
+            old, new = mutation["old"], mutation["new"]
+            target, test, assertion = mutation["target"], mutation["test"], mutation["assertion"]
             path = source / relative
             clean = path.read_text()
             if clean.count(old) != 1:
@@ -83,8 +169,13 @@ def main():
                 restored = run([sys.executable, str(source / "scripts/run-test-gate.py"), str(build), "--test", f"^{test}$"], logs / f"{name}-restored-test.log") == 0
             results[-1]["restored_passed"] = restored
             print(json.dumps(results[-1], ensure_ascii=False))
-    (logs / "summary.json").write_text(json.dumps(results, indent=2, ensure_ascii=False) + "\n")
+    summary = {"full": full, "selected": [m["mutation"] for m in selected],
+               "changed": changed or [], "results": results}
+    (logs / "summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n")
     print(f"Mutation report: {logs / 'summary.json'}")
+    if not full:
+        print("PARTIAL: only mutations affected by the changed paths ran; "
+              "this report is not evidence for the full set")
     return int(not all(row["caught"] and row["restored_passed"] for row in results))
 
 
