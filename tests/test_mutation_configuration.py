@@ -98,6 +98,24 @@ class MutationSelectionTest(unittest.TestCase):
         self.assertEqual(self.select("plugins/desktop/tests/ModelPointerTest.cpp"),
                          ["cursor-timer", "cursor-assembly"])
 
+    def test_test_helper_header_selects_every_mutation_whose_target_compiles_it(self):
+        for path, expected in (
+            ("plugins/desktop/tests/ModelProcessorTestHelpers.hpp",
+             ["gpu-release", "cursor-timer", "cursor-assembly", "gpu-context-guard"]),
+            ("plugins/desktop/tests/TestApplication.hpp", ["cursor-timer", "cursor-assembly"]),
+            ("plugins/desktop/tests/DispatchedInput.hpp", ["cursor-timer", "cursor-assembly"]),
+            ("plugins/desktop/tests/EventLoopFence.hpp", ["hover"]),
+            ("plugins/speech/tests/EventLoopFence.hpp", ["late-speech"]),
+        ):
+            with self.subTest(path=path):
+                self.assertEqual(self.select(path), expected)
+
+    def test_support_paths_exist_so_a_rename_cannot_leave_a_stale_mapping(self):
+        for mutation in mutations.MUTATIONS:
+            for path in mutation.get("support", ()):
+                with self.subTest(mutation=mutation["mutation"], path=path):
+                    self.assertTrue((ROOT / path).is_file(), f"{path} no longer exists")
+
     def test_shared_target_selection_cannot_prove_a_mapping_and_runs_everything(self):
         for path in ("platform/plugin/PluginManager.cpp", "cmake/DeskWaifuTest.cmake",
                      "sdk/include/EventLoop.hpp", "CMakeLists.txt", "thirdParty/glew/src/glew.c"):

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Bounded behavioral mutations in an owned source copy, never the checkout.
 
-A mutation runs when a changed path can affect its production file or the test that
-must catch it. A clean tree or a selection wide enough to touch `deskwaifu-core`
-cannot prove a mapping, so the full set runs instead. Every run checks the selected
-mutations and nothing outside the selection, and a partial report says so.
+A mutation runs when a changed path can affect its production file, the test that
+must catch it, or a helper header that test target compiles. A clean tree or a
+selection wide enough to touch `deskwaifu-core` cannot prove a mapping, so the full
+set runs instead. Every run checks the selected mutations and nothing outside the
+selection, and a partial report says so.
 """
 
 import argparse
@@ -30,6 +31,8 @@ MUTATIONS = [
     {"mutation": "late-speech",
      "owned": ["plugins/speech/private/processor/speech/"],
      "tests": ["plugins/speech/tests/SpeechProcessorContractTest.cpp"],
+     # 该测试目标编译的辅助头文件：不在生产归属目录内，但同样决定它能否通过。
+     "support": ["plugins/speech/tests/EventLoopFence.hpp"],
      "relative": "plugins/speech/private/processor/speech/SpeechPlayer.cpp",
      "old": "return _id && e.id == _id;", "new": "return bool(_id);",
      "target": "speech-processor-contract-test", "test": "speech-contract-replace",
@@ -37,6 +40,7 @@ MUTATIONS = [
     {"mutation": "hover",
      "owned": ["plugins/desktop/private/processor/interaction/"],
      "tests": ["plugins/desktop/tests/InteractionProcessorTest.cpp"],
+     "support": ["plugins/desktop/tests/EventLoopFence.hpp"],
      "relative": "plugins/desktop/private/processor/interaction/InteractionProcessor.cpp",
      "old": "? hoverOpacity : idleOpacity;", "new": "? idleOpacity : idleOpacity;",
      "target": "interaction-processor-test", "test": "interaction-opacity",
@@ -44,6 +48,7 @@ MUTATIONS = [
     {"mutation": "gpu-release",
      "owned": ["plugins/desktop/private/processor/model/"],
      "tests": ["plugins/desktop/tests/ModelRenderThreadTest.cpp"],
+     "support": ["plugins/desktop/tests/ModelProcessorTestHelpers.hpp"],
      "relative": "plugins/desktop/private/processor/model/ModelProcessor.cpp",
      "old": "_stoppedCleanly = _runtime->Shutdown(_target->MakeCurrent());", "new": "_stoppedCleanly = true;",
      "target": "model-render-thread-test", "test": "model-render-thread",
@@ -51,6 +56,10 @@ MUTATIONS = [
     {"mutation": "cursor-timer",
      "owned": ["plugins/desktop/private/processor/input/"],
      "tests": ["plugins/desktop/tests/ModelPointerTest.cpp"],
+     "support": ["plugins/desktop/tests/TestApplication.hpp",
+                 "plugins/desktop/tests/ModelProcessorTestHelpers.hpp",
+                 "plugins/desktop/tests/DispatchedInput.hpp",
+                 "plugins/desktop/tests/TestTemporaryDirectory.hpp"],
      "relative": "plugins/desktop/private/processor/input/InputListener.cpp",
      "old": "_cursorTimer.start(16);", "new": ";",
      "target": "model-pointer-test", "test": "model-pointer-cursor",
@@ -58,6 +67,10 @@ MUTATIONS = [
     {"mutation": "cursor-assembly",
      "owned": ["plugins/desktop/private/app/"],
      "tests": ["plugins/desktop/tests/ModelPointerTest.cpp"],
+     "support": ["plugins/desktop/tests/TestApplication.hpp",
+                 "plugins/desktop/tests/ModelProcessorTestHelpers.hpp",
+                 "plugins/desktop/tests/DispatchedInput.hpp",
+                 "plugins/desktop/tests/TestTemporaryDirectory.hpp"],
      "relative": "plugins/desktop/private/app/LAppDelegate.cpp",
      "old": "if (!_input->StartCursor())", "new": "if (false)",
      "target": "model-pointer-test", "test": "model-pointer-cursor",
@@ -65,11 +78,17 @@ MUTATIONS = [
     {"mutation": "gpu-context-guard",
      "owned": ["plugins/desktop/private/processor/model/"],
      "tests": ["plugins/desktop/tests/ModelRenderThreadTest.cpp"],
+     "support": ["plugins/desktop/tests/ModelProcessorTestHelpers.hpp"],
      "relative": "plugins/desktop/private/processor/model/ModelRuntime.cpp",
      "old": "if (!contextCurrent && (_view || _manager || _textures))", "new": "if (false)",
      "target": "model-render-thread-test", "test": "model-shutdown-context",
      "assertion": "calls.forbiddenDeletes == 0"},
 ]
+
+
+def affected_paths(mutation):
+    """Every path this mutation's build reads: production, test source, helper headers."""
+    return (*mutation["owned"], *mutation["tests"], *mutation.get("support", ()))
 
 
 def select(changed):
@@ -85,8 +104,8 @@ def select(changed):
     if any(path.startswith(SHARED_OWNERS) for path in changed):
         return list(MUTATIONS)
     selected = [m for m in MUTATIONS
-                if any(path.startswith(tuple(m["owned"] + m["tests"])) for path in changed)]
-    mapped = {path for m in MUTATIONS for path in m["owned"] + m["tests"]}
+                if any(path.startswith(tuple(affected_paths(m))) for path in changed)]
+    mapped = {path for m in MUTATIONS for path in affected_paths(m)}
     unmapped = [path for path in changed
                 if not path.startswith(tuple(mapped)) and not path.startswith(INERT)]
     return selected if not unmapped else list(MUTATIONS)
