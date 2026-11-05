@@ -44,6 +44,8 @@ GitHub 标签当前原样映射为 `pkgver`，上游产物使用 `pkgrel=1`。�
 
 下载使用 `upstream-` 文件名前缀，避免与 makepkg 输出包冲突。`noextract` 防止两个上游归档互相覆盖；每个包仅提取自己的 `usr/` 载荷。不安装上游包元数据，并禁用符号剥离和调试包拆分。OCR 许可证目录从上游组件名 `deskwaifu-ocr` 重命名为安装包名 `deskwaifu-ocr-bin`。
 
+自 `0.2.1` 起 OCR 使用系统 ONNX Runtime：OCR 包必须声明 `onnxruntime-cpu` 运行依赖，其载荷只含模块与模型许可证，不再内置 `libonnxruntime` 或运行库许可证，因此配方不安装任何 `onnxruntime/` 许可证文件。
+
 已发布载荷继承的已知 namcap 提示：`/usr/libexec/` 是有意使用的，因为应用在该处调用 OCR；在 AUR 配方中移动它会破坏契约。运行时加载的 Qt Wayland 组件、外部辅助程序依赖及 gcc-libs 可能被静态检查报告为不必要，仍有意保留，以符合发行契约。
 
 ## 失败与迁移安全
