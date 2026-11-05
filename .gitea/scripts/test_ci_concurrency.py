@@ -43,6 +43,23 @@ class CiConcurrencyTest(unittest.TestCase):
         # depth 抓取会把完整克隆重新变成浅克隆，脚本随即拒绝选择。
         self.assertNotIn("--depth", body)
 
+    def test_mutation_step_fails_loudly_when_the_baseline_fetch_yields_nothing(self):
+        """空的 --base 会让脚本把「取不到基线」当成「影响全集」，必须显式失败。"""
+        workflow = pathlib.Path(__file__).resolve().parents[1] / "workflows/ci.yml"
+        step = re.search(r"- name: Verify behavioral mutation interception\n(?:.*\n)*?(?=\n {6}- name: )",
+                         workflow.read_text())
+        self.assertIsNotNone(step)
+        body = step.group(0)
+
+        self.assertIn('git fetch --no-tags origin', body,
+                      "Without a fetch the baseline ref does not exist on a fresh clone")
+        fetched = re.search(r"git fetch[^\n]*\n((?:[ \t]+.*\n)*)", body).group(1)
+        self.assertIn('git rev-parse --verify --quiet "$base_ref^{commit}"', body,
+                      "A fetch that produced nothing must fail before selecting")
+        self.assertIn("exit 1", fetched, "The empty-fetch check must abort the step")
+        self.assertIn('test -n "$merge_base"', body,
+                      "An empty merge base must not reach the script as --base ''")
+
     def test_mutation_checkout_keeps_full_history(self):
         workflow = pathlib.Path(__file__).resolve().parents[1] / "workflows/ci.yml"
         text = workflow.read_text()

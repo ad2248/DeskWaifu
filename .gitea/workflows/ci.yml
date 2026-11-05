@@ -206,8 +206,18 @@ jobs:
             # 上的提交不属于本 PR，两点式会把它们算进改动路径。
             base_ref="origin/${{ github.base_ref }}"
             git fetch --no-tags origin "+refs/heads/${{ github.base_ref }}:refs/remotes/$base_ref"
+            # fetch 拿到空结果时不能带着空 args 跌回全集：那会把「取不到基线」伪装成
+            # 「改动影响所有故障」，201s 的耗时里看不出选择其实没生效。
+            git rev-parse --verify --quiet "$base_ref^{commit}" > /dev/null || {
+              echo "::error::fetching $base_ref produced no commit"
+              exit 1
+            }
             merge_base="$(git merge-base "$base_ref" HEAD)" || {
               echo "::error::cannot resolve the merge base of $base_ref and HEAD"
+              exit 1
+            }
+            test -n "$merge_base" || {
+              echo "::error::empty merge base for $base_ref"
               exit 1
             }
             args+=(--base "$merge_base")
