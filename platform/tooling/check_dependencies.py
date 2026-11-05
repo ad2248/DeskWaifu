@@ -21,8 +21,6 @@ def owner(path, root):
         return "plugin:" + parts[1]
     if parts[0] in ("cmake", "scripts", "tests", "packaging", ".gitea") or parts == ("install.sh",):
         return "platform"
-    if len(parts) > 1 and parts[:2] == ("research", "ocr"):
-        return "plugin:perception"
     if parts == ("deskwaifu-ctl",):
         return "plugin:ipc"
     return "unassigned"
