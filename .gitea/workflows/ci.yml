@@ -113,6 +113,10 @@ jobs:
 
       - name: Check out repository
         uses: https://git.kals.top/actions/checkout@v4
+        with:
+          # 变异选择要区分「本分支改动」与「基线分支后来的提交」，必须能解析真实
+          # merge-base；浅克隆的 graft 边界会被 git 当成 merge-base，得到空 diff。
+          fetch-depth: 0
 
       - name: Select compiler cache
         run: |
@@ -198,8 +202,15 @@ jobs:
         run: |
           args=()
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            git fetch --no-tags --depth=50 origin "${{ github.base_ref }}"
-            args+=(--base "origin/${{ github.base_ref }}")
+            # 基线用 PR 的 merge-base，而不是基线分支的当前 tip：tip 之后落在基线分支
+            # 上的提交不属于本 PR，两点式会把它们算进改动路径。
+            base_ref="origin/${{ github.base_ref }}"
+            git fetch --no-tags origin "+refs/heads/${{ github.base_ref }}:refs/remotes/$base_ref"
+            merge_base="$(git merge-base "$base_ref" HEAD)" || {
+              echo "::error::cannot resolve the merge base of $base_ref and HEAD"
+              exit 1
+            }
+            args+=(--base "$merge_base")
           fi
           python3 scripts/test-environment.py python3 scripts/check-test-mutations.py build-ci "${args[@]}"
 

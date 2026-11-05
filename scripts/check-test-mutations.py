@@ -92,14 +92,44 @@ def select(changed):
     return selected if not unmapped else list(MUTATIONS)
 
 
-def changed_paths(base):
-    """Changed paths against a merge base, or None when they cannot be determined."""
-    if not base:
-        return None
-    command = ["git", "-C", str(ROOT), "diff", "--name-only", f"{base}...HEAD"]
+class UnprovableDiff(Exception):
+    """The branch's own changes cannot be separated from the base branch."""
+
+
+def merge_base(base):
+    """The fork point of base and HEAD, or None when git cannot name one."""
+    command = ["git", "-C", str(ROOT), "merge-base", base, "HEAD"]
     result = subprocess.run(command, capture_output=True, text=True)
     if result.returncode != 0:
         return None
+    return result.stdout.strip() or None
+
+
+def changed_paths(base):
+    """Paths this branch changed since its fork point, or None without a baseline.
+
+    The baseline is the merge base, not the base branch tip: commits that landed on
+    the base branch after the fork are not this branch's changes. `fork..HEAD` is the
+    same set as `base...HEAD` once the fork point is named, but naming it removes the
+    dependence on git re-deriving a merge base that a shallow graft can silently
+    misreport as the clone boundary. Because of that graft, a shallow history cannot
+    prove which side a path came from, so it is refused instead of guessed.
+    """
+    if not base:
+        return None
+    shallow = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--is-shallow-repository"],
+                             capture_output=True, text=True)
+    if shallow.returncode == 0 and shallow.stdout.strip() == "true":
+        raise UnprovableDiff("the repository is a shallow clone, so its merge base is a graft boundary")
+    fork = merge_base(base)
+    if fork is None:
+        raise UnprovableDiff(f"{base} has no merge base with HEAD")
+    # 不加 quotepath=false 时 git 会把中文路径转义成带引号的八进制串，永远匹配不上映射表
+    result = subprocess.run(["git", "-C", str(ROOT), "-c", "core.quotepath=false",
+                             "diff", "--name-only", f"{fork}..HEAD"],
+                            capture_output=True, text=True)
+    if result.returncode != 0:
+        raise UnprovableDiff(result.stderr.strip() or f"cannot diff {fork} against HEAD")
     return [line for line in result.stdout.splitlines() if line]
 
 
@@ -113,9 +143,10 @@ def main():
     parser.add_argument("build", help="a configured build directory")
     parser.add_argument("--base", help="run only mutations the diff from this commit can affect")
     arguments = parser.parse_args()
-    changed = changed_paths(arguments.base)
-    if arguments.base and changed is None:
-        sys.exit(f"cannot diff against {arguments.base}; a partial run would be unproven")
+    try:
+        changed = changed_paths(arguments.base)
+    except UnprovableDiff as error:
+        sys.exit(f"cannot select mutations for {arguments.base}: {error}; a partial run would be unproven")
     selected = select(changed)
     if changed is not None and not selected:
         print(json.dumps({"selected": 0, "reason": "no changed path affects a mutation",
