@@ -20,6 +20,15 @@ def sign(body: bytes, secret: bytes) -> str:
     return hmac.new(secret, body, hashlib.sha256).hexdigest()
 
 
+def failed_jobs(env: dict) -> list:
+    """列出本次失败涉及的作业。
+
+    ci.yml 只由一个聚合作业上报（否则每个失败作业都会创建一次智能体运行），
+    因此 GITHUB_JOB 恒为 report，必须靠 CI_FAILED_JOBS 传回真实失败作业名。
+    """
+    return [name for name in env.get("CI_FAILED_JOBS", "").split() if name]
+
+
 def build_payload(event: dict, env: dict | None = None) -> dict | None:
     """按事件构造 ci_failed 载荷；非 PR 事件返回 None。
 
@@ -36,7 +45,7 @@ def build_payload(event: dict, env: dict | None = None) -> dict | None:
     server = env.get("GITHUB_SERVER_URL", "")
     run_id = env.get("GITHUB_RUN_ID", "")
     run_url = "{}/{}/actions/runs/{}".format(server, repository, run_id)
-    job = env.get("GITHUB_JOB", "")
+    job = ", ".join(failed_jobs(env)) or env.get("GITHUB_JOB", "")
     return {
         "action": "ci_failed",
         "repository": {"full_name": repository},
