@@ -113,6 +113,10 @@ jobs:
 
       - name: Check out repository
         uses: https://git.kals.top/actions/checkout@v4
+        with:
+          # Mutation selection needs a merge base with the base branch, which a
+          # single-commit clone cannot provide.
+          fetch-depth: 0
 
       - name: Select compiler cache
         run: |
@@ -198,8 +202,12 @@ jobs:
         run: |
           args=()
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            git fetch --no-tags --depth=50 origin "${{ github.base_ref }}"
-            args+=(--base FETCH_HEAD)
+            git fetch --no-tags --depth=1000 origin "${{ github.base_ref }}"
+            base=$(git merge-base FETCH_HEAD HEAD) || {
+              echo "::error::Cannot find a merge base; refusing to guess the mutation scope" >&2
+              exit 1
+            }
+            args+=(--base "$base")
           fi
           python3 scripts/test-environment.py python3 scripts/check-test-mutations.py build-ci "${args[@]}"
 
