@@ -173,7 +173,8 @@ class ConsumerTest(unittest.TestCase):
                 with tarfile.open(source, "w") as stream:
                     entries = [(".PKGINFO", b"upstream metadata"), (f"usr/bin/{package}", b"binary")]
                     if package == "deskwaifu-ocr-bin":
-                        entries.append(("usr/share/licenses/deskwaifu-ocr/onnxruntime/LICENSE", b"MIT"))
+                        # ONNX Runtime is a system dependency, so upstream ships only model licenses.
+                        entries.append(("usr/share/licenses/deskwaifu-ocr/models/LICENSE-PaddleOCR", b"Apache-2.0"))
                     for path, data in entries:
                         entry = tarfile.TarInfo(path)
                         entry.mode = 0o755 if path.startswith("usr/bin/") else 0o644
@@ -194,8 +195,9 @@ class ConsumerTest(unittest.TestCase):
                 other = "deskwaifu-ocr-bin" if package == "deskwaifu-bin" else "deskwaifu-bin"
                 self.assertFalse((output / f"usr/bin/{other}").exists())
                 if package == "deskwaifu-ocr-bin":
-                    self.assertTrue((output / "usr/share/licenses/deskwaifu-ocr-bin/onnxruntime/LICENSE").is_file())
-                    self.assertEqual((output / "usr/share/licenses/deskwaifu-ocr-bin/LICENSE").read_bytes(), b"MIT")
+                    self.assertTrue((output / "usr/share/licenses/deskwaifu-ocr-bin/models/LICENSE-PaddleOCR").is_file())
+                    self.assertFalse((output / "usr/share/licenses/deskwaifu-ocr-bin/onnxruntime").exists())
+                    self.assertFalse((output / "usr/share/licenses/deskwaifu-ocr-bin/LICENSE").exists())
 
     def test_binary_recipe_has_no_build_or_sdk_download(self):
         text = (ROOT / "packaging/aur/PKGBUILD").read_text()
@@ -203,6 +205,16 @@ class ConsumerTest(unittest.TestCase):
             self.assertNotIn(forbidden, text)
         self.assertIn("noextract=", text)
         self.assertIn("'!strip' '!debug'", text)
+
+    def test_ocr_recipe_uses_system_onnxruntime(self):
+        # Regression: 0.2.1 moved ONNX Runtime to a system dependency, so the recipe must
+        # declare it and stop installing a bundled runtime license that no longer ships.
+        text = (ROOT / "packaging/aur/PKGBUILD").read_text()
+        _, _, ocr = text.partition("package_deskwaifu-ocr-bin()")
+        self.assertTrue(ocr, "OCR split package is missing from the recipe")
+        self.assertIn("'onnxruntime-cpu'", ocr)
+        self.assertNotIn("onnxruntime/LICENSE", ocr)
+        self.assertNotIn("libonnxruntime", ocr)
 
     @unittest.skipUnless(shutil.which("makepkg"), "makepkg is required")
     def test_generated_metadata_and_bumped_ocr_dependency(self):

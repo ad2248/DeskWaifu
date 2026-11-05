@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tempfile
@@ -19,6 +20,20 @@ class ReviewCliTest(unittest.TestCase):
         allow = {"action": "*", "resource": "*", "effect": "allow"}
         self.assertEqual(config["permissions"], [allow])
         self.assertEqual(config["agents"]["build"], {"permissions": [allow]})
+
+    def test_review_model_is_declared_in_project_provider_config(self):
+        # 回归：`--model` 的 provider/模型必须与项目配置声明一致，
+        # 否则 CLI 直接报 Model unavailable，评审任务整体失败。
+        source = SOURCE.read_text()
+        model = re.search(r"^\s*--model ([\w.-]+/[\w.-]+)\s*\\$", source, re.M).group(1)
+        provider, _, model_id = model.partition("/")
+        # V2 与 V1 分支各写一份项目配置，两份都必须声明该模型。
+        configs = [json.loads(block.split("\nJSON", 1)[0])
+                   for block in source.split("<<'JSON'\n")[1:]]
+        self.assertEqual(len(configs), 2)
+        for config in configs:
+            self.assertIn(provider, config["provider"])
+            self.assertIn(model_id, config["provider"][provider]["models"])
 
     def test_review_prompt_allows_source_exploration_and_verification(self):
         source = SOURCE.read_text()
@@ -175,12 +190,12 @@ class ReviewCliTest(unittest.TestCase):
             self.assertEqual(invocation["repo"], "/trusted/repository")
             self.assertEqual(invocation["args"], [
                 "run", "Review fixture", *(["--standalone"] if standalone else []), "--agent", "build",
-                "--model", "new_api/large", "--format", "json",
+                "--model", "kedaya/deepseek-flash", "--format", "json",
                 "--file", str(work / "context.md"), "--file", str(work / "diff.patch"),
             ])
             config = invocation["config"]
             # 自定义 provider 的模型必须在配置中声明，否则 CLI 报 Model unavailable。
-            self.assertIn("large", config["provider"]["new_api"]["models"])
+            self.assertIn("deepseek-flash", config["provider"]["kedaya"]["models"])
             if standalone:
                 self.assertIn("permissions", config)
                 self.assertNotIn("permission", config)
