@@ -2,6 +2,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -282,6 +283,30 @@ class MutationSelectionTest(unittest.TestCase):
             self.assertEqual(record["reason"], "no changed path affects a mutation")
             self.assertEqual(list((build / "test-logs/mutations").glob("run-*")), [],
                              "跳过的运行不留下 run 目录")
+
+    def test_selection_reaches_job_summary_through_the_isolation_launcher(self):
+        """CI 经由 test-environment.py 调用，摘要落盘才算真的写进 job summary。"""
+        with tempfile.TemporaryDirectory(prefix="mutation-summary-") as directory:
+            build = Path(directory)
+            (build / "CMakeCache.txt").write_text(
+                "SDK_ROOT_PATH:PATH=/unused/sdk\nGLEW_PATH:PATH=/unused/glew\n")
+            summary = build / "step-summary.md"
+            script = (
+                "import importlib.util, sys\n"
+                f"spec = importlib.util.spec_from_file_location('mutations', {str(ROOT / 'scripts/check-test-mutations.py')!r})\n"
+                "mutations = importlib.util.module_from_spec(spec)\n"
+                "spec.loader.exec_module(mutations)\n"
+                "mutations.changed_paths = lambda base: ['README.md']\n"
+                f"sys.argv = ['check-test-mutations.py', {str(build)!r}]\n"
+                "sys.exit(mutations.main())\n")
+            result = subprocess.run(
+                [sys.executable, str(ROOT / "scripts/test-environment.py"), sys.executable, "-c", script],
+                env=dict(os.environ, GITHUB_STEP_SUMMARY=str(summary)),
+                capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            text = summary.read_text()
+            self.assertIn("已选 0 项", text, "白名单不转发 GITHUB_STEP_SUMMARY 时摘要丢失")
+            self.assertIn("改动 ['README.md']", text)
 
     def test_selection_is_written_even_when_the_run_never_builds(self):
         def failing(command, log):
