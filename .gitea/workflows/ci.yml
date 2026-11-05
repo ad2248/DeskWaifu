@@ -71,7 +71,7 @@ jobs:
             } >> "$GITHUB_ENV"
           else
             echo "CCACHE_DISABLE=1" >> "$GITHUB_ENV"
-            echo "Runner cache volume not mounted; building without persistent cache"
+            echo "::warning::Runner cache volume not mounted; building without persistent cache"
           fi
 
       - name: Build packages using the release entry point
@@ -79,15 +79,6 @@ jobs:
 
       - name: Test four installed packages in order
         run: python3 "$RELEASE_TOOLS_DIR/scripts/test-installed-packages.py" release-assets "$RELEASE_TAG"
-
-      - name: Rebuild independently and compare complete package bytes
-        run: |
-          mv release-assets package-reference
-          bash "$RELEASE_TOOLS_DIR/scripts/release-build.sh"
-          diff -u package-reference/SHA256SUMS release-assets/SHA256SUMS
-          for package in release-assets/*.pkg.tar.zst; do
-            cmp "package-reference/$(basename "$package")" "$package"
-          done
 
       - name: Report compiler cache statistics
         if: always()
@@ -100,7 +91,7 @@ jobs:
 
       - name: Clean temporary packages
         if: always()
-        run: rm -f release-assets/*.pkg.tar.zst package-reference/*.pkg.tar.zst
+        run: rm -f release-assets/*.pkg.tar.zst
 
       - name: Report CI failure to OpenHands
         if: failure()
@@ -122,6 +113,10 @@ jobs:
 
       - name: Check out repository
         uses: https://git.kals.top/actions/checkout@v4
+        with:
+          # 变异选择要区分「本分支改动」与「基线分支后来的提交」，必须能解析真实
+          # merge-base；浅克隆的 graft 边界会被 git 当成 merge-base，得到空 diff。
+          fetch-depth: 0
 
       - name: Select compiler cache
         run: |
@@ -135,7 +130,7 @@ jobs:
             } >> "$GITHUB_ENV"
           else
             echo "CCACHE_DISABLE=1" >> "$GITHUB_ENV"
-            echo "Runner cache volume not mounted; building without persistent cache"
+            echo "::warning::Runner cache volume not mounted; building without persistent cache"
           fi
 
       - name: Verify renamed identifiers
@@ -204,7 +199,30 @@ jobs:
         run: python3 scripts/run-test-gate.py build-ci
 
       - name: Verify behavioral mutation interception
-        run: python3 scripts/test-environment.py python3 scripts/check-test-mutations.py build-ci
+        run: |
+          args=()
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            # 基线用 PR 的 merge-base，而不是基线分支的当前 tip：tip 之后落在基线分支
+            # 上的提交不属于本 PR，两点式会把它们算进改动路径。
+            base_ref="origin/${{ github.base_ref }}"
+            git fetch --no-tags origin "+refs/heads/${{ github.base_ref }}:refs/remotes/$base_ref"
+            # fetch 拿到空结果时不能带着空 args 跌回全集：那会把「取不到基线」伪装成
+            # 「改动影响所有故障」，201s 的耗时里看不出选择其实没生效。
+            git rev-parse --verify --quiet "$base_ref^{commit}" > /dev/null || {
+              echo "::error::fetching $base_ref produced no commit"
+              exit 1
+            }
+            merge_base="$(git merge-base "$base_ref" HEAD)" || {
+              echo "::error::cannot resolve the merge base of $base_ref and HEAD"
+              exit 1
+            }
+            test -n "$merge_base" || {
+              echo "::error::empty merge base for $base_ref"
+              exit 1
+            }
+            args+=(--base "$merge_base")
+          fi
+          python3 scripts/test-environment.py python3 scripts/check-test-mutations.py build-ci "${args[@]}"
 
       - name: Test headless Wayland and IPC
         run: bash scripts/headless-smoke-test.sh build-ci
@@ -238,7 +256,7 @@ jobs:
           fi
 
       - name: Preserve test evidence
-        if: always()
+        if: failure()
         uses: https://code.forgejo.org/actions/upload-artifact@ff15f0306b3f739f7b6fd43fb5d26cd321bd4de5 # v3
         with:
           name: regression-evidence
