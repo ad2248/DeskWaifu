@@ -57,6 +57,9 @@ def main():
             env["__EGL_VENDOR_LIBRARY_FILENAMES"] = str(mesa)
         if "DESKWAIFU_DEPS_DIR" in os.environ:
             env["DESKWAIFU_DEPS_DIR"] = os.environ["DESKWAIFU_DEPS_DIR"]
+        # CI 给出的 job summary 文件不在白名单里就会丢，报告只剩 job 日志。
+        if os.environ.get("GITHUB_STEP_SUMMARY"):
+            env["GITHUB_STEP_SUMMARY"] = os.environ["GITHUB_STEP_SUMMARY"]
         process = subprocess.Popen(["dbus-run-session", "--", *command],
                                    env=env, start_new_session=True)
 
