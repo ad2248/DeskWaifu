@@ -533,12 +533,15 @@ private slots:
         }
         QTRY_COMPARE_WITH_TIMEOUT(invalidReplies, 1, 6000);
         QTRY_VERIFY_WITH_TIMEOUT(connections >= 2 && hoverGroup->isEnabled() && lookGroup->isEnabled() && x->isEnabled(), 6000);
-        QVERIFY(log->toPlainText().contains(queuedSave ? QString("apply_transform_edit") : failedCommand));
-        QVERIFY(log->toPlainText().contains("JSON 响应无效"));
+        // 服务端在写入坏响应时即自增计数，客户端要到下一轮事件循环才解析并写入日志。
+        // 因此计数条件满足时日志可能尚未更新，必须同样按超时等待，否则在负载高时误报失败。
+        const QString loggedCommand = queuedSave ? QString("apply_transform_edit") : failedCommand;
+        QTRY_VERIFY_WITH_TIMEOUT(log->toPlainText().contains(loggedCommand), 6000);
+        QTRY_VERIFY_WITH_TIMEOUT(log->toPlainText().contains("JSON 响应无效"), 6000);
         if (queuedSave) {
             QCOMPARE(commands.count("apply_transform_edit"), 0);
             QCOMPARE(commands.count("get_transform_save_result"), 0);
-            QVERIFY(log->toPlainText().contains("发送前取消"));
+            QTRY_VERIFY_WITH_TIMEOUT(log->toPlainText().contains("发送前取消"), 6000);
             QVERIFY(window.findChild<QPushButton*>("xformResetButton")->isEnabled());
         } else if (!failedCommand.startsWith("get_")) QCOMPARE(commands.count(failedCommand), 1);
         if (failedCommand == "set_hover_opacity") {
@@ -560,6 +563,62 @@ private slots:
         const auto before = commands.count("set_hover_opacity");
         window.findChild<QCheckBox*>("hoverOpacityEnabledCheck")->click();
         QTRY_VERIFY(commands.count("set_hover_opacity") == before + 1 && hoverGroup->isEnabled());
+    }
+
+    // 回归测试：服务端计入协议错误时，客户端尚未解析响应，日志必然滞后一轮事件循环。
+    // 断言必须按超时等待日志，否则高负载下会误报失败（见 CTest #40 main-window-temp-directory）。
+    void protocolErrorLogLagsFailureCount()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const int fd = open(QFile::encodeName(directory.path()).constData(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+        QVERIFY(fd >= 0);
+        const auto closeRuntime = qScopeGuard([fd] { close(fd); });
+        const auto oldRuntime = qgetenv("XDG_RUNTIME_DIR");
+        const auto restoreRuntime = qScopeGuard([&] { qputenv("XDG_RUNTIME_DIR", oldRuntime); });
+        const QString runtimePath = QStringLiteral("/proc/self/fd/%1").arg(fd);
+        qputenv("XDG_RUNTIME_DIR", runtimePath.toLocal8Bit());
+        DesktopBackend backend(directory.path() + "/config.json");
+        QLocalServer server;
+        QVERIFY(server.listen(runtimePath + "/deskwaifu.sock"));
+        int invalidReplies = 0;
+        bool failSetHover = true;
+        QString logWhenCounted;
+        QPlainTextEdit* log = nullptr;
+        connect(&server, &QLocalServer::newConnection, this, [&] {
+            auto* socket = server.nextPendingConnection();
+            connect(socket, &QLocalSocket::disconnected, this, [&] { backend.Call("test.disconnect"); });
+            connect(socket, &QLocalSocket::readyRead, this, [&, socket] {
+                while (socket->canReadLine()) {
+                    const auto json = socket->readLine();
+                    const auto input = QJsonDocument::fromJson(json).object();
+                    const auto command = input.value("command").toString();
+                    if (failSetHover && command == "set_hover_opacity") {
+                        failSetHover = false;
+                        ++invalidReplies;
+                        socket->write("broken-json\n");
+                        socket->flush();
+                        // 与生产路径一致：计数先于客户端解析发生，此刻日志一定还是旧的。
+                        if (log) logWhenCounted = log->toPlainText();
+                        continue;
+                    }
+                    socket->write(QJsonDocument(backend.Call(command, input)).toJson(QJsonDocument::Compact) + '\n');
+                    socket->flush();
+                }
+            });
+        });
+        MainWindow window;
+        window.show();
+        auto* hoverGroup = window.findChild<QWidget*>("hoverOpacityGroup");
+        auto* check = window.findChild<QCheckBox*>("hoverOpacityEnabledCheck");
+        log = window.findChild<QPlainTextEdit*>("responseLog");
+        QVERIFY(hoverGroup && check && log);
+        QTRY_VERIFY_WITH_TIMEOUT(hoverGroup->isEnabled(), 6000);
+        check->click();
+        QTRY_COMPARE_WITH_TIMEOUT(invalidReplies, 1, 6000);
+        QVERIFY(!logWhenCounted.contains("JSON 响应无效"));
+        QTRY_VERIFY_WITH_TIMEOUT(log->toPlainText().contains("JSON 响应无效"), 6000);
+        QTRY_VERIFY_WITH_TIMEOUT(log->toPlainText().contains("set_hover_opacity"), 6000);
     }
 
     void mouseLookRangeSavesOnRelease()
