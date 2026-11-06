@@ -41,6 +41,13 @@ class ReviewCliTest(unittest.TestCase):
         self.assertIn("可自由使用工具", prompt)
         self.assertIn("按需执行构建或测试", prompt)
         self.assertIn("目标分支代码不是 PR head", prompt)
+        # 回归：审查临时目录不是 Git 仓库，必须显式给出读取 PR head 源码的命令形式，
+        # 否则 agent 会在 $workdir 里执行 git show 失败，或把目标分支工作区当成 PR head。
+        self.assertIn('git -C "$repo_root" show <head_sha>:<path>', prompt)
+        self.assertIn('git -C "$repo_root" log -1 <head_sha>', prompt)
+        self.assertIn("$workdir 不是 Git 仓库", prompt)
+        self.assertIn("context.md 的 Head 行", prompt)
+        self.assertIn("不代表 PR head", prompt)
         sections = ("你是代码审查智能体", "审查注意事项：", "被审查的 PR 的上下文信息在：$workdir/context.md",
                     "被审查的 PR 的目标分支代码在：$repo_root", "被审查的 PR（diff 形式）在：$workdir/diff.patch",
                     "审查结果格式：", "## 结论", "## 阻塞问题", "## 非阻塞建议")
@@ -137,6 +144,7 @@ class ReviewCliTest(unittest.TestCase):
             self.assertIn("+PR head", diff)
             prompt = (capture / "prompt.txt").read_text()
             self.assertIn(f"被审查的 PR 的目标分支代码在：{repo}", prompt)
+            self.assertIn(f'git -C "{repo}" show <head_sha>:<path>', prompt)
             self.assertNotIn("$workdir", prompt)
             self.assertIn("/context.md", prompt)
             self.assertIn("/diff.patch", prompt)
