@@ -192,7 +192,7 @@ struct FakeKWin
                         static_cast<FakeKWin*>(data)->oldSampleResult =
                             sd_bus_message_is_method_error(reply, SD_BUS_ERROR_ACCESS_DENIED) ? 1 : -1;
                         return 0;
-                    }, this, "sssssss", "0", "0", "A", "0", "0", "100", "100");
+                    }, this, "ssssssss", "0", "0", "A", "0", "0", "100", "100", "false");
             }
             if (oldBus) {
                 while (sd_bus_process(oldBus, nullptr) > 0) {}
@@ -211,13 +211,14 @@ struct FakeKWin
             if (running && !silent && std::chrono::steady_clock::now() >= next) {
                 const bool second = output == "B";
                 sd_bus_call_method_async(bus, nullptr, destination.c_str(), "/org/deskwaifu/Cursor",
-                    "org.deskwaifu.Cursor", "Sample", Reply, this, "sssssss",
+                    "org.deskwaifu.Cursor", "Sample", Reply, this, "ssssssss",
                     invalid ? "nan" : (fractional ? "50.5" : "50"),
                     fractional ? "300.25" : "300", output.c_str(),
                     second ? "1000" : (fractional ? "-200.25" : "-200"),
                     second ? "0" : (fractional ? "100.125" : "100"),
                     second ? "800" : (fractional ? "1000.5" : "1000"),
-                    second ? "600" : (fractional ? "800.25" : "800"));
+                    second ? "600" : (fractional ? "800.25" : "800"),
+                     "false");
                 next = std::chrono::steady_clock::now() + std::chrono::milliseconds(30);
             }
             usleep(1000);
@@ -232,7 +233,10 @@ struct FakeKWin
 int main(int argc, char** argv)
 {
     if (argc == 2 && std::string(argv[1]) == "--script") {
-        std::cout << KWinCursorScript(":1.42", "deskwaifu-test");
+        const auto script = KWinCursorScript(":1.42", "deskwaifu-test");
+        CHECK(script.find("activeWindow") != std::string::npos);
+        CHECK(script.find("fullscreenAt >= 1000") != std::string::npos);
+        std::cout << script;
         return 0;
     }
     const bool localeTest = argc == 3 && std::string(argv[1]) == "--numeric-locale";
@@ -333,7 +337,7 @@ int main(int argc, char** argv)
         [](sd_bus_message* reply, void* data, sd_bus_error*) {
             *static_cast<int*>(data) = sd_bus_message_is_method_error(reply, SD_BUS_ERROR_ACCESS_DENIED) ? 1 : -1;
             return 0;
-        }, &rejected, "sssssss", "0", "0", "A", "0", "0", "100", "100") >= 0);
+        }, &rejected, "ssssssss", "0", "0", "A", "0", "0", "100", "100", "false") >= 0);
     CHECK(Wait([&] {
         tracker.Poll("A");
         while (sd_bus_process(intruder, nullptr) > 0) {}

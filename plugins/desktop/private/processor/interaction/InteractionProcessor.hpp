@@ -77,6 +77,7 @@ private:
     float _x = 0, _y = 0;
     bool _stopped = false;
     bool _inside = false, _hitRequested = false;
+    bool _fullscreen = false;
     ModelHitTest _hitTest;
     bool _renderingOk = true;
 };

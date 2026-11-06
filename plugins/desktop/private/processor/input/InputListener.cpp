@@ -61,6 +61,10 @@ void InputListener::PollCursor()
 {
     if (_stopped || _paused) return;
     _cursor.Poll(_output);
+    if (_cursor.FullscreenChanged()) {
+        Send("environment.fullscreen", &_interaction, {{"active", _cursor.Fullscreen()}});
+        _cursor.AcknowledgeFullscreen();
+    }
     double x = 0, y = 0;
     if (_cursor.LocalPosition(_width, _height, x, y)) Move(x, y, true);
 }

@@ -39,8 +39,8 @@ import sys
 
 
 INTEGER_FIELDS = {"index", "priority", "crop_x", "crop_y", "crop_width", "crop_height", "expected_revision"}
-NUMBER_FIELDS = {"value", "x", "y", "zoom", "radius", "opacity", "idle_opacity"}
-BOOLEAN_FIELDS = {"reset", "stream_source", "screen", "overwrite", "cropped", "enabled"}
+NUMBER_FIELDS = {"value", "x", "y", "zoom", "radius", "opacity", "idle_opacity", "fullscreen_opacity"}
+BOOLEAN_FIELDS = {"reset", "stream_source", "screen", "overwrite", "cropped", "enabled", "fullscreen_enabled"}
 
 
 def reject_constant(value):

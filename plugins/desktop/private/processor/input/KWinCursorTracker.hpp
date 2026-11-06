@@ -13,6 +13,9 @@ public:
     void Stop();
     void Poll(const std::string& outputName);
     bool LocalPosition(int width, int height, double& x, double& y) const;
+    bool Fullscreen() const { return _fullscreen; }
+    bool FullscreenChanged() const { return _fullscreenChanged; }
+    void AcknowledgeFullscreen() { _fullscreenChanged = false; }
     const std::string& Error() const { return _error; }
     const std::string& ScriptName() const { return _scriptName; }
 
@@ -37,6 +40,7 @@ private:
     bool _registered = false; // 也包括已发送但回复超时的 loadScript 请求。
     std::string _owner, _scriptName, _outputName, _sampleOutput, _error;
     double _x = 0, _y = 0, _left = 0, _top = 0, _width = 0, _height = 0;
+    bool _fullscreen = false, _fullscreenChanged = false;
     std::chrono::steady_clock::time_point _sampleTime{}, _loadedAt{}, _retry{};
 };
 

@@ -27,6 +27,8 @@ struct LAppConfig
         bool hoverOpacityEnabled = false;
         float hoverOpacity = 0.5f;
         float idleOpacity = 1.0f;
+        bool fullscreenOpacityEnabled = false;
+        float fullscreenOpacity = 0.5f;
         float mouseLookRadius = 0.5f;
         std::experimental::optional<ModelRegion> modelRegion;
         // 宿主不解释的字段在保存其他设置时原样保留。

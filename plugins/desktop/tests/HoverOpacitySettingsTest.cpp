@@ -18,6 +18,7 @@ int main()
     HoverOpacitySettings settings(config);
     CHECK(settings.Refresh().ok);
     CHECK(!settings.Enabled() && settings.Opacity() == 0.5f);
+    CHECK(!settings.FullscreenEnabled() && settings.FullscreenOpacity() == 0.5f);
     CHECK(settings.Set(R"({"enabled":true})").ok);
     CHECK(settings.Enabled() && settings.Opacity() == 0.5f);
     CHECK(access(path.c_str(), F_OK) == 0); // 配置不存在时创建配置。
@@ -27,13 +28,15 @@ int main()
     CHECK(settings.Enabled() && settings.Opacity() == 0.37f);
     CHECK(settings.Set(R"({"command":"set_hover_opacity","opacity":0.25})").ok);
     CHECK(settings.Enabled() && settings.Opacity() == 0.25f);
+    CHECK(settings.Set(R"({"fullscreen_enabled":true,"fullscreen_opacity":0.2})").ok);
+    CHECK(settings.FullscreenEnabled() && settings.FullscreenOpacity() == 0.2f);
     ConfigStore store(path);
     ConfigStore::Snapshot disk;
     std::string error;
     CHECK(store.Read(disk, error));
     CHECK(disk.values.at("hover_opacity") == "0.25" && disk.values.at("hover_opacity_enabled") == "true");
     CHECK(disk.values.at("model_x") == "2.5" && disk.values.at("extra") == "\"keep\"");
-    CHECK(disk.values.size() == 14 && disk.values.at("window_width") == "1900");
+    CHECK(disk.values.size() == 16 && disk.values.at("window_width") == "1900");
     CHECK(disk.document.find("// keep comment") == std::string::npos);
     CHECK(settings.Set(R"({"enabled":false})").ok);
     CHECK(!settings.Enabled() && settings.Opacity() == 0.25f);

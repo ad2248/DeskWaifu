@@ -17,7 +17,8 @@ bool SameSettings(const LAppConfig::Values& a, const LAppConfig::Values& b)
         && a.pluginDir == b.pluginDir && a.unknownFields == b.unknownFields
         && a.windowWidth == b.windowWidth && a.windowHeight == b.windowHeight
         && a.hoverOpacityEnabled == b.hoverOpacityEnabled && a.hoverOpacity == b.hoverOpacity
-        && a.idleOpacity == b.idleOpacity && a.mouseLookRadius == b.mouseLookRadius
+        && a.idleOpacity == b.idleOpacity && a.fullscreenOpacityEnabled == b.fullscreenOpacityEnabled
+        && a.fullscreenOpacity == b.fullscreenOpacity && a.mouseLookRadius == b.mouseLookRadius
         && bool(a.modelRegion) == bool(b.modelRegion)
         && (!a.modelRegion || (a.modelRegion->x == b.modelRegion->x && a.modelRegion->y == b.modelRegion->y
         && a.modelRegion->width == b.modelRegion->width && a.modelRegion->height == b.modelRegion->height));
@@ -48,13 +49,14 @@ int main()
     const std::string configured = R"({"additional_model_dirs":["/models"],"default_model":"sample",
         "emotion_timeout":9,"model_scale":2,"model_x":3,"model_y":4,
         "window_width":800,"window_height":600,"hover_opacity_enabled":true,"hover_opacity":0.25,
-        "idle_opacity":0.375,"mouse_look_radius":0.3,"model_region":{"x":1,"y":2,"width":300,"height":400}})";
+        "idle_opacity":0.375,"fullscreen_opacity_enabled":true,"fullscreen_opacity":0.25,"mouse_look_radius":0.3,"model_region":{"x":1,"y":2,"width":300,"height":400}})";
     CHECK(load(configured));
     CHECK(config.additionalModelDirs == std::vector<std::string>{"/models"});
     CHECK(config.defaultModel == "sample" && config.emotionTimeout == 9);
     CHECK(config.modelScale == 2 && config.modelX == 3 && config.modelY == 4);
     CHECK(config.windowWidth == 800 && config.windowHeight == 600);
     CHECK(config.hoverOpacityEnabled && config.hoverOpacity == 0.25f);
+    CHECK(config.fullscreenOpacityEnabled && config.fullscreenOpacity == 0.25f);
     CHECK(config.modelRegion && config.modelRegion->x == 1 && config.modelRegion->y == 2);
     CHECK(config.modelRegion->width == 300 && config.modelRegion->height == 400);
 
@@ -80,7 +82,7 @@ int main()
     CHECK(LAppConfig::Serialize(config, document, error));
     ConfigStore::Snapshot snapshot;
     CHECK(ConfigStore::Parse(document, snapshot, error));
-    CHECK(snapshot.values.size() == 14 && !snapshot.values.count("sourcePath"));
+    CHECK(snapshot.values.size() == 16 && !snapshot.values.count("sourcePath"));
     CHECK(load(document));
     CHECK(SameSettings(config, previous));
 
@@ -99,7 +101,7 @@ int main()
     CHECK(config.defaultModel == "夕颜😀" && config.additionalModelDirs[0] == "~/models");
     CHECK(LAppConfig::Serialize(defaults, document, error));
     CHECK(ConfigStore::Parse(document, snapshot, error));
-    CHECK(snapshot.values.size() == 13 && !snapshot.values.count("model_region"));
+    CHECK(snapshot.values.size() == 15 && !snapshot.values.count("model_region"));
     CHECK(load(document) && SameSettings(config, defaults));
     CHECK(load(R"({"render_device":"0000:00:02.0"})"));
     CHECK(config.renderDevice == "0000:00:02.0");
