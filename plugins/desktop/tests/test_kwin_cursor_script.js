@@ -13,6 +13,7 @@ function QTimer() {
 const workspace = {
     cursorPos: { x: -12, y: 42.5 },
     screens: [{ name: 'DP-1', geometry: { x: -200, y: 0, width: 1000, height: 800 } }],
+    activeWindow: { fullScreen: false },
 };
 vm.runInNewContext(execFileSync(process.argv[2], ['--script'], { encoding: 'utf8' }), {
     QTimer, workspace, callDBus: (...args) => calls.push(args),
@@ -27,22 +28,22 @@ sample.tick();
 assert.equal(calls.length, 1); // 最多保留一个尚未完成的采样。
 let call = calls.shift();
 assert.deepEqual(call.slice(0, 4), [':1.42', '/org/deskwaifu/Cursor', 'org.deskwaifu.Cursor', 'Sample']);
-assert.deepEqual(call.slice(4, -1), ['-12', '42.5', '', '0', '0', '0', '0']);
+assert.deepEqual(call.slice(4, -1), ['-12', '42.5', '', '0', '0', '0', '0', 'false']);
 // 整数和小数 JS 坐标必须使用相同的 D-Bus 签名。
 call.at(-1)('DP-1');
 sample.tick();
 call = calls.shift();
-assert.deepEqual(call.slice(4, -1), ['-12', '42.5', 'DP-1', '-200', '0', '1000', '800']);
+assert.deepEqual(call.slice(4, -1), ['-12', '42.5', 'DP-1', '-200', '0', '1000', '800', 'false']);
 call.at(-1)('DP-1');
 workspace.cursorPos = { x: 1500, y: -50 };
 workspace.screens[0].geometry.width = 1500;
 sample.tick();
 call = calls.shift();
-assert.deepEqual(call.slice(4, -1), ['1500', '-50', 'DP-1', '-200', '0', '1500', '800']);
+assert.deepEqual(call.slice(4, -1), ['1500', '-50', 'DP-1', '-200', '0', '1500', '800', 'false']);
 call.at(-1)('missing');
 sample.tick();
 call = calls.shift();
-assert.deepEqual(call.slice(6, -1), ['', '0', '0', '0', '0']);
+assert.deepEqual(call.slice(6, -1), ['', '0', '0', '0', '0', 'false']);
 watchdog.tick();
 call = calls.shift();
 assert.equal(call[3], 'NameHasOwner');

@@ -1074,7 +1074,7 @@ private slots:
         QVERIFY(store.Read(disk, error));
         QCOMPARE(disk.values.at("model_x"), std::string("2.5"));
         QCOMPARE(disk.values.at("extra"), std::string("\"keep\""));
-        QCOMPARE(disk.values.size(), size_t(14));
+        QCOMPARE(disk.values.size(), size_t(16));
         QTest::keyClick(slider, Qt::Key_Home);
         QTRY_VERIFY_WITH_TIMEOUT(backend.State().value("opacity").toDouble() == 0 && group->isEnabled(), 2000);
         QTest::keyClick(slider, Qt::Key_End);
@@ -1242,7 +1242,7 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(float(backend.State().value("runtime_x").toDouble()), 0.f, 2000);
         QTRY_VERIFY_WITH_TIMEOUT(!enabled->isChecked(), 2000);
         QCOMPARE(float(backend.State().value("runtime_zoom").toDouble()), 1.f);
-        QVERIFY(store.Read(disk, error)); QCOMPARE(disk.values.size(), size_t(13));
+        QVERIFY(store.Read(disk, error)); QCOMPARE(disk.values.size(), size_t(15));
         QVERIFY(!disk.values.count("model_region"));
         QCOMPARE(disk.values.at("model_x"), std::string("0"));
         QCOMPARE(disk.values.at("model_y"), std::string("0"));
