@@ -83,9 +83,8 @@ MainWindow::MainWindow(QWidget* parent, const QString& procDirectory)
     _plugins.reset(new GuiPluginManager(PluginDirectory(), *_services, *ui->tabWidget));
     QString error;
     if (!_plugins->Start(&error)) {
-        qWarning().noquote() << "[GUI plugins]" << error;
+        qWarning() << "gui_plugins" << "failure";
         setStatusMessage(error);
-        qWarning().noquote() << error;
     }
     _services->connectToServer();
 }

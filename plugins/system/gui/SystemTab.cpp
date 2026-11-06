@@ -2,11 +2,11 @@
 #include "ui_SystemTab.h"
 #include "plugin/GuiHostServices.hpp"
 #include "DeskWaifuLauncher.hpp"
+#include "plugin/GuiLog.hpp"
 #include "contracts/RenderDevice.hpp"
 #include <QCoreApplication>
 #include <QDebug>
 #include <QJsonArray>
-#include <QJsonDocument>
 #include <QSignalBlocker>
 
 SystemTab::SystemTab(GuiHostServices& services)
@@ -34,7 +34,7 @@ SystemTab::SystemTab(GuiHostServices& services)
         const auto result = DeskWaifuLauncher::spawn(false, QCoreApplication::applicationDirPath(), _procDirectory);
         updateSpawnButton();
         setStatusMessage(result.message, 8000);
-        qInfo().noquote() << result.message;
+        qInfo().noquote() << "spawn" << (result.state == DeskWaifuLauncher::State::Failed ? "failure" : "success");
         if (result.state != DeskWaifuLauncher::State::Failed && !_client.isConnected()) _client.connectToServer();
     });
     connect(ui->respawnButton, &QPushButton::clicked, this, [this] { _respawner.start(_procDirectory); });
@@ -42,9 +42,9 @@ SystemTab::SystemTab(GuiHostServices& services)
         updateSpawnButton();
         if (running) setStatusMessage(tr("正在重启 DeskWaifu，等待旧进程退出…"));
     });
-    connect(&_respawner, &DeskWaifuRespawner::finished, this, [this](bool, const QString& message) {
+    connect(&_respawner, &DeskWaifuRespawner::finished, this, [this](bool success, const QString& message) {
         setStatusMessage(message, 8000);
-        qInfo().noquote() << message;
+        qInfo() << "respawn" << (success ? "success" : "failure");
     });
     _processTimer.setInterval(1000);
     connect(&_processTimer, &QTimer::timeout, this, &SystemTab::updateSpawnButton);
@@ -79,7 +79,7 @@ void SystemTab::stop() noexcept
 void SystemTab::setStatusMessage(const QString& message, int timeout) { _client.setStatusMessage(message, timeout); }
 void SystemTab::logResponse(const QString& command, const QJsonObject& response)
 {
-    qInfo().noquote() << QStringLiteral("%1  %2").arg(command, QString::fromUtf8(QJsonDocument(response).toJson(QJsonDocument::Compact)));
+    qInfo().noquote() << FormatGuiResponseLog(command, response);
 }
 
 void SystemTab::updateSpawnButton()

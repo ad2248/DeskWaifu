@@ -8,17 +8,17 @@ ControlHostServices::ControlHostServices(MainWindow& window)
     // Transport diagnostics use the process-wide Qt logger. Never log raw
     // request/response bodies here (they may be secrets).
     connect(this, &GuiHostServices::protocolError, this, [this](const QString& message) {
-        qWarning().noquote() << message;
+        qWarning() << "protocol_error" << "failure";
         setStatusMessage(message, 5000);
     });
     connect(this, &GuiHostServices::commandOutcomeUnknown, this, [this](const QString& command) {
         const auto message = MainWindow::tr("连接断开：命令“%1”的执行结果未知，未重试该命令。").arg(command);
-        qWarning().noquote() << message;
+        qWarning() << "command_outcome" << command << "unknown";
         setStatusMessage(message, 8000);
     });
     connect(this, &GuiHostServices::commandCancelled, this, [this](const QString& command) {
         const auto message = MainWindow::tr("连接断开：排队中的命令“%1”已在发送前取消。").arg(command);
-        qWarning().noquote() << message;
+        qWarning() << "command_outcome" << command << "cancelled";
         setStatusMessage(message, 8000);
     });
 }

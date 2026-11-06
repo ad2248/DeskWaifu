@@ -2,8 +2,8 @@
 #include "QtLogging.hpp"
 #include "plugin/PluginManager.hpp"
 #include "plugin/PluginCommand.hpp"
+#include <QDebug>
 #include <QGuiApplication>
-#include <cstdio>
 
 int main(int argc, char* argv[])
 {
@@ -16,15 +16,15 @@ int main(int argc, char* argv[])
     HostConfig config;
     QString error;
     if (!HostConfig::Load(application.arguments(), config, error)) {
-        std::fprintf(stderr, "[Config] %s\n", qPrintable(error));
+        qCritical() << "config" << "failure";
         return 1;
     }
     ProcessorEventLoop loop;
     PluginManager plugins(loop, config.pluginDirectory, config.configDirectory);
-    if (!plugins.Start(&error)) std::fprintf(stderr, "[Plugins] %s\n", qPrintable(error));
+    if (!plugins.Start(&error)) qCritical() << "plugins" << "failure";
     const int result = application.exec();
     if (!plugins.Stop(&error)) {
-        std::fprintf(stderr, "[Plugins] %s\n", qPrintable(error));
+        qCritical() << "plugins" << "shutdown_failure";
         return 1;
     }
     return result;
