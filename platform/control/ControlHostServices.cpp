@@ -1,23 +1,24 @@
 #include "ControlHostServices.hpp"
 #include "MainWindow.hpp"
+#include <QDebug>
 
 ControlHostServices::ControlHostServices(MainWindow& window)
     : _window(window)
 {
-    // Transport diagnostics must remain available without the optional log
-    // viewer. Never log raw request/response bodies here (they may be secrets).
+    // Transport diagnostics use the process-wide Qt logger. Never log raw
+    // request/response bodies here (they may be secrets).
     connect(this, &GuiHostServices::protocolError, this, [this](const QString& message) {
-        publishLog(message);
+        qWarning().noquote() << message;
         setStatusMessage(message, 5000);
     });
     connect(this, &GuiHostServices::commandOutcomeUnknown, this, [this](const QString& command) {
         const auto message = MainWindow::tr("连接断开：命令“%1”的执行结果未知，未重试该命令。").arg(command);
-        publishLog(message);
+        qWarning().noquote() << message;
         setStatusMessage(message, 8000);
     });
     connect(this, &GuiHostServices::commandCancelled, this, [this](const QString& command) {
         const auto message = MainWindow::tr("连接断开：排队中的命令“%1”已在发送前取消。").arg(command);
-        publishLog(message);
+        qWarning().noquote() << message;
         setStatusMessage(message, 8000);
     });
 }

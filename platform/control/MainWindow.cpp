@@ -85,7 +85,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& procDirectory)
     if (!_plugins->Start(&error)) {
         qWarning().noquote() << "[GUI plugins]" << error;
         setStatusMessage(error);
-        emit _services->logMessage(error);
+        qWarning().noquote() << error;
     }
     _services->connectToServer();
 }

@@ -1,4 +1,5 @@
 #include "HostConfig.hpp"
+#include "QtLogging.hpp"
 #include "plugin/PluginManager.hpp"
 #include "plugin/PluginCommand.hpp"
 #include <QGuiApplication>
@@ -6,6 +7,7 @@
 
 int main(int argc, char* argv[])
 {
+    InitializeQtLogging(QStringLiteral("daemon.log"));
     const int command = RunPluginCommand(argc, argv, QStringLiteral(DESKWAIFU_PLUGIN_DIR));
     if (command >= 0) return command;
     QGuiApplication application(argc, argv);

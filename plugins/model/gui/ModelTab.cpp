@@ -1,6 +1,7 @@
 #include "ModelTab.hpp"
 #include "ui_ModelTab.h"
 #include "plugin/GuiHostServices.hpp"
+#include <QDebug>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QMessageBox>
@@ -53,7 +54,7 @@ ModelTab::~ModelTab() { delete ui; }
 void ModelTab::setStatusMessage(const QString& message, int timeout) { _client.setStatusMessage(message, timeout); }
 void ModelTab::logResponse(const QString& command, const QJsonObject& response)
 {
-    _client.publishLog(QStringLiteral("%1  %2").arg(command, QString::fromUtf8(QJsonDocument(response).toJson(QJsonDocument::Compact))));
+    qInfo().noquote() << QStringLiteral("%1  %2").arg(command, QString::fromUtf8(QJsonDocument(response).toJson(QJsonDocument::Compact)));
 }
 
 void ModelTab::bindControls()
@@ -179,7 +180,7 @@ void ModelTab::handleResponse(const QString& command, const QJsonObject& respons
         const QString message = !response.value(QStringLiteral("known")).toBool() && response.value(QStringLiteral("ok")).toBool()
             ? tr("无法确认上次保存结果（后端可能已重启），请核对当前配置。")
             : response.value(QStringLiteral("ok")).toBool() ? tr("上次保存已成功。") : response.value(QStringLiteral("error")).toString();
-        _client.publishLog(message);
+        qInfo().noquote() << message;
         setStatusMessage(message, 10000);
         _transformSaveRequest.clear();
         requestTransform();

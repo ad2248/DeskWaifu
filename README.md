@@ -314,7 +314,7 @@ not migrated automatically:
 
 ### GUI plugins
 
-The control panel loads its system, interaction, model and log tabs from GUI
+The control panel loads its system, interaction and model tabs from GUI
 plugins. A plugin may export a backend entry, a GUI entry, or both from the same
 `.so`; the speech plugin provides both. See [GUI plugin architecture](docs/需求描述/GUI插件.md).
 The control panel uses `plugin_dir` from the main configuration. For a build-tree
@@ -430,14 +430,14 @@ transform, visibility, skin, and look-at commands as `deskwaifu-ctl`. Its
 shell layout is stored in `platform/control/MainWindow.ui`; plugin pages live in
 `plugins/<name>/gui/` and can be edited with Qt Designer.
 
-The five top-level tabs are:
+The top-level tabs are:
 
 - **系统**: status, process controls and rendering GPU settings.
 - **交互**: model hotkeys, cursor tracking, look-at overrides and opacity behavior.
 - **模型**: model selection, visibility, skins, expressions, motions, lip sync,
   target monitor, position, zoom and crop.
 - **语音**: speech provider and credential settings.
-- **日志**: explicitly published, credential-safe diagnostics (not raw IPC responses).
+日志由 Qt 日志系统统一写入启动时创建的 `/tmp/log/waifudesk_<随机字符串>/gui.log` 或 `daemon.log`；控制面板不再提供日志 Tab。
 
 Settings pages scroll vertically on smaller windows; connection and operation
 feedback remain in the shared status bar.
@@ -447,8 +447,7 @@ control window is disconnected and no `deskwaifu` process owned by the current
 user is found. It looks beside the control executable first, then in `PATH`,
 and launches with the default backend settings. Existing processes are left
 alone while the control window retries connecting. The backend runs detached:
-closing the control window does not stop it. Startup errors appear in the status
-bar and response log; the control window retries connections every 1.5 seconds.
+closing the control window does not stop it. Startup errors appear in the status bar and Qt log file; the control window retries connections every 1.5 seconds.
 Concurrent Spawn requests share a per-user runtime lock around process inspection
 and startup, so two control windows cannot both start a backend at the same time.
 When connected or a running backend is detected, the button becomes **Shutdown**.
@@ -1159,7 +1158,7 @@ deskwaifu/
 │   ├── ipc/                # Backend socket transport, command gateway and GUI client
 │   ├── speech/             # Speech providers, playback and speech settings page
 │   ├── reading_clip/       # Clipboard reading orchestration
-│   └── system|interaction|model|log/  # GUI-only modules
+│   └── system|interaction|model/  # GUI-only modules
 ├── thirdParty/             # Third-party dependencies (GLEW, stb)
 ├── cmake/                  # CMake helper scripts
 └── CMakeLists.txt          # Build configuration

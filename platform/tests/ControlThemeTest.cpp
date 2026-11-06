@@ -64,7 +64,6 @@ private slots:
         QCOMPARE(ui.respawnButton->text(), QString("重启"));
         QVERIFY(ui.respawnButton->toolTip().contains("重新启动"));
         QVERIFY(ui.renderDeviceCombo->toolTip().contains("“重启”"));
-        QCOMPARE(ui.responseLog->placeholderText(), QString("IPC 响应将显示在此处。"));
     }
 
     void controlsBelongToTheirCategory()
@@ -81,7 +80,6 @@ private slots:
 #if DESKWAIFU_TEST_SPEECH_PLUGIN
             {"speechSettingsGroup"},
 #endif
-            {"responseLog"}
         };
         for (int tab = 0; tab < categories.size(); ++tab) {
             for (const auto& name : categories[tab]) {
@@ -298,8 +296,7 @@ private slots:
                  static_cast<QWidget*>(ui.spawnButton),
                  static_cast<QWidget*>(ui.statusBar),
                  static_cast<QWidget*>(ui.currentModelLabel),
-                 static_cast<QWidget*>(ui.modelCombo),
-                 static_cast<QWidget*>(ui.responseLog)})
+                 static_cast<QWidget*>(ui.modelCombo)})
         {
             QCOMPARE(widget->palette().color(QPalette::Window), background);
             QCOMPARE(widget->palette().color(QPalette::WindowText), foreground);

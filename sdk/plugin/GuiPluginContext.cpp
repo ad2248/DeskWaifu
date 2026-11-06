@@ -18,7 +18,6 @@ public:
         connect(&host, &GuiHostServices::protocolError, this, &GuiHostServices::protocolError);
         connect(&host, &GuiHostServices::commandOutcomeUnknown, this, &GuiHostServices::commandOutcomeUnknown);
         connect(&host, &GuiHostServices::commandCancelled, this, &GuiHostServices::commandCancelled);
-        connect(&host, &GuiHostServices::logMessage, this, &GuiHostServices::logMessage);
         connect(&host, &GuiHostServices::backendReady, this, &GuiHostServices::backendReady);
         connect(&host, &GuiHostServices::activationChanged, this, &GuiHostServices::activationChanged);
     }
@@ -52,8 +51,6 @@ public:
         _transport.clear();
         _host.unregisterTransport(transport);
     }
-    void publishLog(const QString& message) override
-    { AssertThread(); if (_valid) _host.publishLog(message); }
     void notifyBackendReady() override
     { AssertThread(); if (_valid && _active) _host.notifyBackendReady(); }
     void Activate() { _active = true; }

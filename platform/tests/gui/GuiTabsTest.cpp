@@ -7,7 +7,6 @@
 #include <QJsonArray>
 #include <QLabel>
 #include <QLineEdit>
-#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QScopeGuard>
@@ -52,20 +51,6 @@ class GuiTabsTest : public QObject
 {
     Q_OBJECT
 private slots:
-    void logViewOnlyDisplaysPublishedLogs()
-    {
-        Services services;
-        PluginPages pages(services);
-        auto& log = pages.Page("logTab");
-        emit services.protocolError(QStringLiteral("transport failure"));
-        emit services.commandOutcomeUnknown(QStringLiteral("set_model"));
-        emit services.commandCancelled(QStringLiteral("set_model"));
-        auto* view = widget<QPlainTextEdit>(log, "responseLog");
-        QVERIFY(view->toPlainText().isEmpty());
-        services.publishLog(QStringLiteral("host diagnostic"));
-        QCOMPARE(view->toPlainText(), QStringLiteral("host diagnostic"));
-    }
-
     void systemRestartUsesSharedRespawner()
     {
         QTemporaryDir directory;
@@ -82,7 +67,6 @@ private slots:
         services.setProperty("procDirectory", directory.path());
         PluginPages pages(services);
         auto& system = pages.Page("systemTab");
-        auto& log = pages.Page("logTab");
         auto* restart = widget<QPushButton>(system, "respawnButton");
         QVERIFY(restart->isEnabled());
         restart->click();
@@ -91,7 +75,6 @@ private slots:
         QVERIFY(!restart->isEnabled());
         services.reply(QStringLiteral("quit"), {{"ok", false}, {"error", "fixture refused"}});
         QVERIFY(restart->isEnabled());
-        QVERIFY(widget<QPlainTextEdit>(log, "responseLog")->toPlainText().contains(QStringLiteral("重启失败")));
     }
 
     void statusReadinessAndProcessDirectory()
@@ -114,17 +97,13 @@ private slots:
         QCOMPARE(widget<QLabel>(system, "visibilityLabel")->text(), QStringLiteral("已隐藏"));
     }
 
-    void hotkeyTokenAndDuplicateLogging()
+    void hotkeyTokenAndDisconnect()
     {
         Services services;
         PluginPages pages(services);
         auto& interaction = pages.Page("interactionTab");
-        auto& log = pages.Page("logTab");
         const QJsonObject bindings{{"ok", true}, {"model_token", "token-A"}, {"hotkeys", QJsonArray{}}};
         services.reply(QStringLiteral("get_hotkeys"), bindings);
-        const auto logged = widget<QPlainTextEdit>(log, "responseLog")->toPlainText();
-        services.reply(QStringLiteral("get_hotkeys"), bindings);
-        QCOMPARE(widget<QPlainTextEdit>(log, "responseLog")->toPlainText(), logged);
         QVERIFY(triggerHotkey(interaction, QStringLiteral("test-id")));
         QCOMPARE(services.commands.last().first, QStringLiteral("trigger_hotkey"));
         QCOMPARE(services.commands.last().second.value("model_token").toString(), QStringLiteral("token-A"));
@@ -146,18 +125,6 @@ private slots:
 #if DESKWAIFU_TEST_SPEECH_PLUGIN
         QCOMPARE(services.count(QStringLiteral("get_speech_settings")), 1);
 #endif
-    }
-
-    void noSecretOrUnknownResponseLogging()
-    {
-        Services services;
-        PluginPages pages(services);
-        auto& log = pages.Page("logTab");
-        services.reply(QStringLiteral("set_speech_settings"), {{"ok", false}, {"api_key", "secret"}, {"error", "secret"}});
-        services.reply(QStringLiteral("untrusted_transform_edit"), {{"ok", false}, {"api_key", "secret"}});
-        QVERIFY(widget<QPlainTextEdit>(log, "responseLog")->toPlainText().isEmpty());
-        services.reply(QStringLiteral("set_expression"), {{"ok", true}});
-        QVERIFY(widget<QPlainTextEdit>(log, "responseLog")->toPlainText().contains(QStringLiteral("set_expression")));
     }
 
 #if DESKWAIFU_TEST_SPEECH_PLUGIN

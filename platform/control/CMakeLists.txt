@@ -12,6 +12,7 @@ target_link_libraries(deskwaifu_control_shell PUBLIC
   Qt6::Widgets
   deskwaifu_gui_plugin_sdk
   deskwaifu_gui_plugin_host
+  deskwaifu_logging
 )
 target_include_directories(deskwaifu_control_shell PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_definitions(deskwaifu_control_shell PRIVATE
