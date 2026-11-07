@@ -392,7 +392,7 @@ int KWinCursorTracker::OwnerChanged(sd_bus_message* message, void* data, sd_bus_
             self._loaded = false;
             self._registered = false;
             self._sampleTime = {};
-            self._fullscreenChanged = self._fullscreen;
+            self._fullscreenChanged = self._fullscreenChanged || self._fullscreen;
             self._fullscreen = false;
             self._retry = {};
         }

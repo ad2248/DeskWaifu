@@ -100,6 +100,7 @@ int main(int argc, char** argv)
     { std::ofstream file(config.sourcePath);
         file << "{\"model_scale\":1,\"fullscreen_opacity_enabled\":true,\"fullscreen_opacity\":0.8}";
     }
+    CHECK(config.LoadFromFile(config.sourcePath));
     Runtime runtime; ApplicationService service(runtime);
     TransformEditor settings(service, config);
     CHECK(settings.Initialize({}));
