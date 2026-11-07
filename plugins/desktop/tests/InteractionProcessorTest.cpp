@@ -97,7 +97,9 @@ int main(int argc, char** argv)
     CHECK(directory.isValid());
     LAppConfig config;
     config.sourcePath = (directory.path() + "/config.json").toStdString();
-    { std::ofstream file(config.sourcePath); file << "{\"model_scale\":1}"; }
+    { std::ofstream file(config.sourcePath);
+        file << "{\"model_scale\":1,\"fullscreen_opacity_enabled\":true,\"fullscreen_opacity\":0.8}";
+    }
     Runtime runtime; ApplicationService service(runtime);
     TransformEditor settings(service, config);
     CHECK(settings.Initialize({}));
@@ -120,7 +122,9 @@ int main(int argc, char** argv)
         }
         ConfigStore::Snapshot disk; std::string error;
         CHECK(ConfigStore(config.sourcePath).Read(disk, error));
-        CHECK(disk.values.size() == 1 && disk.values.at("model_scale") == "1");
+        CHECK(disk.values.size() == 3 && disk.values.at("model_scale") == "1"
+            && disk.values.at("fullscreen_opacity_enabled") == "true"
+            && disk.values.at("fullscreen_opacity") == "0.8");
     }
     class Observer final : public Processor
     {

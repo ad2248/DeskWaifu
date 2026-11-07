@@ -370,7 +370,7 @@ int KWinCursorTracker::Sample(sd_bus_message* message, void* data, sd_bus_error*
     if (std::strcmp(sfullscreen, "true") != 0 && std::strcmp(sfullscreen, "false") != 0)
         return sd_bus_reply_method_errorf(message, SD_BUS_ERROR_INVALID_ARGS, "Invalid fullscreen state");
     const bool fullscreen = std::strcmp(sfullscreen, "true") == 0;
-    self._fullscreenChanged = self._fullscreen != fullscreen;
+    self._fullscreenChanged = self._fullscreenChanged || self._fullscreen != fullscreen;
     self._fullscreen = fullscreen;
     self._x = x; self._y = y; self._left = left; self._top = top;
     self._width = width; self._height = height; self._sampleOutput = name;
