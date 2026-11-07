@@ -164,7 +164,16 @@ int main(int argc, char** argv)
         CHECK(!settings.Editing() && interaction->Captured());
         CHECK(interaction->Hover().inside);
         CHECK(interaction->HandleEvent(ProcessorEvent("environment.fullscreen", nullptr, nullptr, {{"active", true}})));
+        // 策略测试构造器没有 InteractionContext，只验证事件不会解引用空配置。
         interaction->PrepareFrame(frame, true, .4f, .8f); CHECK(frame.opacity == .8f);
+        InteractionProcessor production(loop, model, std::make_unique<Window>(), config, nullptr);
+        QElapsedTimer productionInitialized; productionInitialized.start();
+        while (!production.Hover().available && productionInitialized.elapsed() < 5000) {
+            QCoreApplication::processEvents(); QThread::msleep(1);
+        }
+        CHECK(production.Hover().available);
+        CHECK(production.HandleEvent(ProcessorEvent("environment.fullscreen", nullptr, nullptr, {{"active", true}})));
+        production.PrepareFrame(frame, true, .4f, .8f); CHECK(frame.opacity == .8f);
         const auto output = window.Outputs().front();
         interaction->ApplyLook(frame, &output, .5f, .5f, 1);
         CHECK(frame.hasLook && frame.lookX > 0);
