@@ -50,9 +50,9 @@ public:
     const std::string& GetSocketPath() const { return _socketPath; }
 
 private:
-    // 固定的传输层限制，不影响命令语义。超大帧只关闭对应连接；
+    // 为避免过度设计，不限制并发连接数。待遇到实际问题时再考虑并发限制。
+    // 其余传输层限制不影响命令语义：超大帧只关闭对应连接；
     // 读取缓慢的客户端只暂停自身的命令派发。
-    static constexpr std::size_t MaxClients = 16;
     static constexpr std::size_t MaxRequestBytes = 64 * 1024;
     static constexpr std::size_t MaxResponseBytes = 8 * 1024 * 1024;
     static constexpr std::size_t AcceptsPerPoll = 4;
