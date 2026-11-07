@@ -377,9 +377,17 @@ int main(int argc, char** argv)
     tracker.AcknowledgeFullscreen();
     CHECK(KWinOwner() != originalOwner && !KWinOwner().empty());
     CHECK(x == 500 && y == 400);
+    kwin.fullscreen = true;
+    CHECK(Wait([&] {
+        tracker.Poll("A");
+        return tracker.Fullscreen() && tracker.FullscreenChanged();
+    }));
+    tracker.AcknowledgeFullscreen();
     kwin.silent = true;
     CHECK(Wait([&] { tracker.Poll("A"); return kwin.unloads == 1; }, 5000));
     CHECK(!tracker.LocalPosition(2000, 1600, x, y));
+    CHECK(!tracker.Fullscreen() && tracker.FullscreenChanged());
+    tracker.AcknowledgeFullscreen();
     kwin.silent = false;
     CHECK(Wait([&] {
         tracker.Poll("A");

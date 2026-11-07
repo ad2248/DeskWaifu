@@ -232,6 +232,10 @@ bool KWinCursorTracker::Load()
 
 bool KWinCursorTracker::Unload()
 {
+    // 脚本失联后不能继续沿用最后一次全屏采样，否则交互层会永久
+    // 使用全屏透明度，直到下一次有效采样覆盖它。
+    _fullscreenChanged = _fullscreenChanged || _fullscreen;
+    _fullscreen = false;
     _loaded = false;
     _sampleTime = {};
     if (!_registered) return true;
