@@ -29,7 +29,6 @@ public:
     virtual bool registerTransport(IGuiTransport* transport, QObject* owner)
     { Q_UNUSED(transport); Q_UNUSED(owner); return false; }
     virtual void unregisterTransport(IGuiTransport* transport) { Q_UNUSED(transport); }
-    virtual void publishLog(const QString& message) { emit logMessage(message); }
     virtual void notifyBackendReady() { emit backendReady(); }
     virtual bool isActive() const { return true; }
 
@@ -41,7 +40,6 @@ signals:
     void commandOutcomeUnknown(const QString& command);
     // A queued mutation was cancelled before it was sent.
     void commandCancelled(const QString& command);
-    void logMessage(const QString& message);
     void backendReady();
     void activationChanged(bool active);
 };

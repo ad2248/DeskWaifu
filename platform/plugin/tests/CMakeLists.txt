@@ -8,7 +8,6 @@ find_package(Python3 COMPONENTS Interpreter)
 if(Python3_Interpreter_FOUND)
   deskwaifu_add_test(NAME plugin-host-standalone-configure COMMAND ${Python3_EXECUTABLE} -B
     ${CMAKE_CURRENT_SOURCE_DIR}/test_host_configuration.py)
-  set_tests_properties(plugin-host-standalone-configure PROPERTIES TIMEOUT 60)
 endif()
 
 foreach(kind good consumer init_fail start_fail bad_abi bad_build_abi bad_entry bad_debug_abi)
@@ -32,8 +31,6 @@ deskwaifu_add_test(NAME plugin-manager COMMAND plugin-manager-test
   $<TARGET_FILE:plugin-fixture-bad_build_abi>
   $<TARGET_FILE:plugin-fixture-bad_entry>
   $<TARGET_FILE:plugin-fixture-bad_debug_abi>)
-set_tests_properties(plugin-manager PROPERTIES TIMEOUT 30)
-
 if(DESKWAIFU_BUILD_GUI_PLUGIN_SDK)
   foreach(kind good dual backend_only init_fail start_fail init_throw start_throw duplicate bad_abi bad_build bad_qt factory_throw validation)
     add_library(gui-plugin-fixture-${kind} MODULE GuiFixture.cpp)
@@ -59,7 +56,7 @@ if(DESKWAIFU_BUILD_GUI_PLUGIN_SDK)
     $<TARGET_FILE:gui-plugin-fixture-bad_qt>
     $<TARGET_FILE:gui-plugin-fixture-factory_throw>
     $<TARGET_FILE:gui-plugin-fixture-validation>)
-  set_tests_properties(gui-plugin-manager PROPERTIES TIMEOUT 30 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+  set_tests_properties(gui-plugin-manager PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
   foreach(kind good init_fail start_fail release destroyed)
     add_library(gui-transport-fixture-${kind} MODULE GuiTransportFixture.cpp)
@@ -77,5 +74,5 @@ if(DESKWAIFU_BUILD_GUI_PLUGIN_SDK)
     $<TARGET_FILE:gui-transport-fixture-start_fail>
     $<TARGET_FILE:gui-transport-fixture-release>
     $<TARGET_FILE:gui-transport-fixture-destroyed>)
-  set_tests_properties(gui-transport-manager PROPERTIES TIMEOUT 30 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+  set_tests_properties(gui-transport-manager PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()

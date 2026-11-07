@@ -2,8 +2,9 @@
 #include "ui_InteractionTab.h"
 #include "plugin/GuiHostServices.hpp"
 #include "HotkeyPanel.hpp"
+#include "plugin/GuiLog.hpp"
+#include <QDebug>
 #include <QJsonArray>
-#include <QJsonDocument>
 #include <QSignalBlocker>
 #include <QTimer>
 #include <algorithm>
@@ -97,7 +98,7 @@ InteractionTab::~InteractionTab() { delete ui; }
 void InteractionTab::setStatusMessage(const QString& message, int timeout) { _client.setStatusMessage(message, timeout); }
 void InteractionTab::logResponse(const QString& command, const QJsonObject& response)
 {
-    _client.publishLog(QStringLiteral("%1  %2").arg(command, QString::fromUtf8(QJsonDocument(response).toJson(QJsonDocument::Compact))));
+    qInfo().noquote() << FormatGuiResponseLog(command, response);
 }
 void InteractionTab::refreshAll() { requestHotkeys(); requestHoverOpacity(); requestMouseLook(); }
 

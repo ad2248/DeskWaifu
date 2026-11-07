@@ -97,7 +97,7 @@ class PluginBoundaries(unittest.TestCase):
         text = (ROOT / "platform/control/CMakeLists.txt").read_text()
         self.assertNotIn("target_sources(speech_plugin", text)
         self.assertNotIn("Tab.cpp", text)
-        for domain in ("system", "interaction", "model", "log", "speech"):
+        for domain in ("system", "interaction", "model", "speech"):
             self.assertTrue((ROOT / "plugins" / domain / "gui").is_dir())
 
     def test_each_plugin_owns_its_build_definition(self):
@@ -105,7 +105,7 @@ class PluginBoundaries(unittest.TestCase):
         parent = (plugins / "CMakeLists.txt").read_text()
         self.assertNotIn(".cpp", parent)
         self.assertNotIn("target_sources(", parent)
-        for name in ("desktop", "perception", "ipc", "reading_clip", "speech", "system", "interaction", "model", "log"):
+        for name in ("desktop", "perception", "ipc", "reading_clip", "speech", "system", "interaction", "model"):
             with self.subTest(plugin=name):
                 self.assertIn(f"add_subdirectory({name})", parent)
                 self.assertIn(f"deskwaifu_add_plugin({name}",

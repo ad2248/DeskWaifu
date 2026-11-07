@@ -42,7 +42,6 @@ TAB 是导航分组，不是插件边界；SDK 允许一个插件注册多个 TA
 | 交互 | `interaction/interaction.so` | 仅 GUI | 快捷键、鼠标/手动注视、悬停/平时透明度 |
 | 模型 | `model/model.so` | 仅 GUI | 模型、皮肤、表情/动作、外部口型、显示器与变换编辑 |
 | 语音 | `speech/speech.so` | 后端 + GUI | 语音提供者与 MiniMax 凭据设置 |
-| 日志 | `log/log.so` | 仅 GUI | 被动显示宿主和领域插件发布的安全日志 |
 | 无 TAB | `reading_clip/reading_clip.so` | 仅后端 | 剪贴板图像识别与播报编排 |
 | 无 TAB | `desktop/desktop.so` | 仅后端 | 模型、渲染、窗口、输入和交互 |
 | 无 TAB | `perception/perception.so` | 仅后端 | 图像读取、OCR 和截图 |
@@ -58,7 +57,7 @@ TAB 是导航分组，不是插件边界；SDK 允许一个插件注册多个 TA
 页面布局的决策背景见[插件与窗口迁移记录](../实施日志/插件与窗口迁移.md)。
 位置、缩放、裁剪及应用/取消必须共用完整变换事务；外部口型幅度不等于生成语音。
 
-系统、交互、模型、日志页面由 GUI 插件拥有自己的控件、UI 文件与业务状态。
+系统、交互、模型页面由 GUI 插件拥有自己的控件、UI 文件与业务状态。
 主窗口只负责 TAB 容器、加载诊断、公共连接状态和通用反馈，不访问插件控件。
 语音设置由语音模块的 GUI 入口提供，不再由主窗口实现。
 
@@ -69,9 +68,9 @@ GUI SDK 是基础 SDK 的可选组件；纯后端插件不必链接 Widgets。
 同一个模块在两个进程中拥有独立实例，不能依靠静态变量共享状态。
 GUI 通过 SDK 的通用服务接口调用后端；宿主只代理请求，实际 IPC 传输由 `ipc`
 插件注册的 `IGuiTransport` 提供。页面不依赖 IPC 实现，不直接读写后端私有配置或持有后端对象。
-日志由页面显式发布，不自动记录所有请求或响应，避免语音密钥进入日志。
-通用协议错误、修改结果未知及发送前取消的提示由宿主生成，即使 `log.so` 缺失仍可反馈；
-日志插件只订阅 `logMessage`，不承担基础错误处理。
+应用通过 Qt 日志系统统一记录诊断信息。GUI 和 daemon 各自在启动时创建并清空
+`/tmp/log/waifudesk_<随机字符串>/gui.log` 或 `daemon.log`；日志不自动记录可能含有凭据的原始 IPC 内容。
+通用协议错误、修改结果未知及发送前取消的提示由宿主生成并写入 Qt 日志。
 
 `--smoke-test` 在应用入口独立发送现有 `get_status` 并验证成功响应，不依赖系统页
 发送 `backendReady`。仅连接 socket 不算通过；该探针验证命令往返，不声称验证所有页面。
@@ -85,8 +84,8 @@ GUI 通过 SDK 的通用服务接口调用后端；宿主只代理请求，实�
 GUI 插件链接 `deskwaifu_gui_plugin_sdk`，安装后的 CMake 消费者使用 SDK 的
 `Gui` 组件和 `DeskWaifu::gui_plugin_sdk` 目标。
 
-系统、交互、模型和日志模块分别安装到 `system/system.so`、
-`interaction/interaction.so`、`model/model.so` 和 `log/log.so`。
+系统、交互和模型模块分别安装到 `system/system.so`、
+`interaction/interaction.so` 和 `model/model.so`。
 构建控制面板和语音插件时，`speech/speech.so` 同时导出两种入口。
 
 控制面板从标准配置目录下的 `deskwaifu/config.json` 读取 `plugin_dir`，

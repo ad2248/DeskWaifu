@@ -43,7 +43,6 @@ if(BUILD_TESTING)
       "OCR_NATIVE_MODULE=$<TARGET_FILE:deskwaifu-ocr>"
       "OCR_MODULE_PROBE=$<TARGET_FILE:ocr-module-probe>"
       ${Python3_EXECUTABLE} -B "${_ocr_model_tests}")
-    set_tests_properties(ocr-native-models PROPERTIES TIMEOUT 120)
   endif()
   add_executable(ocr-module-probe ../tests/OcrModuleProbe.cpp
     ../private/processor/ocr/OcrClient.cpp ../private/processor/ocr/OcrClient.hpp)

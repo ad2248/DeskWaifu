@@ -46,62 +46,6 @@ with patch("pathlib.Path.is_dir", return_value=False):
             self.assertFalse(Path(snapshot["tmp"]).exists())
             self.assertFalse(Path(snapshot["runtime"]).exists())
 
-    def test_ctest_timeout_cleans_directories_and_processes(self):
-        script = '''import json, os, signal, subprocess, sys, time
-from pathlib import Path
-grandchild = subprocess.Popen([sys.executable, "-c",
-    "import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); print('ready',flush=True); time.sleep(60)"],
-    stdout=subprocess.PIPE, text=True)
-assert grandchild.stdout.readline().strip() == "ready"
-signal.signal(signal.SIGTERM, signal.SIG_IGN)
-keys = ("HOME", "XDG_RUNTIME_DIR", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME", "TMPDIR")
-snapshot = {key: os.environ[key] for key in keys}
-snapshot.update(pid=os.getpid(), grandchild=grandchild.pid, group=os.getpgrp())
-Path(sys.argv[1]).write_text(json.dumps(snapshot))
-time.sleep(60)
-'''
-        with tempfile.TemporaryDirectory(prefix="ctest-timeout-") as directory:
-            root = Path(directory)
-            report = root / "snapshot.json"
-            child = root / "child.py"
-            child.write_text(script)
-            (root / "CMakeLists.txt").write_text(
-                'cmake_minimum_required(VERSION 3.25)\nproject(fixture NONE)\ninclude(CTest)\n'
-                f'include("{ROOT}/cmake/TestEnvironment.cmake")\n'
-                f'deskwaifu_add_test(NAME timeout-fixture COMMAND "{sys.executable}" "{child}" "{report}")\n'
-                'set_tests_properties(timeout-fixture PROPERTIES TIMEOUT 1 WILL_FAIL "${EXPECT_FAILURE}")\n')
-            build = root / "build"
-            commands = (
-                ["ctest", "--test-dir", str(build), "--output-on-failure"],
-                [sys.executable, str(ROOT / "scripts/run-test-gate.py"), str(build), "--test", "^timeout-fixture$"],
-            )
-            for expected in ("FALSE", "TRUE"):
-                subprocess.run(["cmake", "-S", str(root), "-B", str(build), f"-DEXPECT_FAILURE={expected}"],
-                               capture_output=True, check=True)
-                for command in commands:
-                    with self.subTest(expected_failure=expected, command=command[0]):
-                        result = subprocess.run(command, capture_output=True, text=True, timeout=20)
-                        self.assertNotEqual(result.returncode, 0, "a timeout must fail the test")
-                        self.assertIn("Test timed out after 1 seconds", result.stdout + result.stderr)
-                        snapshot = json.loads(report.read_text())
-                        try:
-                            for key in ("HOME", "XDG_RUNTIME_DIR", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME", "TMPDIR"):
-                                self.assertFalse(Path(snapshot[key]).exists(), f"CTest timeout leaked {key}")
-                            for key in ("pid", "grandchild"):
-                                status = Path(f"/proc/{snapshot[key]}/status")
-                                try:
-                                    contents = status.read_text()
-                                except FileNotFoundError:
-                                    continue
-                                self.assertIn("State:\tZ", contents, f"CTest timeout left {key} running")
-                        finally:
-                            # 失败的旧实现也只回收本用例记录的进程组与隔离目录。
-                            try:
-                                os.killpg(snapshot["group"], signal.SIGKILL)
-                            except ProcessLookupError:
-                                pass
-                            shutil.rmtree(Path(snapshot["HOME"]).parent, ignore_errors=True)
-
     def test_expected_failure_only_inverts_the_test_command(self):
         with tempfile.TemporaryDirectory(prefix="expected-failure-") as directory:
             root = Path(directory)

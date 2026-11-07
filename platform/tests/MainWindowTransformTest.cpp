@@ -11,7 +11,6 @@
 #include <QSlider>
 #include <QStyleOptionSlider>
 #include <QPushButton>
-#include <QPlainTextEdit>
 #include <QTabWidget>
 #include <QTabBar>
 #include <QTableWidget>
@@ -66,7 +65,6 @@ private slots:
         qputenv("XDG_RUNTIME_DIR", directory.path().toLocal8Bit());
         MainWindow window(nullptr, directory.path());
         auto& services = window.hostServices();
-        QSignalSpy logs(&services, &GuiHostServices::logMessage);
         auto* feedback = window.findChild<QLabel*>("operationStatusLabel");
         QVERIFY(feedback);
         emit services.protocolError(QStringLiteral("fixture protocol failure"));
@@ -75,9 +73,7 @@ private slots:
         QVERIFY(feedback->text().contains(QStringLiteral("执行结果未知")));
         emit services.commandCancelled(QStringLiteral("set_model"));
         QVERIFY(feedback->text().contains(QStringLiteral("发送前取消")));
-        QCOMPARE(logs.count(), 3);
         emit services.responseReceived(QStringLiteral("set_speech_settings"), {{"api_key", "must-not-log"}});
-        QCOMPARE(logs.count(), 3); // The host must not become a raw JSON logger.
         QVERIFY(!window.findChild<QWidget*>("responseLog"));
     }
 
@@ -367,7 +363,6 @@ private slots:
         QCOMPARE(QJsonDocument::fromJson(credentials.readAll()).object().value("api_key").toString(), QString("test-gui-secret"));
         credentials.close();
         QVERIFY(!status->text().contains("test-gui-secret"));
-        QVERIFY(!window.findChild<QPlainTextEdit*>("responseLog")->toPlainText().contains("test-gui-secret"));
         clear->click();
         QTRY_COMPARE(saves, 2);
         QTRY_VERIFY(!clear->isEnabled());
@@ -510,8 +505,7 @@ private slots:
         auto* lookGroup = window.findChild<QWidget*>("mouseLookGroup");
         auto* x = window.findChild<QDoubleSpinBox*>("positionXSpin");
         auto* apply = window.findChild<QPushButton*>("transformButton");
-        auto* log = window.findChild<QPlainTextEdit*>("responseLog");
-        QVERIFY(hoverGroup && lookGroup && x && apply && log);
+        QVERIFY(hoverGroup && lookGroup && x && apply);
         if (!failedCommand.startsWith("get_") || failedCommand == "get_transform_save_result") {
             QTRY_VERIFY(hoverGroup->isEnabled() && lookGroup->isEnabled() && x->isEnabled());
             if (failedCommand == "set_hover_opacity") window.findChild<QCheckBox*>("hoverOpacityEnabledCheck")->click();
@@ -534,15 +528,9 @@ private slots:
         }
         QTRY_COMPARE_WITH_TIMEOUT(invalidReplies, 1, 6000);
         QTRY_VERIFY_WITH_TIMEOUT(connections >= 2 && hoverGroup->isEnabled() && lookGroup->isEnabled() && x->isEnabled(), 6000);
-        // 服务端在写入坏响应时即自增计数，客户端要到下一轮事件循环才解析并写入日志。
-        // 因此计数条件满足时日志可能尚未更新，必须同样按超时等待，否则在负载高时误报失败。
-        const QString loggedCommand = queuedSave ? QString("apply_transform_edit") : failedCommand;
-        QTRY_VERIFY_WITH_TIMEOUT(log->toPlainText().contains(loggedCommand), 6000);
-        QTRY_VERIFY_WITH_TIMEOUT(log->toPlainText().contains("JSON 响应无效"), 6000);
         if (queuedSave) {
             QCOMPARE(commands.count("apply_transform_edit"), 0);
             QCOMPARE(commands.count("get_transform_save_result"), 0);
-            QTRY_VERIFY_WITH_TIMEOUT(log->toPlainText().contains("发送前取消"), 6000);
             QVERIFY(window.findChild<QPushButton*>("xformResetButton")->isEnabled());
         } else if (!failedCommand.startsWith("get_")) QCOMPARE(commands.count(failedCommand), 1);
         if (failedCommand == "set_hover_opacity") {
@@ -664,8 +652,6 @@ private slots:
         QVERIFY(server.listen(runtimePath + "/deskwaifu.sock"));
         int invalidReplies = 0;
         bool failSetHover = true;
-        QString logWhenCounted;
-        QPlainTextEdit* log = nullptr;
         connect(&server, &QLocalServer::newConnection, this, [&] {
             auto* socket = server.nextPendingConnection();
             connect(socket, &QLocalSocket::disconnected, this, [&] { backend.Call("test.disconnect"); });
@@ -679,8 +665,6 @@ private slots:
                         ++invalidReplies;
                         socket->write("broken-json\n");
                         socket->flush();
-                        // 与生产路径一致：计数先于客户端解析发生，此刻日志一定还是旧的。
-                        if (log) logWhenCounted = log->toPlainText();
                         continue;
                     }
                     socket->write(QJsonDocument(backend.Call(command, input)).toJson(QJsonDocument::Compact) + '\n');
@@ -692,14 +676,10 @@ private slots:
         window.show();
         auto* hoverGroup = window.findChild<QWidget*>("hoverOpacityGroup");
         auto* check = window.findChild<QCheckBox*>("hoverOpacityEnabledCheck");
-        log = window.findChild<QPlainTextEdit*>("responseLog");
-        QVERIFY(hoverGroup && check && log);
+        QVERIFY(hoverGroup && check);
         QTRY_VERIFY_WITH_TIMEOUT(hoverGroup->isEnabled(), 6000);
         check->click();
         QTRY_COMPARE_WITH_TIMEOUT(invalidReplies, 1, 6000);
-        QVERIFY(!logWhenCounted.contains("JSON 响应无效"));
-        QTRY_VERIFY_WITH_TIMEOUT(log->toPlainText().contains("JSON 响应无效"), 6000);
-        QTRY_VERIFY_WITH_TIMEOUT(log->toPlainText().contains("set_hover_opacity"), 6000);
     }
 
     void mouseLookRangeSavesOnRelease()
@@ -1145,7 +1125,6 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(group->isEnabled() && queries > 1, 5000);
         QCOMPARE(slider->value(), 65);
         QCOMPARE(mutations.size(), beforeDisconnect + 1); // 确认丢失时不重放操作。
-        QVERIFY(window.findChild<QPlainTextEdit*>("responseLog")->toPlainText().contains("执行结果未知"));
         idleSupported = false; // 仅支持悬停的后端仍可使用旧控件。
         const int beforeHoverOnly = queries;
         QTRY_VERIFY_WITH_TIMEOUT(queries > beforeHoverOnly && !idleSlider->isEnabled(), 3000);
