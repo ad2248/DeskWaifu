@@ -11,7 +11,7 @@
         │                                      │
         │                                      └── interaction.*、speech.* 等领域事件
         │
-        └── system、interaction、model、log（GUI 控制插件）
+        └── system、interaction、model（GUI 控制插件）
 
 桌面运行时：desktop ──> 模型、窗口、输入、渲染
 感知能力：perception ──> 截图、剪贴板图像、OCR
@@ -24,7 +24,7 @@
 - **`perception`** 提供截图、图像处理和 OCR 命令；OCR 后端通过独立客户端/模块加载，避免把具体 OCR 实现耦合进桌面运行时。
 - **`reading_clip`** 编排“读取图像 → OCR 识别 → 语音播报”的朗读流水线，并发布朗读状态；图像、OCR 和语音能力分别由对应插件提供。
 - **`speech`** 提供 `speech.speak/v1` 和语音设置命令，并订阅 `interaction.double_click/v1`。双击问候、请求取消、云端合成和音频播放都在该插件内部完成。
-- **`system`、`interaction`、`model`、`log`** 是控制面板 GUI 插件。它们通过 GUI SDK 创建标签页或控制面板，不拥有对应核心业务；具体命令仍由运行时插件和事件端点处理。
+- **`system`、`interaction`、`model`** 是控制面板 GUI 插件。它们通过 GUI SDK 创建标签页或控制面板，不拥有对应核心业务；具体命令仍由运行时插件和事件端点处理。
 
 ## 构建与加载
 
@@ -53,6 +53,28 @@
 | [system](system/README.md) | GUI | 启动、重启和系统控制 |
 | [interaction](interaction/README.md) | GUI | 交互设置与快捷键面板 |
 | [model](model/README.md) | GUI | 模型控制面板 |
-| [log](log/README.md) | GUI | 日志查看面板 |
 
-各插件的测试位于相应目录的 `tests/`，重点覆盖能力契约、生命周期、取消和错误路径。具体测试命令以插件 README 为准。
+## 测试入口
+
+插件测试源码位于各插件的 `tests/` 目录，测试目标只在对应构建选项开启时注册：`DESKWAIFU_BUILD_DESKTOP_PLUGIN`、`DESKWAIFU_BUILD_PERCEPTION_PLUGIN`、`DESKWAIFU_BUILD_IPC_PLUGIN`、`DESKWAIFU_BUILD_READING_CLIP_PLUGIN`、`DESKWAIFU_BUILD_SPEECH_PLUGIN` 分别控制运行时插件，`system`、`interaction`、`model` 由 `DESKWAIFU_BUILD_CONTROL` 控制。`model` 没有插件内的 `tests/` 目录，其页面与桌面行为分别由控制面板和 desktop 测试覆盖。
+
+| 插件 | 测试源码 | 主要 CTest 目标 |
+| --- | --- | --- |
+| desktop | `plugins/desktop/tests/` | `model-catalog`、`model-hit-test`、`qt-window-input`、`interaction-processor`、`transform-editor` 等 |
+| perception | `plugins/perception/tests/` | `perception-adapters`、`ocr-client`、`ocr-build`、`screenshot-service` |
+| ipc | `plugins/ipc/tests/` | `ipc-transport`、`ipc-bounded-transport`、`command-processor`、`ctl` |
+| reading_clip | `plugins/reading_clip/tests/` | `reading-pipeline` |
+| speech | `plugins/speech/tests/` | `SpeechPlayer`、`MiniMaxSpeechSource`、`AudioPlayer`、`SpeechSettings`、`speech-contract-*` |
+| system | `plugins/system/tests/` | `deskwaifu-launcher`；跨插件重启联动见 `platform/tests` 的 `deskwaifu-respawner` |
+| interaction | `plugins/interaction/tests/` | `hotkey-panel` |
+| model | 无插件内测试 | 页面：`platform/tests/gui` 的 `gui-tabs`；模型命令与资源：`plugins/desktop/tests/` |
+
+跨插件的加载与流水线测试在 `platform/tests` 中注册（`speech-plugin-load`、`reading-plugin`、`processor-ownership`、`processor-pipeline`），控制面板整页验证在 `platform/tests/gui` 中注册（`gui-tabs`、`gui-plugin-shutdown`）。
+
+先按根 [README](../README.md) 配置并构建，再运行需要的目标；`ctest --test-dir build -N` 可列出当前配置下实际注册的测试：
+
+```bash
+cmake -S . -B build -G Ninja -DBUILD_TESTING=ON -DDESKWAIFU_BUILD_OCR=OFF
+cmake --build build --parallel "$(nproc)"
+ctest --test-dir build --output-on-failure -R '^(gui-tabs|hotkey-panel|reading-pipeline)$'
+```
