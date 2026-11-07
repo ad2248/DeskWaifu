@@ -739,11 +739,12 @@ DeskWaifu exposes a Unix domain socket for external control by scripts and progr
 
 ### Transport limits
 
-The server accepts at most 16 concurrent clients. Request lines may contain up
-to 64 KiB and individual replies up to 8 MiB, excluding the terminating newline.
-An oversized frame closes only that connection; excess connections are closed
-without replacing existing clients. A lost reply does not prove that a command
-was not executed: query the resulting state rather than replaying a mutation.
+Concurrent connections are not limited: this avoids over-engineering, and a
+limit will only be considered if a real problem appears. Request lines may
+contain up to 64 KiB and individual replies up to 8 MiB, excluding the
+terminating newline. An oversized frame closes only that connection. A lost
+reply does not prove that a command was not executed: query the resulting state
+rather than replaying a mutation.
 
 Replies are sent non-blockingly and in request order. Each connection retains
 only one pending reply; while it is pending, that client's further commands are

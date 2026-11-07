@@ -75,7 +75,9 @@ extern "C" int __wrap_accept4(int fd, sockaddr* address, socklen_t* length, int 
 namespace {
 constexpr std::size_t RequestLimit = 64 * 1024;
 constexpr std::size_t ResponseLimit = 8 * 1024 * 1024;
-constexpr int ClientLimit = 16;
+constexpr int FairnessClients = 16;
+// 超过历史上的 16 连接上限，验证并发连接不再被拒绝。
+constexpr int ConcurrentClients = 40;
 
 struct Commands : ICommandService
 {
@@ -236,21 +238,17 @@ bool RejectLargeResponse()
     return closed && reply.empty() && f.commands.disconnected.size() == 1;
 }
 
-bool ConnectionLimit()
+bool ConcurrentConnections()
 {
     Fixture f;
-    for (int i = 0; i < ClientLimit; ++i) {
+    for (int i = 0; i < ConcurrentClients; ++i) {
         if (f.Connect() < 0) return false;
         f.server.Poll();
     }
-    const int extra = f.Connect();
-    if (extra < 0) return false;
-    f.server.Poll();
-    std::string reply;
-    if (!Fixture::Read(extra, reply)) return false;
-    for (int i = 0; i < ClientLimit; ++i) {
+    // 不限制并发连接数：所有连接都能得到回复，且互不影响。
+    for (int i = 0; i < ConcurrentClients; ++i) {
         if (!f.Send(f.clients[i], "alive\n")) return false;
-        reply.clear();
+        std::string reply;
         for (int j = 0; j < 8 && reply.empty(); ++j) {
             f.server.Poll();
             if (Fixture::Read(f.clients[i], reply)) return false;
@@ -299,7 +297,7 @@ bool AcceptBudget()
 bool GlobalFairness()
 {
     Fixture f;
-    for (int i = 0; i < ClientLimit; ++i) {
+    for (int i = 0; i < FairnessClients; ++i) {
         if (f.Connect() < 0) return false;
         f.server.Poll();
     }
@@ -307,12 +305,12 @@ bool GlobalFairness()
     for (int i = 0; i < 100; ++i) requests += "x\n";
     for (int fd : f.clients)
         if (send(fd, requests.data(), requests.size(), MSG_NOSIGNAL) != static_cast<ssize_t>(requests.size())) return false;
-    std::vector<std::string> replies(ClientLimit);
+    std::vector<std::string> replies(FairnessClients);
     for (int i = 0; i < 16; ++i) {
         const auto previous = f.commands.requests.size();
         f.server.Poll();
         if (f.commands.requests.size() - previous > 16) return false;
-        for (int j = 0; j < ClientLimit; ++j)
+        for (int j = 0; j < FairnessClients; ++j)
             if (Fixture::Read(f.clients[j], replies[j])) return false;
     }
     // 即使所有客户端持续发送，全局上限也不能让任何连接得不到处理。
@@ -427,7 +425,7 @@ int main()
     check(RejectLongRequest(false), "unterminated request over the limit is disconnected");
     check(RejectLongRequest(true), "terminated request over the limit is not dispatched");
     check(RejectLargeResponse(), "oversized reply is disconnected without a partial frame");
-    check(ConnectionLimit(), "excess connections are rejected without harming existing clients");
+    check(ConcurrentConnections(), "concurrent connections above the former limit are all served");
     check(BoundedCommands(), "bounded dispatch drains buffered commands without new socket input");
     check(AcceptBudget(), "accept attempts including EINTR are bounded per poll");
     check(GlobalFairness(), "global command budget rotates service across all clients");

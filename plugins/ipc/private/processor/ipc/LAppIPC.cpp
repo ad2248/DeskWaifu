@@ -279,7 +279,6 @@ void LAppIPC::Poll()
             if (errno == EINTR) continue;
             break;
         }
-        if (_clients.size() == MaxClients) { close(fd); continue; }
         ClientBuffer client;
         client.fd = fd;
         client.source = "stream:" + std::to_string(++_nextConnection);
