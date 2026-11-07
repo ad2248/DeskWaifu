@@ -6,7 +6,6 @@
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QLabel>
-#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSlider>
@@ -46,8 +45,7 @@ struct ControlTestWidgets
     X(QSpinBox, cropBox_w) \
     X(QSpinBox, cropBox_h) \
     X(QLabel, currentModelLabel) \
-    X(QStatusBar, statusBar) \
-    X(QPlainTextEdit, responseLog)
+    X(QStatusBar, statusBar)
 #define DECLARE_WIDGET(Type, name) Type* name = nullptr;
     CONTROL_TEST_WIDGETS(DECLARE_WIDGET)
 #undef DECLARE_WIDGET

@@ -7,6 +7,5 @@ inline QStringList ExpectedControlTabs()
 #if DESKWAIFU_TEST_SPEECH_PLUGIN
     tabs.append(QStringLiteral("语音"));
 #endif
-    tabs.append(QStringLiteral("日志"));
     return tabs;
 }

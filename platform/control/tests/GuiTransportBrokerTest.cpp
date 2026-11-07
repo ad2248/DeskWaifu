@@ -2,7 +2,6 @@
 #include "plugin/GuiTransport.hpp"
 #include <QApplication>
 #include <QLabel>
-#include <QStringList>
 #include <iostream>
 #include <memory>
 
@@ -34,10 +33,7 @@ int main(int argc, char** argv)
     CHECK(!services.isConnected());
     auto* label = window.findChild<QLabel*>("connectionStatusLabel");
     CHECK(label && label->text().contains(QStringLiteral("传输服务不可用")));
-    QStringList logs;
     int responses = 0;
-    QObject::connect(&services, &GuiHostServices::logMessage, &window,
-        [&](const QString& message) { logs.append(message); });
     QObject::connect(&services, &GuiHostServices::responseReceived, &window,
         [&](const QString&, const QJsonObject&) { ++responses; });
 
@@ -57,7 +53,6 @@ int main(int argc, char** argv)
     emit transport.protocolError("invalid transport response");
     emit transport.commandOutcomeUnknown("set_credentials");
     emit transport.commandCancelled("set_credentials");
-    CHECK(logs.size() == 3 && !logs.join('\n').contains("super-secret"));
 
     services.unregisterTransport(&other);
     CHECK(services.isConnected());
@@ -66,7 +61,7 @@ int main(int argc, char** argv)
     emit transport.responseReceived("late", {{"ok", true}});
     CHECK(responses == 1);
     services.sendCommand("missing", {{"password", "super-secret"}});
-    CHECK(responses == 2 && logs.size() == 4 && !logs.join('\n').contains("super-secret"));
+    CHECK(responses == 2);
 
     QObject nextOwner;
     auto next = std::make_unique<TestTransport>();

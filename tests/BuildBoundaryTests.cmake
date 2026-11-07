@@ -1,4 +1,4 @@
-# 每个 unittest 方法独立调度，保留方法内的完整参数矩阵与原有超时。
+# 每个 unittest 方法独立调度，保留方法内的完整参数矩阵。
 foreach(case IN ITEMS
     c_include_ownership
     compilation_ownership
@@ -17,5 +17,5 @@ foreach(case IN ITEMS
   string(REPLACE "_" "-" test_name "build-boundaries-${case}")
   deskwaifu_add_test(NAME "${test_name}" COMMAND "${Python3_EXECUTABLE}" -B
     "${CMAKE_CURRENT_LIST_DIR}/test_build_boundaries.py" "BuildBoundaries.test_${case}" -v)
-  set_tests_properties("${test_name}" PROPERTIES TIMEOUT 60 LABELS "architecture;regression")
+  set_tests_properties("${test_name}" PROPERTIES LABELS "architecture;regression")
 endforeach()

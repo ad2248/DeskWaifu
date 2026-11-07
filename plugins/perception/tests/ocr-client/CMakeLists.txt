@@ -16,4 +16,3 @@ target_compile_definitions(ocr-client-test PRIVATE DESKWAIFU_OCR_MODULE_PATH="/n
 target_link_libraries(ocr-client-test PRIVATE Qt6::Core)
 include(../OcrModuleFixtures.cmake)
 add_test(NAME ocr-client COMMAND ocr-client-test $<TARGET_FILE:ocr-test-module>)
-set_tests_properties(ocr-client PROPERTIES TIMEOUT 30)

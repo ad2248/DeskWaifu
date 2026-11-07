@@ -18,7 +18,7 @@ add_custom_target(deskwaifu_sdk_ownership ALL
 
 add_library(deskwaifu_events SHARED event/ProcessorEventLoop.cpp)
 add_library(deskwaifu_contracts STATIC contracts/ConfigStore.cpp)
-add_library(deskwaifu_plugin_sdk SHARED plugin/PluginContext.cpp plugin/ConfigJson.cpp plugin/GuiHostServices.hpp)
+add_library(deskwaifu_plugin_sdk SHARED plugin/PluginContext.cpp plugin/ConfigJson.cpp plugin/GuiHostServices.hpp plugin/GuiLog.hpp)
 set_target_properties(deskwaifu_contracts PROPERTIES POSITION_INDEPENDENT_CODE ON EXPORT_NAME contracts)
 set_target_properties(deskwaifu_plugin_sdk PROPERTIES AUTOMOC ON)
 foreach(target deskwaifu_events deskwaifu_contracts deskwaifu_plugin_sdk)

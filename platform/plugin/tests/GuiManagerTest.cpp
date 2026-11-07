@@ -45,8 +45,7 @@ try {
     Copy(argv[3], root, "c-backend");
     Host host;
     host.setProperty("procDirectory", "/fixture/proc");
-    int logs = 0, ready = 0;
-    QObject::connect(&host, &GuiHostServices::logMessage, &host, [&](const QString&) { ++logs; });
+    int ready = 0;
     QObject::connect(&host, &GuiHostServices::backendReady, &host, [&] { ++ready; });
     QTabWidget tabs;
     GuiPluginManager manager(root, host, tabs);
@@ -58,8 +57,7 @@ try {
     Check(tabs.widget(0)->objectName() == "fixturePage", "host preserves page objectName for UI lookup and styling");
     Check(!host.commands.contains("initialize") && host.commands.count("start") == 2, "IPC sends prohibited until activation");
     Check(host.cancellations.isEmpty(), "initialization cannot cancel commands");
-    Check(logs == 2 && ready == 2, "log publication and backend-ready forward once without echo recursion");
-    Check(!manager.Start(&error) && tabs.count() == 4, "duplicate Start non-destructive");
+    Check(ready == 2, "backend-ready forwards once");    Check(!manager.Start(&error) && tabs.count() == 4, "duplicate Start non-destructive");
     emit host.responseReceived("test", {});
     emit host.activationChanged(false);
     Check(Read(log).contains("a-good:response") && Read(log).contains("b-dual:activation"), "shared IPC and process-level activation forwarded");

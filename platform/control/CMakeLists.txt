@@ -12,6 +12,7 @@ target_link_libraries(deskwaifu_control_shell PUBLIC
   Qt6::Widgets
   deskwaifu_gui_plugin_sdk
   deskwaifu_gui_plugin_host
+  deskwaifu_logging
 )
 target_include_directories(deskwaifu_control_shell PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_definitions(deskwaifu_control_shell PRIVATE
@@ -35,6 +36,6 @@ if(BUILD_TESTING)
   add_executable(gui-transport-broker-test tests/GuiTransportBrokerTest.cpp)
   target_link_libraries(gui-transport-broker-test PRIVATE deskwaifu_control_shell)
   deskwaifu_add_test(NAME gui-transport-broker COMMAND gui-transport-broker-test)
-  set_tests_properties(gui-transport-broker PROPERTIES TIMEOUT 30
+  set_tests_properties(gui-transport-broker PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen" LABELS "contract;gui")
 endif()

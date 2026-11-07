@@ -9,7 +9,7 @@ import shutil
 import subprocess
 
 ROOT = Path(__file__).resolve().parent.parent
-PLUGINS = ("desktop", "perception", "ipc", "speech", "reading_clip", "system", "interaction", "model", "log")
+PLUGINS = ("desktop", "perception", "ipc", "speech", "reading_clip", "system", "interaction", "model")
 MAIN_DEPENDS = {"glibc", "gcc-libs", "wayland", "libglvnd", "systemd-libs", "qt6-base>=6.5",
                 "qt6-wayland>=6.5", "qt6-scxml>=6.5", "qt6-websockets>=6.5", "qt6-multimedia>=6.5",
                 "layer-shell-qt>=6.6", "bash", "python", "psmisc"}

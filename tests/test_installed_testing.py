@@ -24,7 +24,7 @@ installation = load("test-installed-packages")
 
 
 class InstalledTestingTest(unittest.TestCase):
-    def test_export_unwraps_isolation_and_preserves_the_original_timeout(self):
+    def test_export_unwraps_isolation_without_a_timeout_budget(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source, build = root / "source", root / "build"
@@ -38,8 +38,7 @@ class InstalledTestingTest(unittest.TestCase):
             launcher = str(source / "cmake/../scripts/test-environment.py")
             registry = {"tests": [
                 {"name": "unit", "command": ["python3", launcher, "cmake", "-E", "env", "SETTING=fixture", executable],
-                 "properties": [{"name": "TIMEOUT", "value": 40},
-                                {"name": "ENVIRONMENT_MODIFICATION", "value": ["DESKWAIFU_TEST_TIMEOUT=set:30", "DESKWAIFU_TEST_WILL_FAIL=set:1"]}]},
+                 "properties": [{"name": "ENVIRONMENT_MODIFICATION", "value": ["DESKWAIFU_TEST_WILL_FAIL=set:1"]}]},
                 {"name": "historical-wrapper", "command": ["python3", launcher, executable],
                  "properties": [{"name": "WILL_FAIL", "value": True}]},
                 {"name": "source-contract", "command": ["python3", launcher, "cmake", "-E", "env",
@@ -51,7 +50,7 @@ class InstalledTestingTest(unittest.TestCase):
             self.assertEqual(result["source_gates"], ["source-contract"])
             self.assertEqual(result["tests"][0]["command"], [installed])
             self.assertEqual(result["tests"][0]["environment"], ["SETTING=fixture"])
-            self.assertEqual(result["tests"][0]["timeout"], 30)
+            self.assertNotIn("timeout", result["tests"][0])
             self.assertTrue(result["tests"][0]["will_fail"])
             self.assertEqual(result["tests"][1]["command"], [installed])
             self.assertTrue(result["tests"][1]["will_fail"])
@@ -70,8 +69,8 @@ class InstalledTestingTest(unittest.TestCase):
             def run(command, **kwargs):
                 self.assertEqual(command[:2], [runner.sys.executable, str(root / "test-environment.py")])
                 self.assertIn("SETTING=fixture", command)
-                self.assertEqual(kwargs["env"]["DESKWAIFU_TEST_TIMEOUT"], "60")
-                self.assertEqual(kwargs["timeout"], 70)
+                self.assertNotIn("DESKWAIFU_TEST_TIMEOUT", kwargs["env"])
+                self.assertNotIn("timeout", kwargs)
                 with lock:
                     directories.add(kwargs["cwd"])
                 barrier.wait()

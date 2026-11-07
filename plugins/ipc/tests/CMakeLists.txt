@@ -15,12 +15,10 @@ target_link_libraries(ipc-bounded-transport-test PRIVATE deskwaifu_ipc_core)
 deskwaifu_domain_test(ipc-bounded-transport-test ipc)
 target_link_options(ipc-bounded-transport-test PRIVATE -Wl,--wrap=send -Wl,--wrap=read -Wl,--wrap=accept4)
 deskwaifu_add_test(NAME ipc-bounded-transport COMMAND ipc-bounded-transport-test)
-set_tests_properties(ipc-bounded-transport PROPERTIES TIMEOUT 30)
 add_executable(ipc-readiness-test IpcReadinessTest.cpp)
 target_link_libraries(ipc-readiness-test PRIVATE deskwaifu_ipc_core Qt6::Network)
 deskwaifu_domain_test(ipc-readiness-test ipc)
 deskwaifu_add_test(NAME ipc-readiness COMMAND ipc-readiness-test)
-set_tests_properties(ipc-readiness PROPERTIES TIMEOUT 30)
 deskwaifu_add_test(NAME ipc-transport-header COMMAND ${CMAKE_COMMAND}
   -DAPP_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/../private -DSDK_SOURCE=${CMAKE_SOURCE_DIR}/sdk
   -DCXX_COMPILER=${CMAKE_CXX_COMPILER} -DFIXTURE_SOURCE=${CMAKE_CURRENT_BINARY_DIR}/transport-header

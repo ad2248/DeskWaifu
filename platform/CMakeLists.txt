@@ -1,7 +1,9 @@
-find_package(Qt6 6.5 REQUIRED COMPONENTS Gui)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui)
+add_library(deskwaifu_logging STATIC QtLogging.cpp QtLogging.hpp)
+target_link_libraries(deskwaifu_logging PUBLIC Qt6::Core)
 add_executable(deskwaifu main.cpp HostConfig.cpp)
 add_subdirectory(plugin)
-target_link_libraries(deskwaifu PRIVATE deskwaifu_plugin_host Qt6::Gui)
+target_link_libraries(deskwaifu PRIVATE deskwaifu_plugin_host deskwaifu_logging Qt6::Gui)
 target_compile_definitions(deskwaifu PRIVATE
   DESKWAIFU_PLUGIN_DIR="${CMAKE_INSTALL_FULL_LIBDIR}/deskwaifu/plugins")
 set_target_properties(deskwaifu PROPERTIES INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")

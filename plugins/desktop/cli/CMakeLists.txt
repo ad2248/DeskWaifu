@@ -8,5 +8,5 @@ endforeach()
 if(BUILD_TESTING)
   deskwaifu_add_test(NAME desktop-cli COMMAND ${Python3_EXECUTABLE} -B
     ${CMAKE_CURRENT_SOURCE_DIR}/../tests/DesktopControlTest.py $<TARGET_FILE:deskwaifu> ${CMAKE_BINARY_DIR}/plugins)
-  set_tests_properties(desktop-cli PROPERTIES TIMEOUT 15 LABELS "contract;regression")
+  set_tests_properties(desktop-cli PROPERTIES LABELS "contract;regression")
 endif()

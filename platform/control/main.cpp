@@ -1,4 +1,5 @@
 #include "MainWindow.hpp"
+#include "../QtLogging.hpp"
 
 #include <QApplication>
 #include <QLibraryInfo>
@@ -7,6 +8,7 @@
 
 int main(int argc, char* argv[])
 {
+    InitializeQtLogging(QStringLiteral("gui.log"));
     QApplication application(argc, argv);
     application.setApplicationName(QStringLiteral("DeskWaifu Control"));
     application.setApplicationDisplayName(QStringLiteral("DeskWaifu 控制面板"));

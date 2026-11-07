@@ -12,7 +12,7 @@ public:
     explicit PluginPages(GuiHostServices& services, bool start = true) : _services(services)
     {
         if (!_installation.isValid()) throw std::runtime_error("private GUI plugin installation");
-        for (const auto& domain : {"system", "interaction", "model", "log", "speech"}) {
+        for (const auto& domain : {"system", "interaction", "model", "speech"}) {
             const QDir source(QStringLiteral(GUI_PLUGIN_ROOT) + '/' + QString::fromLatin1(domain));
             if (!source.exists()) continue;
             const auto destination = _installation.path() + '/' + QString::fromLatin1(domain);

@@ -91,7 +91,6 @@ public:
 #else
         _context->Services()->setStatusMessage(_context->Name());
         _context->Services()->sendCommand("start");
-        _context->Services()->publishLog("fixture log");
         _context->Services()->notifyBackendReady();
         if (_context->Services()->property("procDirectory").toString() != "/fixture/proc") {
             *error = "host metadata not copied";
