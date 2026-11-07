@@ -71,7 +71,7 @@ struct FakeKWin
     std::atomic<bool> delayLoad{false};
     std::atomic<bool> fractional{false};
     std::atomic<bool> blockRun{false}, runBlocked{false};
-    std::atomic<bool> memoryFileClosed{false};
+    std::atomic<bool> memoryFileClosed{false}, fullscreen{false};
     std::atomic<int> loads{0}, unloads{0}, runs{0}, samples{0};
     std::thread thread;
     std::string destination, output, file, script, registeredName;
@@ -218,7 +218,7 @@ struct FakeKWin
                     second ? "0" : (fractional ? "100.125" : "100"),
                     second ? "800" : (fractional ? "1000.5" : "1000"),
                     second ? "600" : (fractional ? "800.25" : "800"),
-                     "false");
+                     fullscreen ? "true" : "false");
                 next = std::chrono::steady_clock::now() + std::chrono::milliseconds(30);
             }
             usleep(1000);
@@ -309,6 +309,13 @@ int main(int argc, char** argv)
         return tracker.LocalPosition(2000, 1600, x, y);
     }));
     CHECK(x == 500 && y == 400); // 输出原点为负，目标缩放为两倍。
+    CHECK(!tracker.Fullscreen());
+    kwin.fullscreen = true;
+    CHECK(Wait([&] {
+        tracker.Poll("A");
+        return tracker.Fullscreen() && tracker.FullscreenChanged();
+    }));
+    tracker.AcknowledgeFullscreen();
     if (localeTest) {
         const std::string numericLocale = std::setlocale(LC_NUMERIC, nullptr);
         kwin.fractional = true;
@@ -360,11 +367,14 @@ int main(int argc, char** argv)
     kwin.invalid = false;
     const auto originalOwner = KWinOwner();
     CHECK(!originalOwner.empty());
+    kwin.fullscreen = false;
     kwin.restart = true;
     CHECK(Wait([&] {
         tracker.Poll("A");
-        return kwin.loads >= 2 && tracker.LocalPosition(2000, 1600, x, y);
+        return kwin.loads >= 2 && tracker.LocalPosition(2000, 1600, x, y)
+            && !tracker.Fullscreen() && tracker.FullscreenChanged();
     }));
+    tracker.AcknowledgeFullscreen();
     CHECK(KWinOwner() != originalOwner && !KWinOwner().empty());
     CHECK(x == 500 && y == 400);
     kwin.silent = true;

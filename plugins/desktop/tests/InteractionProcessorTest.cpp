@@ -158,6 +158,8 @@ int main(int argc, char** argv)
         CHECK(AwaitProcessorEvents(loop));
         CHECK(!settings.Editing() && interaction->Captured());
         CHECK(interaction->Hover().inside);
+        CHECK(interaction->HandleEvent(ProcessorEvent("environment.fullscreen", nullptr, nullptr, {{"active", true}})));
+        interaction->PrepareFrame(frame, true, .4f, .8f); CHECK(frame.opacity == .8f);
         const auto output = window.Outputs().front();
         interaction->ApplyLook(frame, &output, .5f, .5f, 1);
         CHECK(frame.hasLook && frame.lookX > 0);

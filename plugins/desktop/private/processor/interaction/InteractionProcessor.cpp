@@ -344,7 +344,7 @@ void InteractionProcessor::PrepareFrame(ModelRenderState& state, bool hoverEnabl
     const auto hit = Hover();
     state.opacity = hoverEnabled && hit.available && hit.inside && !ModelInputRegionContains(state.handles, _x, _y)
         ? hoverOpacity : idleOpacity;
-    if (_fullscreen && _context->hover.FullscreenEnabled()) state.opacity = _context->hover.FullscreenOpacity();
+    if (_fullscreen && _context && _context->hover.FullscreenEnabled()) state.opacity = _context->hover.FullscreenOpacity();
 }
 
 std::vector<ModelRegion> InteractionProcessor::InputRegions(const ModelRenderState& state, const std::vector<ModelRegion>& regions) const
