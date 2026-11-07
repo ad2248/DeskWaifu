@@ -1,4 +1,6 @@
 #include "processor/image/ImageProcessor.hpp"
+#include "processor/image/ClipboardImage.hpp"
+#include <QBuffer>
 #include "processor/image/ImageFile.hpp"
 #include "processor/ocr/OcrProcessor.hpp"
 #include "processor/screenshot/ScreenshotProcessor.hpp"
@@ -50,6 +52,12 @@ try {
     QCoreApplication app(argc, argv);
     Check(argc == 2, "expected native fake OCR module");
     using namespace ProcessorEvents;
+    QMimeData pngOnlyClipboard;
+    QByteArray png;
+    QBuffer buffer(&png);
+    Check(buffer.open(QIODevice::WriteOnly) && SyntheticImage().save(&buffer, "PNG"), "encode clipboard regression fixture");
+    pngOnlyClipboard.setData("image/png", png);
+    Check(ClipboardImageFromMimeData(&pngOnlyClipboard) == SyntheticImage(), "clipboard PNG is detected without a generic image MIME type");
     Check(!CreateImageFile(QImage()), "private image factory rejects null images");
     Check(!CreateImageFile(QImage(4097, 1, QImage::Format_ARGB32))
           && !CreateImageFile(QImage(1, 4097, QImage::Format_ARGB32)),
