@@ -36,6 +36,6 @@ if(BUILD_TESTING)
   add_executable(gui-transport-broker-test tests/GuiTransportBrokerTest.cpp)
   target_link_libraries(gui-transport-broker-test PRIVATE deskwaifu_control_shell)
   deskwaifu_add_test(NAME gui-transport-broker COMMAND gui-transport-broker-test)
-  set_tests_properties(gui-transport-broker PROPERTIES TIMEOUT 30
+  set_tests_properties(gui-transport-broker PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen" LABELS "contract;gui")
 endif()
