@@ -167,6 +167,10 @@ bool InteractionProcessor::HandleEvent(const ProcessorEvent& event)
     }
     if (event.type == "signal.toggle") { _service.SetVisibility(_service.Snapshot().hidden); return true; }
     if (event.type == "signal.focus" && _context) { _context->FocusOutput(); return true; }
+    if (event.type == "environment.fullscreen") {
+        _fullscreen = event.data.value("active").toBool();
+        return true;
+    }
     if (event.type == "input.event") {
         if (_stopped) return true;
         const auto kind = event.data.value("kind").toString();
@@ -340,6 +344,7 @@ void InteractionProcessor::PrepareFrame(ModelRenderState& state, bool hoverEnabl
     const auto hit = Hover();
     state.opacity = hoverEnabled && hit.available && hit.inside && !ModelInputRegionContains(state.handles, _x, _y)
         ? hoverOpacity : idleOpacity;
+    if (_fullscreen && _context && _context->hover.FullscreenEnabled()) state.opacity = _context->hover.FullscreenOpacity();
 }
 
 std::vector<ModelRegion> InteractionProcessor::InputRegions(const ModelRenderState& state, const std::vector<ModelRegion>& regions) const

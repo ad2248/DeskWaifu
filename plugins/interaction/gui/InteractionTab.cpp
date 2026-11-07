@@ -45,6 +45,13 @@ InteractionTab::InteractionTab(GuiHostServices& services) : ui(new Ui::Interacti
         ui->idleOpacityValueLabel->setText(QStringLiteral("%1%").arg(value));
         setHoverOpacity({{QStringLiteral("idle_opacity"), value / 100.0}});
     });
+    connect(ui->fullscreenOpacitySlider, &QSlider::valueChanged, this, [this](int value) {
+        ui->fullscreenOpacityValueLabel->setText(QStringLiteral("%1%").arg(value));
+        setHoverOpacity({{QStringLiteral("fullscreen_opacity"), value / 100.0}});
+    });
+    connect(ui->fullscreenOpacityEnabledCheck, &QCheckBox::toggled, this, [this](bool enabled) {
+        setHoverOpacity({{QStringLiteral("fullscreen_enabled"), enabled}});
+    });
     connect(ui->mouseLookRadiusSlider, &QSlider::sliderMoved, this, [this](int value) {
         const QSignalBlocker block(ui->mouseLookRadiusSpin);
         ui->mouseLookRadiusSpin->setValue(value / 100.0);
@@ -78,6 +85,8 @@ InteractionTab::InteractionTab(GuiHostServices& services) : ui(new Ui::Interacti
         }
         ui->hoverOpacityGroup->setEnabled(false);
         ui->mouseLookGroup->setEnabled(false);
+        ui->fullscreenOpacitySlider->setEnabled(false);
+        ui->fullscreenOpacityEnabledCheck->setEnabled(false);
         if (connected) refreshAll();
     });
     connect(&_client, &GuiHostServices::responseReceived, this, &InteractionTab::handleResponse);
@@ -120,9 +129,10 @@ void InteractionTab::handleResponse(const QString& command, const QJsonObject& r
         if (mutation) _hoverSetPending = false;
         else _hoverQueryPending = false;
         // Queries issued before a drag or queued mutation must not overwrite user input.
-        if (!mutation && (_hoverSetPending || ui->hoverOpacitySlider->isSliderDown() || ui->idleOpacitySlider->isSliderDown())) return;
+        if (!mutation && (_hoverSetPending || ui->hoverOpacitySlider->isSliderDown() || ui->idleOpacitySlider->isSliderDown() || ui->fullscreenOpacitySlider->isSliderDown())) return;
         const double opacity = response.value(QStringLiteral("opacity")).toDouble(-1);
         const auto idleOpacity = response.value(QStringLiteral("idle_opacity"));
+        const auto fullscreenOpacity = response.value(QStringLiteral("fullscreen_opacity"));
         const bool valid = response.value(QStringLiteral("enabled")).isBool()
             && response.value(QStringLiteral("opacity")).isDouble()
             && std::isfinite(opacity) && opacity >= 0 && opacity <= 1
@@ -135,6 +145,8 @@ void InteractionTab::handleResponse(const QString& command, const QJsonObject& r
         }
         ui->hoverOpacityGroup->setEnabled(_client.isConnected() && _hoverSupported);
         ui->idleOpacitySlider->setEnabled(response.value(QStringLiteral("idle_opacity")).isDouble());
+        ui->fullscreenOpacitySlider->setEnabled(_client.isConnected() && _hoverSupported && response.value(QStringLiteral("fullscreen_opacity")).isDouble());
+        ui->fullscreenOpacityEnabledCheck->setEnabled(_client.isConnected() && _hoverSupported && response.value(QStringLiteral("fullscreen_enabled")).isBool());
         const bool ok = response.value(QStringLiteral("ok")).toBool() && valid;
         if (ok && mutation) setStatusMessage(tr("已设置并保存"));
         if (!ok) setStatusMessage(response.value(QStringLiteral("error")).toString(tr("后端不支持悬停透明度设置")));
@@ -178,7 +190,8 @@ void InteractionTab::requestHotkeys()
 }
 void InteractionTab::requestHoverOpacity()
 {
-    if (_hoverQueryPending || _hoverSetPending || ui->hoverOpacitySlider->isSliderDown() || ui->idleOpacitySlider->isSliderDown()) return;
+    if (_hoverQueryPending || _hoverSetPending || ui->hoverOpacitySlider->isSliderDown() || ui->idleOpacitySlider->isSliderDown()
+        || ui->fullscreenOpacitySlider->isSliderDown()) return;
     _hoverQueryPending = true;
     _client.sendCommand(QStringLiteral("get_hover_opacity"));
 }
@@ -195,6 +208,8 @@ void InteractionTab::showHoverOpacity(const QJsonObject& response)
     const QSignalBlocker blockEnabled(ui->hoverOpacityEnabledCheck);
     const QSignalBlocker blockOpacity(ui->hoverOpacitySlider);
     const QSignalBlocker blockIdleOpacity(ui->idleOpacitySlider);
+    const QSignalBlocker blockFullscreenEnabled(ui->fullscreenOpacityEnabledCheck);
+    const QSignalBlocker blockFullscreenOpacity(ui->fullscreenOpacitySlider);
     ui->hoverOpacityEnabledCheck->setChecked(response.value(QStringLiteral("enabled")).toBool());
     const int value = qRound(response.value(QStringLiteral("opacity")).toDouble() * 100);
     ui->hoverOpacitySlider->setValue(value);
@@ -202,6 +217,10 @@ void InteractionTab::showHoverOpacity(const QJsonObject& response)
     const int idleValue = qRound(response.value(QStringLiteral("idle_opacity")).toDouble(1) * 100);
     ui->idleOpacitySlider->setValue(idleValue);
     ui->idleOpacityValueLabel->setText(QStringLiteral("%1%").arg(idleValue));
+    const int fullscreenValue = qRound(response.value(QStringLiteral("fullscreen_opacity")).toDouble(0.5) * 100);
+    ui->fullscreenOpacitySlider->setValue(fullscreenValue);
+    ui->fullscreenOpacityValueLabel->setText(QStringLiteral("%1%").arg(fullscreenValue));
+    ui->fullscreenOpacityEnabledCheck->setChecked(response.value(QStringLiteral("fullscreen_enabled")).toBool());
 }
 void InteractionTab::requestMouseLook()
 {

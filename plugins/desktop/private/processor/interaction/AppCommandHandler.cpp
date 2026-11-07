@@ -124,6 +124,8 @@ try
             << ",\"enabled\":" << (settings.Enabled() ? "true" : "false")
             << ",\"opacity\":" << settings.Opacity()
             << ",\"idle_opacity\":" << settings.IdleOpacity()
+            << ",\"fullscreen_enabled\":" << (settings.FullscreenEnabled() ? "true" : "false")
+            << ",\"fullscreen_opacity\":" << settings.FullscreenOpacity()
             << ",\"error\":\"" << JsonEscape(result.error) << "\"}";
         return out.str();
     }

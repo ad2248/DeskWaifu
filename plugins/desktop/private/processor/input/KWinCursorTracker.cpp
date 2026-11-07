@@ -84,6 +84,8 @@ std::string KWinCursorScript(const std::string& destination, const std::string& 
     // 两个字符串都由 D-Bus 唯一名称生成，不来自用户输入。
     return "var destination = '" + destination + "';\nvar scriptName = '" + scriptName + R"JS(';
 var outputName = '';
+var fullscreen = false;
+var fullscreenAt = 0;
 var pending = false;
 var sampleTimer = new QTimer();
 sampleTimer.interval = 30;
@@ -100,10 +102,16 @@ sampleTimer.timeout.connect(function () {
         }
     }
     var pos = workspace.cursorPos;
+    var now = Date.now();
+    if (now - fullscreenAt >= 1000) {
+        var active = workspace.activeWindow;
+        fullscreen = !!(active && active.fullScreen);
+        fullscreenAt = now;
+    }
     pending = true;
     callDBus(destination, '/org/deskwaifu/Cursor', 'org.deskwaifu.Cursor', 'Sample',
         String(pos.x), String(pos.y), name, String(rect.x), String(rect.y),
-        String(rect.width), String(rect.height), function (requestedOutput) {
+        String(rect.width), String(rect.height), fullscreen ? 'true' : 'false', function (requestedOutput) {
             outputName = requestedOutput;
             pending = false;
         });
@@ -146,7 +154,7 @@ bool KWinCursorTracker::Start()
         SD_BUS_VTABLE_START(0),
         // JS 数值可能转换为 D-Bus int32 或 double。
         // 显式使用字符串参数，确保两种情况下的协议签名一致。
-        SD_BUS_METHOD("Sample", "sssssss", "s", Sample, SD_BUS_VTABLE_UNPRIVILEGED),
+        SD_BUS_METHOD("Sample", "ssssssss", "s", Sample, SD_BUS_VTABLE_UNPRIVILEGED),
         SD_BUS_VTABLE_END
     };
     result = sd_bus_add_object_vtable(_bus, &_object, Path, Interface, table, this);
@@ -224,6 +232,10 @@ bool KWinCursorTracker::Load()
 
 bool KWinCursorTracker::Unload()
 {
+    // 脚本失联后不能继续沿用最后一次全屏采样，否则交互层会永久
+    // 使用全屏透明度，直到下一次有效采样覆盖它。
+    _fullscreenChanged = _fullscreenChanged || _fullscreen;
+    _fullscreen = false;
     _loaded = false;
     _sampleTime = {};
     if (!_registered) return true;
@@ -353,12 +365,17 @@ int KWinCursorTracker::Sample(sd_bus_message* message, void* data, sd_bus_error*
     if (!sender || self._owner != sender)
         return sd_bus_reply_method_errorf(message, SD_BUS_ERROR_ACCESS_DENIED, "Only KWin may send cursor samples");
     double x, y, left, top, width, height;
-    const char *name, *sx, *sy, *sl, *st, *sw, *sh;
-    const int result = sd_bus_message_read(message, "sssssss", &sx, &sy, &name, &sl, &st, &sw, &sh);
+    const char *name, *sx, *sy, *sl, *st, *sw, *sh, *sfullscreen;
+    const int result = sd_bus_message_read(message, "ssssssss", &sx, &sy, &name, &sl, &st, &sw, &sh, &sfullscreen);
     if (result < 0) return result;
     if (!Number(sx, x) || !Number(sy, y) || !Number(sl, left) || !Number(st, top) ||
         !Number(sw, width) || !Number(sh, height) || width < 0 || height < 0)
         return sd_bus_reply_method_errorf(message, SD_BUS_ERROR_INVALID_ARGS, "Invalid cursor geometry");
+    if (std::strcmp(sfullscreen, "true") != 0 && std::strcmp(sfullscreen, "false") != 0)
+        return sd_bus_reply_method_errorf(message, SD_BUS_ERROR_INVALID_ARGS, "Invalid fullscreen state");
+    const bool fullscreen = std::strcmp(sfullscreen, "true") == 0;
+    self._fullscreenChanged = self._fullscreenChanged || self._fullscreen != fullscreen;
+    self._fullscreen = fullscreen;
     self._x = x; self._y = y; self._left = left; self._top = top;
     self._width = width; self._height = height; self._sampleOutput = name;
     self._sampleTime = std::chrono::steady_clock::now();
@@ -379,6 +396,8 @@ int KWinCursorTracker::OwnerChanged(sd_bus_message* message, void* data, sd_bus_
             self._loaded = false;
             self._registered = false;
             self._sampleTime = {};
+            self._fullscreenChanged = self._fullscreenChanged || self._fullscreen;
+            self._fullscreen = false;
             self._retry = {};
         }
     }

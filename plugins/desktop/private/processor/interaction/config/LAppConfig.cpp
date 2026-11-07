@@ -126,7 +126,7 @@ bool LAppConfig::Decode(const ConfigStore::Snapshot& snapshot, Values& values, s
         }
         next.hoverOpacityEnabled = enabled->second == "true";
     }
-    for (const auto key : {"hover_opacity", "idle_opacity"}) {
+    for (const auto key : {"hover_opacity", "idle_opacity", "fullscreen_opacity"}) {
         auto opacity = snapshot.values.find(key);
         if (opacity != snapshot.values.end()) {
             std::istringstream input(opacity->second); input.imbue(std::locale::classic());
@@ -135,8 +135,17 @@ bool LAppConfig::Decode(const ConfigStore::Snapshot& snapshot, Values& values, s
                 !std::isfinite(parsed) || parsed < 0 || parsed > 1) {
                 error = std::string("Invalid ") + key + ": expected a finite number within 0..1"; return false;
             }
-            (std::string(key) == "hover_opacity" ? next.hoverOpacity : next.idleOpacity) = static_cast<float>(parsed);
+            if (std::string(key) == "hover_opacity") next.hoverOpacity = static_cast<float>(parsed);
+            else if (std::string(key) == "idle_opacity") next.idleOpacity = static_cast<float>(parsed);
+            else next.fullscreenOpacity = static_cast<float>(parsed);
         }
+    }
+    auto fullscreenEnabled = snapshot.values.find("fullscreen_opacity_enabled");
+    if (fullscreenEnabled != snapshot.values.end()) {
+        if (fullscreenEnabled->second != "true" && fullscreenEnabled->second != "false") {
+            error = "Invalid fullscreen_opacity_enabled: expected a boolean"; return false;
+        }
+        next.fullscreenOpacityEnabled = fullscreenEnabled->second == "true";
     }
     auto radius = snapshot.values.find("mouse_look_radius");
     if (radius != snapshot.values.end()) {
@@ -170,7 +179,8 @@ bool LAppConfig::Decode(const ConfigStore::Snapshot& snapshot, Values& values, s
     next.unknownFields = snapshot.values;
     for (const auto* key : {"additional_model_dirs", "default_model", "model_output", "render_device", "plugin_dir",
         "emotion_timeout", "model_scale", "model_x", "model_y", "window_width", "window_height",
-        "hover_opacity_enabled", "hover_opacity", "idle_opacity", "mouse_look_radius", "model_region"})
+        "hover_opacity_enabled", "hover_opacity", "idle_opacity", "fullscreen_opacity_enabled", "fullscreen_opacity",
+        "mouse_look_radius", "model_region"})
         next.unknownFields.erase(key);
     values = std::move(next); error.clear(); return true;
 }
@@ -195,6 +205,8 @@ bool LAppConfig::Serialize(const Values& values, std::string& document, std::str
         << ",\n  \"hover_opacity_enabled\": " << (values.hoverOpacityEnabled ? "true" : "false")
         << ",\n  \"hover_opacity\": " << values.hoverOpacity
         << ",\n  \"idle_opacity\": " << values.idleOpacity
+        << ",\n  \"fullscreen_opacity_enabled\": " << (values.fullscreenOpacityEnabled ? "true" : "false")
+        << ",\n  \"fullscreen_opacity\": " << values.fullscreenOpacity
         << ",\n  \"mouse_look_radius\": " << values.mouseLookRadius;
     if (!values.modelOutput.empty()) out << ",\n  \"model_output\": " << Quote(values.modelOutput);
     if (!values.renderDevice.empty()) out << ",\n  \"render_device\": " << Quote(values.renderDevice);
