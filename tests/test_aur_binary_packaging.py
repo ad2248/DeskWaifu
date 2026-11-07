@@ -110,15 +110,15 @@ class AssetTest(unittest.TestCase):
         for name, required in dependencies.items():
             info += f"\npkgname = {name}\n"
             for dep in sorted(required - {"libnotify>=0.8"}):
-                dep = dep.replace("deskwaifu-bin=0.1.0-1", "deskwaifu-bin=0.1.0-2")
+                dep = dep.replace("deskwaifu-bin=0.1.0-1", "deskwaifu-bin>=0.1.0")
                 info += f"\tdepends = {dep}\n"
         with self.assertRaisesRegex(ValueError, "libnotify>=0.8"):
             updater.verify_dependencies(dependencies, "0.1.0", info)
         # Keeping the new dependency and using the AUR revision satisfies the contract.
         info = info.replace("pkgname = deskwaifu-bin\n", "pkgname = deskwaifu-bin\n\tdepends = libnotify>=0.8\n")
         updater.verify_dependencies(dependencies, "0.1.0", info)
-        with self.assertRaisesRegex(ValueError, "deskwaifu-bin=0.1.0-2"):
-            updater.verify_dependencies(dependencies, "0.1.0", info.replace("deskwaifu-bin=0.1.0-2", "deskwaifu-bin=0.1.0-1"))
+        with self.assertRaisesRegex(ValueError, "deskwaifu-bin>=0.1.0"):
+            updater.verify_dependencies(dependencies, "0.1.0", info.replace("deskwaifu-bin>=0.1.0", "deskwaifu-bin>=0.0.9"))
 
     def test_corrupt_or_missing_asset_is_rejected(self):
         path = next(self.directory.glob("*.pkg.tar.zst"))
@@ -224,10 +224,11 @@ class ConsumerTest(unittest.TestCase):
         version = re.search(r"^\s*pkgver = (\S+)$", actual, re.M).group(1)
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary)
-            text = (recipe / "PKGBUILD").read_text().replace("pkgrel=1\n", "pkgrel=2\n", 1)
+            text = (recipe / "PKGBUILD").read_text()
+            text = re.sub(r"^pkgrel=\d+$", "pkgrel=3", text, count=1, flags=re.M)
             (path / "PKGBUILD").write_text(text)
             info = subprocess.check_output(["makepkg", "--printsrcinfo"], cwd=path, text=True)
-            self.assertIn(f"depends = deskwaifu-bin={version}-2", info)
+            self.assertIn(f"depends = deskwaifu-bin>={version}", info)
             self.assertIn(f"upstream-deskwaifu-bin-{version}-1-x86_64.pkg.tar.zst", info)
 
 

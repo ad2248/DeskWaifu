@@ -81,14 +81,15 @@ def verify_dependencies(dependencies, tag, srcinfo):
     sections = srcinfo.split("\npkgname = ")
     metadata = release_tool("release-packaging").metadata
     base = metadata(sections[0])
-    version = f"{base['pkgver'][0]}-{base['pkgrel'][0]}"
+    version = base['pkgver'][0]
     declared = {}
     for section in sections[1:]:
         name, _, fields = section.partition("\n")
         declared[name] = set(base.get("depends", [])) | set(metadata(fields).get("depends", []))
     for name, required in dependencies.items():
         # Upstream pkgrel and the AUR recipe revision are deliberately independent.
-        required = {f"deskwaifu-bin={version}" if dep == f"deskwaifu-bin={tag}-1" else dep
+        # The OCR split package accepts any compatible main package at this release or newer.
+        required = {f"deskwaifu-bin>={version}" if dep == f"deskwaifu-bin={tag}-1" else dep
                     for dep in required}
         missing = required - declared.get(name, set())
         if missing:
