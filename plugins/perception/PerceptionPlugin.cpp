@@ -3,10 +3,12 @@
 #include "processor/Processor.hpp"
 #include "contracts/ConfigStore.hpp"
 #include "processor/image/ImageProcessor.hpp"
+#include "processor/image/ClipboardImage.hpp"
 #include "processor/ocr/OcrProcessor.hpp"
 #include "processor/screenshot/ScreenshotProcessor.hpp"
 #include <QGuiApplication>
 #include <QClipboard>
+#include <QMimeData>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <deque>
@@ -46,7 +48,9 @@ public:
     }
     bool Start(QString*) override
     {
-        _images.reset(new ImageProcessor(_loop, [] { return QGuiApplication::clipboard()->image(); }, _context));
+        _images.reset(new ImageProcessor(_loop, [] {
+            return ClipboardImageFromMimeData(QGuiApplication::clipboard()->mimeData());
+        }, _context));
         _ocr.reset(new OcrProcessor(*_context));
         _screenshots.reset(new ScreenshotProcessor(_loop));
         return true;
