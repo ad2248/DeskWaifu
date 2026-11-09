@@ -27,6 +27,8 @@ public:
     template<typename Tap>
     void FlushTap(Tap tap) { DispatchPendingTap(_clicks, tap); }
 
+    // 结束捕获并区分拖动、待定单击与双击；没有捕获时返回 Ignored。
+    // tap 同步派发被当前手势排除双击可能的旧单击；now 使用回绕毫秒时钟。
     template<typename Tap>
     ReleaseResult Release(uint32_t now, int x, int y, Tap tap)
     {
@@ -50,9 +52,13 @@ public:
         return DecideModelKey(_keyboard, grabbed, code, pressed, bindings);
     }
 
+    // 将窗口像素位置转为相对模型中心的归一化视线，纵轴向上。
+    // 无效窗口尺寸或非有限缩放时返回零向量。
     static std::pair<float, float> LookAt(float x, float y, int width, int height,
         float centerX, float centerY, ModelTransform model);
+    // 按视口高度与现有缩放换算拖动增量；无效高度或缩放时返回原变换。
     static ModelTransform Drag(ModelTransform model, int dx, int dy, int viewportHeight);
+    // 两轴位移均严格小于 10 像素时视为点击。
     static bool IsTap(int startX, int startY, int endX, int endY);
 
 private:

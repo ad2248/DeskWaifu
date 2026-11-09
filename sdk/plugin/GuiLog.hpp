@@ -1,3 +1,4 @@
+// 提供避免泄漏响应敏感内容的 GUI 日志格式化函数。
 #pragma once
 
 #include <QJsonDocument>
@@ -5,8 +6,8 @@
 #include <QString>
 #include <QStringList>
 
-// Formats only the command outcome and an explicit allowlist of harmless
-// response fields. IPC responses must never be passed to Qt logging directly.
+// 返回仅含命令结果及显式白名单无害字段的紧凑 JSON 日志。
+// 未知命令仅记录命令名与结果；不得将原始 IPC 响应直接传给 Qt 日志。
 inline QString FormatGuiResponseLog(const QString& command, const QJsonObject& response)
 {
     QJsonObject safe{{QStringLiteral("command"), command}};

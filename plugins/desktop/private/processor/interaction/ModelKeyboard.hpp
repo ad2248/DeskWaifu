@@ -21,6 +21,7 @@ inline std::string ModelKeyName(uint32_t key)
     return {};
 }
 
+// 将绑定名称归一化为模型键名；未知名称返回空字符串。
 inline std::string ModelBindingKey(const std::string& name)
 {
     if (name == "LeftControl" || name == "RightControl" || name == "Ctrl") return "Ctrl";
@@ -32,6 +33,8 @@ inline std::string ModelBindingKey(const std::string& name)
     return {};
 }
 
+// 按原始键码记录按下状态，匹配时将左右修饰键归一化。
+// 失去键盘捕获或设备变化时须 Reset()，避免遗留按键影响下一次组合。
 class ModelKeyboard
 {
 public:
@@ -46,6 +49,7 @@ public:
         return _pressed.insert(code).second;
     }
 
+    // 归一化后的按键集合必须完全相等；空列表、未知键或重复键均不匹配。
     bool Matches(const std::vector<std::string>& keys) const
     {
         std::set<std::string> expected, pressed;

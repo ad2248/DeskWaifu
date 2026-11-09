@@ -8,9 +8,12 @@
 
 // Only the platform boundary is replaced. The real desktop assembler, input
 // policy, model loading, commands and render-thread lifecycle remain in use.
+// 用 EGL pbuffer 替代真实桌面窗口，固定为 16×16，不执行帧上传。
+// 在 Qt 事件线程使用；调用方须显式 Shutdown 释放 EGL 资源。
 class DelegateTestWindow final : public DesktopWindow
 {
 public:
+    // observed 可接收合成输入入口的借用指针，其存储和输入接收者须保持有效。
     explicit DelegateTestWindow(IDesktopWindowEvents** observed = nullptr) : _observed(observed) {}
     std::unique_ptr<ModelRenderTarget> RenderTarget(const std::string&) override
     { return CreateEglModelRenderTarget("auto"); }
@@ -32,6 +35,7 @@ public:
         _context = eglCreateContext(_display, config, EGL_NO_CONTEXT, nullptr);
         return _surface != EGL_NO_SURFACE && _context != EGL_NO_CONTEXT && MakeCurrent();
     }
+    // 驱动 Qt 帧循环，回调停止时返回 true；两秒超时退出时返回 false。
     bool Run(const std::function<bool()>& frame) override
     {
         bool finished = false;

@@ -12,6 +12,8 @@ public:
 
     const std::string& Warning() const { return _warning; }
 
+    // 恢复保存的显示器，缺失时选择首个输出；无输出或切换失败返回错误。
+    // 回退名称保存失败仅记录 Warning()，不使已经可用的窗口启动失败。
     AppResult Initialize()
     {
         _warning.clear();
@@ -29,6 +31,9 @@ public:
         return AppResult::Success();
     }
 
+    // 按稳定名称切换并保存输出选择；编辑期间拒绝切换。
+    // 保存失败时尝试恢复原输出，并通过返回值报告保存或恢复错误。
+    // 后端、编辑器和配置均为借用对象，只在 GUI 交互域调用。
     AppResult Select(const std::string& name)
     {
         if (_editor.Editing()) return AppResult::Failure("Finish transform editing before changing display");

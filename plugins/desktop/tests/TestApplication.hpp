@@ -12,6 +12,8 @@ inline InteractionProcessor& ProcessorTestAccess::Interaction(LAppDelegate& app)
 class TestApplication
 {
 public:
+    // 返回进程内夹具；Initialize 成功后方可访问领域对象及窗口的借用引用。
+    // Release 收尾运行时资源，ReleaseInstance 销毁生产入口，之后不得继续访问借用对象。
     static TestApplication* GetInstance() { static TestApplication fixture; return &fixture; }
     static void ReleaseInstance() { LAppDelegate::ReleaseInstance(); }
     bool Initialize() { _app = LAppDelegate::GetInstance(); return _app->Initialize(); }

@@ -16,6 +16,8 @@
 
 // The theme checks exercise installed-style dynamic pages, not a second static
 // copy of their UI. Give the real shell a private, disconnected IPC location.
+// 使用不存在的进程目录创建真实控制外壳，避免测试连接运行中的后端。
+// 页面仍由生产插件管理器动态加载，须在 GUI 主线程使用。
 class ControlTestWindow : public MainWindow
 {
 public:
@@ -24,6 +26,7 @@ public:
 
 // Named widget view retained for the existing visual regression assertions.
 // It only looks up pages loaded by the production plugin manager.
+// 保存真实插件页面的非拥有控件指针；所属窗口及页面必须在断言期间保持有效。
 struct ControlTestWidgets
 {
 #define CONTROL_TEST_WIDGETS(X) \
@@ -49,6 +52,7 @@ struct ControlTestWidgets
 #define DECLARE_WIDGET(Type, name) Type* name = nullptr;
     CONTROL_TEST_WIDGETS(DECLARE_WIDGET)
 #undef DECLARE_WIDGET
+    // 按对象名称查找必需控件，不创建 UI；缺失控件触发断言。
     void setupUi(MainWindow* window)
     {
 #define FIND_WIDGET(Type, name) name = window->findChild<Type*>(QStringLiteral(#name)); Q_ASSERT(name);

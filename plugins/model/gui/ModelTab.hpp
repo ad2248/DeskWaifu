@@ -5,11 +5,14 @@
 class GuiHostServices;
 namespace Ui { class ModelTab; }
 
+// 展示模型与输出设置，协调变换草稿的预览、保存及冲突反馈。
+// 在 GUI 线程使用；借用的 services 必须比页面存活更久。
 class ModelTab : public QScrollArea
 {
 public:
     explicit ModelTab(GuiHostServices& services);
     ~ModelTab() override;
+    // 已连接时查询模型和变换状态；不阻塞等待后端回复。
     void start();
 private:
     void bindControls();

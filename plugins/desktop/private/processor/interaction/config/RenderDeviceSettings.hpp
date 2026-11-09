@@ -12,6 +12,7 @@ public:
 
     std::string Device() const { return _config.values.renderDevice.empty() ? "auto" : _config.values.renderDevice; }
 
+    // 重读完整配置；读取或校验失败返回错误，不替换内存中的设置。
     AppResult Refresh()
     {
         ConfigStore::Snapshot snapshot;
@@ -22,6 +23,8 @@ public:
         return AppResult::Success();
     }
 
+    // 将请求中的 device 合并到最新磁盘配置，校验后原子提交。
+    // 缺少字段、设备格式非法或保存失败时返回错误且不更新借用的 config。
     AppResult Set(const ConfigStore::Snapshot& request)
     {
         const auto device = request.values.find("device");

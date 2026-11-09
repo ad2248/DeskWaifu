@@ -6,11 +6,14 @@ class GuiHostServices;
 class HotkeyPanel;
 namespace Ui { class InteractionTab; }
 
+// 在 GUI 线程管理快捷键、悬停透明度和鼠标注视设置。
+// services 为借用对象，必须比此页面存活更久。
 class InteractionTab : public QScrollArea
 {
 public:
     explicit InteractionTab(GuiHostServices& services);
     ~InteractionTab() override;
+    // 已连接时发起一次设置查询；后续刷新由连接信号和定时器驱动。
     void start();
 private:
     void refreshAll();

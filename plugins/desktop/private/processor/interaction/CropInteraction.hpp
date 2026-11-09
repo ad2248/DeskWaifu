@@ -15,6 +15,7 @@ public:
             {r.x, r.y, 8, r.height}, {clamp(int64_t(r.x) + r.width - 8), r.y, 8, r.height},
             {clamp(int64_t(r.x) + r.width / 2 - 24), r.y, std::min(48, r.width), 16}};
     }
+    // 在逻辑像素坐标中命中移动柄或边缘；角点返回组合位，未命中返回 None。
     static int Hit(ModelRegion r, int x, int y)
     {
         int64_t right = int64_t(r.x) + r.width, bottom = int64_t(r.y) + r.height;
@@ -27,6 +28,8 @@ public:
         else if (std::abs(int64_t(y) - bottom) <= 8) hit |= Bottom;
         return hit;
     }
+    // 相对按下快照应用像素增量，返回新设置；裁剪尺寸保持至少一像素。
+    // Move 同移模型与裁剪框，Model 只移动模型，边缘位只调整矩形。
     static TransformSettings Drag(TransformSettings start, int handle, int dx, int dy, int viewportHeight)
     {
         if (handle == Move) return TransformEditor::MoveCrop(start, dx, dy, viewportHeight);

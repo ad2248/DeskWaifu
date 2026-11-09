@@ -5,7 +5,7 @@
 #include <vector>
 
 // 会话持有缓存模型，调用方只获得借用指针。
-// 为保持兼容，沿用现有淘汰策略；GPU 预算由 #81 跟进。
+// 不提供内部同步，访问和模型析构应在模型所属线程执行。
 template<typename Model>
 class ModelCache
 {
@@ -16,11 +16,13 @@ public:
         _entries.resize(count);
     }
 
+    // 返回借用模型，空槽或越界返回空指针；替换、淘汰或清空后指针失效。
     Model* Get(std::size_t index) const
     {
         return index < _entries.size() ? _entries[index].get() : nullptr;
     }
 
+    // 接管模型并替换原槽内容；越界时不缓存，传入模型随参数销毁。
     void Store(std::size_t index, std::unique_ptr<Model> model)
     {
         if (index < _entries.size()) _entries[index] = std::move(model);

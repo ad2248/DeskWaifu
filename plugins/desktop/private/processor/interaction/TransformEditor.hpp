@@ -8,6 +8,7 @@
 #include <limits>
 #include <functional>
 
+// 一次显示或编辑所需的模型变换与裁剪快照；裁剪矩形使用窗口逻辑像素。
 struct TransformSettings
 {
     ModelTransform transform{LAppConfig::Values{}.modelScale, LAppConfig::Values{}.modelX, LAppConfig::Values{}.modelY};
@@ -16,6 +17,8 @@ struct TransformSettings
 };
 
 // 持有编辑事务，不负责渲染或平台策略。
+// 借用服务与配置，二者须比本对象存活更久；所有操作在 GUI 交互域串行执行。
+// 草稿只影响预览，成功保存才提交运行时快照；保存冲突不会自动覆盖磁盘。
 class TransformEditor
 {
 public:
@@ -23,6 +26,8 @@ public:
     TransformEditor(ApplicationService& service, LAppConfig& config)
         : _service(service), _config(config), _store(config.sourcePath.empty() ? LAppConfig::GetDefaultConfigPath() : config.sourcePath) {}
 
+    // 先应用初始变换再读取配置；初始变换非法时返回 false。
+    // 磁盘配置不可读时记录错误但返回 true，保留初始状态且不覆盖无效文件。
     bool Initialize(const TransformSettings& initial)
     {
         _runtime = initial;
@@ -70,6 +75,7 @@ public:
         return Validate(value, error);
     }
 
+    // 返回编辑草稿或已提交快照的借用引用；后续更新可能改变其内容。
     const TransformSettings& Display() const { return Editing() ? _draft : _runtime; }
     bool Editing() const { return !_owner.empty(); }
     bool OwnedBy(const std::string& owner) const { return Editing() && _owner == owner; }
@@ -87,6 +93,9 @@ public:
     const std::string& Owner() const { return _owner; }
     unsigned Revision() const { return _revision; }
 
+    // 为非空 owner 开始或延续独占事务；其他所有者占用时失败。
+    // 仅新建事务时检查 expectedRevision；同一所有者延续事务时不检查版本。
+    // 首次进入屏幕编辑且尚未裁剪时，用给定窗口尺寸初始化裁剪框。
     AppResult Begin(const std::string& owner, bool screen, int width, int height,
         unsigned expectedRevision = std::numeric_limits<unsigned>::max())
     {
@@ -104,6 +113,7 @@ public:
         return AppResult::Success();
     }
 
+    // 仅允许事务所有者更新有效草稿并预览模型变换，不写磁盘。
     AppResult Update(const std::string& owner, TransformSettings value)
     {
         if (!OwnedBy(owner)) return AppResult::Failure("No edit transaction owned by this connection");
@@ -113,6 +123,8 @@ public:
         return AppResult::Success();
     }
 
+    // 保存所有者的草稿，成功后结束事务；失败保留草稿并返回错误。
+    // overwrite 显式允许覆盖磁盘冲突，否则以开始编辑时的快照检测冲突。
     AppResult Apply(const std::string& owner, bool overwrite = false)
     {
         if (!OwnedBy(owner)) return AppResult::Failure("No edit transaction owned by this connection");
@@ -121,6 +133,7 @@ public:
         return result;
     }
 
+    // 仅取消指定所有者的事务，恢复已提交变换；不会改写磁盘。
     AppResult Cancel(const std::string& owner)
     {
         if (!OwnedBy(owner)) return AppResult::Failure("No edit transaction owned by this connection");
@@ -135,6 +148,7 @@ public:
         if (Editing()) { auto owner = _owner; Cancel(owner); _error = "Screen changed; edit cancelled"; }
     }
 
+    // 保存默认变换及无裁剪状态，成功后结束事务；不能抢占他人的事务。
     AppResult Reset(const std::string& owner, bool overwrite = false)
     {
         if (Editing() && !OwnedBy(owner)) return AppResult::Failure("Another client is editing transforms");
@@ -144,6 +158,8 @@ public:
     }
 
     void SyncRuntime() { if (!Editing()) _runtime.transform = _service.Snapshot().transform; }
+    // 将当前运行时变换标为待保存；使用与 Tick() 相同的秒时钟安排延迟提交。
+    // 编辑事务存在时不安排自动保存。
     void ScheduleSave(double now, double delay)
     {
         if (Editing()) return;
@@ -151,6 +167,7 @@ public:
     }
     void PauseAutosave() { _saveAt = 0; }
     AppResult Retry() { SyncRuntime(); return Save(_runtime, _snapshot, false); }
+    // 保存输出名称并清零平移、移除裁剪，保留缩放；编辑或配置冲突时失败。
     AppResult SaveOutput(const std::string& name)
     {
         if (Editing()) return AppResult::Failure("Finish transform editing before changing display");
@@ -163,6 +180,8 @@ public:
         settings.region = {};
         return Save(settings, _snapshot, false, &name);
     }
+    // 重新加载磁盘设置，成功后丢弃本地草稿和待保存状态并递增版本。
+    // 不能丢弃其他连接的事务；读取失败保留当前设置。
     AppResult ReloadAndDiscard(const std::string& owner)
     {
         if (Editing() && !OwnedBy(owner)) return AppResult::Failure("Another client is editing transforms");
@@ -176,6 +195,7 @@ public:
         if (_editChanged) _editChanged();
         return AppResult::Success();
     }
+    // 按秒时钟轮询磁盘变更并执行到期的自动保存，错误留在 Error() 中。
     void Tick(double now)
     {
         if (now >= _reloadAt) { _reloadAt = now + .5; Reload(); }

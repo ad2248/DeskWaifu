@@ -19,6 +19,8 @@
 *
 * 负责图像读取与管理。
 */
+// 在渲染线程按文件名共享 GL 纹理；所有租约必须先于管理器释放。
+// 获取和最后一次租约释放均需要对应的当前 GL 上下文。
 class LAppTextureManager : public LAppTextureManager_Common
 {
 public:
@@ -34,6 +36,7 @@ public:
     ~LAppTextureManager();
 
     using TextureLease = TextureResidency<GLuint>::Lease;
+    // 返回共享纹理租约；读取、PNG 解码或纹理创建失败时返回空租约。
     TextureLease AcquireTexture(const std::string& fileName);
     std::size_t ResidentBytes() const { return _residency.ResidentBytes(); }
     std::size_t ResidentCount() const { return _residency.ResidentCount(); }

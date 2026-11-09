@@ -29,6 +29,8 @@ class LAppTextureManager;
 /**
 * @brief 绘制类。
 */
+// 借用模型管理器和纹理管理器，拥有精灵及离屏目标；依赖必须存活更久。
+// 初始化、绘制和析构需要渲染线程的有效 GL 上下文。
 class LAppView : public LAppView_Common
 {
 public:
@@ -63,8 +65,11 @@ public:
     */
     void Render(ModelTransform transform, const ModelFrameInput& input);
 
+    // 开始独立模型帧，成功后须以 PresentOpacityFrame 配对结束；失败时返回 false。
     bool BeginOpacityFrame() { return _opacityFrame.Begin(_width, _height); }
+    // 返回供透明度处理前采样的借用帧缓冲 ID，不是颜色纹理 ID。
     GLuint OpacityFramebuffer() const { return _opacityFrame.Framebuffer(); }
+    // 结束外层模型帧，按 opacity 同时缩放预乘颜色和 alpha 后合成到原目标。
     void PresentOpacityFrame(float opacity);
 
     /**

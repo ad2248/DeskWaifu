@@ -17,6 +17,7 @@ public:
     TextureResidency(const TextureResidency&) = delete;
     TextureResidency& operator=(const TextureResidency&) = delete;
 
+    // 可移动的引用计数租约，析构或 Reset 时释放引用；不得晚于资源表析构。
     class Lease
     {
     public:
@@ -55,6 +56,8 @@ public:
         std::size_t _bytes = 0;
     };
 
+    // 按键共享资源；首次获取调用 create，空键或创建失败返回空租约。
+    // 本表不加锁；获取和释放必须由调用方串行化，并满足 destroy 的上下文要求。
     template<typename Create>
     Lease Acquire(const std::string& key, Create create)
     {

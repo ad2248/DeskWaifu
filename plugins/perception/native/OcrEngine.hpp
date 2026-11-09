@@ -9,6 +9,7 @@
 #include <stdexcept>
 #include <vector>
 
+// 携带稳定错误码的模型加载或兼容性异常，供模块转换为协议错误。
 class OcrModelError : public std::runtime_error
 {
 public:
@@ -17,10 +18,15 @@ public:
     const char* code;
 };
 
+// 持有检测、识别 ONNX 会话与字典，完成单张图像的文字检测和逐行识别。
+// 由 OCR 专用线程串行创建、调用和销毁。
 class OcrEngine
 {
 public:
+    // 加载并校验两个模型目录；缺失、格式不兼容或加载失败时抛出异常。
     OcrEngine(const QString& detectionModelDir, const QString& recognitionModelDir);
+    // 同步读取绝对路径图像，返回尺寸、文字行及耗时；读取或推理失败时抛出异常。
+    // 仅接受单帧、文件不超过 64 MiB 且每边不超过 4096 像素的图像。
     QJsonObject Recognize(const QString& image);
 
 private:

@@ -6,6 +6,8 @@
 #include <vector>
 
 // 使用运行器提供的临时目录，而非代理专用路径。
+// 在 TMPDIR（未设置或为空时使用 P_tmpdir）下创建带 prefix 的唯一目录。
+// 成功返回路径，失败返回空字符串；调用方负责清理目录及其内容。
 inline std::string MakeTestTemporaryDirectory(const std::string& prefix)
 {
     const char* configured = std::getenv("TMPDIR");

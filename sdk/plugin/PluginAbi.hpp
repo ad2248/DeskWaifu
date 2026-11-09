@@ -1,3 +1,4 @@
+// 生成宿主与插件进行严格二进制兼容性检查所需的构建指纹。
 #pragma once
 
 #include <QByteArray>
@@ -5,7 +6,8 @@
 #include <QtGlobal>
 #include <cstdint>
 
-// Deliberately strict: this is a same-repository C++/Qt SDK, not a stable C ABI.
+// 返回静态存储的 Qt、编译器、语言及标准库 ABI 指纹，调用者不得释放。
+// 宿主严格比较此指纹；这是同仓库 C++/Qt SDK，而非稳定的 C ABI。
 static inline const char* DeskWaifuPluginBuildAbi()
 {
     static const QByteArray abi = QSysInfo::buildAbi().toUtf8()

@@ -13,6 +13,7 @@ inline void ApplyModelTransform(Live2D::Cubism::Framework::CubismMatrix44& proje
 
 // 绘制和指针命中测试共用的裁剪空间投影。
 // 刻意不包含模型矩阵，因为 Cubism 的 IsHit 已对其执行逆变换。
+// width 和 height 必须为正；view 可为空，非空时只借用而不修改。
 inline Live2D::Cubism::Framework::CubismMatrix44 BuildModelProjection(
     float canvasWidth, int width, int height, ModelTransform transform,
     Live2D::Cubism::Framework::CubismMatrix44* view)

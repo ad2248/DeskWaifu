@@ -2,6 +2,8 @@
 
 #include "contracts/ModelTransform.hpp"
 
+// 返回围绕逻辑坐标锚点缩放后的变换，将缩放限制为 [0.1, 10]。
+// 当前缩放为正时调整平移以保持锚点下的模型点不动；否则只更新缩放。
 inline ModelTransform ZoomModelAroundPoint(
     ModelTransform current, float anchorX, float anchorY, float requestedScale)
 {

@@ -1,3 +1,4 @@
+// 定义模型显示区域及其裁剪、坐标转换辅助函数。
 #pragma once
 
 #include <algorithm>
@@ -13,6 +14,7 @@ struct ModelRegion
     int height = 0;
 };
 
+// 返回两个区域的交集；任一区域无面积或不相交时返回空区域。
 inline ModelRegion IntersectModelRegions(ModelRegion a, ModelRegion b)
 {
     const int x = std::max(a.x, b.x);
@@ -25,17 +27,20 @@ inline ModelRegion IntersectModelRegions(ModelRegion a, ModelRegion b)
     return {x, y, static_cast<int>(right - x), static_cast<int>(bottom - y)};
 }
 
+// 未配置时返回整个非负尺寸表面，否则返回请求区域与表面的交集。
 inline ModelRegion ResolveModelRegion(bool configured, ModelRegion requested, int width, int height)
 {
     const ModelRegion surface{0, 0, std::max(0, width), std::max(0, height)};
     return configured ? IntersectModelRegions(requested, surface) : surface;
 }
 
+// 将左上角原点区域转换为 OpenGL 左下角原点坐标，不裁剪区域。
 inline ModelRegion ModelRegionToOpenGL(ModelRegion region, int surfaceHeight)
 {
     return {region.x, surfaceHeight - region.y - region.height, region.width, region.height};
 }
 
+// 返回区域外部的上、下、左、右四块矩形，可包含零面积矩形。
 // 调用方传入的区域须已与表面范围求交。
 inline std::array<ModelRegion, 4> OutsideModelRegion(ModelRegion region, int width, int height)
 {

@@ -18,6 +18,8 @@
 * 管理纹理 ID 和矩形区域。
 *
 */
+// 保存纹理 ID 和着色器属性位置；构造和绘制需要对应的当前 GL 上下文。
+// 调用方须保持所用着色器程序有效，绘制前负责绑定程序和必要的 GL 状态。
 class LAppSprite : public LAppSprite_Common
 {
 public:
@@ -51,12 +53,8 @@ public:
     */
     void RenderImmidiate(GLuint textureId, const GLfloat uvVertex[8], int maxWidth, int maxHeight) const;
 
-    /**
-    * @brief 构造函数。
-    *
-    * @param[in]       pointX X 坐标。
-    * @param[in]       pointY Y 坐标。
-    */
+    // 判断左上原点的像素坐标是否位于精灵矩形内。
+    // 边界计入命中；目标尺寸无效时返回 false。
     bool IsHit(float pointX, float pointY, int maxWidth, int maxHeight) const;
 
     /**

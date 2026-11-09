@@ -15,9 +15,12 @@ class ModelProcessor final : public Processor
 public:
     explicit ModelProcessor(ProcessorEventLoop& loop, std::shared_ptr<ModelExchange> exchange);
     ~ModelProcessor() override;
+    // 接管渲染目标并启动工作线程；同步等待初始化结果，失败返回 false。
     bool Start(std::unique_ptr<ModelRenderTarget> target, const ModelRuntimeOptions& options, int width, int height);
     void Stop() noexcept override { Shutdown(); }
     bool Shutdown() noexcept; // 等待线程结束，报告 GPU 上下文收尾结果。
+    // GUI 线程接收模型操作并异步回复，或提供只查询 CPU 快照的命中回调。
+    // 返回值表示事件是否已被消费；自身元数据通知只更新状态而不消费。
     bool HandleEvent(const ProcessorEvent& event) override;
 private:
     friend struct ProcessorTestAccess;

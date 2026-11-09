@@ -17,9 +17,11 @@
 * 集中文件读取、时间获取等平台相关函数。
 *
 */
+// 资源基路径和帧时钟为进程级状态，由渲染线程串行更新。
 class LAppPal
 {
 public:
+    // 设置相对文件路径使用的前缀，调用方负责末尾路径分隔符。
     static void SetResourceBasePath(const std::string& base);
     /**
     * @brief 将文件读取为字节数据。
@@ -30,6 +32,8 @@ public:
     * @param[out]  outSize 文件大小。
     * @return 字节数据。
     */
+    // 优先读取内嵌着色器；失败返回空指针，成功缓冲必须用 ReleaseBytes 释放。
+    // outSize 必须非空，仅在读取成功时写入字节数。
     static Csm::csmByte* LoadFileAsBytes(const std::string filePath, Csm::csmSizeInt* outSize);
 
 
@@ -45,11 +49,12 @@ public:
     /**
     * @biref 获取与上一帧的时间差。
     *
-    * @return 帧间隔时间，单位为毫秒。
+    * @return 帧间隔时间，单位为秒。
     *
     */
     static Csm::csmFloat32 GetDeltaTime();
 
+    // 以单调时钟推进帧时间，供本帧的 GetDeltaTime 查询。
     static void UpdateTime();
 
     /**

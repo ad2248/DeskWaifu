@@ -13,6 +13,8 @@ public:
     ModelOpacityFrame(const ModelOpacityFrame&) = delete;
     ModelOpacityFrame& operator=(const ModelOpacityFrame&) = delete;
 
+    // 在当前 GL 上下文创建或调整目标并清透明色；失败返回 false。
+    // 成功后须调用 Present 配对结束绘制，析构也须保持该上下文有效。
     bool Begin(int width, int height)
     {
         if (width <= 0 || height <= 0) return false;
@@ -39,6 +41,7 @@ public:
         return true;
     }
 
+    // 恢复先前绘制目标，同步将颜色纹理及显示透明度交给合成回调。
     template<typename Composite>
     void Present(float opacity, Composite composite)
     {
@@ -46,6 +49,7 @@ public:
         composite(_buffer.GetColorBuffer(), opacity);
     }
 
+    // 返回借用帧缓冲 ID，仅用于当前上下文的像素读取。
     GLuint Framebuffer() const { return _buffer.GetRenderTexture(); }
 
 private:

@@ -21,11 +21,16 @@ public:
     };
 
     ModelWindowState();
+    // 同步处理本状态机的待投递事件；状态配置发生变化时返回 true。
+    // 不支持的事件返回 false，不启动嵌套应用事件循环。
     bool Send(Event event);
+    // 返回当前叶子状态；状态机尚未就绪时返回 Uninitialized。
     State Current() const;
+    // 判断是否处于运行父状态；切屏、关闭及初始化阶段均不属于运行态。
     bool Running() const;
     bool Normal() const;
     bool ScreenEditing() const;
+    // 普通按压或屏幕编辑拖动期间返回 true。
     bool GestureActive() const;
 
 signals:

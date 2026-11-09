@@ -17,6 +17,7 @@ public:
     bool FullscreenEnabled() const { return _config.values.fullscreenOpacityEnabled; }
     float FullscreenOpacity() const { return _config.values.fullscreenOpacity; }
 
+    // 从磁盘读取并校验完整配置；失败返回错误且不更新内存配置。
     AppResult Refresh()
     {
         ConfigStore::Snapshot snapshot;
@@ -36,6 +37,8 @@ public:
         return Set(request);
     }
 
+    // 将请求中的透明度字段合并到最新配置；至少需要一个受支持字段。
+    // 校验、并发冲突或写入失败通过返回值报告；借用 config 并串行更新。
     AppResult Set(const ConfigStore::Snapshot& request)
     {
         ConfigStore::Snapshot latest, saved;

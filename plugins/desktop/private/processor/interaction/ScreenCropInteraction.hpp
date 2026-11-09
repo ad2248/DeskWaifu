@@ -14,6 +14,8 @@ public:
         if (_handle == CropInteraction::None) _handle = CropInteraction::Model;
     }
 
+    // 超过点击阈值后申请本地屏幕编辑事务并开始模型拖动。
+    // 未越过阈值或事务申请失败时返回 false，不启动手势。
     bool StartModelDrag(TransformEditor& editor, int startX, int startY,
         int x, int y, int width, int height)
     {
@@ -34,6 +36,8 @@ public:
         editor.Update(editor.Owner(), CropInteraction::Drag(_start, _handle, x - _x, y - _y, height));
     }
 
+    // 结束手势；裁剪框外的单击或边框上的双击会提交当前编辑事务。
+    // 返回提交结果；未触发提交时返回成功，拖动草稿仍留给编辑器管理。
     AppResult Release(TransformEditor& editor, uint32_t now, int x, int y)
     {
         const auto handle = _handle;
