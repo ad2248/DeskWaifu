@@ -15,6 +15,7 @@
 /**
 * @brief 保存精灵着色器设置的类。
 */
+// 拥有精灵着色器程序，构造及析构必须在同一有效 GL 上下文中进行。
 class LAppSpriteShader
 {
 public:
@@ -31,6 +32,7 @@ public:
     /**
      * @brief 获取着色器 ID。
      */
+    // 返回借用的程序 ID；编译或链接失败时为 0，不转移所有权。
     GLuint GetShaderId() const;
 
 private:

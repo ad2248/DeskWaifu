@@ -7,6 +7,7 @@
 class DispatchedInput final : public IDesktopWindowEvents
 {
 public:
+    // 仅借用接收者；派发任一输入前必须设置，且接收者须存活至最后一次回调结束。
     void Set(IDesktopWindowEvents& sink) { _sink = &sink; }
     void PointerEntered(double x, double y) override { _sink->PointerEntered(x, y); Drain(); }
     void PointerLeft() override { _sink->PointerLeft(); Drain(); }

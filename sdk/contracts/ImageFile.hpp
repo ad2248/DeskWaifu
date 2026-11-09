@@ -1,3 +1,4 @@
+// 提供跨排队事件共享的临时图片文件生命周期载体。
 #pragma once
 
 #include <QMetaType>
@@ -8,6 +9,7 @@
 class ImageFile
 {
 public:
+    // 返回临时目录中的目标 PNG 路径，不创建图片；目录创建失败时路径可能无效。
     QString Path() const { return _directory.filePath("image.png"); }
 private:
     QTemporaryDir _directory;

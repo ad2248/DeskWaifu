@@ -5,6 +5,7 @@
 #include <QThread>
 #include <QJsonDocument>
 
+// 测试专用友元入口，仅借用生产对象；GUI 状态访问须在所属线程进行。
 struct ProcessorTestAccess
 {
     static ProcessorEventLoop& Loop(ModelProcessor& processor) { return processor._loop; }
@@ -15,12 +16,15 @@ struct ProcessorTestAccess
     static class InteractionProcessor& Interaction(class LAppDelegate& app);
 };
 
+// 返回 GUI 侧元数据的借用引用，只在所属线程使用。
 inline const ModelMetadata& ModelMetadataOf(ModelProcessor& processor) { return ProcessorTestAccess::Metadata(processor); }
+// 加锁取得最新不可变帧，可在解锁后持有；尚未产生帧时返回空指针。
 inline std::shared_ptr<const RenderFrame> ModelFrameOf(ModelProcessor& processor)
 {
     const auto slot = ProcessorTestAccess::Exchange(processor);
     std::lock_guard<std::mutex> lock(slot->mutex); return slot->frame;
 }
+// 加锁覆盖最新输入状态，不等待下一帧完成。
 inline void SetModelState(ModelProcessor& processor, const ModelRenderState& state)
 {
     const auto slot = ProcessorTestAccess::Exchange(processor);
@@ -33,6 +37,7 @@ inline QString ModelErrorOf(ModelProcessor& processor)
 }
 
 // 测试只在平台边界注入依赖；模型业务和实际完成通知走正式事件路径。
+// 在 GUI 线程驱动事件，返回模型操作回复；投递失败返回空对象，超时终止测试。
 inline QJsonObject AwaitModel(ModelProcessor& processor, QJsonObject operation = {{"command", "reset_drag"}})
 {
     class Receiver final : public Processor

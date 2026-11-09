@@ -8,10 +8,16 @@
 class KWinCursorTracker
 {
 public:
+    // 析构时停止追踪并释放总线、匿名脚本文件与清理管道。
     ~KWinCursorTracker();
+    // 连接会话总线并加载脚本，成功返回 true；后续恢复由 Poll() 驱动。
+    // 所有操作须由同一 Qt 应用线程串行调用。
     bool Start();
+    // 请求卸载脚本；独立清理进程可在本进程退出后继续完成清理。
     void Stop();
+    // 有界派发总线消息，更新目标输出名称，并重试失联的脚本。
     void Poll(const std::string& outputName);
+    // 将新鲜且匹配目标输出的采样映射到指定窗口尺寸；失败不改写 x、y。
     bool LocalPosition(int width, int height, double& x, double& y) const;
     bool Fullscreen() const { return _fullscreen; }
     bool FullscreenChanged() const { return _fullscreenChanged; }

@@ -15,10 +15,15 @@ class ModelRuntime
 {
 public:
     ModelRuntime();
+    // 在当前 GL 上下文中启动 Cubism 并加载初始模型；任一步失败返回 false。
     bool Initialize(const ModelRuntimeOptions& options, int width, int height);
+    // 执行模型操作 JSON；返回含 ok 状态或错误原因的业务回复。
     QJsonObject Execute(const std::string& json);
+    // 返回当前模型能力的 CPU 值快照，不暴露 SDK 对象。
     ModelMetadata Metadata() const;
+    // 绘制并读回完整帧；目标绑定或读回失败时抛出异常。
     std::shared_ptr<RenderFrame> Render(const ModelRenderState& state, ModelRenderTarget& target);
+    // contextCurrent 表示本线程持有正确上下文；无法安全析构 GL 资源时返回 false。
     bool Shutdown(bool contextCurrent);
     ~ModelRuntime();
 private:

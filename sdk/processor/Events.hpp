@@ -1,7 +1,10 @@
+// 汇集处理器之间约定的领域事件与能力名称。
 #pragma once
 
 #include "contracts/SpeechEvents.hpp"
 
+// 图片读取、OCR、语音与阅读编排共享的事件名及能力名。
+// 具体负载由对应插件约定，宿主仅按名称路由。
 namespace ProcessorEvents {
 constexpr auto ReadingClip = "reading.clip";
 constexpr auto ReadImage = "image.read";

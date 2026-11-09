@@ -14,6 +14,7 @@
 #include <memory>
 #include "contracts/ICommandService.hpp"
 
+// 拥有监听描述符和客户端连接；由同一事件循环线程驱动，不自行启动线程。
 class LAppIPC
 {
 public:
@@ -21,6 +22,7 @@ public:
     ~LAppIPC();
     LAppIPC(const LAppIPC&) = delete;
     LAppIPC& operator=(const LAppIPC&) = delete;
+    // 借用命令服务；其生命周期须覆盖命令派发及 Release 的断连通知。
     void SetCommandService(ICommandService& commands) { _commands = &commands; }
 
     /**
@@ -34,9 +36,12 @@ public:
      *        在套接字就绪或存在缓冲工作时调用，不依赖渲染。
      */
     void Poll();
+    // 返回本轮应监听的可读、可写描述符快照，不转移描述符所有权。
     std::vector<int> ReadDescriptors() const;
     std::vector<int> WriteDescriptors() const;
+    // 缓冲区中存在无需等待套接字即可推进的工作时返回 true。
     bool HasBufferedWork() const;
+    // 注册异步回复就绪时的调度回调；传入空回调可解除注册。
     void SetReadyCallback(std::function<void()> ready) { *_ready = std::move(ready); }
 
     /**

@@ -17,6 +17,8 @@ public:
         _current = -1;
     }
 
+    // 加载成功才切换当前索引，失败保留原模型并返回 false。
+    // load 转移模型所有权；随后尝试预取下一项，并按软预算淘汰非活动模型。
     template<typename Load>
     bool Select(int index, Load load)
     {
@@ -40,6 +42,7 @@ public:
         return true;
     }
 
+    // 尚未选择时索引为 -1、Current 返回空；模型指针仅借用，可能因后续选择失效。
     int CurrentIndex() const { return _current; }
     Model* Current() const { return _current < 0 ? nullptr : _cache.Get(_current); }
     const ModelCache<Model>& Cache() const { return _cache; }

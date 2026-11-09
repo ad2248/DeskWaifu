@@ -25,6 +25,8 @@
  *        负责模型和功能组件的创建、更新及渲染调用。
  *
  */
+// 模型拥有 SDK 组件和纹理租约；纹理管理器须比模型存活更久。
+// 加载、更新、绘制及析构均在模型渲染线程及其有效 GL 上下文中执行。
 class LAppModel : public LAppModel_Common
 {
 public:
@@ -50,6 +52,7 @@ public:
      * @brief 根据 model3.json 所在目录及文件路径创建模型。
      *
      */
+    // 成功返回 true；配置、核心模型或纹理缺失时返回 false。
     bool LoadAssets(const Csm::csmChar* dir, const Csm::csmChar* fileName);
 
     /**
@@ -146,6 +149,7 @@ public:
      * @brief 获取全部可用动作，供 IPC 查询。
      */
     std::vector<MotionInfo> GetMotionList() const;
+    // 返回本模型全部纹理租约的字节估计，共享纹理仍计入本模型预算。
     std::size_t TextureBytes() const;
 
     /**
@@ -223,15 +227,15 @@ private:
     Csm::csmVector<Csm::csmRectF> _hitArea;
     Csm::csmVector<Csm::csmRectF> _userArea;
     const Csm::CubismId* _idParamAngleX; ///< 参数 ID：ParamAngleX。
-    const Csm::CubismId* _idParamAngleY; ///< 参数 ID：ParamAngleX。
-    const Csm::CubismId* _idParamAngleZ; ///< 参数 ID：ParamAngleX。
+    const Csm::CubismId* _idParamAngleY; ///< 参数 ID：ParamAngleY。
+    const Csm::CubismId* _idParamAngleZ; ///< 参数 ID：ParamAngleZ。
     const Csm::CubismId* _idParamBodyAngleX; ///< 参数 ID：ParamBodyAngleX。
     
     const Csm::CubismId* _idParamBodyAngleY; ///< 参数 ID：ParamBodyAngleY。
     
     const Csm::CubismId* _idParamBodyAngleZ; ///< 参数 ID：ParamBodyAngleZ。
     const Csm::CubismId* _idParamEyeBallX; ///< 参数 ID：ParamEyeBallX。
-    const Csm::CubismId* _idParamEyeBallY; ///< 参数 ID：ParamEyeBallXY。
+    const Csm::CubismId* _idParamEyeBallY; ///< 参数 ID：ParamEyeBallY。
 
     Csm::csmBool _motionUpdated; ///< 动作更新标志。
     Csm::csmInt32 _currentSkinIndex;

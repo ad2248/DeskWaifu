@@ -7,12 +7,14 @@
 #include <mutex>
 #include <string>
 
+// 模型空间中的具名轴对齐命中矩形。
 struct ModelHitArea
 {
     std::string name;
     float left = 0, top = 0, right = 0, bottom = 0;
 };
 
+// 输入像素坐标及其视口、模型令牌，用于拒绝过期快照。
 struct ModelHitQuery
 {
     double x = 0, y = 0;
@@ -20,6 +22,7 @@ struct ModelHitQuery
     std::string modelToken;
 };
 
+// available 区分过期或缺失快照；inside 是像素区域命中，parts 是模型部位命中。
 struct ModelHitResult
 {
     bool available = false, inside = false;
@@ -37,6 +40,7 @@ struct ModelHitSnapshot
     std::vector<ModelRegion> regions;
     std::vector<ModelHitArea> areas;
 
+    // 视口或令牌不匹配时返回不可用结果；隐藏模型返回可用但不命中的结果。
     ModelHitResult Test(const ModelHitQuery& query) const
     {
         if (query.width != width || query.height != height || query.modelToken != modelToken) return {};
@@ -65,6 +69,7 @@ struct ModelHitMailbox
     std::mutex mutex;
     bool active = true;
     std::shared_ptr<const ModelHitSnapshot> snapshot;
+    // 返回可跨线程调用的加锁查询；邮箱失效或停用时返回不可用结果。
     ModelHitTest Callback(const std::shared_ptr<ModelHitMailbox>& self)
     {
         return [weak = std::weak_ptr<ModelHitMailbox>(self)](const ModelHitQuery& query) {

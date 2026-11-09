@@ -10,9 +10,12 @@
 
 // Integration fixture speaks only the test module's JSON protocol. No plugin
 // implementation headers or private static libraries cross into the test.
+// 在私有临时安装中加载桌面设置测试模块，拥有事件循环、插件管理器及请求端点。
+// 构造、调用及销毁均应在事件循环所属线程执行；等待响应时会泵送 Qt 事件。
 class DesktopBackend
 {
 public:
+    // 安装并启动模块，以 configPath 初始化设置；任一步失败均抛出 runtime_error。
     explicit DesktopBackend(const QString& configPath)
     {
         if (!_installation.isValid() || !QDir().mkpath(_installation.path() + "/settings") ||
@@ -25,6 +28,8 @@ public:
         if (!Call("test.initialize", {{"path", configPath}}).value("ok").toBool())
             throw std::runtime_error("initialize desktop settings fixture");
     }
+    // 以 owner 标识连接发送测试命令，覆盖 input 中的 command 并返回 JSON 响应。
+    // 最多等待约三秒；未完成或响应为空时抛出 runtime_error。
     QJsonObject Call(const QString& command, QJsonObject input = {}, const QString& owner = QStringLiteral("gui"))
     {
         input.insert("command", command);
@@ -42,6 +47,7 @@ public:
         if (!done || response.isEmpty()) throw std::runtime_error("desktop test protocol completion");
         return response;
     }
+    // 返回测试模块的当前状态快照，失败语义与 Call 相同。
     QJsonObject State() { return Call("test.snapshot"); }
 private:
     QTemporaryDir _installation;

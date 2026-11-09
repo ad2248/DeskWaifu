@@ -4,6 +4,8 @@
 #include <QRegion>
 #include <vector>
 
+// 将有效矩形合并为 Qt 输入掩码，忽略非正尺寸；没有有效矩形时返回空区域。
+// 空区域的输入穿透语义由窗口后端单独处理。
 inline QRegion QtModelInputRegion(const std::vector<ModelRegion>& regions)
 {
     QRegion mask;

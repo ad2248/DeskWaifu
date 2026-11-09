@@ -12,6 +12,8 @@ public:
     void GlobalPosition(double x, double y) { Set(x, y, true); }
     bool HasPosition() const { return _available; }
 
+    // 将最新采样转换为相对模型中心的视线，并将向量长度限制到 radius。
+    // 全局采样先减去当前输出原点；没有采样时返回零向量。
     std::pair<float, float> LookAt(int outputX, int outputY, int width, int height,
         float centerX, float centerY, ModelTransform model, float radius = 0.5f) const
     {

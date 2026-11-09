@@ -12,6 +12,7 @@
 #include <memory>
 #include <vector>
 
+// 启动时复制给渲染线程的资源发现及模型初始化选项。
 struct ModelRuntimeOptions
 {
     std::string resourceBase, primaryDirectory, defaultModel;
@@ -19,6 +20,7 @@ struct ModelRuntimeOptions
     float emotionTimeout = 5.0f;
 };
 
+// GUI 发布给渲染线程的最新输入快照；只包含可复制的值。
 struct ModelRenderState
 {
     AppSnapshot app;
@@ -43,6 +45,7 @@ struct RenderFrame
     std::shared_ptr<const ModelHitSnapshot> hit;
 };
 
+// 当前模型的目录、动作和绑定能力快照，可脱离 SDK 对象传递。
 struct ModelMetadata
 {
     int index = -1;

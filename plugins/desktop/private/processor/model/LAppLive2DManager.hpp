@@ -22,6 +22,7 @@
 class LAppModel;
 class LAppTextureManager;
 
+// 模型目录发现、默认选择和表情超时的初始化参数。
 struct ModelDiscoveryOptions
 {
     std::string primaryDirectory;
@@ -35,22 +36,12 @@ struct ModelDiscoveryOptions
 *        负责模型创建和销毁、点击事件处理以及模型切换。
 *
 */
+// 在单一渲染线程拥有模型会话；借用的纹理管理器必须存活至本对象析构之后。
 class LAppLive2DManager
 {
 
 public:
-    /**
-    * @brief 返回类的单例。<br>
-    *        实例尚未创建时，在内部创建。
-    *
-    * @return 类实例。
-    */
-
-    /**
-    * @brief 释放类的单例。
-    *
-    */
-
+    // 目录信息按发现顺序返回副本，不转移模型所有权。
     /**
     * @brief 获取 Resources 下的模型目录名称。
     *
@@ -70,6 +61,7 @@ public:
     * @return 模型实例；索引越界时返回 NULL。
     */
     LAppModel* GetModel(Csm::csmUint32 no) const;
+    // 复制当前模型的 CPU 命中信息；返回值不借用 SDK 顶点或矩阵。
     ModelHitSnapshot HitSnapshot(int width, int height, ModelTransform transform) const;
 
     /**
@@ -114,6 +106,7 @@ public:
     * @brief 切换到下一个场景。<br>
     *        示例应用中用于切换模型集合。
     */
+    // 没有候选模型或下一模型加载失败时返回 false。
     bool NextScene();
 
     /**
@@ -125,6 +118,7 @@ public:
     * @brief 切换场景。<br>
     *        示例应用中用于切换模型集合。
     */
+    // 无效索引或加载失败返回 false，保持原活动模型；成功后重置新模型的热键状态。
     bool ChangeScene(Csm::csmInt32 index);
 
     /**
@@ -151,14 +145,7 @@ public:
 
 private:
     void SetUpModel();
-    /**
-    * @brief 构造函数。
-    */
-
-    /**
-    * @brief 析构函数。
-    */
-
+    // 视图矩阵由管理器拥有，SetViewMatrix 只复制传入矩阵的值。
     Csm::CubismMatrix44* _viewMatrix; ///< 模型绘制使用的视图矩阵。
     LAppTextureManager& _textures;
     int _viewportWidth;

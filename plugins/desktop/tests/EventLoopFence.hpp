@@ -4,6 +4,8 @@
 #include <QElapsedTimer>
 #include <QThread>
 
+// 在 Qt 事件线程投递栅栏并处理事件，等待此前排队事件经过派发。
+// 投递失败或五秒内未收到栅栏返回 false；不保证工作线程任务已经完成。
 inline bool AwaitProcessorEvents(ProcessorEventLoop& loop)
 {
     class Fence final : public Processor

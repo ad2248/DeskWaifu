@@ -13,6 +13,8 @@ class ExternalControlState
 public:
     enum class Lifetime { Persistent, Stream };
 
+    // 更新具名来源的口型及优先序；来源为空或 value 不在有限的 [0, 1] 内时
+    // 返回 false 且不修改状态。同一来源的生命周期属性由最近一次设置决定。
     bool SetMouth(const std::string& id, Lifetime lifetime, float value)
     {
         if (id.empty() || !std::isfinite(value) || value < 0.0f || value > 1.0f) return false;
@@ -22,6 +24,7 @@ public:
         return true;
     }
 
+    // 更新具名来源的视线；来源为空或任一坐标非有限数时返回 false。
     bool SetLook(const std::string& id, Lifetime lifetime, float x, float y)
     {
         if (id.empty() || !std::isfinite(x) || !std::isfinite(y)) return false;
@@ -36,6 +39,8 @@ public:
     void Release(const std::string& id) { _sources.erase(id); }
     void Clear() { _sources.clear(); }
 
+    // 分别选取口型和视线的最高优先来源，返回不含来源所有权的帧输入副本。
+    // 本对象无内部锁，须由交互域串行更新和读取。
     ModelFrameInput Frame() const
     {
         ModelFrameInput result;

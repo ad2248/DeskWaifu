@@ -12,6 +12,7 @@ public:
 
     float Radius() const { return _config.values.mouseLookRadius; }
 
+    // 重读并校验完整配置；成功更新借用的 config，失败返回错误且保留原值。
     AppResult Refresh()
     {
         ConfigStore::Snapshot snapshot;
@@ -31,6 +32,8 @@ public:
         return Set(request);
     }
 
+    // 校验 radius 并与最新磁盘配置合并提交；缺少字段或写入冲突时返回失败。
+    // 借用的 config 必须存活至本对象销毁；在 GUI 交互域串行调用。
     AppResult Set(const ConfigStore::Snapshot& request)
     {
         ConfigStore::Snapshot latest, saved;

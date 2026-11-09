@@ -8,6 +8,8 @@
 // A FIFO fence for events already posted to this processor loop. This does not
 // prove that a worker, socket or a handler's future child events have completed;
 // those require their own observable terminal condition before using the fence.
+// 在循环所属线程投递 FIFO 栅栏并泵送 Qt 事件，收到栅栏返回 true。
+// 投递失败或五秒内未收到时返回 false；不保证异步工作或后续派生事件已完成。
 inline bool AwaitProcessorEvents(ProcessorEventLoop& loop)
 {
     class Fence final : public Processor

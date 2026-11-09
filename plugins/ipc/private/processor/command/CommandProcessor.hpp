@@ -18,6 +18,7 @@ public:
         _ownedEndpoint(context ? nullptr : loop.CreateEndpoint("command-gateway", [](const EventDelivery&) {})),
         _endpoint(context ? context->CreateEndpoint("command-gateway", [](const EventDelivery&) {}) : _ownedEndpoint.get()) {}
     ~CommandProcessor() override { Stop(); }
+    // 幂等失效端点并向所有待处理请求回复停止错误。
     void Stop() noexcept override
     {
         if (_stopped) return;
@@ -28,6 +29,7 @@ public:
             Reply(request.second, R"({"ok":false,"error":"command processor stopped"})");
         Processor::Stop();
     }
+    // 接收命令请求并返回 true；断连仅取消关联请求，返回 false 供其他订阅者处理。
     bool HandleEvent(const ProcessorEvent& event) override
     {
         if (event.type == "command.request") {

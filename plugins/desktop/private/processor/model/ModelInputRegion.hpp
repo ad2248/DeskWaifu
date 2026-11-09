@@ -5,6 +5,7 @@
 
 // 像素为 glReadPixels 返回的自下而上 RGBA8 数据。
 // 此处只使用模型自身的 alpha，不使用最终悬停或显示透明度。
+// 调用方提供至少 width * height * 4 字节；返回裁剪后的左上原点块状区域。
 inline std::vector<ModelRegion> ExtractModelInputRegion(const unsigned char* pixels,
     int width, int height, ModelRegion clip)
 {
@@ -36,6 +37,7 @@ inline std::vector<ModelRegion> ExtractModelInputRegion(const unsigned char* pix
     return regions;
 }
 
+// 判断点是否落在任一区域内；右边界和下边界不计入命中。
 inline bool ModelInputRegionContains(const std::vector<ModelRegion>& regions, double x, double y)
 {
     for (const auto& box : regions)

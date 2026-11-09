@@ -15,6 +15,7 @@ public:
     explicit SpeechSettings(const QString& directory)
         : _store(QDir(directory).filePath(QStringLiteral("config.json")).toStdString(), true) {}
 
+    // 从磁盘刷新凭据；失败时保留缓存并写入 error，成功时清空 error。
     bool Refresh(QString& error)
     {
         ConfigStore::Snapshot snapshot;
@@ -26,6 +27,8 @@ public:
         error.clear(); return true;
     }
 
+    // 校验并原子保存 api_key，保留其他配置项；空字符串表示清除凭据。
+    // 成功返回 true 并更新缓存，失败返回 false 且通过 error 给出原因。
     bool Set(const QJsonObject& request, QString& error)
     { return Set(QJsonDocument(request).toJson(QJsonDocument::Compact).toStdString(), error); }
 
@@ -54,7 +57,9 @@ public:
         error.clear(); return true;
     }
 
+    // 返回进程内缓存凭据，仅供语音服务使用，不应写入 IPC 回复或日志。
     QString ApiKey() const { return _apiKey; }
+    // 仅反映缓存是否非空，不表示远端已验证凭据有效。
     bool Configured() const { return !_apiKey.isEmpty(); }
 
 private:

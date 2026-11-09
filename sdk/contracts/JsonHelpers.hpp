@@ -1,3 +1,4 @@
+// 从已校验的配置快照中按严格类型读取常用 JSON 字段。
 #pragma once
 
 #include "ConfigStore.hpp"
@@ -9,6 +10,7 @@
 
 // 仅读取已校验的顶层成员。可选字段缺失时使用默认值；
 // 字段存在但类型错误时，不能悄悄将其转换为合法值。
+// 读取并解码字符串，缺失返回空字符串；类型不符时抛出 invalid_argument。
 inline std::string JsonGetString(const ConfigStore::Snapshot& request, const std::string& key)
 {
     const auto it = request.values.find(key);
@@ -19,6 +21,7 @@ inline std::string JsonGetString(const ConfigStore::Snapshot& request, const std
     return value;
 }
 
+// 读取布尔值，缺失返回 false；兼容 0/1 及字符串写法，非法值抛出 invalid_argument。
 inline bool JsonGetBool(const ConfigStore::Snapshot& request, const std::string& key)
 {
     const auto it = request.values.find(key);
@@ -31,6 +34,7 @@ inline bool JsonGetBool(const ConfigStore::Snapshot& request, const std::string&
     throw std::invalid_argument(key + " must be boolean");
 }
 
+// 读取 32 位整数，缺失返回 fallback；非整数字面量或越界时抛出 invalid_argument。
 inline int JsonGetInt(const ConfigStore::Snapshot& request, const std::string& key, int fallback)
 {
     const auto it = request.values.find(key);
@@ -49,6 +53,7 @@ inline int JsonGetInt(const ConfigStore::Snapshot& request, const std::string& k
     }
 }
 
+// 以固定区域设置读取有限浮点数，缺失返回 fallback；非法值抛出 invalid_argument。
 inline float JsonGetFloat(const ConfigStore::Snapshot& request, const std::string& key, float fallback)
 {
     const auto it = request.values.find(key);

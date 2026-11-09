@@ -14,6 +14,7 @@
 * @brief 应用使用的常量。
 *
 */
+// Cubism 渲染与资源命名约定；可变路径及尺寸在启动装配阶段设置，供窗口与模型初始化使用。
 namespace LAppDefine {
 
     using namespace Csm;

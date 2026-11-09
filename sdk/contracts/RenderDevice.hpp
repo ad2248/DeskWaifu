@@ -1,7 +1,10 @@
+// 校验用于选择渲染设备的配置字符串。
 #pragma once
 
 #include <string>
 
+// 返回设备选择是否为默认值（空字符串或 auto）或小写 PCI 地址。
+// PCI 地址格式为 dddd:bb:dd.f，设备号和功能号分别限制为 0x1f 和 7。
 inline bool ValidRenderDevice(const std::string& device)
 {
     if (device.empty() || device == "auto") return true;
