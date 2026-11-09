@@ -39,7 +39,11 @@ podman run --rm "$IMAGE" bash -ceu '
     ccache --version
     bsdtar --version
     python3 --version
-    command -v fakeroot runuser useradd userdel fuser
+    command -v fakeroot runuser useradd userdel fuser wl-copy wl-paste pipewire pipewire-pulse wireplumber pw-cat pw-play pw-loopback pw-cli wpctl
+    wl-copy --version
+    wl-paste --version
+    pipewire --version
+    wireplumber --version
     proot --version
     runuser -u nobody -- proot -r / -w /tmp /usr/bin/true
     pkgconf --modversion yaml-cpp
@@ -59,7 +63,7 @@ podman run --rm "$IMAGE" bash -ceu '
     locale_dir=$(mktemp -d)
     localedef --no-archive -i de_DE -f UTF-8 "$locale_dir/de_DE.UTF-8"
     rm -rf "$locale_dir"
-    pkgconf --modversion Qt6Core Qt6Widgets Qt6OpenGL Qt6WaylandClient Qt6StateMachine Qt6WebSockets Qt6Multimedia
+    pkgconf --modversion Qt6Core Qt6Widgets Qt6OpenGL Qt6WaylandClient Qt6StateMachine Qt6WebSockets Qt6Multimedia Qt6Network Qt6DBus samplerate
     test -f /usr/lib/cmake/LayerShellQt/LayerShellQtConfig.cmake
     test -f /opt/deskwaifu-deps/CubismSdkForNative-5-r.5/Core/include/Live2DCubismCore.h
     test -f /opt/deskwaifu-deps/glew/include/GL/glew.h

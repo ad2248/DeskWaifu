@@ -4,6 +4,12 @@ find_package(LayerShellQt 6.6 REQUIRED)
 set(PRIVATE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../private")
 set(TEST_SCRIPTS "${CMAKE_CURRENT_SOURCE_DIR}")
 
+add_executable(clipboard-fixture ClipboardFixture.cpp)
+add_executable(clipboard-service-test ClipboardServiceTest.cpp)
+target_link_libraries(clipboard-service-test PRIVATE deskwaifu_clipboard)
+add_dependencies(clipboard-service-test clipboard-fixture)
+deskwaifu_add_test(NAME clipboard-service COMMAND clipboard-service-test $<TARGET_FILE:clipboard-fixture>)
+
 add_executable(model-input-region-test ModelInputRegionTest.cpp)
 deskwaifu_add_test(NAME model-input-region COMMAND model-input-region-test)
 add_executable(model-hit-test-test ModelHitTestTest.cpp)
@@ -170,7 +176,7 @@ set_tests_properties(delegate-keyboard PROPERTIES ENVIRONMENT "EGL_PLATFORM=surf
 # The platform integration loader links neither this module nor desktop's core.
 add_library(desktop-keyboard-fixture MODULE ../DesktopPlugin.cpp DelegatePluginWindow.cpp)
 deskwaifu_domain_test(desktop-keyboard-fixture desktop)
-target_link_libraries(desktop-keyboard-fixture PRIVATE deskwaifu_application OpenGL::EGL)
+target_link_libraries(desktop-keyboard-fixture PRIVATE deskwaifu_application deskwaifu_clipboard OpenGL::EGL)
 set_target_properties(desktop-keyboard-fixture PROPERTIES PREFIX "" OUTPUT_NAME desktop)
 add_executable(application-service-test ApplicationServiceTest.cpp)
 deskwaifu_add_test(NAME application-service COMMAND application-service-test)

@@ -80,6 +80,11 @@ private slots:
 #if DESKWAIFU_TEST_SPEECH_PLUGIN
             {"speechSettingsGroup"},
 #endif
+#if DESKWAIFU_TEST_VOICE_INPUT_PLUGIN
+            {"voiceInputEndpoint", "voiceInputApiKey", "voiceInputModel", "voiceInputDevice",
+                "voiceInputMaxRecordingSeconds", "startVoiceInput", "stopVoiceInput", "cancelVoiceInput",
+                "voiceInputResult", "retryVoiceInputCopy"},
+#endif
         };
         for (int tab = 0; tab < categories.size(); ++tab) {
             for (const auto& name : categories[tab]) {

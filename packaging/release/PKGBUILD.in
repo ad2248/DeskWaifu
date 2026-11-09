@@ -8,7 +8,7 @@ pkgdesc='DeskWaifu application and all default plugins'
 arch=('x86_64')
 url='https://github.com/ad2248/DeskWaifu'
 license=('LicenseRef-Live2D-Open-Software' 'LicenseRef-Live2D-Proprietary' 'BSD-3-Clause' 'MIT' 'Unlicense')
-makedepends=('cmake' 'ninja' 'qt6-base' 'qt6-wayland' 'qt6-scxml' 'qt6-websockets' 'qt6-multimedia' 'layer-shell-qt' 'wayland' 'libglvnd' 'systemd-libs' 'opencv' 'yaml-cpp' 'onnxruntime-cpu')
+makedepends=('cmake' 'ninja' 'qt6-base' 'qt6-wayland' 'qt6-scxml' 'qt6-websockets' 'qt6-multimedia' 'layer-shell-qt' 'wayland' 'libglvnd' 'systemd-libs' 'opencv' 'yaml-cpp' 'onnxruntime-cpu' 'libsamplerate' 'pkgconf')
 # Linker --wrap boundary tests need non-LTO objects. Use this same profile for
 # all four packages in both CI and release, not a different test-only build.
 options=('!debug' '!lto')
@@ -54,7 +54,7 @@ build() {
     -DDESKWAIFU_BUILD_CONTROL=ON -DDESKWAIFU_BUILD_GUI_PLUGIN_SDK=ON \
     -DDESKWAIFU_BUILD_DESKTOP_PLUGIN=ON -DDESKWAIFU_BUILD_PERCEPTION_PLUGIN=ON \
     -DDESKWAIFU_BUILD_IPC_PLUGIN=ON -DDESKWAIFU_BUILD_SPEECH_PLUGIN=ON \
-    -DDESKWAIFU_BUILD_READING_CLIP_PLUGIN=ON \
+    -DDESKWAIFU_BUILD_READING_CLIP_PLUGIN=ON -DDESKWAIFU_BUILD_VOICE_INPUT_PLUGIN=ON \
     -DSDK_ROOT_PATH="$srcdir/private-deps/CubismSdkForNative-5-r.5" \
     -DGLEW_PATH="$srcdir/private-deps/glew"
   cmake --build "$srcdir/build-main" --parallel "${CMAKE_BUILD_PARALLEL_LEVEL:-4}"
@@ -69,7 +69,7 @@ build() {
 }
 
 package_deskwaifu-bin() {
-  depends=('glibc' 'gcc-libs' 'wayland' 'libglvnd' 'systemd-libs' 'qt6-base>=6.5' 'qt6-wayland>=6.5' 'qt6-scxml>=6.5' 'qt6-websockets>=6.5' 'qt6-multimedia>=6.5' 'layer-shell-qt>=6.6' 'bash' 'python' 'psmisc')
+  depends=('glibc' 'gcc-libs' 'wayland' 'libglvnd' 'systemd-libs' 'qt6-base>=6.5' 'qt6-wayland>=6.5' 'qt6-scxml>=6.5' 'qt6-websockets>=6.5' 'qt6-multimedia>=6.5' 'layer-shell-qt>=6.6' 'bash' 'python' 'psmisc' 'libsamplerate' 'wl-clipboard')
   optdepends=('deskwaifu-ocr-bin: optional in-process OCR module (models provisioned separately)')
   provides=("deskwaifu=$pkgver")
   conflicts=('deskwaifu')

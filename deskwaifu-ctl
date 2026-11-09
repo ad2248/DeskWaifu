@@ -11,6 +11,9 @@ Examples:
   deskwaifu-ctl set_mouth_y --value 0.8
   deskwaifu-ctl set_look --x 0.5 --y -0.3
   deskwaifu-ctl set_look --reset
+  deskwaifu-ctl toggle_voice_input
+  deskwaifu-ctl get_voice_input_status
+  deskwaifu-ctl set_voice_input_settings --max_recording_seconds 60
 
 Commands:
   get_status, get_available_models, get_current_model, set_model,
@@ -24,7 +27,10 @@ Commands:
   retry_transform_save, reload_transform_settings, get_transform_save_result,
    relocate_crop, set_output,
    get_ocr_status, ocr_recognize, get_ocr_result, cancel_ocr,
-   reading_clip, get_reading_clip_status
+   reading_clip, get_reading_clip_status,
+   start_voice_input, stop_voice_input, toggle_voice_input, cancel_voice_input,
+   get_voice_input_status, get_voice_input_result, retry_voice_input_copy, list_voice_input_devices,
+   get_voice_input_settings, set_voice_input_settings
 
 The socket is $XDG_RUNTIME_DIR/deskwaifu.sock (fallback: /tmp/deskwaifu.sock).
 --reset is shorthand for --reset true. --stream_source is for long-lived
@@ -38,7 +44,7 @@ import socket
 import sys
 
 
-INTEGER_FIELDS = {"index", "priority", "crop_x", "crop_y", "crop_width", "crop_height", "expected_revision"}
+INTEGER_FIELDS = {"index", "priority", "crop_x", "crop_y", "crop_width", "crop_height", "expected_revision", "max_recording_seconds"}
 NUMBER_FIELDS = {"value", "x", "y", "zoom", "radius", "opacity", "idle_opacity", "fullscreen_opacity"}
 BOOLEAN_FIELDS = {"reset", "stream_source", "screen", "overwrite", "cropped", "enabled", "fullscreen_enabled"}
 

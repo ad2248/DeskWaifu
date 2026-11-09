@@ -24,6 +24,7 @@ RUN { printf 'Server = %s/$repo/os/$arch\n' "${PACMAN_MIRROR}"; \
         layer-shell-qt \
         kwin \
         libkscreen \
+        libsamplerate \
         mesa \
         ninja \
         opencv \
@@ -35,6 +36,9 @@ RUN { printf 'Server = %s/$repo/os/$arch\n' "${PACMAN_MIRROR}"; \
         noto-fonts \
         onnxruntime-cpu \
         pkgconf \
+        pipewire \
+        pipewire-pulse \
+        wireplumber \
         qt6-base \
         qt6-multimedia \
         qt6-scxml \
@@ -48,6 +52,7 @@ RUN { printf 'Server = %s/$repo/os/$arch\n' "${PACMAN_MIRROR}"; \
         wayland \
         wayland-protocols \
         wayland-utils \
+        wl-clipboard \
     && setcap -r /usr/bin/sway \
     && pacman -Scc --noconfirm
 
