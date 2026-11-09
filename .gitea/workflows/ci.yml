@@ -4,23 +4,128 @@ on:
   pull_request:
     types: [opened, reopened, synchronize]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Optional existing tag for release-identical package verification'
+        required: false
+        type: string
+      clean:
+        description: '干净构建：不使用宿主机持久化的编译缓存'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 jobs:
-  test:
-    name: Arch build and headless Wayland test
-    # This label must map to the digest-pinned deskwaifu-ci image.
-    # Rebuild and publish it with scripts/rebuild-ci-image.sh.
+  package:
+    name: Build and reproduce both Arch packages
     runs-on: deskwaifu-arch
-    timeout-minutes: 30
+    timeout-minutes: 60
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: 24
+      DESKWAIFU_CLEAN_BUILD: ${{ github.event.inputs.clean }}
+      http_proxy: http://100.64.0.11:7912
+      https_proxy: http://100.64.0.11:7912
+      ALL_PROXY: http://100.64.0.11:7912
+      no_proxy: 127.0.0.1,localhost
     steps:
       - name: Verify runner isolation
         run: test ! -S /var/run/docker.sock
 
       - name: Check out repository
         uses: https://git.kals.top/actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Select package source
+        env:
+          PACKAGE_TAG: ${{ github.event.inputs.tag }}
+        run: |
+          if [[ -n "$PACKAGE_TAG" ]]; then
+            # Use the same trusted tooling and historical-source selection as release.
+            RELEASE_EVENT=push RELEASE_REF="refs/tags/$PACKAGE_TAG" \
+              RELEASE_EVENT_SHA="$(git rev-parse --verify "refs/tags/$PACKAGE_TAG^{commit}")" \
+              python3 scripts/release-source.py
+          else
+            commit=$(git rev-parse HEAD)
+            echo "RELEASE_COMMIT=$commit" >> "$GITHUB_ENV"
+            echo "RELEASE_TAG=0.0.0.r$commit" >> "$GITHUB_ENV"
+            echo "RELEASE_TOOLS_DIR=$PWD" >> "$GITHUB_ENV"
+          fi
+
+      - name: Test packaging contracts
+        run: python3 -B "$RELEASE_TOOLS_DIR/tests/test_release_packaging.py" -v
+
+      - name: Select compiler cache
+        run: |
+          if [[ "${DESKWAIFU_CLEAN_BUILD:-false}" == "true" ]]; then
+            echo "CCACHE_DISABLE=1" >> "$GITHUB_ENV"
+            echo "Clean build requested; persistent compiler cache disabled"
+          elif [[ -d /cache ]]; then
+            {
+              echo "CCACHE_DIR=/cache/ccache-makepkg"
+              echo "CCACHE_MAXSIZE=8G"
+            } >> "$GITHUB_ENV"
+          else
+            echo "CCACHE_DISABLE=1" >> "$GITHUB_ENV"
+            echo "::warning::Runner cache volume not mounted; building without persistent cache"
+          fi
+
+      - name: Build packages using the release entry point
+        run: bash "$RELEASE_TOOLS_DIR/scripts/release-build.sh"
+
+      - name: Test four installed packages in order
+        run: python3 "$RELEASE_TOOLS_DIR/scripts/test-installed-packages.py" release-assets "$RELEASE_TAG"
+
+      - name: Report compiler cache statistics
+        if: always()
+        run: |
+          if [[ -n "${CCACHE_DISABLE:-}" ]]; then
+            echo "Compiler cache disabled for this run"
+          else
+            ccache -s
+          fi
+
+      - name: Clean temporary packages
+        if: always()
+        run: rm -f release-assets/*.pkg.tar.zst
+
+  test:
+    name: Arch build and headless Wayland test
+    # 此标签必须映射到按镜像 ID 固定的 deskwaifu-ci 镜像，且 force_pull=false。
+    # 使用 scripts/rebuild-ci-image.sh 重建并私下传输镜像。
+    runs-on: deskwaifu-arch
+    timeout-minutes: 30
+    env:
+      DESKWAIFU_CLEAN_BUILD: ${{ github.event.inputs.clean }}
+    steps:
+      - name: Verify runner isolation
+        run: test ! -S /var/run/docker.sock
+
+      - name: Check out repository
+        uses: https://git.kals.top/actions/checkout@v4
+        with:
+          # 变异选择要区分「本分支改动」与「基线分支后来的提交」，必须能解析真实
+          # merge-base；浅克隆的 graft 边界会被 git 当成 merge-base，得到空 diff。
+          fetch-depth: 0
+
+      - name: Select compiler cache
+        run: |
+          if [[ "${DESKWAIFU_CLEAN_BUILD:-false}" == "true" ]]; then
+            echo "CCACHE_DISABLE=1" >> "$GITHUB_ENV"
+            echo "Clean build requested; persistent compiler cache disabled"
+          elif [[ -d /cache ]]; then
+            {
+              echo "CCACHE_DIR=/cache/ccache"
+              echo "CCACHE_MAXSIZE=8G"
+            } >> "$GITHUB_ENV"
+          else
+            echo "CCACHE_DISABLE=1" >> "$GITHUB_ENV"
+            echo "::warning::Runner cache volume not mounted; building without persistent cache"
+          fi
 
       - name: Verify renamed identifiers
         run: |
@@ -51,11 +156,15 @@ jobs:
         run: |
           cmake -S . -B build-ci -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DBUILD_TESTING=ON \
-            -DDESKWAIFU_BUILD_CONTROL=ON
+            -DDESKWAIFU_BUILD_OCR=OFF \
+            -DDESKWAIFU_BUILD_CONTROL=ON \
+            -DDESKWAIFU_TEST_GATE=ON
 
       - name: Build
-        run: cmake --build build-ci --parallel "$(nproc)"
+        run: cmake --build build-ci --parallel 24
 
       - name: Compile render-target variants
         run: |
@@ -63,7 +172,10 @@ jobs:
             build_dir="build-ci-$definition"
             cmake -S . -B "$build_dir" -G Ninja \
               -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+              -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
               -DBUILD_TESTING=OFF \
+              -DDESKWAIFU_BUILD_OCR=OFF \
               -DDESKWAIFU_BUILD_CONTROL=OFF \
               -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
               "-DCMAKE_CXX_FLAGS=-D$definition"
@@ -71,21 +183,121 @@ jobs:
           import json, shlex, sys
           commands = json.load(open(sys.argv[1]))
           expected = '-D' + sys.argv[2]
-          assert any(entry['file'].endswith('/src/LAppLive2DManager.cpp') and
+          assert any(entry['file'].endswith('/plugins/desktop/private/processor/model/LAppLive2DManager.cpp') and
                      expected in shlex.split(entry['command']) for entry in commands), expected
           PY
-            cmake --build "$build_dir" --parallel "$(nproc)"
+            cmake --build "$build_dir" --parallel 24
           done
 
-      - name: Test Qt IPC client
-        run: ctest --test-dir build-ci --output-on-failure --no-tests=error
+      - name: Test Qt model window, rendering, and IPC client
+        run: python3 scripts/run-test-gate.py build-ci
+
+      - name: Verify behavioral mutation interception
+        run: |
+          args=()
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            # pull_request 事件理应带 base_ref；缺失时宁可失败，也不能空着 args 跑全集。
+            test -n "${{ github.base_ref }}" || {
+              echo "::error::pull_request event has no github.base_ref; refusing to guess the mutation scope"
+              exit 1
+            }
+            # 基线用 PR 的 merge-base，而不是基线分支的当前 tip：tip 之后落在基线分支
+            # 上的提交不属于本 PR，两点式会把它们算进改动路径。
+            base_ref="origin/${{ github.base_ref }}"
+            git fetch --no-tags origin "+refs/heads/${{ github.base_ref }}:refs/remotes/$base_ref"
+            # fetch 拿到空结果时不能带着空 args 跌回全集：那会把「取不到基线」伪装成
+            # 「改动影响所有故障」，201s 的耗时里看不出选择其实没生效。
+            git rev-parse --verify --quiet "$base_ref^{commit}" > /dev/null || {
+              echo "::error::fetching $base_ref produced no commit"
+              exit 1
+            }
+            merge_base="$(git merge-base "$base_ref" HEAD)" || {
+              echo "::error::cannot resolve the merge base of $base_ref and HEAD"
+              exit 1
+            }
+            test -n "$merge_base" || {
+              echo "::error::empty merge base for $base_ref"
+              exit 1
+            }
+            args+=(--base "$merge_base")
+          fi
+          python3 scripts/test-environment.py python3 scripts/check-test-mutations.py build-ci "${args[@]}"
 
       - name: Test headless Wayland and IPC
         run: bash scripts/headless-smoke-test.sh build-ci
 
+      - name: Test KWin actual click-through, outputs and installed application
+        run: |
+          python3 plugins/desktop/tests/qt_headless_smoke.py build-ci "$DESKWAIFU_DEPS_DIR/CubismSdkForNative-5-r.5"
+          python3 plugins/desktop/tests/qt_headless_smoke.py build-ci "$DESKWAIFU_DEPS_DIR/CubismSdkForNative-5-r.5" --scale 1.5 --installed
+
+      - name: Test core contracts with ASan and UBSan
+        run: |
+          cmake -S . -B build-sanitize -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DDESKWAIFU_BUILD_OCR=OFF \
+            -DDESKWAIFU_ENABLE_SANITIZERS=ON -DDESKWAIFU_TEST_GATE=ON
+          cmake --build build-sanitize --parallel 24 --target \
+            processor-event-loop-test speech-processor-contract-test interaction-processor-test \
+            config-store-test ipc-bounded-transport-test sanitizer-failure-fixture
+          python3 scripts/run-test-gate.py build-sanitize \
+            --test '^(processor-event-loop|speech-contract-.*|interaction-opacity|config-store|ipc-bounded-transport|sanitizer-failure-gate)$'
+
+      - name: Report compiler cache statistics
+        if: always()
+        run: |
+          if [[ -n "${CCACHE_DISABLE:-}" ]]; then
+            echo "Compiler cache disabled for this run"
+          else
+            ccache -s
+          fi
+
+      - name: Preserve test evidence
+        if: failure()
+        uses: https://code.forgejo.org/actions/upload-artifact@ff15f0306b3f739f7b6fd43fb5d26cd321bd4de5 # v3
+        with:
+          name: regression-evidence
+          path: |
+            build-ci/test-logs/
+            build-ci/qt-smoke-logs/
+            build-ci/Testing/Temporary/
+            build-sanitize/test-logs/
+          if-no-files-found: warn
+
       - name: Print logs after failure
         if: failure()
         run: |
-          test ! -f build-ci/test-logs/sway.log || cat build-ci/test-logs/sway.log
-          test ! -f build-ci/test-logs/deskwaifu.log || cat build-ci/test-logs/deskwaifu.log
-          test ! -f build-ci/test-logs/deskwaifu-control.log || cat build-ci/test-logs/deskwaifu-control.log
+          test ! -d build-ci/test-logs || find build-ci/test-logs -type f \
+            \( -name sway.log -o -name deskwaifu.log -o -name deskwaifu-control.log -o -name qt-window.log \) \
+            -exec cat {} \;
+
+  report:
+    name: Report CI failure to OpenHands
+    # 两个作业可能同时失败。若各自上报，同一次 CI 失败会创建两个智能体运行
+    # （见运行 722/710：一次失败产生两条 runs_created），此处集中上报一次。
+    needs: [package, test]
+    # 用 always() 而不是 failure()：漏报一次失败就没人在 PR 上修，
+    # 代价高于多跑一个几秒的空作业。是否真的失败由下面的步骤自己判断。
+    if: always()
+    runs-on: deskwaifu-arch
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: https://git.kals.top/actions/checkout@v4
+
+      - name: Report CI failure to OpenHands
+        env:
+          PIPELINE_WEBHOOK_SECRET: ${{ secrets.PIPELINE_WEBHOOK_SECRET }}
+          PACKAGE_RESULT: ${{ needs.package.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+        run: |
+          failed=()
+          if [[ "$PACKAGE_RESULT" == "failure" ]]; then failed+=("package"); fi
+          if [[ "$TEST_RESULT" == "failure" ]]; then failed+=("test"); fi
+          if [[ ${#failed[@]} -eq 0 ]]; then
+            echo "CI 未失败，跳过回调"
+            exit 0
+          fi
+          CI_FAILED_JOBS="${failed[*]}" python3 -B .gitea/scripts/report-ci-failure.py

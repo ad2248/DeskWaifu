@@ -1,0 +1,45 @@
+{
+  "required": [
+    "plugin-events", "plugin-timeout-flood", "plugin-manager", "speech-plugin-load", "speech-endpoint", "reading-plugin", "plugin-no-speech-configure",
+    "plugin-boundaries", "plugin-host-link", "gui-plugin-manager", "gui-plugin-shutdown", "gui-tabs", "control-smoke-probe", "control-theme", "delegate-plugin-commands", "command-processor", "SpeechSettings",
+    "screenshot-service", "processor-event-loop", "processor-pipeline", "processor-pipeline-script", "processor-ownership", "plugin-cli", "desktop-cli",
+    "interaction-processor", "interaction-opacity",
+    "speech-contract-normal", "speech-contract-cancel", "speech-contract-cancel-playing", "speech-contract-cancel-draining", "speech-contract-replace",
+    "speech-contract-repeat-replace", "speech-contract-queued-replace", "speech-contract-destroy", "speech-contract-receiver-destroy", "speech-contract-pending-destroy",
+    "speech-contract-reading-cancel", "speech-contract-reading-complete",
+    "kwin-cursor-tracker", "kwin-cursor-script", "kwin-cursor-locale",
+    "config-store", "transform-editor", "ipc-transport", "ipc-bounded-transport",
+    "model-region-render", "lapp-sprite", "model-gaze", "model-render-thread", "model-shutdown-context",
+    "model-pointer-release", "model-pointer-transform", "model-pointer-drag", "model-pointer-state", "model-pointer-cursor",
+    "texture-residency", "SpeechPlayer", "MiniMaxSpeechSource", "AudioPlayer",
+    "main-window-transform", "aur-packaging", "ocr-client", "smoke-isolation",
+    "test-environment", "test-gate", "mutation-configuration",
+    "build-boundary-registration", "sdk-configuration", "plugin-host-standalone-configure", "installed-testing",
+    "build-boundaries-c-include-ownership", "build-boundaries-compilation-ownership",
+    "build-boundaries-cpp-only-fixture-does-not-probe-unused-c-compiler",
+    "build-boundaries-forwarded-static-is-scoped-not-global", "build-boundaries-include-ownership",
+    "build-boundaries-library-search-respects-static-dynamic-selection",
+    "build-boundaries-link-artifacts-do-not-depend-on-output-directory-or-argument-spelling",
+    "build-boundaries-link-ownership", "build-boundaries-precompiled-headers-cannot-be-reused-across-owners",
+    "build-boundaries-renamed-vendor-directory-has-consistent-ownership",
+    "build-boundaries-same-owner-archives-and-existing-launchers-are-allowed",
+    "build-boundaries-sdk-include-surface-does-not-expose-plugin-private-headers",
+    "build-boundaries-static-archives-cannot-absorb-foreign-objects",
+    "build-boundaries-valid-same-owner-and-sdk-consumer-builds",
+    "plugin-build-boundaries", "backend-capabilities", "backend-ipc-only", "backend-multi-instance",
+    "desktop-ownership", "reading-pipeline", "perception-adapters", "ipc-readiness", "speech-adapter-failure",
+    "plugin-sdk-image-file", "plugin-sdk-installed-consumer", "desktop-commands-fairness", "desktop-commands-early-start", "perception-startup", "qt-desktop-window-run"
+  ],
+  "sanitizer_required": ["sanitizer-failure-gate"],
+  "optional_processes": {
+    "offscreen-renderer": "Requires an explicitly selected PCI render device; auto is not evidence of PCI coverage"
+  },
+  "optional_cases": {
+    "AudioPlayerTest::waitsForEndOfInputAndDrains": "Authorized audio device test; device-independent policy tracked in #230",
+    "AudioPlayerTest::stopAndReplacementDiscardBufferedAudio": "Authorized audio device test; device-independent policy tracked in #230",
+    "AudioPlayerTest::rejectsPartialFramesAndOverflow": "Current device-dependent test; device-independent coverage tracked in #230",
+    "AudioPlayerTest::liveSpeechPipeline": "Requires explicit cloud credentials and audible playback authorization",
+    "MiniMaxSpeechSourceTest::liveSynthesis": "Requires explicit cloud credentials/paid API authorization",
+    "ModelHotkeysTest::importsLocalModelWhenProvided": "Requires explicitly supplied private local model assets"
+  }
+}

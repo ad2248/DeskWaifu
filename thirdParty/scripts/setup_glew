@@ -9,10 +9,10 @@ SCRIPT_PATH=$(cd $(dirname $0) && pwd)
 cd $SCRIPT_PATH/..
 
 ##############
-# Setup GLEW #
+# 配置 GLEW #
 ##############
 
-# Download and extract the archive.
+# 下载并解压归档文件。
 echo "- Setup GLEW $GLEW_VERSION"
 echo Downloading...
 curl -fsSL -o glew.zip \

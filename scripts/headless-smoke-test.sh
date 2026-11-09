@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ ${DESKWAIFU_TEST_ISOLATED:-} != 1 ]]; then
+    exec python3 "$(dirname "$0")/test-environment.py" bash "$0" "$@"
+fi
 source "$(dirname "$0")/quit-exit-status.sh"
 
 BUILD_DIR=${1:-build-ci}
+export DESKWAIFU_PLUGIN_DIR="$(realpath "$BUILD_DIR/plugins")"
+export DESKWAIFU_CONTROL_PLUGIN_DIR="$DESKWAIFU_PLUGIN_DIR"
 DEPS_DIR=${DESKWAIFU_DEPS_DIR:-}
-RUNTIME_DIR=${XDG_RUNTIME_DIR:-/tmp/deskwaifu-runtime}
-LOG_DIR="$BUILD_DIR/test-logs"
+RUNTIME_DIR=$XDG_RUNTIME_DIR
+LOG_DIR=
 SWAY_PID=
 APP_PID=
 CONFIG_DIR=
@@ -37,19 +42,19 @@ if [[ ! -d "$DEPS_DIR/CubismSdkForNative-5-r.5/Samples/Resources" ||
     exit 1
 fi
 
-mkdir -p "$LOG_DIR"
-install -d -m 0700 "$RUNTIME_DIR"
-rm -f "$RUNTIME_DIR"/wayland-* "$RUNTIME_DIR/deskwaifu.sock"
-
+mkdir -p "$BUILD_DIR/test-logs"
+LOG_DIR=$(mktemp -d "$BUILD_DIR/test-logs/sway-XXXXXX")
 export XDG_RUNTIME_DIR="$RUNTIME_DIR"
 CONFIG_DIR=$(mktemp -d "$RUNTIME_DIR/hotkey-config.XXXXXX")
 export XDG_CONFIG_HOME="$CONFIG_DIR"
-python3 tests/hotkey_smoke.py prepare "$DEPS_DIR/CubismSdkForNative-5-r.5/Samples/Resources/Haru"
+python3 plugins/desktop/tests/hotkey_smoke.py prepare "$DEPS_DIR/CubismSdkForNative-5-r.5/Samples/Resources/Haru"
 export WLR_BACKENDS=headless
 export WLR_LIBINPUT_NO_DEVICES=1
 export WLR_RENDERER=pixman
 export LIBGL_ALWAYS_SOFTWARE=1
 export GALLIUM_DRIVER=llvmpipe
+export QT_QPA_PLATFORM=wayland
+unset QT_WAYLAND_SHELL_INTEGRATION WAYLAND_DISPLAY SWAYSOCK
 
 sway --config containers/sway.config >"$LOG_DIR/sway.log" 2>&1 &
 SWAY_PID=$!
@@ -182,7 +187,7 @@ with connect() as first, connect() as second:
         assert state['mouth'] == 0.8 and state['look_x'] == 0.25, state
     first.close()
     with connect() as observer:
-        # Disconnection is processed on the next frame; use a bounded retry.
+        # 下一帧才处理断开通知，因此使用有界重试。
         import time
         for _ in range(100):
             state = request(observer, 'get_control_status')
@@ -240,15 +245,14 @@ with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
 PY
 assert_ok prev_model
 assert_ok set_model --name Haru
-python3 tests/hotkey_smoke.py check
+python3 plugins/desktop/tests/hotkey_smoke.py check
 
 kill -0 "$APP_PID"
 timeout 20 "$BUILD_DIR/bin/deskwaifu-control" --smoke-test \
     >"$LOG_DIR/deskwaifu-control.log" 2>&1
 kill -0 "$APP_PID"
 {
-    # Exercise the actual layer-surface configure/EGL rebind path, including
-    # switching back with an already live GPU context and active model.
+    # 测试 Qt/LayerShellQt 表面替换，同时保留模型原有的 OpenGL 上下文和资源。
     swaymsg create_output >/dev/null
     for _ in {1..100}; do
         count=$(swaymsg -t get_outputs -r | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')
@@ -278,6 +282,19 @@ kill -0 "$APP_PID"
     if (( after <= before + 1 )); then cat "$LOG_DIR/deskwaifu.log" >&2; exit 1; fi
     assert_ok get_status
 }
+python3 plugins/desktop/tests/output_smoke.py
+WAYLAND_DEBUG=client timeout 30 "$BUILD_DIR/bin/qt-desktop-window-test" --no-keyboard \
+    >"$LOG_DIR/qt-window.log" 2>&1
+python3 - "$LOG_DIR/qt-window.log" <<'PY'
+import pathlib, sys
+sys.path.insert(0, "plugins/desktop/tests")
+from qt_headless_smoke import assert_layer_shell, assert_keyboard_capability
+trace = pathlib.Path(sys.argv[1]).read_text()
+assert_layer_shell(trace)
+# WLR_LIBINPUT_NO_DEVICES=1 刻意让此座席没有键盘。
+# 对具备键盘能力的座席，不能让 --no-keyboard 掩盖焦点回归。
+assert_keyboard_capability(trace, expected=False)
+PY
 assert_ok quit
 for _ in {1..200}; do
     state=$(ps -o stat= -p "$APP_PID" 2>/dev/null || true)
@@ -296,5 +313,5 @@ else
     APP_PID=
     report_app_failure "$exit_code" "$LOG_DIR/deskwaifu.log" || exit "$exit_code"
 fi
-grep -q 'GPU resources released before EGL teardown' "$LOG_DIR/deskwaifu.log"
+grep -q 'GPU resources released before window teardown' "$LOG_DIR/deskwaifu.log"
 echo "Headless Wayland, Qt control, and IPC smoke test passed"

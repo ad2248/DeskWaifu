@@ -3,6 +3,8 @@
 import json
 import os
 from pathlib import Path
+import re
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -12,16 +14,143 @@ SOURCE = Path(__file__).with_name("opencode-review.sh")
 
 
 class ReviewCliTest(unittest.TestCase):
-    def test_v2_permissions_deny_everything_except_controlled_shell(self):
+    def test_v2_permissions_allow_tools_without_step_limit(self):
         source = SOURCE.read_text()
         config = json.loads(source.split("<<'JSON'\n", 1)[1].split("\nJSON", 1)[0])
-        deny = {"action": "*", "resource": "*", "effect": "deny"}
-        self.assertEqual(config["permissions"], [deny])
-        self.assertEqual(config["agents"]["build"]["permissions"], [deny, {
-            "action": "shell",
-            "resource": ".gitea/scripts/opencode-review-action.sh *",
-            "effect": "allow",
-        }])
+        allow = {"action": "*", "resource": "*", "effect": "allow"}
+        self.assertEqual(config["permissions"], [allow])
+        self.assertEqual(config["agents"]["build"], {"permissions": [allow]})
+
+    def test_review_model_is_declared_in_project_provider_config(self):
+        # 回归：`--model` 的 provider/模型必须与项目配置声明一致，
+        # 否则 CLI 直接报 Model unavailable，评审任务整体失败。
+        source = SOURCE.read_text()
+        model = re.search(r"^\s*--model ([\w.-]+/[\w.-]+)\s*\\$", source, re.M).group(1)
+        provider, _, model_id = model.partition("/")
+        # V2 与 V1 分支各写一份项目配置，两份都必须声明该模型。
+        configs = [json.loads(block.split("\nJSON", 1)[0])
+                   for block in source.split("<<'JSON'\n")[1:]]
+        self.assertEqual(len(configs), 2)
+        for config in configs:
+            self.assertIn(provider, config["provider"])
+            self.assertIn(model_id, config["provider"][provider]["models"])
+
+    def test_review_prompt_allows_source_exploration_and_verification(self):
+        source = SOURCE.read_text()
+        prompt = source.split('\nprompt="$(cat <<EOF\n', 1)[1].split('\nEOF\n)"', 1)[0]
+        self.assertIn("可自由使用工具", prompt)
+        self.assertIn("按需执行构建或测试", prompt)
+        self.assertIn("目标分支代码不是 PR head", prompt)
+        # 回归：审查临时目录不是 Git 仓库，必须显式给出读取 PR head 源码的命令形式，
+        # 否则 agent 会在 $workdir 里执行 git show 失败，或把目标分支工作区当成 PR head。
+        self.assertIn('git -C "$repo_root" show <head_sha>:<path>', prompt)
+        self.assertIn('git -C "$repo_root" log -1 <head_sha>', prompt)
+        self.assertIn("$workdir 不是 Git 仓库", prompt)
+        self.assertIn("context.md 的 Head 行", prompt)
+        self.assertIn("不代表 PR head", prompt)
+        sections = ("你是代码审查智能体", "审查注意事项：", "被审查的 PR 的上下文信息在：$workdir/context.md",
+                    "被审查的 PR 的目标分支代码在：$repo_root", "被审查的 PR（diff 形式）在：$workdir/diff.patch",
+                    "审查结果格式：", "## 结论", "## 阻塞问题", "## 非阻塞建议")
+        positions = [prompt.index(section) for section in sections]
+        self.assertEqual(positions, sorted(positions))
+        for restriction in ("禁止调用 API", "仅根据附件", "不调用任何工具", "不要尝试其他命令"):
+            self.assertNotIn(restriction, prompt)
+
+    def test_review_uses_target_checkout_and_complete_pr_diff(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            repo = root / "target repository with spaces"
+            repo.mkdir()
+            def git(*args):
+                return subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+            git("init")
+            git("config", "user.email", "review@example.com")
+            git("config", "user.name", "Review test")
+            scripts = repo / ".gitea/scripts"
+            scripts.mkdir(parents=True)
+            for name in ("opencode-review.sh", "opencode-review-action.sh", "extract-opencode-review.py"):
+                shutil.copy(SOURCE.with_name(name), scripts / name)
+            (repo / "source.txt").write_text("common ancestor\n")
+            git("add", ".")
+            git("commit", "-m", "fixture")
+            ancestor = git("rev-parse", "HEAD")
+            git("checkout", "-b", "pr-source")
+            (scripts / "opencode-review.sh").write_text("exit 99\n")
+            (repo / "source.txt").write_text("PR head\n")
+            (repo / "large.txt").write_text("added PR line\n" * 40_000)
+            git("add", ".")
+            git("commit", "-m", "PR changes")
+            head = git("rev-parse", "HEAD")
+            git("checkout", "-b", "release/review", ancestor)
+            (repo / "target-only.txt").write_text("target branch advanced\n")
+            git("add", ".")
+            git("commit", "-m", "target changes")
+            base = git("rev-parse", "HEAD")
+            git("remote", "add", "origin", str(repo))
+            git("update-ref", "refs/pull/7/head", head)
+
+            capture = root / "capture"
+            capture.mkdir()
+            pr = {"state": "open", "head": {"sha": head, "ref": "pr-source"},
+                  "base": {"sha": "target-moved-after-checkout", "ref": "release/review"},
+                  "title": "Review fixture", "body": "PR description", "html_url": "https://example.com/pulls/7"}
+            (capture / "pr.json").write_text(json.dumps(pr))
+            tea = root / "tea"
+            tea.write_text(
+                "#!/usr/bin/env python3\n"
+                "import os, pathlib, sys\n"
+                "capture = pathlib.Path(os.environ['CAPTURE'])\n"
+                "if '-X' in sys.argv:\n"
+                "    payload = pathlib.Path(sys.argv[sys.argv.index('-d') + 1][1:])\n"
+                "    (capture / 'payload.json').write_text(payload.read_text())\n"
+                "elif sys.argv[2].endswith('/reviews'):\n"
+                "    print('[]')\n"
+                "else:\n"
+                "    print((capture / 'pr.json').read_text())\n"
+            )
+            tea.chmod(0o755)
+            executable = root / "opencode"
+            executable.write_text(
+                "#!/usr/bin/env python3\n"
+                "import json, os, pathlib, sys\n"
+                "if sys.argv[1:] == ['--version']:\n"
+                "    print('fixture'); sys.exit(0)\n"
+                "if sys.argv[1:] == ['run', '--help']:\n"
+                "    print('--standalone'); sys.exit(0)\n"
+                "capture = pathlib.Path(os.environ['CAPTURE'])\n"
+                "(capture / 'prompt.txt').write_text(sys.argv[2])\n"
+                "for i, arg in enumerate(sys.argv):\n"
+                "    if arg == '--file':\n"
+                "        path = pathlib.Path(sys.argv[i + 1])\n"
+                "        (capture / path.name).write_text(path.read_text())\n"
+                "review = '## 结论\\n审查完成\\n## 阻塞问题\\n未发现阻塞问题\\n## 非阻塞建议\\n无'\n"
+                "print(json.dumps({'type': 'text', 'part': {'text': review}}))\n"
+            )
+            executable.chmod(0o755)
+            subprocess.run(["bash", ".gitea/scripts/opencode-review.sh"], cwd=repo, check=True,
+                           capture_output=True, text=True, env=os.environ | {
+                               "PATH": f"{root}:{os.environ['PATH']}", "CAPTURE": str(capture),
+                               "OPENCODE_BIN": str(executable), "REVIEW_PR_NUMBER": "7", "REVIEW_HEAD_SHA": head,
+                           })
+            context = (capture / "context.md").read_text()
+            self.assertIn(f"- Base: `release/review` (`{base}`)", context)
+            self.assertIn(f"- Merge base: `{ancestor}`", context)
+            self.assertIn(f"- Head: `pr-source` (`{head}`)", context)
+            self.assertIn("PR description", context)
+            diff = (capture / "diff.patch").read_text()
+            self.assertGreater(len(diff), 500_000)
+            self.assertEqual(diff, git("diff", "--no-ext-diff", "--find-renames", f"{base}...{head}") + "\n")
+            self.assertNotIn("target-only.txt", diff)
+            self.assertIn("+PR head", diff)
+            prompt = (capture / "prompt.txt").read_text()
+            self.assertIn(f"被审查的 PR 的目标分支代码在：{repo}", prompt)
+            self.assertIn(f'git -C "{repo}" show <head_sha>:<path>', prompt)
+            self.assertNotIn("$workdir", prompt)
+            self.assertIn("/context.md", prompt)
+            self.assertIn("/diff.patch", prompt)
+            self.assertEqual(git("rev-parse", "HEAD"), base)
+            self.assertEqual((repo / "source.txt").read_text(), "common ancestor\n")
+            self.assertEqual(json.loads((capture / "payload.json").read_text())["commit_id"], head)
 
     def test_run_uses_isolated_directory_and_supported_flags(self):
         for standalone in (False, True):
@@ -69,25 +198,20 @@ class ReviewCliTest(unittest.TestCase):
             self.assertEqual(invocation["repo"], "/trusted/repository")
             self.assertEqual(invocation["args"], [
                 "run", "Review fixture", *(["--standalone"] if standalone else []), "--agent", "build",
-                "--model", "openai/gpt-6.1-sol", "--format", "json",
+                "--model", "sub/large", "--format", "json",
                 "--file", str(work / "context.md"), "--file", str(work / "diff.patch"),
             ])
             config = invocation["config"]
+            # 自定义 provider 的模型必须在配置中声明，否则 CLI 报 Model unavailable。
+            self.assertIn("large", config["provider"]["sub"]["models"])
             if standalone:
                 self.assertIn("permissions", config)
                 self.assertNotIn("permission", config)
             else:
                 self.assertNotIn("permissions", config)
-                self.assertEqual(config["permission"], {"*": "deny"})
+                self.assertEqual(config["permission"], {"*": "allow"})
                 self.assertEqual(config["agent"]["build"], {
-                    "steps": 8,
-                    "permission": {
-                        "*": "deny",
-                        "bash": {
-                            "*": "deny",
-                            ".gitea/scripts/opencode-review-action.sh *": "allow",
-                        },
-                    },
+                    "permission": {"*": "allow"},
                 })
 
     def test_host_runner_prefers_user_installation_and_honors_override(self):

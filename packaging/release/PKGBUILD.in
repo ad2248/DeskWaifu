@@ -1,0 +1,110 @@
+# Maintainer: kals
+# Generated from the checked-out release tag; all sources are acquired beforehand.
+pkgbase=deskwaifu-bin
+pkgname=('deskwaifu-bin' 'deskwaifu-ocr-bin' 'deskwaifu-tests' 'deskwaifu-ocr-tests')
+pkgver=@PKGVER@
+pkgrel=1
+pkgdesc='DeskWaifu application and all default plugins'
+arch=('x86_64')
+url='https://github.com/ad2248/DeskWaifu'
+license=('LicenseRef-Live2D-Open-Software' 'LicenseRef-Live2D-Proprietary' 'BSD-3-Clause' 'MIT' 'Unlicense')
+makedepends=('cmake' 'ninja' 'qt6-base' 'qt6-wayland' 'qt6-scxml' 'qt6-websockets' 'qt6-multimedia' 'layer-shell-qt' 'wayland' 'libglvnd' 'systemd-libs' 'opencv' 'yaml-cpp' 'onnxruntime-cpu')
+# Linker --wrap boundary tests need non-LTO objects. Use this same profile for
+# all four packages in both CI and release, not a different test-only build.
+options=('!debug' '!lto')
+source=('deskwaifu.tar.gz' 'private-deps.tar.gz' 'system-onnxruntime.patch' 'release-tools.tar.gz')
+sha256sums=('@SOURCE_SHA@' '@PRIVATE_SHA@' '@ORT_PATCH_SHA@' '@TOOLS_SHA@')
+
+_ocr_source_dir() {
+  local native="$srcdir/deskwaifu/plugins/perception/native"
+  if [[ ! -f "$native/CMakeLists.txt" ]]; then
+    native="$srcdir/deskwaifu/src/plugins/perception/native"
+  fi
+  if [[ ! -f "$native/CMakeLists.txt" ]]; then
+    printf '%s\n' 'OCR source CMakeLists.txt not found in selected release tag' >&2
+    return 1
+  fi
+  printf '%s\n' "$native"
+}
+
+prepare() {
+  local native
+  native=$(_ocr_source_dir) || return
+  # Distribution build patch for historical tags, never modify the tag checkout
+  # or restore its private SDK dependency. Current tags already use system ORT.
+  if grep -q 'set(ONNXRUNTIME_ROOT ' "$native/CMakeLists.txt"; then
+    patch --batch --forward -p1 -d "$native" -i "$srcdir/system-onnxruntime.patch"
+  fi
+}
+
+build() {
+  local ocr_source
+  ocr_source=$(_ocr_source_dir) || return
+  # scripts/release-build.sh exports DESKWAIFU_CCACHE only when the runner
+  # mounts the persistent cache volume and the build is not clean.
+  local ccache_launcher=()
+  if [[ -n "${DESKWAIFU_CCACHE:-}" ]]; then
+    ccache_launcher=(-DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache)
+  fi
+  cmake -S "$srcdir/deskwaifu" -B "$srcdir/build-main" -G Ninja \
+    "${ccache_launcher[@]}" \
+    -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib \
+    -DBUILD_TESTING=ON -DDESKWAIFU_BUILD_OCR=OFF -DDESKWAIFU_PACKAGE_TESTS=ON \
+    -DDESKWAIFU_TEST_TOOLS="$srcdir/release-tools/scripts" \
+    -DDESKWAIFU_BUILD_CONTROL=ON -DDESKWAIFU_BUILD_GUI_PLUGIN_SDK=ON \
+    -DDESKWAIFU_BUILD_DESKTOP_PLUGIN=ON -DDESKWAIFU_BUILD_PERCEPTION_PLUGIN=ON \
+    -DDESKWAIFU_BUILD_IPC_PLUGIN=ON -DDESKWAIFU_BUILD_SPEECH_PLUGIN=ON \
+    -DDESKWAIFU_BUILD_READING_CLIP_PLUGIN=ON \
+    -DSDK_ROOT_PATH="$srcdir/private-deps/CubismSdkForNative-5-r.5" \
+    -DGLEW_PATH="$srcdir/private-deps/glew"
+  cmake --build "$srcdir/build-main" --parallel "${CMAKE_BUILD_PARALLEL_LEVEL:-4}"
+  cmake -S "$ocr_source" -B "$srcdir/build-ocr" -G Ninja \
+    "${ccache_launcher[@]}" \
+    -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib \
+    -DBUILD_TESTING=ON -DDESKWAIFU_PACKAGE_TESTS=ON \
+    -DDESKWAIFU_TEST_TOOLS="$srcdir/release-tools/scripts"
+  cmake --build "$srcdir/build-ocr" --parallel "${CMAKE_BUILD_PARALLEL_LEVEL:-4}"
+  python3 "$srcdir/release-tools/scripts/prepare-installed-tests.py" "$srcdir/build-main" "$srcdir/deskwaifu" "$srcdir/release-tools/scripts"
+  python3 "$srcdir/release-tools/scripts/prepare-installed-tests.py" "$srcdir/build-ocr" "$srcdir/deskwaifu" "$srcdir/release-tools/scripts" --ocr
+}
+
+package_deskwaifu-bin() {
+  depends=('glibc' 'gcc-libs' 'wayland' 'libglvnd' 'systemd-libs' 'qt6-base>=6.5' 'qt6-wayland>=6.5' 'qt6-scxml>=6.5' 'qt6-websockets>=6.5' 'qt6-multimedia>=6.5' 'layer-shell-qt>=6.6' 'bash' 'python' 'psmisc')
+  optdepends=('deskwaifu-ocr-bin: optional in-process OCR module (models provisioned separately)')
+  provides=("deskwaifu=$pkgver")
+  conflicts=('deskwaifu')
+  DESTDIR="$pkgdir" cmake --install "$srcdir/build-main" --component DeskWaifu
+  install -Dm644 "$srcdir/deskwaifu/README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
+  local sdk="$srcdir/private-deps/CubismSdkForNative-5-r.5"
+  install -Dm644 "$sdk/LICENSE.md" "$pkgdir/usr/share/licenses/$pkgname/Live2D-SDK.md"
+  install -Dm644 "$sdk/Core/LICENSE.md" "$pkgdir/usr/share/licenses/$pkgname/Live2D-Core.md"
+  install -Dm644 "$sdk/Framework/LICENSE.md" "$pkgdir/usr/share/licenses/$pkgname/Live2D-Framework.md"
+  install -Dm644 "$srcdir/private-deps/glew/LICENSE.txt" "$pkgdir/usr/share/licenses/$pkgname/GLEW.txt"
+}
+
+package_deskwaifu-ocr-bin() {
+  pkgdesc='DeskWaifu in-process OCR module using system ONNX Runtime (no models or dictionaries)'
+  license=('MIT' 'Apache-2.0')
+  depends=("deskwaifu-bin=$pkgver-$pkgrel" 'glibc' 'gcc-libs' 'qt6-base>=6.5' 'opencv' 'yaml-cpp' 'onnxruntime-cpu')
+  provides=("deskwaifu-ocr=$pkgver")
+  conflicts=('deskwaifu-ocr')
+  DESTDIR="$pkgdir" cmake --install "$srcdir/build-ocr" --component DeskWaifuOCR
+}
+
+package_deskwaifu-tests() {
+  pkgdesc='DeskWaifu installed platform unit/integration tests (CI only)'
+  depends=("deskwaifu-bin=$pkgver-$pkgrel" 'qt6-base' 'dbus' 'python' 'cmake' 'mesa' 'libxkbcommon' 'noto-fonts')
+  DESTDIR="$pkgdir" cmake --install "$srcdir/build-main" --component DeskWaifuTests
+  install -d "$pkgdir/usr/lib/deskwaifu/tests/scripts"
+  cp -a "$srcdir/build-main/installed-scripts/." "$pkgdir/usr/lib/deskwaifu/tests/scripts/"
+  install -Dm755 "$srcdir/release-tools/scripts/test-environment.py" "$pkgdir/usr/lib/deskwaifu/tests/test-environment.py"
+}
+
+package_deskwaifu-ocr-tests() {
+  pkgdesc='DeskWaifu installed OCR unit/integration tests (CI only, generated ONNX fixtures)'
+  depends=("deskwaifu-ocr-bin=$pkgver-$pkgrel" 'python' 'cmake' 'dbus')
+  DESTDIR="$pkgdir" cmake --install "$srcdir/build-ocr" --component DeskWaifuOCRTests
+  install -d "$pkgdir/usr/lib/deskwaifu/ocr-tests/scripts"
+  cp -a "$srcdir/build-ocr/installed-scripts/." "$pkgdir/usr/lib/deskwaifu/ocr-tests/scripts/"
+  install -Dm755 "$srcdir/release-tools/scripts/test-environment.py" "$pkgdir/usr/lib/deskwaifu/ocr-tests/test-environment.py"
+}

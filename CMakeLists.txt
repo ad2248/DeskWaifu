@@ -1,142 +1,62 @@
-cmake_minimum_required(VERSION 3.16)
-
-# Set app name.
-set(APP_NAME deskwaifu)
-
-# Set directory paths based on the new layout
-set(SDK_ROOT_PATH ${CMAKE_CURRENT_SOURCE_DIR}/CubismSdkForNative-5-r.5)
-set(CORE_PATH ${SDK_ROOT_PATH}/Core)
-set(FRAMEWORK_PATH ${SDK_ROOT_PATH}/Framework)
-set(THIRD_PARTY_PATH ${CMAKE_CURRENT_SOURCE_DIR}/thirdParty)
-
-set(STB_PATH ${THIRD_PARTY_PATH}/stb)
-set(GLEW_PATH ${THIRD_PARTY_PATH}/glew)
-
-# Shaders from SDK
-set(SAMPLE_SHADER_PATH ${SDK_ROOT_PATH}/Samples/OpenGL/Shaders/Standard)
-set(FRAMEWORK_SHADER_PATH ${FRAMEWORK_PATH}/src/Rendering/OpenGL/Shaders/Standard)
-set(COMMON_SRC_PATH ${SDK_ROOT_PATH}/Samples/Common)
-
-# Set project.
-project(${APP_NAME})
+cmake_minimum_required(VERSION 3.25)
+project(deskwaifu LANGUAGES C CXX)
 include(GNUInstallDirs)
-
 include(CTest)
-option(DESKWAIFU_BUILD_CONTROL "Build the Qt control application" ON)
+if(BUILD_TESTING)
+  include(cmake/TestEnvironment.cmake)
+endif()
 
-# Define output directory.
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin)
-# Set configuration (Release and Debug only).
-set(CMAKE_CONFIGURATION_TYPES Debug Release
-  CACHE STRING "Configurations" FORCE
-)
-# Suppress generation of ZERO_CHECK project.
-set(CMAKE_SUPPRESS_REGENERATION ON)
-
-# Suppress GLEW process.
-set(GLEW_EGL ON CACHE BOOL "" FORCE)
-set(BUILD_UTILS OFF CACHE BOOL "" FORCE)
-
-# Specify version of compiler.
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Add Cubism Core.
-add_library(Live2DCubismCore STATIC IMPORTED)
-set_target_properties(Live2DCubismCore
-  PROPERTIES
-    IMPORTED_LOCATION ${CORE_PATH}/lib/linux/x86_64/libLive2DCubismCore.a
-    INTERFACE_INCLUDE_DIRECTORIES ${CORE_PATH}/include
-)
+option(DESKWAIFU_BUILD_CONTROL "Build the GUI platform and GUI plugins" ON)
+option(DESKWAIFU_BUILD_GUI_PLUGIN_SDK "Build the optional GUI SDK" ${DESKWAIFU_BUILD_CONTROL})
+option(DESKWAIFU_BUILD_DESKTOP_PLUGIN "Build the model/window/input plugin" ON)
+option(DESKWAIFU_BUILD_PERCEPTION_PLUGIN "Build the image/OCR/screenshot plugin" ON)
+option(DESKWAIFU_BUILD_OCR "Build the optional in-process OCR module" ON)
+option(DESKWAIFU_BUILD_IPC_PLUGIN "Build the IPC transport plugin" ON)
+option(DESKWAIFU_BUILD_SPEECH_PLUGIN "Build the speech plugin" ON)
+option(DESKWAIFU_BUILD_READING_CLIP_PLUGIN "Build the clipboard reading plugin" ON)
+option(DESKWAIFU_TEST_GATE "Require the complete ordinary regression gate" OFF)
+option(DESKWAIFU_ENABLE_SANITIZERS "Enable AddressSanitizer and UBSan" OFF)
+option(DESKWAIFU_PACKAGE_TESTS "Install standalone runtime tests for split test packages" OFF)
+if(DESKWAIFU_BUILD_CONTROL AND NOT DESKWAIFU_BUILD_GUI_PLUGIN_SDK)
+  message(FATAL_ERROR "The GUI platform requires the GUI SDK")
+endif()
+if(DESKWAIFU_ENABLE_SANITIZERS)
+  add_compile_options(-fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer)
+  add_link_options(-fsanitize=address,undefined)
+endif()
+if(DESKWAIFU_TEST_GATE)
+  foreach(option BUILD_TESTING DESKWAIFU_BUILD_CONTROL DESKWAIFU_BUILD_DESKTOP_PLUGIN
+      DESKWAIFU_BUILD_PERCEPTION_PLUGIN DESKWAIFU_BUILD_IPC_PLUGIN
+      DESKWAIFU_BUILD_SPEECH_PLUGIN DESKWAIFU_BUILD_READING_CLIP_PLUGIN)
+    if(NOT ${option})
+      message(FATAL_ERROR "The complete regression gate requires ${option}")
+    endif()
+  endforeach()
+  find_program(DBUS_RUN_SESSION dbus-run-session REQUIRED)
+  find_program(NODE_EXECUTABLE NAMES node nodejs REQUIRED)
+endif()
 
-# Find opengl libraries.
-find_package(OpenGL REQUIRED COMPONENTS OpenGL EGL)
-
-# Add GLEW.
-set(GLEW_EGL ON CACHE BOOL "" FORCE)
-add_subdirectory(${GLEW_PATH}/build/cmake ${CMAKE_CURRENT_BINARY_DIR}/glew)
-
-# Specify Cubism Framework rendering.
-set(FRAMEWORK_SOURCE OpenGL)
-# Add Cubism Native Framework.
-add_subdirectory(${FRAMEWORK_PATH} ${CMAKE_CURRENT_BINARY_DIR}/Framework)
-# Add rendering definition to framework.
-target_compile_definitions(Framework PUBLIC CSM_TARGET_LINUX_GL)
-# Add include path of GLEW to framework.
-target_include_directories(Framework PUBLIC ${GLEW_PATH}/include)
-# Link libraries to framework.
-target_link_libraries(Framework Live2DCubismCore glew_s)
-
-# Find Wayland & EGL via PkgConfig
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(WAYLAND REQUIRED wayland-client wayland-egl wayland-cursor egl)
-pkg_get_variable(WAYLAND_SCANNER wayland-scanner wayland_scanner)
-
-# Generate Wayland protocol files
-set(PROTOCOL_DIR ${CMAKE_CURRENT_SOURCE_DIR}/protocol)
-set(WAYLAND_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
-file(MAKE_DIRECTORY ${WAYLAND_GEN_DIR})
-
-macro(wayland_generate_protocol PROTOCOL_XML NAMESPACE)
-    set(HEADER "${WAYLAND_GEN_DIR}/${NAMESPACE}-client-protocol.h")
-    set(CODE "${WAYLAND_GEN_DIR}/${NAMESPACE}-protocol.c")
-
-    add_custom_command(
-        OUTPUT ${HEADER}
-        COMMAND ${WAYLAND_SCANNER} client-header ${PROTOCOL_XML} ${HEADER}
-        DEPENDS ${PROTOCOL_XML}
-    )
-    add_custom_command(
-        OUTPUT ${CODE}
-        COMMAND ${WAYLAND_SCANNER} private-code ${PROTOCOL_XML} ${CODE}
-        DEPENDS ${PROTOCOL_XML} ${HEADER}
-    )
-    list(APPEND PROTOCOL_SOURCES ${CODE} ${HEADER})
-endmacro()
-
-wayland_generate_protocol(${PROTOCOL_DIR}/xdg-shell.xml xdg-shell)
-wayland_generate_protocol(${PROTOCOL_DIR}/wlr-layer-shell-unstable-v1.xml wlr-layer-shell-unstable-v1)
-
-# Make executable app.
-add_executable(${APP_NAME} ${PROTOCOL_SOURCES})
-# Add common source files from SDK.
-add_subdirectory(${COMMON_SRC_PATH} ${CMAKE_CURRENT_BINARY_DIR}/src/Common)
-# Add our source files in ./src
-add_subdirectory(src)
-
-install(TARGETS ${APP_NAME}
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT DeskWaifu)
-install(PROGRAMS deskwaifu-ctl
-  DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT DeskWaifu)
-
-# Link libraries to app.
-target_link_libraries(${APP_NAME}
-  Framework
-  ${OPENGL_LIBRARIES}
-  ${WAYLAND_LIBRARIES}
-)
-# Specify include directories.
-target_include_directories(${APP_NAME} PRIVATE 
-  ${STB_PATH}
-  ${WAYLAND_GEN_DIR}
-  ${WAYLAND_INCLUDE_DIRS}
-)
-
-# Generate embedded shaders header at configure time.
-set(EMBEDDED_SHADERS_HEADER ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedShaders.hpp)
-execute_process(
-  COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_shaders.sh
-    ${FRAMEWORK_SHADER_PATH}
-    ${SAMPLE_SHADER_PATH}
-    ${EMBEDDED_SHADERS_HEADER}
-)
-target_include_directories(${APP_NAME} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
-
-if (DESKWAIFU_BUILD_CONTROL)
-  add_subdirectory(control)
-endif ()
-
-if (BUILD_TESTING)
-  add_subdirectory(tests)
-endif ()
+include(cmake/PluginBoundaries.cmake)
+add_subdirectory(sdk)
+add_subdirectory(platform)
+add_subdirectory(plugins)
+if(DESKWAIFU_BUILD_OCR)
+  add_subdirectory(plugins/perception/native)
+endif()
+if(DESKWAIFU_BUILD_CONTROL)
+  add_subdirectory(platform/control)
+endif()
+if(BUILD_TESTING)
+  add_subdirectory(platform/tests)
+endif()
+deskwaifu_validate_boundaries()
+if(BUILD_TESTING AND DESKWAIFU_PACKAGE_TESTS)
+  include(cmake/InstallTests.cmake)
+endif()

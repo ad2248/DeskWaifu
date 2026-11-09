@@ -1,0 +1,86 @@
+name: DeskWaifu Arch release
+
+on:
+  push:
+    tags: ['**']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag name used unchanged for packaging and upload (never a branch); created on the latest main commit when it does not exist'
+        required: true
+        type: string
+      release_notes:
+        description: '版本发布更新说明（Markdown，将作为 GitHub Release 正文）'
+        required: true
+        type: string
+      notes_only:
+        description: 'Only update the existing published release body; never rebuild or change assets'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: deskwaifu-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: deskwaifu-arch
+    timeout-minutes: 60
+    env:
+      http_proxy: http://100.64.0.11:7912
+      https_proxy: http://100.64.0.11:7912
+      ALL_PROXY: http://100.64.0.11:7912
+      no_proxy: 127.0.0.1,localhost
+    steps:
+      - name: Verify runner isolation
+        run: |
+          test ! -S /var/run/docker.sock
+          test "$(id -u)" = 0 || {
+            echo 'Release requires root orchestration with a separate makepkg user; no sudo fallback' >&2
+            exit 1
+          }
+
+      - name: Check out repository
+        uses: https://git.kals.top/actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolve release tag, creating it on main when missing
+        env:
+          RELEASE_EVENT: ${{ github.event_name }}
+          RELEASE_REF: ${{ github.ref }}
+          RELEASE_EVENT_SHA: ${{ github.sha }}
+          RELEASE_INPUT_TAG: ${{ github.event.inputs.tag }}
+          RELEASE_NOTES: ${{ github.event.inputs.release_notes }}
+          RELEASE_NOTES_ONLY: ${{ github.event.inputs.notes_only }}
+          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
+        run: python3 scripts/release-source.py
+
+      - name: Acquire verified sources and build unprivileged Arch packages
+        if: ${{ github.event.inputs.notes_only != 'true' }}
+        run: bash "$RELEASE_TOOLS_DIR/scripts/release-build.sh"
+
+      - name: Discard test packages without executing tests
+        if: ${{ github.event.inputs.notes_only != 'true' }}
+        run: python3 "$RELEASE_TOOLS_DIR/scripts/release-packaging.py" prune-tests release-assets "$RELEASE_TAG" "$RELEASE_COMMIT"
+
+      - name: Upload verified packages to GitHub release
+        # Never expose this credential to checkout, dependency acquisition,
+        # CMake, makepkg, tests, or shell profiles used by the build user.
+        env:
+          RELEASE_UPLOAD: ${{ secrets.RELEASE_UPLOAD }}
+          RELEASE_NOTES: ${{ github.event.inputs.release_notes }}
+          RELEASE_NOTES_ONLY: ${{ github.event.inputs.notes_only }}
+        run: |
+          args=()
+          if [[ "$RELEASE_NOTES_ONLY" == true ]]; then args+=(--notes-only); fi
+          python3 "$RELEASE_TOOLS_DIR/scripts/release-upload.py" release-assets "$RELEASE_TAG" "$RELEASE_COMMIT" "${args[@]}"
+
+      - name: Clean temporary packages
+        if: always()
+        run: rm -f release-assets/*.pkg.tar.zst

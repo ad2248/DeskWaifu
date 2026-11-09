@@ -1,0 +1,42 @@
+# 普通测试逐项隔离，直接运行 CTest 时也不借用宿主桌面与用户目录。
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+find_program(DBUS_RUN_SESSION dbus-run-session REQUIRED)
+
+function(deskwaifu_finalize_test_timeouts)
+  get_property(tests DIRECTORY PROPERTY TESTS)
+  foreach(name IN LISTS tests)
+    get_property(isolated TEST "${name}" PROPERTY DESKWAIFU_ISOLATED)
+    if(NOT isolated)
+      continue()
+    endif()
+    get_property(will_fail TEST "${name}" PROPERTY WILL_FAIL)
+    get_property(skip_code TEST "${name}" PROPERTY SKIP_RETURN_CODE)
+    if(will_fail)
+      set(expect_failure 1)
+      # 只反转实际命令的正常非零退出，不能反转包装器自身的失败。
+      set_property(TEST "${name}" PROPERTY WILL_FAIL FALSE)
+    else()
+      set(expect_failure 0)
+    endif()
+    set_property(TEST "${name}" APPEND PROPERTY ENVIRONMENT_MODIFICATION
+      "DESKWAIFU_TEST_WILL_FAIL=set:${expect_failure}"
+      "DESKWAIFU_TEST_SKIP_CODE=set:${skip_code}")
+  endforeach()
+endfunction()
+
+function(deskwaifu_add_test)
+  cmake_parse_arguments(PARSE_ARGV 0 TEST "" "NAME" "COMMAND;ENVIRONMENT")
+  list(POP_FRONT TEST_COMMAND executable)
+  if(TARGET "${executable}")
+    set(executable "$<TARGET_FILE:${executable}>")
+  endif()
+  get_filename_component(launcher "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../scripts/test-environment.py" ABSOLUTE)
+  add_test(NAME "${TEST_NAME}" COMMAND "${Python3_EXECUTABLE}" "${launcher}"
+    "${CMAKE_COMMAND}" -E env ${TEST_ENVIRONMENT} "${executable}" ${TEST_COMMAND})
+  set_property(TEST "${TEST_NAME}" PROPERTY DESKWAIFU_ISOLATED TRUE)
+  get_property(scheduled DIRECTORY PROPERTY DESKWAIFU_TEST_TIMEOUTS_SCHEDULED)
+  if(NOT scheduled)
+    set_property(DIRECTORY PROPERTY DESKWAIFU_TEST_TIMEOUTS_SCHEDULED TRUE)
+    cmake_language(DEFER CALL deskwaifu_finalize_test_timeouts)
+  endif()
+endfunction()

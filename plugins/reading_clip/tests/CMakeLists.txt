@@ -1,0 +1,5 @@
+find_package(Qt6 6.5 REQUIRED COMPONENTS Gui)
+add_executable(reading-pipeline-test ReadingPipelineTest.cpp)
+deskwaifu_domain_test(reading-pipeline-test reading_clip)
+target_link_libraries(reading-pipeline-test PRIVATE deskwaifu_reading Qt6::Gui)
+deskwaifu_add_test(NAME reading-pipeline COMMAND reading-pipeline-test)

@@ -1,0 +1,151 @@
+"""Manual-only OCR IPC smoke test in a private headless compositor (stdlib only)."""
+
+import argparse
+import json
+import os
+from pathlib import Path
+import signal
+import socket
+import subprocess
+import tempfile
+import time
+
+
+def wait_for(predicate, timeout=30):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        value = predicate()
+        if value:
+            return value
+        time.sleep(0.02)
+    raise TimeoutError("smoke-test condition timed out")
+
+
+def stop(process):
+    if process.poll() is None:
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=5)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--app", type=Path, required=True)
+    parser.add_argument("--module", type=Path, required=True, help="installed/staged module; models deployed separately")
+    parser.add_argument("--detection-model-dir", type=Path,
+                        default=Path("/usr/share/deskwaifu/ocr/models/PP-OCRv6_small_det"))
+    parser.add_argument("--recognition-model-dir", type=Path,
+                        default=Path("/usr/share/deskwaifu/ocr/models/PP-OCRv6_small_rec"))
+    parser.add_argument("--live2d-models", type=Path, required=True)
+    parser.add_argument("--samples", type=Path, required=True)
+    parser.add_argument("--logs", type=Path, required=True)
+    parser.add_argument("--compositor", choices=("sway", "kwin"), default="sway")
+    args = parser.parse_args()
+    root = Path(__file__).resolve().parents[3]
+    args.logs.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="ocr-smoke-", dir="/tmp/opencode") as temporary:
+        runtime = Path(temporary)
+        perception_config = runtime / "config/deskwaifu/plugin/perception/config.json"
+        perception_config.parent.mkdir(parents=True)
+        perception_config.write_text(json.dumps({
+            "ocr_detection_model_dir": str(args.detection_model_dir.resolve()),
+            "ocr_recognition_model_dir": str(args.recognition_model_dir.resolve()),
+        }))
+        env = dict(os.environ, XDG_RUNTIME_DIR=str(runtime), XDG_CONFIG_HOME=str(runtime / "config"),
+                   DBUS_SESSION_BUS_ADDRESS=f"unix:path={runtime}/no-session-bus",
+                   WLR_BACKENDS="headless", WLR_LIBINPUT_NO_DEVICES="1", WLR_RENDERER="pixman",
+                   LIBGL_ALWAYS_SOFTWARE="1", GALLIUM_DRIVER="llvmpipe", QT_QPA_PLATFORM="wayland")
+        env.pop("WAYLAND_DISPLAY", None)
+        env.pop("SWAYSOCK", None)
+        env.pop("QT_WAYLAND_SHELL_INTEGRATION", None)
+        compositor_env = dict(env)
+        compositor_command = ["sway", "--config", str(root / "containers/sway.config")]
+        if args.compositor == "kwin":
+            compositor_env["QT_QPA_PLATFORM"] = "offscreen"
+            compositor_command = ["dbus-run-session", "--", "kwin_wayland", "--virtual", "--no-lockscreen", "--no-global-shortcuts", "--no-kactivities"]
+        with (args.logs / "compositor.log").open("w") as log:
+            sway = subprocess.Popen(compositor_command, env=compositor_env, stdout=log, stderr=log, start_new_session=True)
+        try:
+            display = wait_for(lambda: next((p for p in runtime.glob("wayland-*") if p.is_socket()), None))
+            env["WAYLAND_DISPLAY"] = display.name
+            for installed in (False, True):
+                env["DESKWAIFU_OCR_MODULE"] = str(args.module.resolve()) if installed else str(runtime / "missing-module")
+                with (args.logs / f"app-{installed}.log").open("w") as log:
+                    app = subprocess.Popen([str(args.app.resolve()), "--models_dir", str(args.live2d_models.resolve())], env=env, stdout=log, stderr=log)
+                try:
+                    endpoint = runtime / "deskwaifu.sock"
+                    wait_for(endpoint.is_socket)
+
+                    def command(name, **kwargs):
+                        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+                            connection.settimeout(3)
+                            connection.connect(str(endpoint))
+                            connection.sendall((json.dumps({"command": name, **kwargs}) + "\n").encode())
+                            with connection.makefile("rb") as stream:
+                                return json.loads(stream.readline())
+
+                    def finished(job):
+                        reply = command("get_ocr_result", job_id=job)
+                        return reply if reply.get("state") != "pending" else None
+
+                    def submit(sample):
+                        reply = command("ocr_recognize", image=str((args.samples / sample).resolve()))
+                        assert reply["ok"], reply
+                        return reply["job_id"]
+
+                    def initialized():
+                        status = command("get_ocr_status")
+                        return status if status.get("availability_state") != "checking" else None
+
+                    status = wait_for(initialized, timeout=60)
+                    assert status["available"] == installed, status
+                    assert status["execution_mode"] == "in_process", status
+                    assert command("get_status")["ok"]
+                    reading = command("get_reading_clip_status")
+                    assert reading["ok"] and reading["state"] == "idle", reading
+                    if not installed:
+                        assert status["error_code"] == "module_missing", status
+                        assert not command("ocr_recognize", image=str((args.samples / "light.png").resolve()))["ok"]
+                    else:
+                        first = submit("light.png")
+                        # The native module must be mapped into the application, not a helper.
+                        assert str(args.module.resolve()) in Path(f"/proc/{app.pid}/maps").read_text()
+                        children = Path(f"/proc/{app.pid}/task/{app.pid}/children").read_text().split()
+                        assert all(Path(f"/proc/{pid}/comm").read_text().strip() != "deskwaifu-ocr" for pid in children)
+                        assert not command("ocr_recognize", image=str((args.samples / "light.png").resolve()))["ok"]
+                        start = time.monotonic()
+                        assert command("get_status")["ok"]
+                        responsive_s = time.monotonic() - start
+                        result = wait_for(lambda: finished(first), timeout=60)
+                        assert result["state"] == "completed", result
+                        assert len(result["response"]["result"]["lines"]) == 3, result
+                        second = submit("blank.png")
+                        result = wait_for(lambda: finished(second))
+                        assert result["state"] == "completed" and not result["response"]["result"]["lines"], result
+                        cancelled = submit("dense.png")
+                        assert command("cancel_ocr", job_id=cancelled)["ok"]
+                        assert finished(cancelled)["state"] == "failed"
+                        wait_for(lambda: not command("get_ocr_status")["running"])
+                        recovered = submit("light.jpg")
+                        result = wait_for(lambda: finished(recovered), timeout=60)
+                        assert result["state"] == "completed", result
+                        print(json.dumps({"installed": True, "live_ipc": "passed", "get_status_while_ocr_s": round(responsive_s, 4)}))
+                    assert command("quit")["ok"]
+                    app.wait(timeout=10)
+                    assert app.returncode == 0, app.returncode
+                    print("optional package", installed, "passed")
+                finally:
+                    stop(app)
+                wait_for(lambda: not endpoint.exists())
+        finally:
+            # 合成器可能持有私有 D-Bus 子进程，而非用户的会话总线。
+            if sway.poll() is None:
+                os.killpg(sway.pid, signal.SIGTERM)
+            stop(sway)
+
+
+if __name__ == "__main__":
+    main()

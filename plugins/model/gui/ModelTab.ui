@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>ModelTab</class>
+ <widget class="QScrollArea" name="modelTab">
+  <property name="frameShape"><enum>QFrame::Shape::NoFrame</enum></property>
+  <property name="widgetResizable"><bool>true</bool></property>
+  <widget class="QWidget" name="modelContents">
+   <layout class="QVBoxLayout" name="modelLayout">
+    <item><widget class="QGroupBox" name="modelGroup">
+     <property name="title"><string>模型选择</string></property>
+     <layout class="QGridLayout" name="modelGrid">
+      <item row="0" column="0" colspan="3"><widget class="QComboBox" name="modelCombo"/></item>
+      <item row="1" column="0"><widget class="QPushButton" name="previousModelButton"><property name="text"><string>上一个</string></property></widget></item>
+      <item row="1" column="1"><widget class="QPushButton" name="setModelButton"><property name="text"><string>加载所选模型</string></property></widget></item>
+      <item row="1" column="2"><widget class="QPushButton" name="nextModelButton"><property name="text"><string>下一个</string></property></widget></item>
+      <item row="2" column="0" colspan="3"><layout class="QHBoxLayout" name="modelActionsLayout">
+       <item><widget class="QPushButton" name="toggleHiddenButton"><property name="text"><string>显示／隐藏</string></property></widget></item>
+       <item><widget class="QPushButton" name="switchSkinButton"><property name="text"><string>切换皮肤</string></property></widget></item>
+      </layout></item>
+     </layout>
+    </widget></item>
+    <item><widget class="QGroupBox" name="expressionGroup"><property name="title"><string>表情</string></property>
+     <layout class="QHBoxLayout" name="expressionLayout">
+      <item><widget class="QComboBox" name="expressionCombo"/></item>
+      <item><widget class="QPushButton" name="setExpressionButton"><property name="text"><string>应用表情</string></property></widget></item>
+     </layout>
+    </widget></item>
+    <item><widget class="QGroupBox" name="motionGroup"><property name="title"><string>动作</string></property>
+     <layout class="QGridLayout" name="motionLayout">
+      <item row="0" column="0" colspan="3"><widget class="QComboBox" name="motionCombo"/></item>
+      <item row="1" column="0"><widget class="QLabel" name="priorityLabel"><property name="text"><string>优先级</string></property></widget></item>
+      <item row="1" column="1"><widget class="QSpinBox" name="prioritySpin"><property name="minimum"><number>1</number></property><property name="maximum"><number>3</number></property><property name="value"><number>2</number></property></widget></item>
+      <item row="1" column="2"><widget class="QPushButton" name="playMotionButton"><property name="text"><string>播放所选动作</string></property></widget></item>
+      <item row="2" column="2"><widget class="QPushButton" name="randomMotionButton"><property name="text"><string>随机播放 TapBody 动作</string></property></widget></item>
+     </layout>
+    </widget></item>
+    <item><widget class="QGroupBox" name="mouthGroup"><property name="title"><string>外部口型同步</string></property>
+     <layout class="QHBoxLayout" name="mouthLayout">
+      <item><widget class="QLabel" name="mouthLabel"><property name="text"><string>张嘴幅度</string></property></widget></item>
+      <item><widget class="QDoubleSpinBox" name="mouthSpin"><property name="maximum"><double>1.0</double></property><property name="singleStep"><double>0.05</double></property></widget></item>
+      <item><widget class="QPushButton" name="mouthButton"><property name="text"><string>应用</string></property></widget></item>
+     </layout>
+    </widget></item>
+    <item><layout class="QHBoxLayout" name="outputLayout">
+     <item><widget class="QLabel" name="outputLabel"><property name="text"><string>显示器</string></property></widget></item>
+     <item><widget class="QComboBox" name="outputCombo"><property name="enabled"><bool>false</bool></property><property name="toolTip"><string>切换后立即保存，模型居中并清除裁剪，保留缩放。</string></property></widget></item>
+    </layout></item>
+    <item><widget class="QGroupBox" name="transformGroup"><property name="title"><string>位置与缩放</string></property>
+     <layout class="QGridLayout" name="horizontalLayout">
+      <item row="0" column="0"><widget class="QLabel" name="positionXLabel"><property name="text"><string>X 偏移</string></property></widget></item>
+      <item row="0" column="1"><widget class="QDoubleSpinBox" name="positionXSpin"><property name="minimum"><double>-100.0</double></property><property name="maximum"><double>100.0</double></property><property name="singleStep"><double>0.1</double></property></widget></item>
+      <item row="0" column="2"><widget class="QLabel" name="positionYLabel"><property name="text"><string>Y 偏移</string></property></widget></item>
+      <item row="0" column="3"><widget class="QDoubleSpinBox" name="positionYSpin"><property name="minimum"><double>-100.0</double></property><property name="maximum"><double>100.0</double></property><property name="singleStep"><double>0.1</double></property></widget></item>
+      <item row="1" column="0"><widget class="QLabel" name="zoomLabel"><property name="text"><string>缩放</string></property></widget></item>
+      <item row="1" column="1"><widget class="QDoubleSpinBox" name="zoomSpin"><property name="minimum"><double>0.1</double></property><property name="maximum"><double>10.0</double></property><property name="singleStep"><double>0.1</double></property><property name="value"><double>1.0</double></property></widget></item>
+      <item row="1" column="2"><widget class="QPushButton" name="transformButton"><property name="text"><string>应用并保存</string></property></widget></item>
+      <item row="1" column="3"><spacer name="horizontalSpacer_2"><property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property></spacer></item>
+     </layout>
+    </widget></item>
+    <item><widget class="QGroupBox" name="positionEdit"><property name="title"><string>裁剪框</string></property>
+     <layout class="QGridLayout" name="horizontalLayout_2">
+      <item row="0" column="0" colspan="4"><widget class="QCheckBox" name="cropEnabledCheck"><property name="text"><string>启用裁剪</string></property></widget></item>
+      <item row="1" column="0"><widget class="QLabel" name="cropBox_x_label"><property name="text"><string>X</string></property></widget></item>
+      <item row="1" column="1"><widget class="QSpinBox" name="cropBox_x"><property name="minimum"><number>-2147483648</number></property><property name="maximum"><number>2147483647</number></property><property name="singleStep"><number>1</number></property></widget></item>
+      <item row="1" column="2"><widget class="QLabel" name="cropBox_y_label"><property name="text"><string>Y</string></property></widget></item>
+      <item row="1" column="3"><widget class="QSpinBox" name="cropBox_y"><property name="minimum"><number>-2147483648</number></property><property name="maximum"><number>2147483647</number></property><property name="singleStep"><number>1</number></property></widget></item>
+      <item row="2" column="0"><widget class="QLabel" name="cropBox_w_label"><property name="text"><string>宽度</string></property></widget></item>
+      <item row="2" column="1"><widget class="QSpinBox" name="cropBox_w"><property name="minimum"><number>1</number></property><property name="maximum"><number>2147483647</number></property><property name="singleStep"><number>1</number></property></widget></item>
+      <item row="2" column="2"><widget class="QLabel" name="cropBox_h_label"><property name="text"><string>高度</string></property></widget></item>
+      <item row="2" column="3"><widget class="QSpinBox" name="cropBox_h"><property name="minimum"><number>1</number></property><property name="maximum"><number>2147483647</number></property><property name="singleStep"><number>1</number></property></widget></item>
+      <item row="3" column="0" colspan="2"><widget class="QPushButton" name="dragEditButton"><property name="text"><string>拖放编辑</string></property></widget></item>
+      <item row="3" column="2" colspan="2"><spacer name="horizontalSpacer"><property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property></spacer></item>
+     </layout>
+    </widget></item>
+    <item><layout class="QHBoxLayout" name="transformActionsLayout">
+     <item><widget class="QPushButton" name="cancelTransformButton"><property name="text"><string>取消编辑</string></property></widget></item>
+     <item><widget class="QPushButton" name="relocateCropButton"><property name="text"><string>移回屏幕</string></property></widget></item>
+     <item><widget class="QPushButton" name="retryTransformButton"><property name="text"><string>重试保存</string></property></widget></item>
+     <item><widget class="QPushButton" name="xformResetButton"><property name="text"><string>重置</string></property></widget></item>
+    </layout></item>
+    <item><widget class="QLabel" name="transformStatusLabel"><property name="text"><string>尚未连接</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
+    <item><spacer name="transformSpacer"><property name="orientation"><enum>Qt::Orientation::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer></item>
+   </layout>
+  </widget>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

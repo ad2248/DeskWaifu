@@ -1,0 +1,38 @@
+pkgbase = deskwaifu-git
+	pkgdesc = Qt Live2D desktop characters for Wayland with a control panel
+	pkgver = r262.g508b9ab
+	pkgrel = 1
+	url = https://github.com/ad2248/DeskWaifu
+	arch = x86_64
+	license = LicenseRef-Live2D-Open-Software
+	license = LicenseRef-Live2D-Proprietary
+	license = BSD-3-Clause
+	license = MIT
+	license = Unlicense
+	makedepends = git
+	makedepends = cmake
+	makedepends = ninja
+	depends = glibc
+	depends = gcc-libs
+	depends = wayland
+	depends = libglvnd
+	depends = systemd-libs
+	depends = qt6-base>=6.5
+	depends = qt6-wayland>=6.5
+	depends = qt6-scxml>=6.5
+	depends = qt6-websockets>=6.5
+	depends = qt6-multimedia>=6.5
+	depends = layer-shell-qt>=6.6
+	depends = bash
+	depends = python
+	depends = psmisc
+	provides = deskwaifu
+	conflicts = deskwaifu
+	source = deskwaifu::git+https://github.com/ad2248/DeskWaifu.git#branch=main
+	source = https://cubism.live2d.com/sdk-native/bin/CubismSdkForNative-5-r.5.zip
+	source = https://github.com/nigels-com/glew/releases/download/glew-2.3.1/glew-2.3.1.zip
+	sha256sums = SKIP
+	sha256sums = 7ff3a4bbc19c0a8728965aa522ab77eb11b252916453e68a8a78d3b71188bb12
+	sha256sums = 09e0083ae46930aba9b53e72c92ee1a557e24ed393526fec26cb0ebabd834720
+
+pkgname = deskwaifu-git

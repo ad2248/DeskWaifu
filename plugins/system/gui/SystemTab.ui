@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>SystemTab</class>
+ <widget class="QScrollArea" name="systemTab">
+  <property name="frameShape"><enum>QFrame::Shape::NoFrame</enum></property>
+  <property name="widgetResizable"><bool>true</bool></property>
+  <widget class="QWidget" name="systemContents">
+   <layout class="QVBoxLayout" name="systemLayout">
+    <item><widget class="QGroupBox" name="statusGroup">
+     <property name="title"><string>当前状态</string></property>
+     <layout class="QGridLayout" name="statusLayout">
+      <item row="0" column="0"><widget class="QLabel" name="modelCaption"><property name="text"><string>模型</string></property></widget></item>
+      <item row="0" column="1"><widget class="QLabel" name="currentModelLabel"><property name="text"><string>-</string></property></widget></item>
+      <item row="1" column="0"><widget class="QLabel" name="countCaption"><property name="text"><string>可用模型数</string></property></widget></item>
+      <item row="1" column="1"><widget class="QLabel" name="modelCountLabel"><property name="text"><string>0</string></property></widget></item>
+      <item row="2" column="0"><widget class="QLabel" name="visibilityCaption"><property name="text"><string>显示状态</string></property></widget></item>
+      <item row="2" column="1"><widget class="QLabel" name="visibilityLabel"><property name="text"><string>-</string></property></widget></item>
+     </layout>
+    </widget></item>
+    <item><widget class="QGroupBox" name="quickActionsGroup">
+     <property name="title"><string>进程控制</string></property>
+     <layout class="QHBoxLayout" name="quickActionsLayout">
+      <item><widget class="QPushButton" name="spawnButton"><property name="text"><string>启动</string></property></widget></item>
+      <item><widget class="QPushButton" name="respawnButton"><property name="text"><string>重启</string></property><property name="toolTip"><string>安全停止并重新启动已连接的 DeskWaifu 后端。</string></property></widget></item>
+      <item><spacer name="quickSpacer"><property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property></spacer></item>
+     </layout>
+    </widget></item>
+    <item><widget class="QGroupBox" name="renderDeviceGroup">
+     <property name="title"><string>渲染设备</string></property>
+     <layout class="QFormLayout" name="renderDeviceLayout">
+      <property name="fieldGrowthPolicy"><enum>QFormLayout::FieldGrowthPolicy::AllNonFixedFieldsGrow</enum></property>
+      <item row="0" column="0"><widget class="QLabel" name="renderDeviceCaption"><property name="text"><string>模型渲染 GPU</string></property><property name="buddy"><cstring>renderDeviceCombo</cstring></property></widget></item>
+      <item row="0" column="1"><widget class="QComboBox" name="renderDeviceCombo"><property name="enabled"><bool>false</bool></property><property name="toolTip"><string>保存后点击“重启”生效；命令行和环境变量的选择优先于配置。</string></property><item><property name="text"><string>自动</string></property></item></widget></item>
+      <item row="1" column="0" colspan="2"><widget class="QLabel" name="renderDeviceStatus"><property name="text"><string>连接后端后可配置；保存后需重启生效。</string></property><property name="wordWrap"><bool>true</bool></property><property name="textFormat"><enum>Qt::TextFormat::PlainText</enum></property></widget></item>
+     </layout>
+    </widget></item>
+    <item><spacer name="overviewSpacer"><property name="orientation"><enum>Qt::Orientation::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer></item>
+   </layout>
+  </widget>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

@@ -1,12 +1,12 @@
 #!/bin/bash
 #
-# DeskWaifu Install Script
-# Checks dependencies, downloads third-party libraries, and builds the project.
+# DeskWaifu 安装脚本。
+# 检查依赖、下载第三方库并构建项目。
 #
 
 set -euo pipefail
 
-# ─── Colors & Helpers ─────────────────────────────────────────────────────────
+# ─── 颜色与辅助函数 ───────────────────────────────────────────────────────────
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -21,10 +21,10 @@ warn()    { echo -e "${YELLOW}[WARN]${RESET}  $*"; }
 error()   { echo -e "${RED}[ERROR]${RESET} $*"; }
 step()    { echo -e "\n${BOLD}===> $*${RESET}"; }
 
-# Track overall status
+# 跟踪整体状态。
 ERRORS=0
 
-# ─── Project Root ─────────────────────────────────────────────────────────────
+# ─── 项目根目录 ───────────────────────────────────────────────────────────────
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
@@ -32,7 +32,7 @@ cd "$SCRIPT_DIR"
 SDK_DIR="CubismSdkForNative-5-r.5"
 NPROC=$(nproc 2>/dev/null || echo 4)
 
-# ─── Step 1: Check system dependencies ───────────────────────────────────────
+# ─── 第一步：检查系统依赖 ─────────────────────────────────────────────────────
 
 step "Checking system dependencies"
 
@@ -65,27 +65,14 @@ check_command pkg-config   "pkg-config / pkgconf"
 check_command curl         "curl"
 check_command unzip        "unzip"
 
-# wayland-scanner
-if command -v wayland-scanner &>/dev/null; then
-    success "wayland-scanner found: $(command -v wayland-scanner)"
-elif pkg-config --exists wayland-scanner 2>/dev/null; then
-    SCANNER=$(pkg-config --variable=wayland_scanner wayland-scanner 2>/dev/null || true)
-    if [ -n "$SCANNER" ] && [ -x "$SCANNER" ]; then
-        success "wayland-scanner found via pkg-config: $SCANNER"
-    else
-        error "wayland-scanner not found. Install wayland-devel / wayland"
-        ERRORS=$((ERRORS + 1))
-    fi
-else
-    error "wayland-scanner not found. Install wayland-devel / wayland"
-    ERRORS=$((ERRORS + 1))
-fi
-
-# Libraries via pkg-config
+# 通过 pkg-config 检查库。
 check_pkg_config wayland-client  "libwayland-dev / wayland-devel"
-check_pkg_config wayland-egl     "libwayland-dev / wayland-devel"
-check_pkg_config wayland-cursor  "libwayland-dev / wayland-devel"
+check_pkg_config libsystemd      "libsystemd-dev / systemd-devel / systemd-libs"
 check_pkg_config egl             "libegl-dev / mesa-libEGL-devel"
+check_pkg_config Qt6Gui          "Qt >= 6.5 development libraries"
+check_pkg_config Qt6OpenGL       "Qt >= 6.5 OpenGL development libraries"
+check_pkg_config Qt6WaylandClient "Qt >= 6.5 Wayland development libraries"
+check_pkg_config Qt6StateMachine "qt6-scxml-dev / qt6-qtscxml-devel / qt6-scxml"
 check_pkg_config Qt6Widgets      "qt6-base-dev / qt6-qtbase-devel / qt6-base"
 check_pkg_config Qt6Network      "qt6-base-dev / qt6-qtbase-devel / qt6-base"
 
@@ -93,13 +80,14 @@ if [ "$ERRORS" -gt 0 ]; then
     echo ""
     error "$ERRORS missing dependency(ies). Please install them and re-run this script."
     echo ""
-    info  "Arch Linux:       sudo pacman -S --needed base-devel cmake pkgconf wayland wayland-protocols libglvnd egl-wayland qt6-base qt6-wayland curl unzip"
-    info  "Ubuntu / Debian:  sudo apt install build-essential cmake pkg-config libwayland-dev wayland-protocols libegl-dev libgl-dev libglu1-mesa-dev qt6-base-dev qt6-wayland curl unzip"
-    info  "Fedora:           sudo dnf install gcc-c++ cmake pkgconf-pkg-config wayland-devel wayland-protocols-devel mesa-libEGL-devel mesa-libGL-devel qt6-qtbase-devel qt6-qtwayland curl unzip"
+    info  "Arch Linux:       sudo pacman -S --needed base-devel cmake pkgconf wayland wayland-protocols libglvnd egl-wayland qt6-base qt6-wayland qt6-scxml layer-shell-qt systemd-libs curl unzip"
+    info  "Ubuntu / Debian:  sudo apt install build-essential cmake pkg-config libwayland-dev wayland-protocols libegl-dev libgl-dev libglu1-mesa-dev libsystemd-dev qt6-base-dev libqt6opengl6-dev qt6-wayland qt6-wayland-dev qt6-scxml-dev curl unzip"
+    info  "Fedora:           sudo dnf install gcc-c++ cmake pkgconf-pkg-config wayland-devel wayland-protocols-devel mesa-libEGL-devel mesa-libGL-devel systemd-devel qt6-qtbase-devel qt6-qtwayland-devel qt6-qtscxml-devel layer-shell-qt-devel curl unzip"
+    info  "Also install LayerShellQt >= 6.6 development files; older distributions may require a newer package or a source build."
     exit 1
 fi
 
-# ─── Step 2: Check Live2D Cubism SDK ─────────────────────────────────────────
+# ─── 第二步：检查 Live2D Cubism SDK ────────────────────────────────────────────
 
 step "Checking Live2D Cubism SDK"
 
@@ -143,7 +131,7 @@ else
     fi
 fi
 
-# ─── Step 3: Download third-party dependencies (GLEW & GLFW) ─────────────────
+# ─── 第三步：下载第三方依赖（GLEW 与 GLFW）─────────────────────────────────────
 
 step "Setting up third-party dependencies (GLEW & GLFW)"
 
@@ -151,7 +139,7 @@ GLEW_VERSION=2.3.1
 GLFW_VERSION=3.4
 THIRDPARTY_DIR="$SCRIPT_DIR/thirdParty"
 
-# GLEW
+# GLEW 依赖。
 if [ -d "$THIRDPARTY_DIR/glew" ] && [ -f "$THIRDPARTY_DIR/glew/include/GL/glew.h" ]; then
     success "GLEW already present, skipping download"
 else
@@ -166,13 +154,13 @@ else
     info "Extracting GLEW..."
     unzip -oq "$THIRDPARTY_DIR/glew.zip" -d "$THIRDPARTY_DIR"
     rm -f "$THIRDPARTY_DIR/glew.zip"
-    # Rename to 'glew' (remove version suffix)
+    # 重命名为 glew，移除版本后缀。
     rm -rf "$THIRDPARTY_DIR/glew"
     mv "$THIRDPARTY_DIR/glew-"* "$THIRDPARTY_DIR/glew"
     success "GLEW $GLEW_VERSION extracted"
 fi
 
-# ─── Step 4: Configure with CMake ────────────────────────────────────────────
+# ─── 第四步：使用 CMake 配置 ───────────────────────────────────────────────────
 
 step "Configuring project with CMake"
 
@@ -186,7 +174,7 @@ else
     exit 1
 fi
 
-# ─── Step 5: Build ───────────────────────────────────────────────────────────
+# ─── 第五步：构建 ─────────────────────────────────────────────────────────────
 
 step "Building deskwaifu (using $NPROC parallel jobs)"
 
@@ -197,7 +185,7 @@ else
     exit 1
 fi
 
-# ─── Done ─────────────────────────────────────────────────────────────────────
+# ─── 完成 ─────────────────────────────────────────────────────────────────────
 
 BINARY="$BUILD_DIR/bin/deskwaifu"
 
