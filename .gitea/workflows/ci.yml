@@ -265,7 +265,7 @@ jobs:
             processor-event-loop-test speech-processor-contract-test interaction-processor-test \
             config-store-test ipc-bounded-transport-test sanitizer-failure-fixture \
             voice-input-audio-test voice-input-asr-test voice-input-settings-test voice-input-state-test \
-            voice-input-controller-test voice-input-gui-test voice-input-plugin-load-test clipboard-service-test
+            voice-input-controller-test voice-input-gui-test voice-input-plugin-load-test voice-input-notifier-test clipboard-service-test
           python3 scripts/run-test-gate.py build-sanitize \
             --test '^(processor-event-loop|speech-contract-.*|interaction-opacity|config-store|ipc-bounded-transport|sanitizer-failure-gate|voice-input-.*|clipboard-service)$'
 

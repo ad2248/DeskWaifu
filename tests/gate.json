@@ -5,7 +5,7 @@
     "screenshot-service", "processor-event-loop", "processor-pipeline", "processor-pipeline-script", "processor-ownership", "plugin-cli", "desktop-cli",
     "interaction-processor", "interaction-opacity",
     "voice-input-audio", "voice-input-asr", "voice-input-settings", "voice-input-state", "voice-input-controller", "voice-input-gui",
-    "voice-input-plugin-load", "voice-input-smoke-mock", "clipboard-service",
+    "voice-input-plugin-load", "voice-input-smoke-mock", "voice-input-notifier", "clipboard-service",
     "speech-contract-normal", "speech-contract-cancel", "speech-contract-cancel-playing", "speech-contract-cancel-draining", "speech-contract-replace",
     "speech-contract-repeat-replace", "speech-contract-queued-replace", "speech-contract-destroy", "speech-contract-receiver-destroy", "speech-contract-pending-destroy",
     "speech-contract-reading-cancel", "speech-contract-reading-complete",
