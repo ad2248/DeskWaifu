@@ -34,6 +34,8 @@ def main():
             expected["get_ocr_status"] = "perception" in names
             expected["get_speech_settings"] = "speech" in names
             expected["get_reading_clip_status"] = "reading_clip" in names
+            expected["get_voice_input_settings"] = "voice_input" in names
+            expected["get_voice_input_status"] = "voice_input" in names
             for command, available in expected.items():
                 with socket.socket(socket.AF_UNIX) as client:
                     client.settimeout(3)
@@ -44,6 +46,25 @@ def main():
                 assert reply["ok"] is available, (command, reply)
                 if not available:
                     assert reply["error"] == "no provider", (command, reply)
+            if "voice_input" in names:
+                def voice_command(command, **parameters):
+                    with socket.socket(socket.AF_UNIX) as client:
+                        client.settimeout(3)
+                        client.connect(str(path))
+                        client.sendall((json.dumps(dict(command=command, **parameters)) + "\n").encode())
+                        with client.makefile() as stream:
+                            return json.loads(stream.readline())
+                secret = "offline-voice-ipc-secret"
+                endpoint = "https://asr.example.invalid/native"
+                reply = voice_command("set_voice_input_settings", endpoint=endpoint, api_key=secret)
+                assert reply["ok"] and reply["configured"] and reply["endpoint"] == endpoint, reply
+                assert secret not in json.dumps(reply) and "api_key" not in reply
+                reply = voice_command("set_voice_input_settings", max_recording_seconds=17)
+                assert reply["ok"] and reply["configured"] and reply["endpoint"] == endpoint, reply
+                reply = voice_command("get_voice_input_settings")
+                assert reply["max_recording_seconds"] == 17 and secret not in json.dumps(reply), reply
+                reply = voice_command("retry_voice_input_copy", session_id="1")
+                assert not reply["ok"] and reply["error_code"] == "stale_session", reply
             assert process.poll() is None, "A missing optional capability terminated the platform"
         finally:
             process.terminate()

@@ -67,6 +67,10 @@ class CliTest(unittest.TestCase):
             (["set_model_position", "--x", "-0.25", "--y", "1e-2"], {"x": -.25, "y": .01}),
             (["set_look", "--reset"], {"reset": True}),
             (["set_hover_opacity", "--enabled", "false"], {"enabled": False}),
+            (["set_voice_input_settings", "--max_recording_seconds", "60"],
+             {"max_recording_seconds": 60}),
+            (["get_voice_input_result", "--session_id", "9007199254740993"],
+             {"session_id": "9007199254740993"}),
             (["begin_transform_edit", "--screen", "true", "--expected_revision", "2"],
              {"screen": True, "expected_revision": 2}),
         ]:
@@ -74,6 +78,15 @@ class CliTest(unittest.TestCase):
                 result, wire = self.exchange(args)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(json.loads(wire[0]), dict(command=args[0], **expected))
+
+    def test_voice_input_help(self):
+        result = subprocess.run([str(CLI), "--help"], capture_output=True, text=True, timeout=8)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for command in ["start_voice_input", "stop_voice_input", "toggle_voice_input",
+                        "cancel_voice_input", "get_voice_input_status", "get_voice_input_result",
+                        "list_voice_input_devices", "get_voice_input_settings", "set_voice_input_settings"]:
+            self.assertIn(command, result.stdout)
+        self.assertIn("--max_recording_seconds 60", result.stdout)
 
     def test_response_status(self):
         for reply in [b'{"ok":false,"error":"missing model"}\n', b'', b'broken\n',
@@ -101,7 +114,10 @@ class CliTest(unittest.TestCase):
                      ["set_model", "--index", "2147483648"], ["set_model_zoom", "--value", "NaN"],
                      ["set_model_zoom", "--value", "1e999"], ["set_model", "--index", "001"],
                      ["set_model", "--name"], ["get_status", "oops", "value"],
-                     ["get_status", "--command", "quit"]]:
+                     ["get_status", "--command", "quit"],
+                     ["set_voice_input_settings", "--max_recording_seconds", "1.5"],
+                     ["set_voice_input_settings", "--max_recording_seconds", "true"],
+                     ["set_voice_input_settings", "--max_recording_seconds", "2147483648"]]:
             result, wire = self.exchange(args)
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual(wire, [])

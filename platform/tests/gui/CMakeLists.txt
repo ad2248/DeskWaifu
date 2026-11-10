@@ -2,7 +2,8 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets Test Network)
 add_executable(gui_tabs_test GuiTabsTest.cpp)
 target_link_libraries(gui_tabs_test PRIVATE deskwaifu_test_support deskwaifu_gui_plugin_host Qt6::Test Qt6::Network)
 target_compile_definitions(gui_tabs_test PRIVATE GUI_PLUGIN_ROOT="${CMAKE_BINARY_DIR}/plugins"
-  DESKWAIFU_TEST_SPEECH_PLUGIN=$<BOOL:${DESKWAIFU_BUILD_SPEECH_PLUGIN}>)
+  DESKWAIFU_TEST_SPEECH_PLUGIN=$<BOOL:${DESKWAIFU_BUILD_SPEECH_PLUGIN}>
+  DESKWAIFU_TEST_VOICE_INPUT_PLUGIN=$<BOOL:${DESKWAIFU_BUILD_VOICE_INPUT_PLUGIN}>)
 add_dependencies(gui_tabs_test deskwaifu_control_plugins)
 set_target_properties(gui_tabs_test PROPERTIES AUTOMOC ON)
 deskwaifu_add_test(NAME gui-tabs COMMAND gui_tabs_test)

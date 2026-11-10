@@ -24,6 +24,9 @@ target_include_directories(Framework PUBLIC "${GLEW_PATH}/include")
 target_link_libraries(Framework Live2DCubismCore glew_s)
 
 set(private "${CMAKE_CURRENT_SOURCE_DIR}/private")
+add_library(deskwaifu_clipboard STATIC private/clipboard/ClipboardService.cpp)
+target_include_directories(deskwaifu_clipboard PUBLIC "${private}")
+target_link_libraries(deskwaifu_clipboard PUBLIC deskwaifu_plugin_sdk)
 add_library(deskwaifu_catalog STATIC private/processor/model/ModelCatalog.cpp)
 add_library(deskwaifu_input STATIC private/processor/interaction/InputController.cpp)
 add_library(deskwaifu_output STATIC private/processor/interaction/window/OutputController.cpp)
@@ -76,7 +79,7 @@ target_link_libraries(deskwaifu_application PUBLIC deskwaifu_plugin_sdk
   deskwaifu_compositor deskwaifu_kwin_cursor deskwaifu_offscreen deskwaifu_window_state
   Qt6::Gui Qt6::OpenGL Qt6::WaylandClient LayerShellQt::Interface)
 deskwaifu_add_plugin(desktop DesktopPlugin.cpp private/processor/interaction/window/QtDesktopWindow.cpp)
-target_link_libraries(desktop_plugin PRIVATE deskwaifu_application)
+target_link_libraries(desktop_plugin PRIVATE deskwaifu_application deskwaifu_clipboard)
 add_executable(deskwaifu-cursor-guard CursorGuardMain.cpp)
 target_link_libraries(deskwaifu-cursor-guard PRIVATE deskwaifu_kwin_cursor)
 add_dependencies(desktop_plugin deskwaifu-cursor-guard)

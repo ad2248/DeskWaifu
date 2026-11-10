@@ -9,6 +9,13 @@ if(TARGET speech_plugin)
   deskwaifu_add_test(NAME speech-plugin-load COMMAND speech-plugin-load-test $<TARGET_FILE:speech_plugin>)
   set_tests_properties(speech-plugin-load PROPERTIES LABELS "contract;plugin")
 endif()
+if(TARGET voice_input_plugin)
+  add_executable(voice-input-plugin-load-test VoiceInputPluginLoadTest.cpp)
+  target_link_libraries(voice-input-plugin-load-test PRIVATE deskwaifu_plugin_host)
+  add_dependencies(voice-input-plugin-load-test voice_input_plugin)
+  deskwaifu_add_test(NAME voice-input-plugin-load COMMAND voice-input-plugin-load-test $<TARGET_FILE:voice_input_plugin>)
+  set_tests_properties(voice-input-plugin-load PROPERTIES LABELS "contract;plugin")
+endif()
 find_package(Python3 COMPONENTS Interpreter)
 if(Python3_Interpreter_FOUND)
   deskwaifu_add_test(NAME processor-pipeline-script COMMAND ${Python3_EXECUTABLE} -B
@@ -79,7 +86,7 @@ if(Python3_Interpreter_FOUND)
   set_tests_properties(plugin-build-boundaries PROPERTIES LABELS "architecture;regression")
   if(TARGET ipc_plugin)
     set(BACKEND_MODULES $<TARGET_FILE:ipc_plugin>)
-    foreach(owner perception reading_clip speech)
+    foreach(owner perception reading_clip speech voice_input)
       if(TARGET ${owner}_plugin)
         list(APPEND BACKEND_MODULES $<TARGET_FILE:${owner}_plugin>)
       endif()
@@ -186,7 +193,9 @@ if(DESKWAIFU_BUILD_CONTROL AND TARGET ipc_plugin)
   qt_add_executable(control-theme-test ControlThemeTest.cpp)
   target_link_libraries(control-theme-test PRIVATE Qt6::Test deskwaifu_test_support deskwaifu_control_shell)
   add_dependencies(control-theme-test deskwaifu_control_plugins)
-  target_compile_definitions(control-theme-test PRIVATE DESKWAIFU_TEST_SPEECH_PLUGIN=$<BOOL:${DESKWAIFU_BUILD_SPEECH_PLUGIN}>)
+  target_compile_definitions(control-theme-test PRIVATE
+    DESKWAIFU_TEST_SPEECH_PLUGIN=$<BOOL:${DESKWAIFU_BUILD_SPEECH_PLUGIN}>
+    DESKWAIFU_TEST_VOICE_INPUT_PLUGIN=$<BOOL:${DESKWAIFU_BUILD_VOICE_INPUT_PLUGIN}>)
   set_target_properties(control-theme-test PROPERTIES AUTOMOC ON)
   deskwaifu_add_test(NAME control-theme COMMAND control-theme-test
     ENVIRONMENT "DESKWAIFU_CONTROL_PLUGIN_DIR=${CMAKE_BINARY_DIR}/plugins")
@@ -199,6 +208,7 @@ if(DESKWAIFU_BUILD_CONTROL AND TARGET ipc_plugin)
   add_dependencies(main-window-transform-test deskwaifu_control_plugins desktop-settings-fixture)
   target_compile_definitions(main-window-transform-test PRIVATE
     DESKWAIFU_TEST_SPEECH_PLUGIN=$<BOOL:${DESKWAIFU_BUILD_SPEECH_PLUGIN}>
+    DESKWAIFU_TEST_VOICE_INPUT_PLUGIN=$<BOOL:${DESKWAIFU_BUILD_VOICE_INPUT_PLUGIN}>
     DESKTOP_SETTINGS_FIXTURE="$<TARGET_FILE:desktop-settings-fixture>")
   set_target_properties(main-window-transform-test PROPERTIES AUTOMOC ON)
   deskwaifu_add_test(NAME main-window-transform COMMAND main-window-transform-test

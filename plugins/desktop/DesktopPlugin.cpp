@@ -3,6 +3,8 @@
 #include "processor/Processor.hpp"
 #include "app/DesktopStartup.hpp"
 #include "app/LAppDelegate.hpp"
+#include "clipboard/ClipboardService.hpp"
+#include "contracts/ClipboardEvents.hpp"
 #include <QCoreApplication>
 #include <QJsonDocument>
 #include <QTimer>
@@ -112,7 +114,14 @@ public:
             return false;
         }
         _commands.reset(new DesktopCommands(context));
-        return _commands->Register();
+        _clipboardEndpoint = context.CreateEndpoint("clipboard", [this](const EventDelivery& delivery) {
+            if (_clipboard) _clipboard->Deliver(delivery);
+        });
+        if (!_clipboardEndpoint) return false;
+        _clipboard = std::make_unique<ClipboardService>(*_clipboardEndpoint);
+        return _commands->Register() &&
+            _clipboardEndpoint->Provide(ClipboardEvents::WriteTextCapability) &&
+            _clipboardEndpoint->Provide(ClipboardEvents::CommandCapability);
     }
     bool Start(QString* error) override
     {
@@ -128,6 +137,10 @@ public:
     }
     void Stop() noexcept override
     {
+        if (_clipboardEndpoint) _clipboardEndpoint->Invalidate();
+        if (_clipboard) _clipboard->Stop();
+        _clipboard.reset();
+        _clipboardEndpoint = nullptr;
         if (_commands) _commands->Stop();
         _commands.reset();
         if (_runtime) {
@@ -144,6 +157,8 @@ private:
     PluginContext* _context = nullptr;
     LAppDelegate* _runtime = nullptr;
     std::unique_ptr<DesktopCommands> _commands;
+    EventEndpoint* _clipboardEndpoint = nullptr;
+    std::unique_ptr<ClipboardService> _clipboard;
 };
 }
 DESKWAIFU_EXPORT_PLUGIN(DesktopPlugin)

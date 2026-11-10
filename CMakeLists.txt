@@ -20,6 +20,7 @@ option(DESKWAIFU_BUILD_PERCEPTION_PLUGIN "Build the image/OCR/screenshot plugin"
 option(DESKWAIFU_BUILD_OCR "Build the optional in-process OCR module" ON)
 option(DESKWAIFU_BUILD_IPC_PLUGIN "Build the IPC transport plugin" ON)
 option(DESKWAIFU_BUILD_SPEECH_PLUGIN "Build the speech plugin" ON)
+option(DESKWAIFU_BUILD_VOICE_INPUT_PLUGIN "Build the voice input plugin" ON)
 option(DESKWAIFU_BUILD_READING_CLIP_PLUGIN "Build the clipboard reading plugin" ON)
 option(DESKWAIFU_TEST_GATE "Require the complete ordinary regression gate" OFF)
 option(DESKWAIFU_ENABLE_SANITIZERS "Enable AddressSanitizer and UBSan" OFF)
@@ -34,7 +35,8 @@ endif()
 if(DESKWAIFU_TEST_GATE)
   foreach(option BUILD_TESTING DESKWAIFU_BUILD_CONTROL DESKWAIFU_BUILD_DESKTOP_PLUGIN
       DESKWAIFU_BUILD_PERCEPTION_PLUGIN DESKWAIFU_BUILD_IPC_PLUGIN
-      DESKWAIFU_BUILD_SPEECH_PLUGIN DESKWAIFU_BUILD_READING_CLIP_PLUGIN)
+      DESKWAIFU_BUILD_SPEECH_PLUGIN DESKWAIFU_BUILD_READING_CLIP_PLUGIN
+      DESKWAIFU_BUILD_VOICE_INPUT_PLUGIN)
     if(NOT ${option})
       message(FATAL_ERROR "The complete regression gate requires ${option}")
     endif()

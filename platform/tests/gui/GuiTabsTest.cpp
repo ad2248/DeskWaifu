@@ -125,6 +125,11 @@ private slots:
 #if DESKWAIFU_TEST_SPEECH_PLUGIN
         QCOMPARE(services.count(QStringLiteral("get_speech_settings")), 1);
 #endif
+#if DESKWAIFU_TEST_VOICE_INPUT_PLUGIN
+        QCOMPARE(services.count(QStringLiteral("get_voice_input_settings")), 1);
+        QCOMPARE(services.count(QStringLiteral("get_voice_input_status")), 1);
+        QCOMPARE(services.count(QStringLiteral("list_voice_input_devices")), 1);
+#endif
     }
 
 #if DESKWAIFU_TEST_SPEECH_PLUGIN

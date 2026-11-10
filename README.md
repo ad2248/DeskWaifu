@@ -177,6 +177,18 @@ cd DeskWaifu
 
 #### 3. Build
 
+The default build also includes the `voice_input` plugin. It requires Qt 6
+Multimedia/Network development files, pkg-config and libsamplerate; background
+Wayland clipboard writes require `wl-copy` from wl-clipboard at runtime. On Arch:
+
+```bash
+sudo pacman -S --needed qt6-multimedia pkgconf libsamplerate wl-clipboard
+```
+
+Use `-DDESKWAIFU_BUILD_VOICE_INPUT_PLUGIN=OFF` to omit this plugin (not permitted
+for the complete regression gate). No microphone or ASR credentials are needed
+to compile or run ordinary tests.
+
 The default full build includes the OCR module. Install system OpenCV, yaml-cpp
 and ONNX Runtime development packages, including ONNX Runtime's CMake config.
 On Arch Linux:
@@ -240,8 +252,8 @@ cmake --build build-ci --parallel "$(nproc)"
 ctest --test-dir build-ci --output-on-failure
 ```
 
-`DESKWAIFU_TEST_GATE=ON` fails configuration unless `BUILD_TESTING` and all five
-backend plugins are enabled, and it requires `dbus-run-session` and `node`. CI
+`DESKWAIFU_TEST_GATE=ON` fails configuration unless `BUILD_TESTING` and all six
+backend plugins (including `voice_input`) are enabled, and it requires `dbus-run-session` and `node`. CI
 then runs the same suite through the gate wrapper, which checks
 `tests/gate.json` and fails on a missing or skipped required test:
 
@@ -319,6 +331,34 @@ plugins. A plugin may export a backend entry, a GUI entry, or both from the same
 `.so`; the speech plugin provides both. See [GUI plugin architecture](docs/需求描述/GUI插件.md).
 The control panel uses `plugin_dir` from the main configuration. For a build-tree
 run, set `DESKWAIFU_CONTROL_PLUGIN_DIR=/absolute/path/to/build/plugins`.
+
+### Voice input (speech to clipboard)
+
+The default `voice_input` plugin is separate from the `speech` TTS plugin. In the
+control panel's **语音输入** tab, configure an ASR endpoint, model, API key, input
+device and maximum recording duration. Start recording, then stop to recognize;
+on success the text is copied to the Wayland clipboard. Paste it yourself in the
+focused application: the plugin does not inject keys or automatically paste.
+
+```bash
+deskwaifu-ctl toggle_voice_input       # idle: start; recording: stop and recognize
+deskwaifu-ctl get_voice_input_status
+deskwaifu-ctl cancel_voice_input --session_id 1  # use the session_id returned above
+deskwaifu-ctl list_voice_input_devices
+```
+
+A compositor shortcut can invoke `deskwaifu-ctl toggle_voice_input` while another
+application retains focus. The default limit is 60 seconds; reaching the limit
+stops recording and starts recognition. Recognition in progress returns busy on
+another toggle instead of cancelling or queueing a new session. Microphone access
+and cloud upload happen only after an explicit request. Audio and recognized text
+are not saved to files by default; ASR uploads leave your device and may incur
+charges. Credentials are stored in a local plaintext file restricted to `0600`,
+not an encrypted key store. Use the GUI rather than a shell argument for secrets.
+
+See [语音输入使用说明](docs/语音输入.md) for configuration, shortcut examples,
+privacy limitations and troubleshooting. Ordinary voice-input tests use offline
+fixtures and must not access a real microphone, clipboard or cloud service.
 
 ### Streaming speech
 
@@ -437,6 +477,7 @@ The top-level tabs are:
 - **模型**: model selection, visibility, skins, expressions, motions, lip sync,
   target monitor, position, zoom and crop.
 - **语音**: speech provider and credential settings.
+- **语音输入**: ASR endpoint, credentials, microphone and recording controls.
 日志由 Qt 日志系统统一写入启动时创建的 `/tmp/log/waifudesk_<随机字符串>/gui.log` 或 `daemon.log`；控制面板不再提供日志 Tab。
 
 Settings pages scroll vertically on smaller windows; connection and operation
@@ -1158,6 +1199,7 @@ deskwaifu/
 │   ├── perception/         # Image/OCR/screenshot services; optional in-process OCR module
 │   ├── ipc/                # Backend socket transport, command gateway and GUI client
 │   ├── speech/             # Speech providers, playback and speech settings page
+│   ├── voice_input/        # Microphone, HTTP ASR and speech-to-clipboard settings
 │   ├── reading_clip/       # Clipboard reading orchestration
 │   └── system|interaction|model/  # GUI-only modules
 ├── thirdParty/             # Third-party dependencies (GLEW, stb)
