@@ -44,7 +44,14 @@ def metadata(text):
     return result
 
 
+def verify_unversioned_dependencies(dependencies):
+    if any(dep.startswith("deskwaifu") and any(operator in dep for operator in "<>=")
+           for dep in dependencies):
+        raise ValueError("DeskWaifu dependencies must use package names without a version constraint")
+
+
 def verify_content(name, info, files, version):
+    verify_unversioned_dependencies(info.get("depend", []))
     if info.get("pkgname") != [name] or info.get("pkgver") != [version + "-1"] or info.get("arch") != ["x86_64"]:
         raise ValueError(f"Wrong package identity/version/architecture: {name}")
     directories = {path.removeprefix("./").rstrip("/") for path in files if path.endswith("/")}
@@ -56,8 +63,8 @@ def verify_content(name, info, files, version):
         ocr = name == "deskwaifu-ocr-tests"
         prefix = "usr/lib/deskwaifu/" + ("ocr-tests" if ocr else "tests")
         dependency = "deskwaifu-ocr-bin" if ocr else "deskwaifu-bin"
-        if f"{dependency}={version}-1" not in info.get("depend", []):
-            raise ValueError("Test package needs the exact runtime package version")
+        if dependency not in info.get("depend", []):
+            raise ValueError("Test package needs its runtime package")
         if not {f"{prefix}/run.py", f"{prefix}/installed-tests.json"} <= files:
             raise ValueError("Missing installed test runner/registry")
         if any(path.startswith("usr/bin/") or path.startswith("usr/lib/deskwaifu/plugins/") for path in files):
@@ -84,8 +91,8 @@ def verify_content(name, info, files, version):
         required = {"usr/lib/deskwaifu/ocr/deskwaifu-ocr.so"}
         if "usr/libexec/deskwaifu-ocr" in files:
             raise ValueError("OCR package must not contain the retired helper executable")
-        if not {f"deskwaifu-bin={version}-1", "opencv", "yaml-cpp", "onnxruntime-cpu"} <= set(info.get("depend", [])):
-            raise ValueError("OCR package needs the exact main package version, OpenCV, yaml-cpp and system onnxruntime-cpu")
+        if not {"deskwaifu-bin", "opencv", "yaml-cpp", "onnxruntime-cpu"} <= set(info.get("depend", [])):
+            raise ValueError("OCR package needs the main package, OpenCV, yaml-cpp and system onnxruntime-cpu")
         if any(path.startswith("usr/lib/deskwaifu/plugins/") for path in files):
             raise ValueError("OCR package must not duplicate main plugins")
     if not required <= files:

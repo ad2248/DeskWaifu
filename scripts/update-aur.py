@@ -76,21 +76,19 @@ def verify_assets(directory, tag, commit):
     return checksums, dependencies
 
 
-def verify_dependencies(dependencies, tag, srcinfo):
+def verify_dependencies(dependencies, srcinfo):
     srcinfo = "\n".join(line.strip() for line in srcinfo.splitlines())
     sections = srcinfo.split("\npkgname = ")
-    metadata = release_tool("release-packaging").metadata
+    packaging = release_tool("release-packaging")
+    metadata = packaging.metadata
     base = metadata(sections[0])
-    version = base['pkgver'][0]
     declared = {}
     for section in sections[1:]:
         name, _, fields = section.partition("\n")
         declared[name] = set(base.get("depends", [])) | set(metadata(fields).get("depends", []))
+    for required in (*dependencies.values(), *declared.values()):
+        packaging.verify_unversioned_dependencies(required)
     for name, required in dependencies.items():
-        # Upstream pkgrel and the AUR recipe revision are deliberately independent.
-        # The OCR split package accepts any compatible main package at this release or newer.
-        required = {f"deskwaifu-bin>={version}" if dep == f"deskwaifu-bin={tag}-1" else dep
-                    for dep in required}
         missing = required - declared.get(name, set())
         if missing:
             raise ValueError(f"AUR recipe omits upstream dependencies for {name}: {sorted(missing)}; "
@@ -132,7 +130,7 @@ def update(tag):
         # Generate metadata before changing either maintained file.
         (directory / "PKGBUILD").write_text(text)
         srcinfo = subprocess.check_output(["makepkg", "--printsrcinfo"], cwd=directory, text=True)
-        verify_dependencies(dependencies, tag, srcinfo)
+        verify_dependencies(dependencies, srcinfo)
         (recipe / "PKGBUILD").write_text(text)
         (recipe / ".SRCINFO").write_text(srcinfo)
     subprocess.run(["git", "diff", "--", "PKGBUILD", ".SRCINFO"], cwd=recipe, check=True)

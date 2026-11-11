@@ -51,14 +51,14 @@ def fixture_files(ocr=False):
 
 
 class PackagingTest(unittest.TestCase):
-    def test_test_packages_are_exact_versioned_and_do_not_leak_into_runtime(self):
+    def test_test_packages_require_runtime_and_do_not_leak_into_it(self):
         for name, runtime, directory in (("deskwaifu-tests", "deskwaifu-bin", "tests"),
                                          ("deskwaifu-ocr-tests", "deskwaifu-ocr-bin", "ocr-tests")):
             info = {"pkgname": [name], "pkgver": ["1.2.3-1"], "arch": ["x86_64"],
-                    "depend": [f"{runtime}=1.2.3-1"]}
+                    "depend": [runtime]}
             files = {f"usr/lib/deskwaifu/{directory}/run.py", f"usr/lib/deskwaifu/{directory}/installed-tests.json"}
             packaging.verify_content(name, info, files, "1.2.3")
-            with self.assertRaisesRegex(ValueError, "exact runtime"):
+            with self.assertRaisesRegex(ValueError, "needs its runtime package"):
                 packaging.verify_content(name, dict(info, depend=[]), files, "1.2.3")
             with self.assertRaisesRegex(ValueError, "must not duplicate"):
                 packaging.verify_content(name, info, files | {"usr/bin/deskwaifu"}, "1.2.3")
@@ -206,10 +206,10 @@ class PackagingTest(unittest.TestCase):
                         source.main()
                     git.assert_not_called()
 
-    def test_payload_and_exact_dependency(self):
+    def test_payload_and_runtime_dependencies(self):
         for name, ocr in (("deskwaifu-bin", False), ("deskwaifu-ocr-bin", True)):
             info = {"pkgname": [name], "pkgver": ["1.2.3-1"], "arch": ["x86_64"],
-                    "depend": ["deskwaifu-bin=1.2.3-1", "opencv", "yaml-cpp", "onnxruntime-cpu"] if ocr else sorted(packaging.MAIN_DEPENDS)}
+                    "depend": ["deskwaifu-bin", "opencv", "yaml-cpp", "onnxruntime-cpu"] if ocr else sorted(packaging.MAIN_DEPENDS)}
             packaging.verify_content(name, info, fixture_files(ocr), "1.2.3")
             if ocr:
                 for bundled in ("usr/lib/deskwaifu/ocr/libonnxruntime.so.1",
@@ -218,7 +218,7 @@ class PackagingTest(unittest.TestCase):
                     with self.subTest(bundled=bundled), self.assertRaisesRegex(ValueError, "not bundled"):
                         packaging.verify_content(name, info, fixture_files(True) | {bundled}, "1.2.3")
                 with self.assertRaisesRegex(ValueError, "system onnxruntime-cpu"):
-                    packaging.verify_content(name, dict(info, depend=["deskwaifu-bin=1.2.3-1", "opencv", "yaml-cpp"]),
+                    packaging.verify_content(name, dict(info, depend=["deskwaifu-bin", "opencv", "yaml-cpp"]),
                                              fixture_files(True), "1.2.3")
                 with self.assertRaisesRegex(ValueError, "retired helper"):
                     packaging.verify_content(name, info, fixture_files(True) | {"usr/libexec/deskwaifu-ocr"}, "1.2.3")
@@ -229,16 +229,27 @@ class PackagingTest(unittest.TestCase):
                     packaging.verify_content(name, info, fixture_files(ocr) | {extra}, "1.2.3")
             with self.assertRaisesRegex(ValueError, "Missing package files"):
                 packaging.verify_content(name, info, set(), "1.2.3")
-        info["depend"] = ["deskwaifu-bin>=1.2.3", "opencv", "yaml-cpp"]
-        with self.assertRaisesRegex(ValueError, "exact main package"):
-            packaging.verify_content(name, info, fixture_files(True), "1.2.3")
-        info["depend"] = ["deskwaifu-bin=1.2.3-1", "opencv"]
+        info["depend"] = ["deskwaifu-bin", "opencv"]
         with self.assertRaisesRegex(ValueError, "yaml-cpp"):
             packaging.verify_content(name, info, fixture_files(True), "1.2.3")
 
+    def test_internal_dependencies_must_be_package_names(self):
+        for name in packaging.PACKAGE_NAMES:
+            packaging.verify_unversioned_dependencies([name])
+            for operator in ("=", ">=", "<=", ">", "<"):
+                for include_plain in (False, True):
+                    with self.subTest(name=name, operator=operator, include_plain=include_plain):
+                        dependencies = [name + operator + "1.2.3"]
+                        if include_plain:
+                            dependencies.append(name)
+                        with self.assertRaisesRegex(ValueError, "without a version constraint"):
+                            packaging.verify_unversioned_dependencies(dependencies)
+                        with self.assertRaisesRegex(ValueError, "without a version constraint"):
+                            packaging.verify_content(name, {"depend": dependencies}, [], "1.2.3")
+
     def test_empty_ocr_model_directory_is_allowed_but_payload_is_not(self):
         info = {"pkgname": ["deskwaifu-ocr-bin"], "pkgver": ["1.2.3-1"], "arch": ["x86_64"],
-                "depend": ["deskwaifu-bin=1.2.3-1", "opencv", "yaml-cpp", "onnxruntime-cpu"]}
+                "depend": ["deskwaifu-bin", "opencv", "yaml-cpp", "onnxruntime-cpu"]}
         directories = {"./usr/share/deskwaifu/ocr/", "./usr/share/deskwaifu/ocr/models/"}
         packaging.verify_content("deskwaifu-ocr-bin", info, fixture_files(True) | directories, "1.2.3")
         for payload in ("usr/share/deskwaifu/ocr/models", "usr/share/deskwaifu/ocr/models/model.onnx",
@@ -464,7 +475,15 @@ class PackagingTest(unittest.TestCase):
             pkgbuild = work / "PKGBUILD"
             subprocess.run(["bash", "-n", str(pkgbuild)], check=True)
             srcinfo = subprocess.check_output(["makepkg", "--printsrcinfo"], cwd=work, text=True)
-            self.assertIn(f"depends = deskwaifu-bin={TAG}-1", srcinfo)
+            sections = srcinfo.split("\npkgname = ")[1:]
+            for section in sections:
+                dependencies = packaging.metadata("\n".join(line.strip() for line in section.splitlines())).get("depends", [])
+                packaging.verify_unversioned_dependencies(dependencies)
+                name = section.splitlines()[0]
+                if name in ("deskwaifu-ocr-bin", "deskwaifu-tests"):
+                    self.assertIn("deskwaifu-bin", dependencies)
+                elif name == "deskwaifu-ocr-tests":
+                    self.assertIn("deskwaifu-ocr-bin", dependencies)
             self.assertIn("depends = yaml-cpp", srcinfo)
             self.assertIn("depends = onnxruntime-cpu", srcinfo)
             self.assertIn("makedepends = onnxruntime-cpu", srcinfo)

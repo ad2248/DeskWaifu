@@ -36,6 +36,20 @@ class UpdateTest(unittest.TestCase):
     def test_same_version_preserves_aur_revision(self):
         self.assertEqual(updater.render_recipe(RECIPE, "0.1.0", ["aaa", "bbb"]), RECIPE)
 
+    def test_ocr_dependency_constraints_are_rejected(self):
+        dependencies = {"deskwaifu-ocr-bin": {"deskwaifu-bin", "opencv"}}
+        info = ("pkgbase = deskwaifu-bin\n\tpkgver = 0.1.0\n\tpkgrel = 2\n"
+                "\npkgname = deskwaifu-ocr-bin\n\tdepends = opencv\n\tdepends = deskwaifu-bin\n")
+        updater.verify_dependencies(dependencies, info)
+        for constraint in ("=0.1.0-1", ">=0.1.0", "<=0.1.0", ">0.1.0", "<0.1.0"):
+            for include_plain in (False, True):
+                with self.subTest(constraint=constraint, include_plain=include_plain):
+                    constrained = info.replace("depends = deskwaifu-bin\n", f"depends = deskwaifu-bin{constraint}\n")
+                    if include_plain:
+                        constrained += "\tdepends = deskwaifu-bin\n"
+                    with self.assertRaisesRegex(ValueError, "without a version constraint"):
+                        updater.verify_dependencies(dependencies, constrained)
+
     def test_changed_existing_assets_are_rejected(self):
         with self.assertRaisesRegex(ValueError, "Assets changed"):
             updater.render_recipe(RECIPE, "0.1.0", ["ccc", "bbb"])
@@ -76,7 +90,7 @@ class AssetTest(unittest.TestCase):
                 depends = PRODUCER.MAIN_DEPENDS
             else:
                 files = {"usr/lib/deskwaifu/ocr/deskwaifu-ocr.so"}
-                depends = {"deskwaifu-bin=0.1.0-1", "opencv", "yaml-cpp", "onnxruntime-cpu"}
+                depends = {"deskwaifu-bin", "opencv", "yaml-cpp", "onnxruntime-cpu"}
             info = f"pkgname = {name}\npkgver = 0.1.0-1\narch = x86_64\n"
             info += "".join(f"depend = {dependency}\n" for dependency in sorted(depends))
             archive = self.directory / f"{name}-0.1.0-1-x86_64.pkg.tar.zst"
@@ -110,15 +124,14 @@ class AssetTest(unittest.TestCase):
         for name, required in dependencies.items():
             info += f"\npkgname = {name}\n"
             for dep in sorted(required - {"libnotify>=0.8"}):
-                dep = dep.replace("deskwaifu-bin=0.1.0-1", "deskwaifu-bin>=0.1.0")
                 info += f"\tdepends = {dep}\n"
         with self.assertRaisesRegex(ValueError, "libnotify>=0.8"):
-            updater.verify_dependencies(dependencies, "0.1.0", info)
-        # Keeping the new dependency and using the AUR revision satisfies the contract.
+            updater.verify_dependencies(dependencies, info)
+        # Keeping the new dependency satisfies the contract.
         info = info.replace("pkgname = deskwaifu-bin\n", "pkgname = deskwaifu-bin\n\tdepends = libnotify>=0.8\n")
-        updater.verify_dependencies(dependencies, "0.1.0", info)
-        with self.assertRaisesRegex(ValueError, "deskwaifu-bin>=0.1.0"):
-            updater.verify_dependencies(dependencies, "0.1.0", info.replace("deskwaifu-bin>=0.1.0", "deskwaifu-bin>=0.0.9"))
+        updater.verify_dependencies(dependencies, info)
+        with self.assertRaisesRegex(ValueError, "deskwaifu-bin"):
+            updater.verify_dependencies(dependencies, info.replace("\tdepends = deskwaifu-bin\n", ""))
 
     def test_corrupt_or_missing_asset_is_rejected(self):
         path = next(self.directory.glob("*.pkg.tar.zst"))
@@ -217,7 +230,7 @@ class ConsumerTest(unittest.TestCase):
         self.assertNotIn("libonnxruntime", ocr)
 
     @unittest.skipUnless(shutil.which("makepkg"), "makepkg is required")
-    def test_generated_metadata_and_bumped_ocr_dependency(self):
+    def test_generated_metadata_and_independent_recipe_revision(self):
         recipe = ROOT / "packaging/aur"
         actual = subprocess.check_output(["makepkg", "--printsrcinfo"], cwd=recipe, text=True)
         self.assertEqual(actual, (recipe / ".SRCINFO").read_text())
@@ -228,7 +241,10 @@ class ConsumerTest(unittest.TestCase):
             text = re.sub(r"^pkgrel=\d+$", "pkgrel=3", text, count=1, flags=re.M)
             (path / "PKGBUILD").write_text(text)
             info = subprocess.check_output(["makepkg", "--printsrcinfo"], cwd=path, text=True)
-            self.assertIn(f"depends = deskwaifu-bin>={version}", info)
+            ocr = info.split("\npkgname = deskwaifu-ocr-bin\n")[1]
+            dependencies = PRODUCER.metadata("\n".join(line.strip() for line in ocr.splitlines()))["depends"]
+            self.assertIn("deskwaifu-bin", dependencies)
+            PRODUCER.verify_unversioned_dependencies(dependencies)
             self.assertIn(f"upstream-deskwaifu-bin-{version}-1-x86_64.pkg.tar.zst", info)
 
 
