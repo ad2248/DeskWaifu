@@ -441,16 +441,19 @@ private slots:
     void recoversFromInvalidReply_data()
     {
         QTest::addColumn<QString>("failedCommand");
+        QTest::addColumn<bool>("delayInvalidSaveReply");
         for (const auto& command : {"get_hover_opacity", "set_hover_opacity", "get_mouse_look",
                 "set_mouse_look", "get_transform_settings", "begin_transform_edit",
                 "update_transform_edit", "apply_transform_edit", "get_transform_save_result"})
-            QTest::newRow(command) << QString(command);
-        QTest::newRow("queued-save-cancelled") << QString("queued_apply_transform_edit");
+            QTest::newRow(command) << QString(command) << false;
+        QTest::newRow("queued-save-cancelled") << QString("queued_apply_transform_edit") << false;
+        QTest::newRow("delayed-invalid-save-reply") << QString("get_transform_save_result") << true;
     }
 
     void recoversFromInvalidReply()
     {
         QFETCH(QString, failedCommand);
+        QFETCH(bool, delayInvalidSaveReply);
         const bool queuedSave = failedCommand == "queued_apply_transform_edit";
         QTemporaryDir directory;
         QVERIFY(directory.isValid());
@@ -492,6 +495,14 @@ private slots:
                     if (loseSave) lostSaveReply = true;
                     if (loseSave || (command == failedCommand && invalidReplies == 0)) {
                         if (!loseSave) ++invalidReplies;
+                        if (delayInvalidSaveReply && !loseSave) {
+                            // 服务端已计数，但客户端尚未收到第二次协议错误。
+                            QTimer::singleShot(200, socket, [socket] {
+                                socket->write("broken-json\n");
+                                socket->flush();
+                            });
+                            continue;
+                        }
                         socket->write("broken-json\n");
                     } else socket->write(QJsonDocument(response).toJson(QJsonDocument::Compact) + '\n');
                     socket->flush();
@@ -499,6 +510,7 @@ private slots:
             });
         });
         MainWindow window;
+        QSignalSpy protocolErrors(&window.hostServices(), &GuiHostServices::protocolError);
         window.show();
         window.activateWindow();
         auto* hoverGroup = window.findChild<QWidget*>("hoverOpacityGroup");
@@ -527,7 +539,11 @@ private slots:
             }
         }
         QTRY_COMPARE_WITH_TIMEOUT(invalidReplies, 1, 6000);
-        QTRY_VERIFY_WITH_TIMEOUT(connections >= 2 && hoverGroup->isEnabled() && lookGroup->isEnabled() && x->isEnabled(), 6000);
+        // 服务端写出坏回执不代表客户端已处理。保存回执查询还会触发第二次断线，
+        // 必须等客户端处理完所有预期协议错误，否则后续点击会排队并被取消。
+        const int expectedErrors = failedCommand == "get_transform_save_result" ? 2 : 1;
+        QTRY_COMPARE_WITH_TIMEOUT(protocolErrors.count(), expectedErrors, 6000);
+        QTRY_VERIFY_WITH_TIMEOUT(connections >= expectedErrors + 1 && hoverGroup->isEnabled() && lookGroup->isEnabled() && x->isEnabled(), 6000);
         if (queuedSave) {
             QCOMPARE(commands.count("apply_transform_edit"), 0);
             QCOMPARE(commands.count("get_transform_save_result"), 0);
