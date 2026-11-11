@@ -2,13 +2,19 @@
 #include "plugin/GuiLog.hpp"
 
 #include <QCoreApplication>
+#include <QDebug>
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QDir>
-#include <QDebug>
 #include <iostream>
 
-#define CHECK(condition) do { if (!(condition)) { std::cerr << __LINE__ << ": " << #condition << '\n'; return 1; } } while (false)
+#define CHECK(condition)                                                                                                                                                           \
+    do {                                                                                                                                                                           \
+        if (!(condition)) {                                                                                                                                                        \
+            std::cerr << __LINE__ << ": " << #condition << '\n';                                                                                                                   \
+            return 1;                                                                                                                                                              \
+        }                                                                                                                                                                          \
+    } while (false)
 
 int main(int argc, char** argv)
 {
@@ -18,14 +24,12 @@ int main(int argc, char** argv)
     CHECK(path.startsWith(QDir::tempPath() + QStringLiteral("/log/waifudesk_")));
     CHECK(QFileInfo::exists(path));
     const auto safe = FormatGuiResponseLog(QStringLiteral("set_speech_settings"),
-        {{QStringLiteral("ok"), false}, {QStringLiteral("api_key"), QStringLiteral("secret")},
-         {QStringLiteral("error"), QStringLiteral("secret")}});
+        { { QStringLiteral("ok"), false }, { QStringLiteral("api_key"), QStringLiteral("secret") }, { QStringLiteral("error"), QStringLiteral("secret") } });
     CHECK(safe.contains(QStringLiteral("set_speech_settings")));
     CHECK(safe.contains(QStringLiteral("failure")));
     CHECK(!safe.contains(QStringLiteral("secret")));
     const auto allowed = FormatGuiResponseLog(QStringLiteral("set_render_device"),
-        {{QStringLiteral("ok"), true}, {QStringLiteral("restart_required"), true},
-         {QStringLiteral("unexpected"), QStringLiteral("secret")}});
+        { { QStringLiteral("ok"), true }, { QStringLiteral("restart_required"), true }, { QStringLiteral("unexpected"), QStringLiteral("secret") } });
     CHECK(allowed.contains(QStringLiteral("restart_required")));
     CHECK(!allowed.contains(QStringLiteral("unexpected")));
     qInfo().noquote() << safe;

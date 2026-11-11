@@ -12,11 +12,12 @@
 namespace {
 void Check(bool value, const char* message)
 {
-    if (!value) throw std::runtime_error(message);
+    if (!value) {
+        throw std::runtime_error(message);
+    }
 }
 
-class Host final : public GuiHostServices
-{
+class Host final : public GuiHostServices {
 public:
     bool connected = true;
     QStringList commands, cancellations;
@@ -52,7 +53,7 @@ try {
     script.close();
     Check(script.setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner), "executable fixture");
 
-    for (bool disconnected : {true, false}) {
+    for (bool disconnected : { true, false }) {
         const auto root = directory.path() + (disconnected ? "/disconnected" : "/queued");
         CopyModule(QString::fromLocal8Bit(argv[1]), root, "z-system");
         CopyModule(QString::fromLocal8Bit(argv[2]), root, "a-pump");
@@ -74,7 +75,7 @@ try {
         manager.Stop();
         Check(tabs.count() == 0, "pages destroyed after Stop");
         Check(!QFile::exists(marker), "stopped system plugin must not launch a backend during another plugin's Stop");
-        Check(host.cancellations == QStringList{"quit"}, "teardown retracts queued quit even after service invalidation");
+        Check(host.cancellations == QStringList { "quit" }, "teardown retracts queued quit even after service invalidation");
     }
     std::cout << "System plugin stops restart timers and cancels queued quit before teardown events\n";
     return 0;

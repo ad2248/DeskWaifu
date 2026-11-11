@@ -5,8 +5,7 @@
 #include <systemd/sd-bus.h>
 
 // 由当前进程持有的临时 KWin 脚本，并非安装到系统的 KDE 插件。
-class KWinCursorTracker
-{
+class KWinCursorTracker {
 public:
     // 析构时停止追踪并释放总线、匿名脚本文件与清理管道。
     ~KWinCursorTracker();
@@ -47,7 +46,7 @@ private:
     std::string _owner, _scriptName, _outputName, _sampleOutput, _error;
     double _x = 0, _y = 0, _left = 0, _top = 0, _width = 0, _height = 0;
     bool _fullscreen = false, _fullscreenChanged = false;
-    std::chrono::steady_clock::time_point _sampleTime{}, _loadedAt{}, _retry{};
+    std::chrono::steady_clock::time_point _sampleTime { }, _loadedAt { }, _retry { };
 };
 
 // 单独提供脚本，以便在没有合成器时也能测试实际脚本。

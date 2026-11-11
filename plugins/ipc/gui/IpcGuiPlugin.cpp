@@ -4,16 +4,21 @@
 #include <QPointer>
 #include <memory>
 
-class IpcGuiPlugin final : public IGuiPlugin
-{
+class IpcGuiPlugin final : public IGuiPlugin {
 public:
     bool Initialize(GuiPluginContext& context, QString* error) override
     {
-        if (error) error->clear();
+        if (error) {
+            error->clear();
+        }
         _services = context.Services();
         _client = std::make_unique<DeskWaifuClient>();
-        if (_services->registerTransport(_client.get(), &context)) return true;
-        if (error) *error = QStringLiteral("Cannot register GUI command transport");
+        if (_services->registerTransport(_client.get(), &context)) {
+            return true;
+        }
+        if (error) {
+            *error = QStringLiteral("Cannot register GUI command transport");
+        }
         return false;
     }
     bool Start(QString* error) override
@@ -24,10 +29,13 @@ public:
     }
     void Stop() noexcept override
     {
-        if (_services && _client) _services->unregisterTransport(_client.get());
+        if (_services && _client) {
+            _services->unregisterTransport(_client.get());
+        }
         _client.reset();
         _services.clear();
     }
+
 private:
     QPointer<GuiHostServices> _services;
     std::unique_ptr<DeskWaifuClient> _client;

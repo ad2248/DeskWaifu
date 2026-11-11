@@ -1,13 +1,18 @@
-#include <GL/glew.h>
-#include <EGL/egl.h>
 #include "processor/model/LAppSprite.hpp"
+#include <EGL/egl.h>
+#include <GL/glew.h>
 #include <cmath>
 #include <iostream>
-#include <vector>
 #include <utility>
+#include <vector>
 
-#define CHECK(condition) do { if (!(condition)) { \
-    std::cerr << "Failed at line " << __LINE__ << ": " << #condition << '\n'; return 1; } } while (false)
+#define CHECK(condition)                                                                                                                                                           \
+    do {                                                                                                                                                                           \
+        if (!(condition)) {                                                                                                                                                        \
+            std::cerr << "Failed at line " << __LINE__ << ": " << #condition << '\n';                                                                                              \
+            return 1;                                                                                                                                                              \
+        }                                                                                                                                                                          \
+    } while (false)
 
 static GLuint Compile(GLenum type, const char* source)
 {
@@ -16,7 +21,9 @@ static GLuint Compile(GLenum type, const char* source)
     glCompileShader(shader);
     GLint compiled;
     glGetShaderiv(shader, GL_COMPILE_STATUS, &compiled);
-    if (compiled) return shader;
+    if (compiled) {
+        return shader;
+    }
     glDeleteShader(shader);
     return 0;
 }
@@ -24,22 +31,23 @@ static GLuint Compile(GLenum type, const char* source)
 int main()
 {
     const EGLDisplay display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
-    if (display == EGL_NO_DISPLAY || !eglInitialize(display, nullptr, nullptr)) return 77;
-    const EGLint attributes[] = {EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
-        EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT, EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8,
-        EGL_BLUE_SIZE, 8, EGL_ALPHA_SIZE, 8, EGL_NONE};
+    if (display == EGL_NO_DISPLAY || !eglInitialize(display, nullptr, nullptr)) {
+        return 77;
+    }
+    const EGLint attributes[]
+        = { EGL_SURFACE_TYPE, EGL_PBUFFER_BIT, EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT, EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8, EGL_BLUE_SIZE, 8, EGL_ALPHA_SIZE, 8, EGL_NONE };
     EGLConfig config;
     EGLint count = 0;
     CHECK(eglChooseConfig(display, attributes, &config, 1, &count) && count == 1);
     CHECK(eglBindAPI(EGL_OPENGL_API));
-    const EGLint size[] = {EGL_WIDTH, 1, EGL_HEIGHT, 1, EGL_NONE};
+    const EGLint size[] = { EGL_WIDTH, 1, EGL_HEIGHT, 1, EGL_NONE };
     const EGLSurface surface = eglCreatePbufferSurface(display, config, size);
     const EGLContext context = eglCreateContext(display, config, EGL_NO_CONTEXT, nullptr);
     CHECK(surface != EGL_NO_SURFACE && context != EGL_NO_CONTEXT);
     CHECK(eglMakeCurrent(display, surface, surface, context));
     glewExperimental = GL_TRUE;
     CHECK(glewInit() == GLEW_OK);
-    while (glGetError() != GL_NO_ERROR) {}
+    while (glGetError() != GL_NO_ERROR) { }
 
     const GLuint vertex = Compile(GL_VERTEX_SHADER,
         "#version 120\nattribute vec2 position; attribute vec2 uv; varying vec2 texCoord;"
@@ -49,11 +57,14 @@ int main()
         "void main(){gl_FragColor=texture2D(texture,texCoord)*baseColor;}");
     CHECK(vertex && fragment);
     const GLuint program = glCreateProgram();
-    glAttachShader(program, vertex); glAttachShader(program, fragment); glLinkProgram(program);
+    glAttachShader(program, vertex);
+    glAttachShader(program, fragment);
+    glLinkProgram(program);
     GLint linked;
     glGetProgramiv(program, GL_LINK_STATUS, &linked);
     CHECK(linked);
-    glDeleteShader(vertex); glDeleteShader(fragment);
+    glDeleteShader(vertex);
+    glDeleteShader(fragment);
     glUseProgram(program);
 
     GLuint textures[3], framebuffer;
@@ -63,8 +74,8 @@ int main()
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     }
-    const unsigned char straight[] = {255, 128, 64, 255};
-    const unsigned char premultiplied[] = {128, 64, 32, 128};
+    const unsigned char straight[] = { 255, 128, 64, 255 };
+    const unsigned char premultiplied[] = { 128, 64, 32, 128 };
     glBindTexture(GL_TEXTURE_2D, textures[0]);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, straight);
     glBindTexture(GL_TEXTURE_2D, textures[1]);
@@ -78,8 +89,8 @@ int main()
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     {
         LAppSprite sprite(3, 4, 4, 4, textures[0], program);
-        const GLfloat uv[] = {1, 1, 0, 1, 0, 0, 1, 0};
-        for (const auto dimensions : {std::pair<int, int>{16, 12}, {8, 20}}) {
+        const GLfloat uv[] = { 1, 1, 0, 1, 0, 0, 1, 0 };
+        for (const auto dimensions : { std::pair<int, int> { 16, 12 }, { 8, 20 } }) {
             const int width = dimensions.first, height = dimensions.second;
             glBindTexture(GL_TEXTURE_2D, textures[2]);
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
@@ -95,40 +106,41 @@ int main()
             CHECK(sprite.IsHit(centerX, height - centerY, width, height));
             CHECK(!sprite.IsHit(0, height - centerY, width, height));
             CHECK(!sprite.IsHit(centerX, 0, width, height));
-            for (const bool nonzeroBackground : {false, true}) for (const bool immediate : {false, true}) {
-                const int background[] = {nonzeroBackground ? 32 : 0, nonzeroBackground ? 64 : 0,
-                    nonzeroBackground ? 96 : 0, nonzeroBackground ? 128 : 0};
-                glClearColor(background[0] / 255.f, background[1] / 255.f,
-                    background[2] / 255.f, background[3] / 255.f);
-                glClear(GL_COLOR_BUFFER_BIT);
-                if (immediate) {
-                    // LAppView 的透明度路径同时缩放预乘 RGB 和 alpha。
-                    glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-                    sprite.SetColor(.5f, .5f, .5f, .5f);
-                    sprite.RenderImmidiate(textures[1], uv, width, height);
-                } else {
-                    sprite.SetColor(1, 1, 1, .5f);
-                    sprite.Render(width, height);
-                }
-                std::vector<unsigned char> pixels(width * height * 4);
-                glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
-                // Render 将包括 alpha 在内的所有源通道乘以 0.5。
-                // Immediate 接收已按 0.5 缩放的预乘通道。
-                const double source[] = {immediate ? 64.0 : 127.5, immediate ? 32.0 : 64.0,
-                    immediate ? 16.0 : 32.0, immediate ? 64.0 : 63.75};
-                const double destinationFactor = immediate ? 1.0 - 64.0 / 255 : .5;
-                for (int y = 0; y < height; ++y) for (int x = 0; x < width; ++x) {
-                    const bool inside = x >= centerX - 2 && x < centerX + 2 && y >= centerY - 2 && y < centerY + 2;
-                    for (int channel = 0; channel < 4; ++channel) {
-                        const double expected = inside ? source[channel] + background[channel] * destinationFactor
-                            : background[channel];
-                        CHECK(std::abs(pixels[(y * width + x) * 4 + channel] - expected) <= 1);
+            for (const bool nonzeroBackground : { false, true }) {
+                for (const bool immediate : { false, true }) {
+                    const int background[] = { nonzeroBackground ? 32 : 0, nonzeroBackground ? 64 : 0, nonzeroBackground ? 96 : 0, nonzeroBackground ? 128 : 0 };
+                    glClearColor(background[0] / 255.f, background[1] / 255.f, background[2] / 255.f, background[3] / 255.f);
+                    glClear(GL_COLOR_BUFFER_BIT);
+                    if (immediate) {
+                        // LAppView 的透明度路径同时缩放预乘 RGB 和 alpha。
+                        glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+                        sprite.SetColor(.5f, .5f, .5f, .5f);
+                        sprite.RenderImmidiate(textures[1], uv, width, height);
+                    } else {
+                        sprite.SetColor(1, 1, 1, .5f);
+                        sprite.Render(width, height);
                     }
+                    std::vector<unsigned char> pixels(width * height * 4);
+                    glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+                    // Render 将包括 alpha 在内的所有源通道乘以 0.5。
+                    // Immediate 接收已按 0.5 缩放的预乘通道。
+                    const double source[] = { immediate ? 64.0 : 127.5, immediate ? 32.0 : 64.0, immediate ? 16.0 : 32.0, immediate ? 64.0 : 63.75 };
+                    const double destinationFactor = immediate ? 1.0 - 64.0 / 255 : .5;
+                    for (int y = 0; y < height; ++y) {
+                        for (int x = 0; x < width; ++x) {
+                            const bool inside = x >= centerX - 2 && x < centerX + 2 && y >= centerY - 2 && y < centerY + 2;
+                            for (int channel = 0; channel < 4; ++channel) {
+                                const double expected = inside ? source[channel] + background[channel] * destinationFactor : background[channel];
+                                CHECK(std::abs(pixels[(y * width + x) * 4 + channel] - expected) <= 1);
+                            }
+                        }
+                    }
+                    CHECK(glGetError() == GL_NO_ERROR);
                 }
-                CHECK(glGetError() == GL_NO_ERROR);
             }
             // 无效目标不能导致除零，也不能继续绘制或命中旧矩形。
-            glClearColor(0, 0, 0, 0); glClear(GL_COLOR_BUFFER_BIT);
+            glClearColor(0, 0, 0, 0);
+            glClear(GL_COLOR_BUFFER_BIT);
             sprite.Render(0, height);
             sprite.Render(width, -1);
             sprite.RenderImmidiate(textures[1], uv, width, 0);

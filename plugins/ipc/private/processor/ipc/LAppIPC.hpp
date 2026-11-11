@@ -7,16 +7,15 @@
 
 #pragma once
 
+#include "contracts/ICommandService.hpp"
 #include <cstddef>
+#include <memory>
 #include <string>
 #include <sys/types.h>
 #include <vector>
-#include <memory>
-#include "contracts/ICommandService.hpp"
 
 // 拥有监听描述符和客户端连接；由同一事件循环线程驱动，不自行启动线程。
-class LAppIPC
-{
+class LAppIPC {
 public:
     LAppIPC();
     ~LAppIPC();
@@ -75,7 +74,10 @@ private:
     ino_t _socketInode = 0;
     bool _ownsSocketPath = false;
     // 每个连接只保留一个待发送回复，不使用无界回复队列。
-    struct PendingReply { bool ready = false; std::string response; };
+    struct PendingReply {
+        bool ready = false;
+        std::string response;
+    };
     std::shared_ptr<std::function<void()>> _ready = std::make_shared<std::function<void()>>();
     struct ClientBuffer {
         int fd;

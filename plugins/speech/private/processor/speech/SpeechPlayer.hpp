@@ -8,8 +8,7 @@ class AudioPlayer;
 
 // 业务入口；语音来源和输出对象必须比此协调器存活更久。
 // 与来源及输出对象在同一 Qt 应用线程使用，状态变更由异步状态机驱动。
-class SpeechPlayer : public QObject
-{
+class SpeechPlayer : public QObject {
     Q_OBJECT
 public:
     enum class State { Idle, Preparing, Playing, Draining };

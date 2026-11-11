@@ -4,8 +4,7 @@
 #include <vector>
 
 // 描述模型动作或表情与触发按键的绑定，以及可用性和播放参数。
-struct ModelBinding
-{
+struct ModelBinding {
     std::string id, name, action, file, reason;
     std::vector<std::string> keys;
     bool enabled = true;

@@ -1,8 +1,8 @@
 #pragma once
 
-#include "processor/Processor.hpp"
-#include "RenderFrame.hpp"
 #include "ModelExchange.hpp"
+#include "RenderFrame.hpp"
+#include "processor/Processor.hpp"
 #include "render/ModelRenderTarget.hpp"
 #include <QThread>
 
@@ -10,8 +10,7 @@ class ModelRuntime;
 
 // GUI 侧的操作适配器。帧使用有界的最新状态和最新帧交换槽，
 // 不使用逐帧 ProcessorEvent 或无界 Qt 信号队列。
-class ModelProcessor final : public Processor
-{
+class ModelProcessor final : public Processor {
 public:
     explicit ModelProcessor(ProcessorEventLoop& loop, std::shared_ptr<ModelExchange> exchange);
     ~ModelProcessor() override;
@@ -22,6 +21,7 @@ public:
     // GUI 线程接收模型操作并异步回复，或提供只查询 CPU 快照的命中回调。
     // 返回值表示事件是否已被消费；自身元数据通知只更新状态而不消费。
     bool HandleEvent(const ProcessorEvent& event) override;
+
 private:
     friend struct ProcessorTestAccess;
     QThread _thread;

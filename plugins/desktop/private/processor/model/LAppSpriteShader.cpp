@@ -7,26 +7,22 @@
 
 #include "LAppSpriteShader.hpp"
 
+#include "FailureDiagnostics.hpp"
 #include "LAppDefine.hpp"
 #include "LAppLive2DManager.hpp"
 #include "LAppPal.hpp"
-#include "FailureDiagnostics.hpp"
 #include <vector>
 
-LAppSpriteShader::LAppSpriteShader()
-{
-    _programId = CreateShader();
-}
+LAppSpriteShader::LAppSpriteShader() { _programId = CreateShader(); }
 
 LAppSpriteShader::~LAppSpriteShader()
 {
-    if (_programId) glDeleteProgram(_programId);
+    if (_programId) {
+        glDeleteProgram(_programId);
+    }
 }
 
-GLuint LAppSpriteShader::GetShaderId() const
-{
-    return _programId;
-}
+GLuint LAppSpriteShader::GetShaderId() const { return _programId; }
 
 GLuint LAppSpriteShader::CreateShader()
 {
@@ -40,10 +36,13 @@ GLuint LAppSpriteShader::CreateShader()
     GLuint vertexShaderId = CompileShader(vertShaderFile, GL_VERTEX_SHADER);
     GLuint fragmentShaderId = CompileShader(fragShaderFile, GL_FRAGMENT_SHADER);
 
-    if (!vertexShaderId || !fragmentShaderId)
-    {
-        if (vertexShaderId) glDeleteShader(vertexShaderId);
-        if (fragmentShaderId) glDeleteShader(fragmentShaderId);
+    if (!vertexShaderId || !fragmentShaderId) {
+        if (vertexShaderId) {
+            glDeleteShader(vertexShaderId);
+        }
+        if (fragmentShaderId) {
+            glDeleteShader(fragmentShaderId);
+        }
         return 0;
     }
 
@@ -57,8 +56,7 @@ GLuint LAppSpriteShader::CreateShader()
     GLint linked = GL_FALSE;
     glGetProgramiv(programId, GL_LINK_STATUS, &linked);
 
-    if (linked != GL_TRUE)
-    {
+    if (linked != GL_TRUE) {
         GLint logLength = 0;
         glGetProgramiv(programId, GL_INFO_LOG_LENGTH, &logLength);
         if (logLength > 0) {
@@ -88,8 +86,7 @@ bool LAppSpriteShader::CheckShader(GLuint shaderId)
     GLint status;
     GLint logLength;
     glGetShaderiv(shaderId, GL_INFO_LOG_LENGTH, &logLength);
-    if (logLength > 0)
-    {
+    if (logLength > 0) {
         GLchar* log = reinterpret_cast<GLchar*>(CSM_MALLOC(logLength));
         glGetShaderInfoLog(shaderId, logLength, &logLength, log);
         CubismLogError("Shader compile log: %s", log);
@@ -97,8 +94,7 @@ bool LAppSpriteShader::CheckShader(GLuint shaderId)
     }
 
     glGetShaderiv(shaderId, GL_COMPILE_STATUS, &status);
-    if (status == GL_FALSE)
-    {
+    if (status == GL_FALSE) {
         glDeleteShader(shaderId);
         return false;
     }
@@ -121,8 +117,7 @@ GLuint LAppSpriteShader::CompileShader(Csm::csmString filename, GLenum shaderTyp
     // 释放读取的着色器字符串。
     LAppPal::ReleaseBytes(reinterpret_cast<Csm::csmByte*>(const_cast<char*>(shaderString)));
 
-    if (!CheckShader(shaderId))
-    {
+    if (!CheckShader(shaderId)) {
         return 0;
     }
 

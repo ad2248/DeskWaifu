@@ -9,15 +9,14 @@
 
 #include <GL/glew.h>
 
-#include <Utils/CubismString.hpp>
 #include "CubismFramework.hpp"
+#include <Utils/CubismString.hpp>
 
 /**
-* @brief 保存精灵着色器设置的类。
-*/
+ * @brief 保存精灵着色器设置的类。
+ */
 // 拥有精灵着色器程序，构造及析构必须在同一有效 GL 上下文中进行。
-class LAppSpriteShader
-{
+class LAppSpriteShader {
 public:
     /**
      * @brief 构造函数。
@@ -37,8 +36,8 @@ public:
 
 private:
     /**
-    * @brief 创建着色器。
-    */
+     * @brief 创建着色器。
+     */
     GLuint CreateShader();
 
     /**
@@ -55,5 +54,5 @@ private:
      */
     GLuint CompileShader(Csm::csmString filename, GLenum shaderType);
 
-    GLuint _programId;                       ///< 着色器 ID。
+    GLuint _programId; ///< 着色器 ID。
 };

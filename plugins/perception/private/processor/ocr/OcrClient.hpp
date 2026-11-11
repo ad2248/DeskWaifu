@@ -7,8 +7,7 @@
 
 // 主程序仅需 QtCore；可选模块的加载、推理和释放均在专用线程完成。
 // 公共接口须在客户端所属的 Qt 事件循环线程调用，不支持并发提交。
-class OcrClient : public QObject
-{
+class OcrClient : public QObject {
     Q_OBJECT
 public:
     explicit OcrClient(QString module, int timeoutMs = 60000, int idleMs = 60000);
@@ -25,7 +24,7 @@ public:
     // 返回环境变量覆盖的模块路径，未设置时使用编译期默认路径。
     static QString DefaultModule();
     // 配置并异步校验模型目录；已加载或正在工作时忽略调用。
-    void ConfigureModels(const QJsonObject& config, const QString& configError = {});
+    void ConfigureModels(const QJsonObject& config, const QString& configError = { });
 
 signals:
     // 任务终态的逻辑回复；取消或超时后原生推理仍可能运行。

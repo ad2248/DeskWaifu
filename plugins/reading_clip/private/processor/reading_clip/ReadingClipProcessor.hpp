@@ -1,12 +1,11 @@
 #pragma once
 
-#include "processor/Processor.hpp"
 #include "contracts/ImageFile.hpp"
+#include "processor/Processor.hpp"
 
 // 协调剪贴板图像读取、OCR 与语音播报；再次触发会取消当前流水线。
 // 在事件循环线程串行推进，并持有临时图像直到识别步骤结束。
-class ReadingClipProcessor final : public Processor
-{
+class ReadingClipProcessor final : public Processor {
 public:
     enum class State { Idle, WaitingImage, WaitingOcr, WaitingSpeech, Cancelling };
     // 借用三个已注册处理器，供直接事件派发使用；依赖须保持存活。
@@ -24,10 +23,11 @@ public:
     QString LastError() const { return _error; }
     // 返回含 ok、协议状态名和最近错误的快照；不发起任何异步操作。
     QVariantMap Status() const;
+
 private:
     void SetState(State state);
-    void Finish(QString error = {});
-    void Step(State state, const QString& type, const QString& capability, IProcessorPlugin* legacy, QVariantMap data = {});
+    void Finish(QString error = { });
+    void Step(State state, const QString& type, const QString& capability, IProcessorPlugin* legacy, QVariantMap data = { });
     bool Result(const QString& type, const QVariantMap& data);
     IProcessorPlugin* _images = nullptr;
     IProcessorPlugin* _ocr = nullptr;

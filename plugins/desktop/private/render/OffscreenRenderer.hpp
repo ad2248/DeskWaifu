@@ -5,8 +5,7 @@
 #include <vector>
 
 // EGL 硬件设备的稳定 PCI 地址及供用户显示的名称。
-struct RenderDeviceInfo
-{
+struct RenderDeviceInfo {
     std::string pciAddress;
     std::string name;
 };
@@ -16,8 +15,7 @@ std::vector<RenderDeviceInfo> ListRenderDevices();
 
 // 持有独立于 Qt Wayland 显示连接的设备平台 EGL 显示连接；auto 使用无表面模式。
 // 此边界只传递自下而上的 RGBA8 像素，不传递 GL 对象标识。
-class OffscreenRenderer
-{
+class OffscreenRenderer {
 public:
     OffscreenRenderer();
     ~OffscreenRenderer();
@@ -37,6 +35,7 @@ public:
     // 重新绑定自有上下文并释放全部 EGL/GL 资源；无法绑定以销毁 GL 资源时返回 false。
     // 显式关闭及析构应在渲染线程完成，且此前不得终止依赖的 EGL 连接。
     bool Shutdown();
+
 private:
     struct State;
     std::unique_ptr<State> _state;

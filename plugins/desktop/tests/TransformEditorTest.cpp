@@ -1,15 +1,20 @@
 #include "processor/interaction/TransformEditor.hpp"
+#include "TestTemporaryDirectory.hpp"
 #include "processor/interaction/CropInteraction.hpp"
 #include "processor/interaction/ScreenCropInteraction.hpp"
-#include "TestTemporaryDirectory.hpp"
 #include <fstream>
 #include <iostream>
 #include <unistd.h>
 
-#define CHECK(condition) do { if (!(condition)) { std::cerr << __LINE__ << ": " << #condition << '\n'; return 1; } } while (false)
+#define CHECK(condition)                                                                                                                                                           \
+    do {                                                                                                                                                                           \
+        if (!(condition)) {                                                                                                                                                        \
+            std::cerr << __LINE__ << ": " << #condition << '\n';                                                                                                                   \
+            return 1;                                                                                                                                                              \
+        }                                                                                                                                                                          \
+    } while (false)
 
-struct Runtime : IApplicationRuntime
-{
+struct Runtime : IApplicationRuntime {
     int ModelIndex() const override { return 0; }
     int ModelCount() const override { return 1; }
     bool SetHidden(bool) override { return true; }
@@ -19,38 +24,52 @@ int main()
 {
     const std::string directory = MakeTestTemporaryDirectory("transform-editor-test");
     CHECK(!directory.empty());
-    if (const char* root = std::getenv("TMPDIR"))
+    if (const char* root = std::getenv("TMPDIR")) {
         CHECK(directory.find(std::string(root) + "/") == 0);
+    }
     const std::string path = std::string(directory) + "/config.json";
-    auto write = [&](std::string text) { std::ofstream file(path); file << text; };
+    auto write = [&](std::string text) {
+        std::ofstream file(path);
+        file << text;
+    };
     write("{\"model_x\":1,\"model_scale\":2,\"other\":true}");
-    Runtime runtime; ApplicationService service(runtime);
-    ConfigStore::Snapshot invalid; TransformSettings decoded; std::string validationError;
-    for (const auto* document : {"{\"model_scale\":11}", "{\"model_x\":\"1\"}",
-             "{\"model_region\":{\"width\":0,\"height\":1}}", "{\"model_region\":{\"width\":1.5,\"height\":1}}",
-             "{\"model_region\":{\"x\":2147483648,\"width\":1,\"height\":1}}"}) {
+    Runtime runtime;
+    ApplicationService service(runtime);
+    ConfigStore::Snapshot invalid;
+    TransformSettings decoded;
+    std::string validationError;
+    for (const auto* document : { "{\"model_scale\":11}", "{\"model_x\":\"1\"}", "{\"model_region\":{\"width\":0,\"height\":1}}", "{\"model_region\":{\"width\":1.5,\"height\":1}}",
+             "{\"model_region\":{\"x\":2147483648,\"width\":1,\"height\":1}}" }) {
         CHECK(ConfigStore::Parse(document, invalid, validationError));
         CHECK(!TransformEditor::Decode(invalid, decoded, validationError));
     }
-    LAppConfig config; config.sourcePath = path;
+    LAppConfig config;
+    config.sourcePath = path;
     TransformEditor editor(service, config);
-    CHECK(editor.Initialize({}));
+    CHECK(editor.Initialize({ }));
     CHECK(editor.Display().transform.x == 1 && editor.Display().transform.scale == 2);
     CHECK(editor.Begin("gui", true, 1920, 1080).ok);
     CHECK(editor.Display().cropped && editor.Display().region.width == 1920);
     CHECK(editor.Display().region.height == 1080);
     CHECK(!editor.Begin("other", false, 1920, 1080).ok);
-    auto draft = editor.Display(); draft.transform.x = 3; draft.region.x = 100;
+    auto draft = editor.Display();
+    draft.transform.x = 3;
+    draft.region.x = 100;
     CHECK(editor.Update("gui", draft).ok);
-    ConfigStore store(path); ConfigStore::Snapshot disk; std::string error;
+    ConfigStore store(path);
+    ConfigStore::Snapshot disk;
+    std::string error;
     CHECK(store.Read(disk, error) && disk.values.at("model_x") == "1");
-    editor.Disconnected("other"); CHECK(editor.Editing());
-    editor.Disconnected("gui"); CHECK(!editor.Editing() && service.Snapshot().transform.x == 1);
+    editor.Disconnected("other");
+    CHECK(editor.Editing());
+    editor.Disconnected("gui");
+    CHECK(!editor.Editing() && service.Snapshot().transform.x == 1);
     CHECK(editor.Begin("gui", false, 1920, 1080).ok);
     CHECK(editor.Update("gui", draft).ok);
     // 外部对同一字段的修改更新已提交状态，不更新预览。
     write("{\"model_x\":5,\"model_scale\":2,\"other\":false}");
-    editor.Reload(); CHECK(editor.Conflict());
+    editor.Reload();
+    CHECK(editor.Conflict());
     CHECK(service.Snapshot().transform.x == 3);
     CHECK(!editor.Apply("gui").ok);
     CHECK(editor.Cancel("gui").ok && service.Snapshot().transform.x == 5);
@@ -62,12 +81,15 @@ int main()
     CHECK(disk.values.size() == 17 && disk.values.at("window_width") == "1900");
     CHECK(config.values.modelX == 3 && config.values.modelRegion);
     // 普通位置和缩放控件只在防抖期结束后保存。
-    CHECK(service.SetTransform({1.5f, 2, -1}).ok);
-    editor.ScheduleSave(10, .5); editor.Tick(10.2);
+    CHECK(service.SetTransform({ 1.5f, 2, -1 }).ok);
+    editor.ScheduleSave(10, .5);
+    editor.Tick(10.2);
     CHECK(editor.Dirty());
-    editor.Tick(10.6); CHECK(!editor.Dirty());
+    editor.Tick(10.6);
+    CHECK(!editor.Dirty());
     CHECK(store.Read(disk, error) && disk.values.at("model_scale") == "1.5");
-    TransformEditor restarted(service, config); CHECK(restarted.Initialize({}));
+    TransformEditor restarted(service, config);
+    CHECK(restarted.Initialize({ }));
     CHECK(restarted.Display().transform.y == -1);
     CHECK(editor.Reset("gui").ok);
     CHECK(!editor.Display().cropped && service.Snapshot().transform.scale == 1 && service.Snapshot().transform.x == 0);
@@ -77,7 +99,7 @@ int main()
     write("{\"model_x\":8,\"other\":false}");
     CHECK(!editor.Begin("gui", false, 1920, 1080, oldRevision).ok);
     CHECK(!editor.Editing() && service.Snapshot().transform.x == 8);
-    CHECK(service.SetTransform({1, 9, 0}).ok);
+    CHECK(service.SetTransform({ 1, 9, 0 }).ok);
     editor.ScheduleSave(20, .5);
     write("{\"model_x\":10,\"other\":false}");
     editor.Tick(21);
@@ -88,11 +110,13 @@ int main()
     // 保存失败时保留预览，不能将重置报告为成功。
     CHECK(editor.Begin("gui", true, 1920, 1080).ok);
     CHECK(editor.Update("gui", draft).ok);
-    write("broken"); CHECK(!editor.Reset("gui").ok && editor.Editing());
+    write("broken");
+    CHECK(!editor.Reset("gui").ok && editor.Editing());
     CHECK(service.Snapshot().transform.x == 3);
-    editor.AbortScreenEdit(); CHECK(!editor.Editing() && service.Snapshot().transform.x == 0);
+    editor.AbortScreenEdit();
+    CHECK(!editor.Editing() && service.Snapshot().transform.x == 0);
     // 裁剪框向右移动 100 像素、向下移动 50 像素时，模型也应移动相同像素距离。
-    TransformSettings start{{2, 1, 1}, true, {100, 100, 800, 600}};
+    TransformSettings start { { 2, 1, 1 }, true, { 100, 100, 800, 600 } };
     const auto moved = CropInteraction::Drag(start, CropInteraction::Move, 100, 50, 1000);
     CHECK(moved.region.x == 200 && moved.region.y == 150);
     CHECK(std::abs(moved.transform.x - 1.1f) < .00001f && std::abs(moved.transform.y - .95f) < .00001f);
@@ -101,7 +125,7 @@ int main()
     CHECK(resized.transform.x == start.transform.x && resized.transform.scale == start.transform.scale);
     CHECK(CropInteraction::Hit(start.region, 500, 100) == CropInteraction::Move);
     CHECK(CropInteraction::Hit(start.region, 100, 100) == (CropInteraction::Left | CropInteraction::Top));
-    start.region = {INT32_MIN, INT32_MIN, INT32_MAX, INT32_MAX};
+    start.region = { INT32_MIN, INT32_MIN, INT32_MAX, INT32_MAX };
     auto recovered = TransformEditor::MoveCrop(start, -int64_t(start.region.x), -int64_t(start.region.y), 1000);
     CHECK(recovered.region.x == 0 && recovered.region.y == 0);
     const auto extreme = CropInteraction::Drag(start, CropInteraction::Left | CropInteraction::Top, INT32_MIN, INT32_MIN, 1000);
@@ -124,11 +148,12 @@ int main()
     CHECK(editor.ScreenEditing()); // 释放操作不会保存或隐藏边框。
     CHECK(store.Read(disk, error) && disk.values.empty());
     CHECK(!editor.Begin("gui", true, 1000, 1000).ok);
-    CHECK(!editor.Update("gui", {}).ok && !editor.Apply("gui").ok);
-    editor.Disconnected("gui"); CHECK(editor.LocalScreenEditing());
+    CHECK(!editor.Update("gui", { }).ok && !editor.Apply("gui").ok);
+    editor.Disconnected("gui");
+    CHECK(editor.LocalScreenEditing());
 
     // 双击模型内部不会保存边框，也不会触发模型动作。
-    for (uint32_t time : {200u, 300u}) {
+    for (uint32_t time : { 200u, 300u }) {
         pointer.Press(editor.Display(), 200, 200);
         CHECK(pointer.Release(editor, time, 200, 200).ok);
     }
@@ -155,7 +180,7 @@ int main()
     CHECK(editor.Begin("gui", true, 1000, 1000).ok);
     CHECK(!pointer.StartModelDrag(editor, 100, 100, 150, 100, 1000, 1000));
     CHECK(editor.OwnedBy("gui"));
-    for (uint32_t time : {1000u, 1100u}) {
+    for (uint32_t time : { 1000u, 1100u }) {
         pointer.Press(editor.Display(), 500, 0);
         CHECK(pointer.Release(editor, time, 500, 0).ok);
     }
@@ -178,7 +203,7 @@ int main()
     CHECK(!editor.ScreenEditing() && service.Snapshot().transform.x == 9);
 
     // 临时写入或解析失败后，可通过再次双击边框重试。
-    pointer = ScreenCropInteraction{};
+    pointer = ScreenCropInteraction { };
     CHECK(store.Read(disk, error));
     const auto savedDocument = disk.document;
     CHECK(pointer.StartModelDrag(editor, 100, 100, 120, 100, 1000, 1000));
@@ -197,10 +222,11 @@ int main()
     CHECK(!editor.Editing() && editor.Display().cropped && editor.Error().empty());
 
     // 本地和 GUI 屏幕编辑都通过一次区域外点击保存同一份草稿。
-    for (const auto* owner : {"local-screen", "gui"}) {
-        for (const auto point : {std::pair<int, int>{50, 250}, {750, 250}, {300, 50}, {300, 650}}) {
+    for (const auto* owner : { "local-screen", "gui" }) {
+        for (const auto point : { std::pair<int, int> { 50, 250 }, { 750, 250 }, { 300, 50 }, { 300, 650 } }) {
             CHECK(editor.Begin(owner, true, 1000, 1000).ok);
-            auto next = editor.Display(); next.region = {100, 100, 600, 500};
+            auto next = editor.Display();
+            next.region = { 100, 100, 600, 500 };
             next.transform.scale = 1.5f;
             CHECK(editor.Update(owner, next).ok);
             pointer.Press(editor.Display(), point.first, point.second);
@@ -251,7 +277,8 @@ int main()
     CHECK(!editor.Editing() && editor.Error().empty());
     // 区域外点击也不能绕过外部编辑冲突保护。
     CHECK(editor.Begin("gui", true, 1000, 1000).ok);
-    auto conflictDraft = editor.Display(); conflictDraft.transform.x += 1;
+    auto conflictDraft = editor.Display();
+    conflictDraft.transform.x += 1;
     CHECK(editor.Update("gui", conflictDraft).ok);
     write("{\"model_x\":9}");
     pointer.Press(editor.Display(), 50, 250);
@@ -263,7 +290,7 @@ int main()
     CHECK(editor.ReloadAndDiscard("gui").ok);
 
     // 保存当前对象的全部字段，而非仅保存变换或旧磁盘值。
-    config.values.additionalModelDirs = {"~/模型", "with \"quotes\" and \\slashes"};
+    config.values.additionalModelDirs = { "~/模型", "with \"quotes\" and \\slashes" };
     config.values.defaultModel = "夕颜\nmodel";
     config.values.emotionTimeout = 7.25f;
     config.values.windowWidth = 812;
@@ -278,7 +305,8 @@ int main()
     CHECK(disk.values.at("window_width") == "812" && disk.values.at("window_height") == "613");
     CHECK(disk.values.at("hover_opacity_enabled") == "true" && disk.values.at("hover_opacity") == "0.375");
     CHECK(disk.values.at("idle_opacity") == "0.625");
-    LAppConfig loaded; CHECK(loaded.LoadFromFile(path));
+    LAppConfig loaded;
+    CHECK(loaded.LoadFromFile(path));
     CHECK(loaded.values.additionalModelDirs == config.values.additionalModelDirs);
     CHECK(loaded.values.defaultModel == config.values.defaultModel);
     CHECK(!disk.values.count("sourcePath"));

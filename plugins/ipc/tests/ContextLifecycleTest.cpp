@@ -4,60 +4,74 @@
 #include <iostream>
 #include <vector>
 
-#define CHECK(c) do { if (!(c)) { std::cerr << __LINE__ << ": " << #c << '\n'; return 1; } } while (false)
+#define CHECK(c)                                                                                                                                                                   \
+    do {                                                                                                                                                                           \
+        if (!(c)) {                                                                                                                                                                \
+            std::cerr << __LINE__ << ": " << #c << '\n';                                                                                                                           \
+            return 1;                                                                                                                                                              \
+        }                                                                                                                                                                          \
+    } while (false)
 
 // Drive the SDK's manager-only barrier without linking platform implementation.
-class PluginManager
-{
+class PluginManager {
 public:
-    static std::unique_ptr<PluginContext> Create(ProcessorEventLoop& loop)
-    { return std::unique_ptr<PluginContext>(new PluginContext(loop, "ipc-lifecycle", {})); }
+    static std::unique_ptr<PluginContext> Create(ProcessorEventLoop& loop) { return std::unique_ptr<PluginContext>(new PluginContext(loop, "ipc-lifecycle", { })); }
     static void Activate(PluginContext& context) { context.Activate(); }
     static void Invalidate(PluginContext& context) { context.Invalidate(); }
 };
 
 namespace {
-void Drain() { for (int i = 0; i < 40; ++i) QCoreApplication::processEvents(); }
-
-class Receiver final : public Processor
+void Drain()
 {
+    for (int i = 0; i < 40; ++i) {
+        QCoreApplication::processEvents();
+    }
+}
+
+class Receiver final : public Processor {
 public:
     using Processor::Processor;
     std::vector<ProcessorEvent> replies;
     std::vector<QString> disconnected;
     bool HandleEvent(const ProcessorEvent& event) override
     {
-        if (event.type == "ipc.command.result") { replies.push_back(event); return true; }
-        if (event.type == "command.disconnected") disconnected.push_back(event.data.value("connection").toString());
+        if (event.type == "ipc.command.result") {
+            replies.push_back(event);
+            return true;
+        }
+        if (event.type == "command.disconnected") {
+            disconnected.push_back(event.data.value("connection").toString());
+        }
         return false;
     }
 };
 
-class Stopper final : public Processor
-{
+class Stopper final : public Processor {
 public:
-    Stopper(ProcessorEventLoop& loop, CommandProcessor& gateway) : Processor(loop), _gateway(gateway) {}
+    Stopper(ProcessorEventLoop& loop, CommandProcessor& gateway)
+        : Processor(loop)
+        , _gateway(gateway)
+    {
+    }
     bool HandleEvent(const ProcessorEvent& event) override
     {
-        if (event.type != "test.stop.gateway") return false;
+        if (event.type != "test.stop.gateway") {
+            return false;
+        }
         _gateway.Stop();
         return true;
     }
+
 private:
     CommandProcessor& _gateway;
 };
 
 ProcessorEvent Request(IProcessorPlugin* sender, CommandProcessor* gateway, const QString& connection)
 {
-    return {"command.request", sender, gateway,
-        {{"json", QStringLiteral(R"({"command":"lifecycle"})")}, {"connection", connection}}};
+    return { "command.request", sender, gateway, { { "json", QStringLiteral(R"({"command":"lifecycle"})") }, { "connection", connection } } };
 }
 
-ProcessorEventPtr Result()
-{
-    return std::make_shared<ProcessorEvent>("command.result", nullptr, nullptr,
-        QVariantMap{{"json", QStringLiteral(R"({"ok":true})")}});
-}
+ProcessorEventPtr Result() { return std::make_shared<ProcessorEvent>("command.result", nullptr, nullptr, QVariantMap { { "json", QStringLiteral(R"({"ok":true})") } }); }
 }
 
 int main(int argc, char** argv)
@@ -71,8 +85,12 @@ int main(int argc, char** argv)
         std::vector<RequestId> requests;
         int cancelled = 0;
         auto provider = loop.CreateEndpoint("lifecycle-provider", [&](const EventDelivery& event) {
-            if (event.kind == EventDelivery::Kind::Request) requests.push_back(event.requestId);
-            if (event.kind == EventDelivery::Kind::Cancellation) ++cancelled;
+            if (event.kind == EventDelivery::Kind::Request) {
+                requests.push_back(event.requestId);
+            }
+            if (event.kind == EventDelivery::Kind::Cancellation) {
+                ++cancelled;
+            }
         });
         CHECK(provider->Provide("command.lifecycle/v1"));
 
@@ -112,14 +130,16 @@ int main(int argc, char** argv)
         Stopper stopper(loop, gateway);
         RequestId request = 0;
         auto provider = loop.CreateEndpoint("reply-before-stop", [&](const EventDelivery& event) {
-            if (event.kind == EventDelivery::Kind::Request) request = event.requestId;
+            if (event.kind == EventDelivery::Kind::Request) {
+                request = event.requestId;
+            }
         });
         CHECK(provider->Provide("command.lifecycle/v1"));
         CHECK(loop.Post(Request(&receiver, &gateway, "completed")));
         Drain();
         CHECK(request != 0 && provider->Respond(request, Result()));
         // Completion queues its reply behind Stop. Unregister must not discard it.
-        CHECK(loop.Post({"test.stop.gateway", nullptr, &stopper}));
+        CHECK(loop.Post({ "test.stop.gateway", nullptr, &stopper }));
         Drain();
         CHECK(!loop.Contains(&gateway) && receiver.replies.size() == 1);
         const auto reply = QJsonDocument::fromJson(receiver.replies.front().data.value("json").toString().toUtf8()).object();
@@ -132,12 +152,13 @@ int main(int argc, char** argv)
         auto ipc = std::make_unique<IpcProcessor>(loop, std::make_unique<LAppIPC>(), gateway);
         RequestId request = 0;
         auto provider = loop.CreateEndpoint("ipc-stop-provider", [&](const EventDelivery& event) {
-            if (event.kind == EventDelivery::Kind::Request) request = event.requestId;
+            if (event.kind == EventDelivery::Kind::Request) {
+                request = event.requestId;
+            }
         });
         CHECK(provider->Provide("command.lifecycle/v1"));
         std::vector<std::string> replies;
-        ipc->ExecuteAsync(R"({"command":"lifecycle"})", "pending",
-            [&](std::string json) { replies.push_back(std::move(json)); });
+        ipc->ExecuteAsync(R"({"command":"lifecycle"})", "pending", [&](std::string json) { replies.push_back(std::move(json)); });
         Drain();
         CHECK(request != 0 && replies.empty());
         gateway.Stop();
@@ -145,8 +166,7 @@ int main(int argc, char** argv)
         CHECK(replies.size() == 1 && replies.front().find("command processor stopped") != std::string::npos);
         CHECK(!provider->Respond(request, Result()));
 
-        ipc->ExecuteAsync(R"({"command":"lifecycle"})", "unsent",
-            [&](std::string json) { replies.push_back(std::move(json)); });
+        ipc->ExecuteAsync(R"({"command":"lifecycle"})", "unsent", [&](std::string json) { replies.push_back(std::move(json)); });
         ipc->Disconnected("desktop-session");
         ipc->Stop();
         CHECK(!loop.Contains(ipc.get()));
@@ -155,7 +175,7 @@ int main(int argc, char** argv)
         CHECK(replies.size() == 2);
         ipc.reset();
         Drain();
-        CHECK(observer.disconnected == std::vector<QString>{QStringLiteral("desktop-session")});
+        CHECK(observer.disconnected == std::vector<QString> { QStringLiteral("desktop-session") });
     }
     return 0;
 }

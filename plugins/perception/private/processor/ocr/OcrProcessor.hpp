@@ -1,12 +1,11 @@
 #pragma once
 
-#include "processor/Processor.hpp"
-#include "contracts/ImageFile.hpp"
 #include "OcrClient.hpp"
+#include "contracts/ImageFile.hpp"
+#include "processor/Processor.hpp"
 
 // 将 OCR 命令及识别能力请求适配为单任务客户端调用，并保活临时图像。
-class OcrProcessor final : public Processor
-{
+class OcrProcessor final : public Processor {
 public:
     explicit OcrProcessor(ProcessorEventLoop& loop);
     explicit OcrProcessor(PluginContext& context);
@@ -17,10 +16,11 @@ public:
     void Stop() noexcept override;
     // 消费 OCR 命令、识别请求或匹配的取消事件时返回 true。
     bool HandleEvent(const ProcessorEvent& event) override;
+
 private:
     OcrProcessor(ProcessorEventLoop& loop, std::unique_ptr<OcrClient> client, PluginContext* context);
     bool Recognize(const ProcessorEvent& event, RequestId request);
-    void Complete(const QString& type, IProcessorPlugin* receiver, RequestId request, QVariantMap data = {});
+    void Complete(const QString& type, IProcessorPlugin* receiver, RequestId request, QVariantMap data = { });
     std::unique_ptr<EventEndpoint> _ownedEndpoint;
     EventEndpoint* _endpoint = nullptr;
     RequestId _request = 0;

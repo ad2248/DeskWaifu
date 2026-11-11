@@ -9,8 +9,7 @@ class PluginManager;
 // 管理器拥有的后端插件上下文，从 Initialize 到 Stop 及插件析构期间始终存活。
 // 端点由上下文拥有，初始化失败也会统一撤销；插件只借用返回的指针。
 // 生命周期、端点创建和故障报告须在事件循环所属线程执行。
-class PluginContext final
-{
+class PluginContext final {
 public:
     const QString& Name() const { return _name; }
     // 返回插件专属配置目录；目录可能尚未创建。

@@ -4,8 +4,7 @@
 #include <Math/CubismMatrix44.hpp>
 
 // 渲染端的变换组合顺序必须与缩放不变量保持一致。
-inline void ApplyModelTransform(Live2D::Cubism::Framework::CubismMatrix44& projection,
-    ModelTransform transform)
+inline void ApplyModelTransform(Live2D::Cubism::Framework::CubismMatrix44& projection, ModelTransform transform)
 {
     projection.ScaleRelative(transform.scale, transform.scale);
     projection.TranslateRelative(transform.x, transform.y);
@@ -15,15 +14,17 @@ inline void ApplyModelTransform(Live2D::Cubism::Framework::CubismMatrix44& proje
 // 刻意不包含模型矩阵，因为 Cubism 的 IsHit 已对其执行逆变换。
 // width 和 height 必须为正；view 可为空，非空时只借用而不修改。
 inline Live2D::Cubism::Framework::CubismMatrix44 BuildModelProjection(
-    float canvasWidth, int width, int height, ModelTransform transform,
-    Live2D::Cubism::Framework::CubismMatrix44* view)
+    float canvasWidth, int width, int height, ModelTransform transform, Live2D::Cubism::Framework::CubismMatrix44* view)
 {
     Live2D::Cubism::Framework::CubismMatrix44 projection;
-    if (canvasWidth > 1.0f && width < height)
+    if (canvasWidth > 1.0f && width < height) {
         projection.Scale(1.0f, static_cast<float>(width) / height);
-    else
+    } else {
         projection.Scale(static_cast<float>(height) / width, 1.0f);
+    }
     ApplyModelTransform(projection, transform);
-    if (view) projection.MultiplyByMatrix(view);
+    if (view) {
+        projection.MultiplyByMatrix(view);
+    }
     return projection;
 }

@@ -10,8 +10,7 @@ class QAudioSink;
 class QIODevice;
 
 // 仅负责 PCM 输出，所有方法均在 Qt 应用线程调用。
-class AudioPlayer : public QObject
-{
+class AudioPlayer : public QObject {
     Q_OBJECT
 public:
     explicit AudioPlayer(QObject* parent = nullptr);

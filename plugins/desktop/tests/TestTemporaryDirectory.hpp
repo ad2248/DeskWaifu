@@ -14,5 +14,5 @@ inline std::string MakeTestTemporaryDirectory(const std::string& prefix)
     std::vector<char> writable(pattern.begin(), pattern.end());
     writable.push_back(0);
     const char* created = mkdtemp(writable.data());
-    return created ? std::string(created) : std::string{};
+    return created ? std::string(created) : std::string { };
 }

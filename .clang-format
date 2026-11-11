@@ -1,0 +1,3 @@
+BasedOnStyle: WebKit
+InsertBraces: true
+ColumnLimit: 180

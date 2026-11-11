@@ -1,36 +1,40 @@
 #include "DeskWaifuRespawner.hpp"
 #include "DeskWaifuLauncher.hpp"
 
-DeskWaifuRespawner::DeskWaifuRespawner(GuiHostServices& client, const QString& applicationDirectory,
-                                     QObject* parent)
-    : QObject(parent), _client(client), _applicationDirectory(applicationDirectory)
+DeskWaifuRespawner::DeskWaifuRespawner(GuiHostServices& client, const QString& applicationDirectory, QObject* parent)
+    : QObject(parent)
+    , _client(client)
+    , _applicationDirectory(applicationDirectory)
 {
     _timer.setInterval(100);
     connect(&_client, &GuiHostServices::connectionChanged, this, [this](bool connected, const QString&) {
-        if (isRunning() && !connected) _disconnected = true;
+        if (isRunning() && !connected) {
+            _disconnected = true;
+        }
     });
-    connect(&_client, &GuiHostServices::responseReceived, this,
-        [this](const QString& command, const QJsonObject& response) {
-            if (isRunning() && command == QStringLiteral("quit") && !response.value("ok").toBool())
-                finish(false, tr("重启失败，退出请求被拒绝：%1").arg(response.value("error").toString()));
-        });
+    connect(&_client, &GuiHostServices::responseReceived, this, [this](const QString& command, const QJsonObject& response) {
+        if (isRunning() && command == QStringLiteral("quit") && !response.value("ok").toBool()) {
+            finish(false, tr("重启失败，退出请求被拒绝：%1").arg(response.value("error").toString()));
+        }
+    });
 }
 
-DeskWaifuRespawner::~DeskWaifuRespawner()
-{
-    stop();
-}
+DeskWaifuRespawner::~DeskWaifuRespawner() { stop(); }
 
 void DeskWaifuRespawner::stop() noexcept
 {
     const bool running = isRunning();
     _timer.stop();
-    if (running) _client.cancelQueuedCommand(QStringLiteral("quit"));
+    if (running) {
+        _client.cancelQueuedCommand(QStringLiteral("quit"));
+    }
 }
 
 void DeskWaifuRespawner::start(const QString& procDirectory, const QString& lockDirectory, int timeoutMs)
 {
-    if (isRunning()) return;
+    if (isRunning()) {
+        return;
+    }
     if (!_client.isConnected()) {
         emit finished(false, tr("重启需要先连接 DeskWaifu，请使用“启动”按钮启动。"));
         return;
@@ -47,13 +51,19 @@ void DeskWaifuRespawner::start(const QString& procDirectory, const QString& lock
             finish(false, tr("重启超时：等待 DeskWaifu 退出超时，未启动新进程。"));
             return;
         }
-        if (!_disconnected) return;
+        if (!_disconnected) {
+            return;
+        }
         // IPC 套接字关闭不代表旧进程已清理完成。
         // 启动时的进程检查和共享锁只约束当前运行目录的后端。
         const auto result = DeskWaifuLauncher::spawn(false, _applicationDirectory, procDirectory, lockDirectory);
-        if (result.state == DeskWaifuLauncher::State::AlreadyRunning) return;
+        if (result.state == DeskWaifuLauncher::State::AlreadyRunning) {
+            return;
+        }
         finish(result.state == DeskWaifuLauncher::State::Started, result.message);
-        if (result.state == DeskWaifuLauncher::State::Started) _client.connectToServer();
+        if (result.state == DeskWaifuLauncher::State::Started) {
+            _client.connectToServer();
+        }
     });
     _timer.start();
     emit runningChanged(true);

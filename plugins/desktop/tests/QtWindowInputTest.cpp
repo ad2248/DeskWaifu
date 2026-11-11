@@ -4,10 +4,14 @@
 
 int main()
 {
-    const auto require = [](bool condition) { if (!condition) std::abort(); };
-    require(QtModelInputRegion({}).isEmpty());
-    require(QtModelInputRegion({{10, 20, 0, 10}, {0, 0, -1, 20}}).isEmpty());
-    const QRegion region = QtModelInputRegion({{10, 20, 30, 40}, {70, 80, 10, 10}});
+    const auto require = [](bool condition) {
+        if (!condition) {
+            std::abort();
+        }
+    };
+    require(QtModelInputRegion({ }).isEmpty());
+    require(QtModelInputRegion({ { 10, 20, 0, 10 }, { 0, 0, -1, 20 } }).isEmpty());
+    const QRegion region = QtModelInputRegion({ { 10, 20, 30, 40 }, { 70, 80, 10, 10 } });
     require(region.contains(QPoint(10, 20)));
     require(region.contains(QPoint(39, 59)));
     require(!region.contains(QPoint(40, 60)));

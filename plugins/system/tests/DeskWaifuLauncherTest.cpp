@@ -15,8 +15,7 @@
 
 using DeskWaifuLauncher::State;
 
-class DeskWaifuLauncherTest : public QObject
-{
+class DeskWaifuLauncherTest : public QObject {
     Q_OBJECT
 private:
     QTemporaryDir directory;
@@ -42,7 +41,9 @@ private:
     }
     static void stopBackend(qint64 pid)
     {
-        if (pid <= 0) return;
+        if (pid <= 0) {
+            return;
+        }
         kill(pid, SIGKILL);
         const auto active = [pid] {
             QFile status(QStringLiteral("/proc/%1/status").arg(pid));
@@ -66,16 +67,16 @@ private slots:
     }
     void cleanup()
     {
-        if (hadPath) qputenv("PATH", originalPath);
-        else qunsetenv("PATH");
+        if (hadPath) {
+            qputenv("PATH", originalPath);
+        } else {
+            qunsetenv("PATH");
+        }
         QVERIFY(QDir(app()).removeRecursively());
         QVERIFY(QDir(proc()).removeRecursively());
         QDir(directory.path() + "/path").removeRecursively();
     }
-    void connectedDoesNotInspectOrSpawn()
-    {
-        QCOMPARE(DeskWaifuLauncher::spawn(true, app(), "/nonexistent-proc").state, State::Connected);
-    }
+    void connectedDoesNotInspectOrSpawn() { QCOMPARE(DeskWaifuLauncher::spawn(true, app(), "/nonexistent-proc").state, State::Connected); }
     void existingProcessDoesNotSpawn()
     {
         process("123", "deskwaifu");
@@ -101,9 +102,12 @@ private slots:
     void detectsRealRunningProcess()
     {
         QProcess backend;
-        backend.start(QStringLiteral(SPAWN_BACKEND_FIXTURE), QStringList{});
+        backend.start(QStringLiteral(SPAWN_BACKEND_FIXTURE), QStringList { });
         QVERIFY(backend.waitForStarted());
-        const auto stop = qScopeGuard([&] { backend.terminate(); backend.waitForFinished(); });
+        const auto stop = qScopeGuard([&] {
+            backend.terminate();
+            backend.waitForFinished();
+        });
         const auto result = DeskWaifuLauncher::spawn(false, app());
         QCOMPARE(result.state, State::AlreadyRunning);
         QVERIFY(result.pid > 0);
@@ -123,22 +127,27 @@ private slots:
         auto environment = QProcessEnvironment::systemEnvironment();
         environment.insert("XDG_RUNTIME_DIR", otherRuntime.path());
         backend.setProcessEnvironment(environment);
-        backend.start(QStringLiteral(SPAWN_BACKEND_FIXTURE), QStringList{});
+        backend.start(QStringLiteral(SPAWN_BACKEND_FIXTURE), QStringList { });
         QVERIFY(backend.waitForStarted());
-        const auto stopOther = qScopeGuard([&] { backend.kill(); backend.waitForFinished(); });
+        const auto stopOther = qScopeGuard([&] {
+            backend.kill();
+            backend.waitForFinished();
+        });
         QVERIFY(QFile::link(QStringLiteral("/proc/%1").arg(backend.processId()), proc() + "/123"));
         QCOMPARE(DeskWaifuLauncher::runningPid(proc()), 0);
         QCOMPARE(DeskWaifuLauncher::runningPid(), 0);
         // init() 的 PATH 中没有 unshare；独立运行目录不应要求 namespace 权限。
         QProcess launcher;
-        launcher.start(QCoreApplication::applicationFilePath(), {"connectedDoesNotInspectOrSpawn"});
+        launcher.start(QCoreApplication::applicationFilePath(), { "connectedDoesNotInspectOrSpawn" });
         QVERIFY(launcher.waitForFinished(5000));
         QCOMPARE(launcher.exitStatus(), QProcess::NormalExit);
         QCOMPARE(launcher.exitCode(), 0);
         installBackend(app());
         const auto result = DeskWaifuLauncher::spawn(false, app(), proc());
         const auto stop = qScopeGuard([&] {
-            if (result.state == State::Started) stopBackend(result.pid);
+            if (result.state == State::Started) {
+                stopBackend(result.pid);
+            }
         });
         QCOMPARE(result.state, State::Started);
         QVERIFY(result.pid > 0);
@@ -174,22 +183,29 @@ private slots:
             launcherRuntime = alias.toLocal8Bit();
         } else if (mode >= 2) {
             launcherRuntime = QStringLiteral("/tmp/deskwaifu-%1").arg(getuid()).toLocal8Bit();
-            backendRuntime = mode == 4 ? launcherRuntime : QByteArray{};
+            backendRuntime = mode == 4 ? launcherRuntime : QByteArray { };
         }
         process("123", "deskwaifu");
         QFile environment(proc() + "/123/environ");
         QVERIFY(environment.open(QIODevice::WriteOnly | QIODevice::Truncate));
-        if (mode != 2)
+        if (mode != 2) {
             environment.write("XDG_RUNTIME_DIR=" + backendRuntime + QByteArray(1, '\0'));
+        }
         environment.close();
         const auto previous = qgetenv("XDG_RUNTIME_DIR");
         const bool hadRuntime = qEnvironmentVariableIsSet("XDG_RUNTIME_DIR");
         const auto restore = qScopeGuard([&] {
-            if (hadRuntime) qputenv("XDG_RUNTIME_DIR", previous);
-            else qunsetenv("XDG_RUNTIME_DIR");
+            if (hadRuntime) {
+                qputenv("XDG_RUNTIME_DIR", previous);
+            } else {
+                qunsetenv("XDG_RUNTIME_DIR");
+            }
         });
-        if (mode == 4) qunsetenv("XDG_RUNTIME_DIR");
-        else qputenv("XDG_RUNTIME_DIR", launcherRuntime);
+        if (mode == 4) {
+            qunsetenv("XDG_RUNTIME_DIR");
+        } else {
+            qputenv("XDG_RUNTIME_DIR", launcherRuntime);
+        }
         QCOMPARE(DeskWaifuLauncher::runningPid(proc()), 123);
         QCOMPARE(DeskWaifuLauncher::spawn(false, app(), proc(), proc()).state, State::AlreadyRunning);
     }
@@ -224,8 +240,9 @@ private slots:
         // 不与用户现有后端交互。此处 PATH 和同级目录均为空，
         // 所以探测只能检查进程，不会启动程序。
         const auto before = DeskWaifuLauncher::spawn(false, app(), "/proc", proc());
-        if (before.state == State::AlreadyRunning)
+        if (before.state == State::AlreadyRunning) {
             QSKIP("A deskwaifu backend is already running for this user.");
+        }
         QCOMPARE(before.state, State::Failed);
         QVERIFY(before.message.contains("找不到"));
         installBackend(app());
@@ -234,14 +251,14 @@ private slots:
         QVERIFY(gate.tryLock());
         QProcess first, second;
         const auto stopLaunchers = qScopeGuard([&] {
-            for (auto* launcher : {&first, &second}) {
+            for (auto* launcher : { &first, &second }) {
                 if (launcher->state() != QProcess::NotRunning) {
                     launcher->kill();
                     launcher->waitForFinished();
                 }
             }
         });
-        const QStringList arguments{"--contend", app(), "/proc", proc()};
+        const QStringList arguments { "--contend", app(), "/proc", proc() };
         first.start(QCoreApplication::applicationFilePath(), arguments);
         second.start(QCoreApplication::applicationFilePath(), arguments);
         QVERIFY(first.waitForStarted());
@@ -267,10 +284,12 @@ private slots:
         const qint64 firstPid = firstFields[1].toLongLong();
         const qint64 secondPid = secondFields[1].toLongLong();
         const auto stopSpawned = qScopeGuard([&] {
-            if (firstFields[0].toInt() == int(State::Started)) stopBackend(firstPid);
-            if (secondFields[0].toInt() == int(State::Started) &&
-                (firstFields[0].toInt() != int(State::Started) || secondPid != firstPid))
+            if (firstFields[0].toInt() == int(State::Started)) {
+                stopBackend(firstPid);
+            }
+            if (secondFields[0].toInt() == int(State::Started) && (firstFields[0].toInt() != int(State::Started) || secondPid != firstPid)) {
                 stopBackend(secondPid);
+            }
         });
         QCOMPARE(first.exitStatus(), QProcess::NormalExit);
         QCOMPARE(second.exitStatus(), QProcess::NormalExit);
@@ -278,8 +297,8 @@ private slots:
         QCOMPARE(second.exitCode(), 0);
         const int firstState = firstFields[0].toInt();
         const int secondState = secondFields[0].toInt();
-        QVERIFY((firstState == int(State::Started) && secondState == int(State::AlreadyRunning)) ||
-                (secondState == int(State::Started) && firstState == int(State::AlreadyRunning)));
+        QVERIFY(
+            (firstState == int(State::Started) && secondState == int(State::AlreadyRunning)) || (secondState == int(State::Started) && firstState == int(State::AlreadyRunning)));
         QVERIFY(firstPid > 0);
         QCOMPARE(firstPid, secondPid);
         QVERIFY(kill(firstPid, 0) == 0);
@@ -301,7 +320,7 @@ private slots:
         // 无效 PATH 也用于验证同级可执行文件具有更高优先级。
         qputenv("PATH", "/nonexistent-deskwaifu-path");
         QProcess gui;
-        gui.start(QCoreApplication::applicationFilePath(), {"--launch-and-exit", app(), proc()});
+        gui.start(QCoreApplication::applicationFilePath(), { "--launch-and-exit", app(), proc() });
         QVERIFY(gui.waitForFinished(5000));
         QCOMPARE(gui.exitStatus(), QProcess::NormalExit);
         QCOMPARE(gui.exitCode(), 0);
@@ -326,31 +345,28 @@ int main(int argc, char** argv)
 {
     QCoreApplication application(argc, argv);
     auto arguments = application.arguments();
-    if (arguments.size() == 5 && arguments[1] == "--contend")
-    {
+    if (arguments.size() == 5 && arguments[1] == "--contend") {
         QTextStream(stdout) << "ready" << Qt::endl;
         const auto result = DeskWaifuLauncher::spawn(false, arguments[2], arguments[3], arguments[4]);
         QTextStream(stdout) << int(result.state) << ' ' << result.pid << Qt::endl;
         return result.state == State::Started || result.state == State::AlreadyRunning ? 0 : 1;
     }
-    if (arguments.size() == 4 && arguments[1] == "--launch-and-exit")
-    {
+    if (arguments.size() == 4 && arguments[1] == "--launch-and-exit") {
         const auto result = DeskWaifuLauncher::spawn(false, arguments[2], arguments[3]);
         QTextStream(stdout) << result.pid << Qt::endl;
         return result.state == State::Started ? 0 : 1;
     }
     const bool privateProc = arguments.removeOne("--private-proc");
-    if (!privateProc && DeskWaifuLauncher::runningPid("/proc") > 0)
-    {
+    if (!privateProc && DeskWaifuLauncher::runningPid("/proc") > 0) {
         // 只在当前运行目录已有后端时隔离进程视图，不与用户桌宠交互。
         // 其他运行目录中的并行测试后端不应触发 namespace 权限要求。
         QProcess isolated;
         isolated.setProcessChannelMode(QProcess::ForwardedChannels);
-        isolated.start("unshare", QStringList{"--user", "--map-root-user", "--pid", "--fork", "--mount-proc",
-            QCoreApplication::applicationFilePath(), "--private-proc"} + arguments.mid(1));
-        if (!isolated.waitForStarted() || !isolated.waitForFinished(30000))
-        {
-            isolated.kill(); isolated.waitForFinished();
+        isolated.start("unshare",
+            QStringList { "--user", "--map-root-user", "--pid", "--fork", "--mount-proc", QCoreApplication::applicationFilePath(), "--private-proc" } + arguments.mid(1));
+        if (!isolated.waitForStarted() || !isolated.waitForFinished(30000)) {
+            isolated.kill();
+            isolated.waitForFinished();
             return 1;
         }
         return isolated.exitStatus() == QProcess::NormalExit ? isolated.exitCode() : 1;

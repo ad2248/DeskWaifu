@@ -1,21 +1,34 @@
 #include "processor/interaction/config/RenderDeviceSettings.hpp"
-#include "processor/interaction/config/MouseLookSettings.hpp"
 #include "TestTemporaryDirectory.hpp"
+#include "processor/interaction/config/MouseLookSettings.hpp"
 #include <fstream>
 #include <iostream>
 #include <sys/stat.h>
 #include <unistd.h>
 
-#define CHECK(condition) do { if (!(condition)) { \
-    std::cerr << "Failed at line " << __LINE__ << ": " << #condition << '\n'; return 1; } } while (0)
+#define CHECK(condition)                                                                                                                                                           \
+    do {                                                                                                                                                                           \
+        if (!(condition)) {                                                                                                                                                        \
+            std::cerr << "Failed at line " << __LINE__ << ": " << #condition << '\n';                                                                                              \
+            return 1;                                                                                                                                                              \
+        }                                                                                                                                                                          \
+    } while (0)
 
 int main()
 {
     const auto directory = MakeTestTemporaryDirectory("deskwaifu-render-device");
     CHECK(!directory.empty());
     const auto path = directory + "/custom.json";
-    struct Cleanup { std::string path, directory; ~Cleanup() { std::remove(path.c_str()); rmdir(directory.c_str()); } } cleanup{path, directory};
-    LAppConfig config; config.sourcePath = path;
+    struct Cleanup {
+        std::string path, directory;
+        ~Cleanup()
+        {
+            std::remove(path.c_str());
+            rmdir(directory.c_str());
+        }
+    } cleanup { path, directory };
+    LAppConfig config;
+    config.sourcePath = path;
     RenderDeviceSettings settings(config);
     const auto set = [&](const std::string& json) {
         ConfigStore::Snapshot request;
@@ -30,7 +43,7 @@ int main()
     std::string error;
     CHECK(store.Read(disk, error));
     const auto saved = disk.document;
-    for (const auto invalid : {"42", "false", "null", "[]", "{}", "\"intel\"", "\"0000:00:02.8\""}) {
+    for (const auto invalid : { "42", "false", "null", "[]", "{}", "\"intel\"", "\"0000:00:02.8\"" }) {
         CHECK(!set("{\"device\":" + std::string(invalid) + "}"));
         CHECK(settings.Device() == "0000:00:02.0");
         CHECK(store.Read(disk, error) && disk.document == saved);
@@ -44,7 +57,10 @@ int main()
     CHECK(restarted.LoadFromFile(path));
     CHECK(restarted.values.renderDevice == "auto" && restarted.values.mouseLookRadius == .25f);
     CHECK(set(R"({"device":"0000:00:02.0"})"));
-    { std::ofstream file(path); file << "{invalid"; }
+    {
+        std::ofstream file(path);
+        file << "{invalid";
+    }
     CHECK(!settings.Refresh().ok && !set(R"({"device":"auto"})"));
     CHECK(settings.Device() == "0000:00:02.0");
     CHECK(std::remove(path.c_str()) == 0 && mkdir(path.c_str(), 0700) == 0);

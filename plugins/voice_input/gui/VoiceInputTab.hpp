@@ -13,8 +13,7 @@ class QPushButton;
 class QSpinBox;
 
 // GUI-thread page; services is borrowed from the plugin context.
-class VoiceInputTab final : public QScrollArea
-{
+class VoiceInputTab final : public QScrollArea {
 public:
     explicit VoiceInputTab(GuiHostServices& services);
     ~VoiceInputTab() override;
@@ -31,7 +30,7 @@ private:
     void refresh();
     void poll();
     void save(bool clearKey);
-    void mutate(const QString& command, const QJsonObject& parameters = {});
+    void mutate(const QString& command, const QJsonObject& parameters = { });
     void handleResponse(const QString& command, const QJsonObject& response);
     void updateControls();
     void cancelUnsent();

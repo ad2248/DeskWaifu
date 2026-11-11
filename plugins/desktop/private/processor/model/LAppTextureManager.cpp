@@ -31,10 +31,7 @@ LAppTextureManager::~LAppTextureManager() = default;
 
 LAppTextureManager::TextureLease LAppTextureManager::AcquireTexture(const std::string& fileName)
 {
-    return _residency.Acquire(fileName, [this](const std::string& path)
-    {
-        return UploadTexture(path);
-    });
+    return _residency.Acquire(fileName, [this](const std::string& path) { return UploadTexture(path); });
 }
 
 std::pair<GLuint, std::size_t> LAppTextureManager::UploadTexture(const std::string& fileName)
@@ -48,30 +45,22 @@ std::pair<GLuint, std::size_t> LAppTextureManager::UploadTexture(const std::stri
     address = LAppPal::LoadFileAsBytes(fileName, &size);
     if (!address) {
         LAppPal::PrintLogLn("%s", TextureFailureMessage(fileName, "Cannot read").c_str());
-        return {};
+        return { };
     }
 
     // 获取 PNG 信息。
-    png = stbi_load_from_memory(
-        address,
-        static_cast<int>(size),
-        &width,
-        &height,
-        &channels,
-        STBI_rgb_alpha);
+    png = stbi_load_from_memory(address, static_cast<int>(size), &width, &height, &channels, STBI_rgb_alpha);
     if (!png) {
         const char* error = stbi_failure_reason();
-        LAppPal::PrintLogLn("%s", TextureFailureMessage(fileName,
-            std::string("Cannot decode") + (error ? std::string(" (") + error + ")" : "")).c_str());
+        LAppPal::PrintLogLn("%s", TextureFailureMessage(fileName, std::string("Cannot decode") + (error ? std::string(" (") + error + ")" : "")).c_str());
         LAppPal::ReleaseBytes(address);
-        return {};
+        return { };
     }
     {
 
 #ifdef PREMULTIPLIED_ALPHA_ENABLE
         unsigned int* fourBytes = reinterpret_cast<unsigned int*>(png);
-        for (int i = 0; i < width * height; i++)
-        {
+        for (int i = 0; i < width * height; i++) {
             unsigned char* p = png + i * 4;
             fourBytes[i] = LAppTextureManager_Common::Premultiply(p[0], p[1], p[2], p[3]);
         }
@@ -84,7 +73,7 @@ std::pair<GLuint, std::size_t> LAppTextureManager::UploadTexture(const std::stri
         LAppPal::PrintLogLn("%s", TextureFailureMessage(fileName, "glGenTextures failed").c_str());
         stbi_image_free(png);
         LAppPal::ReleaseBytes(address);
-        return {};
+        return { };
     }
     glBindTexture(GL_TEXTURE_2D, textureId);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, png);
@@ -97,6 +86,5 @@ std::pair<GLuint, std::size_t> LAppTextureManager::UploadTexture(const std::stri
     stbi_image_free(png);
     LAppPal::ReleaseBytes(address);
 
-    return std::make_pair(textureId,
-        static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4);
+    return std::make_pair(textureId, static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4);
 }

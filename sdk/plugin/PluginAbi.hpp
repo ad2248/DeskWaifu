@@ -10,9 +10,7 @@
 // 宿主严格比较此指纹；这是同仓库 C++/Qt SDK，而非稳定的 C ABI。
 static inline const char* DeskWaifuPluginBuildAbi()
 {
-    static const QByteArray abi = QSysInfo::buildAbi().toUtf8()
-        + ";compiler=" + QByteArray(__VERSION__)
-        + ";cxx=" + QByteArray::number(__cplusplus)
+    static const QByteArray abi = QSysInfo::buildAbi().toUtf8() + ";compiler=" + QByteArray(__VERSION__) + ";cxx=" + QByteArray::number(__cplusplus)
 #ifdef __GLIBCXX__
         + ";libstdcxx=" + QByteArray::number(__GLIBCXX__)
 #endif

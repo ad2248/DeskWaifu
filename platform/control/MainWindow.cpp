@@ -1,15 +1,15 @@
 #include "MainWindow.hpp"
 #include "ControlHostServices.hpp"
-#include "ui_MainWindow.h"
 #include "plugin/GuiPluginManager.hpp"
+#include "ui_MainWindow.h"
 
+#include <QDebug>
 #include <QDir>
 #include <QFile>
 #include <QJsonDocument>
 #include <QLabel>
 #include <QStandardPaths>
 #include <QStatusBar>
-#include <QDebug>
 
 #ifndef DESKWAIFU_PLUGIN_DIR
 #define DESKWAIFU_PLUGIN_DIR "/usr/lib/deskwaifu/plugins"
@@ -19,30 +19,34 @@ namespace {
 QString PluginDirectory()
 {
     // An explicit empty override disables discovery, just like plugin_dir.
-    if (qEnvironmentVariableIsSet("DESKWAIFU_CONTROL_PLUGIN_DIR"))
+    if (qEnvironmentVariableIsSet("DESKWAIFU_CONTROL_PLUGIN_DIR")) {
         return qEnvironmentVariable("DESKWAIFU_CONTROL_PLUGIN_DIR");
+    }
     const auto configDirectory = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation);
     QFile config(QDir(configDirectory).filePath(QStringLiteral("deskwaifu/config.json")));
     if (config.exists()) {
         if (!config.open(QIODevice::ReadOnly)) {
             qWarning() << "Cannot read plugin_dir:" << config.errorString();
-            return {};
+            return { };
         }
         QJsonParseError error;
         const auto document = QJsonDocument::fromJson(config.readAll(), &error);
         if (error.error != QJsonParseError::NoError || !document.isObject()) {
             qWarning() << "Invalid control plugin configuration";
-            return {};
+            return { };
         }
         const auto value = document.object().value(QStringLiteral("plugin_dir"));
         if (!value.isUndefined()) {
             if (!value.isString() || value.toString().contains(QChar::Null)) {
                 qWarning() << "Invalid plugin_dir";
-                return {};
+                return { };
             }
             auto path = value.toString();
-            if (path == QStringLiteral("~")) path = QDir::homePath();
-            else if (path.startsWith(QStringLiteral("~/"))) path.replace(0, 1, QDir::homePath());
+            if (path == QStringLiteral("~")) {
+                path = QDir::homePath();
+            } else if (path.startsWith(QStringLiteral("~/"))) {
+                path.replace(0, 1, QDir::homePath());
+            }
             return path;
         }
     }
@@ -51,8 +55,9 @@ QString PluginDirectory()
 }
 
 MainWindow::MainWindow(QWidget* parent, const QString& procDirectory)
-    : QMainWindow(parent), ui(new Ui::MainWindow),
-      _services(new ControlHostServices(*this))
+    : QMainWindow(parent)
+    , ui(new Ui::MainWindow)
+    , _services(new ControlHostServices(*this))
 {
     ui->setupUi(this);
     _services->setProperty("procDirectory", procDirectory);
@@ -68,12 +73,11 @@ MainWindow::MainWindow(QWidget* parent, const QString& procDirectory)
     _operationStatusLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     statusBar()->addPermanentWidget(_operationStatusLabel, 1);
     _statusMessageTimer.setSingleShot(true);
-    connect(&_statusMessageTimer, &QTimer::timeout, this, [this] { setStatusMessage({}); });
-    connect(_services.get(), &GuiHostServices::connectionChanged, this,
-        [this](bool, const QString& message) {
-            _connectionStatusLabel->setText(message);
-            _connectionStatusLabel->setToolTip(message);
-        });
+    connect(&_statusMessageTimer, &QTimer::timeout, this, [this] { setStatusMessage({ }); });
+    connect(_services.get(), &GuiHostServices::connectionChanged, this, [this](bool, const QString& message) {
+        _connectionStatusLabel->setText(message);
+        _connectionStatusLabel->setToolTip(message);
+    });
     connect(_services.get(), &GuiHostServices::backendReady, this, [this] {
         if (!_backendReadyEmitted) {
             _backendReadyEmitted = true;
@@ -89,10 +93,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& procDirectory)
     _services->connectToServer();
 }
 
-MainWindow::~MainWindow()
-{
-    _plugins->Stop();
-}
+MainWindow::~MainWindow() { _plugins->Stop(); }
 
 GuiHostServices& MainWindow::hostServices() const { return *_services; }
 
@@ -101,5 +102,7 @@ void MainWindow::setStatusMessage(const QString& message, int timeoutMs)
     _statusMessageTimer.stop();
     _operationStatusLabel->setText(message);
     _operationStatusLabel->setToolTip(message);
-    if (!message.isEmpty() && timeoutMs > 0) _statusMessageTimer.start(timeoutMs);
+    if (!message.isEmpty() && timeoutMs > 0) {
+        _statusMessageTimer.start(timeoutMs);
+    }
 }

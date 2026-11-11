@@ -9,18 +9,29 @@
 #include <stdexcept>
 
 namespace {
-void Check(bool value, const char* message) { if (!value) throw std::runtime_error(message); }
-QByteArray Read(const QString& path) { QFile file(path); Check(file.open(QIODevice::ReadOnly), "read lifecycle log"); return file.readAll(); }
-class Host : public GuiHostServices
+void Check(bool value, const char* message)
 {
+    if (!value) {
+        throw std::runtime_error(message);
+    }
+}
+QByteArray Read(const QString& path)
+{
+    QFile file(path);
+    Check(file.open(QIODevice::ReadOnly), "read lifecycle log");
+    return file.readAll();
+}
+class Host : public GuiHostServices {
 public:
     bool isConnected() const override { return false; }
-    void sendCommand(const QString&, const QJsonObject&) override {}
-    void cancelQueuedCommand(const QString&) override {}
+    void sendCommand(const QString&, const QJsonObject&) override { }
+    void cancelQueuedCommand(const QString&) override { }
     bool registerTransport(IGuiTransport* value, QObject* owner) override
     {
         ++registerCalls;
-        if (transport || !value || !owner) return false;
+        if (transport || !value || !owner) {
+            return false;
+        }
         transport = value;
         transportDestroyed = connect(value, &QObject::destroyed, this, [this] {
             ++destroyedRegistrations;
@@ -34,7 +45,7 @@ public:
         Check(value && transport == value, "only the registered live transport may be unregistered");
         disconnect(transportDestroyed);
         transport.clear();
-        emit responseReceived("during-unregister", {});
+        emit responseReceived("during-unregister", { });
         // A broker is allowed to pump events while detaching. Context, page and
         // descendant callbacks must already be fenced before this external call.
         QCoreApplication::processEvents();
@@ -56,7 +67,9 @@ try {
         Check(QDir().mkpath(root + "/transport"), "create transport plugin directory");
         Check(QFile::copy(argv[i], root + "/transport/transport.so"), "copy transport fixture");
         const auto log = root + "/lifecycle.log";
-        QFile file(log); Check(file.open(QIODevice::WriteOnly), "create lifecycle log"); file.close();
+        QFile file(log);
+        Check(file.open(QIODevice::WriteOnly), "create lifecycle log");
+        file.close();
         qputenv("DESKWAIFU_GUI_TRANSPORT_TEST_LOG", log.toUtf8());
         Host host;
         QTabWidget tabs;
@@ -66,7 +79,9 @@ try {
         const bool released = i == 4, destroyed = i == 5;
         Check(manager.Start(&error) != failed, qPrintable(error));
         Check(host.registerCalls == (released ? 2 : 1), "invalid or duplicate registration never reaches broker");
-        if (!failed) emit host.responseReceived("queued-before-stop", {});
+        if (!failed) {
+            emit host.responseReceived("queued-before-stop", { });
+        }
         manager.Stop();
         manager.Stop();
         QCoreApplication::processEvents();
@@ -84,4 +99,7 @@ try {
     }
     std::cout << "GUI transport registration, rollback, ownership and invalidation tests passed\n";
     return 0;
-} catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
+} catch (const std::exception& error) {
+    std::cerr << error.what() << '\n';
+    return 1;
+}

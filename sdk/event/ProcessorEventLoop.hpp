@@ -21,7 +21,7 @@
 // 注册、注销和端点生命周期操作必须在所属线程执行；事件投递和端点的
 // Notify、Request、Respond、Cancel 可从工作线程调用，但调用期间对象必须存活。
 class ProcessorEventLoop : public QObject {
-   public:
+public:
     // 端点通知和请求入队时使用的容量限制；旧式 Post 不受此限制。
     static constexpr size_t MaxQueuedDeliveries = 4096;
     // 等待响应的请求数上限，不包含已排队的完成回调。
@@ -46,8 +46,8 @@ class ProcessorEventLoop : public QObject {
     // 指定接收者时定向派发，否则按注册顺序派发，直到处理器返回 true。
     bool PostEvent(ProcessorEventPtr event);
     // 按值接收派生事件并转交 PostEvent，避免切片；线程约束和返回值同 PostEvent。
-    template <class T, typename std::enable_if<std::is_base_of<ProcessorEvent, T>::value && !std::is_same<ProcessorEvent, T>::value, int>::type = 0>
-    bool Post(T event) {
+    template <class T, typename std::enable_if<std::is_base_of<ProcessorEvent, T>::value && !std::is_same<ProcessorEvent, T>::value, int>::type = 0> bool Post(T event)
+    {
         return PostEvent(std::make_shared<T>(std::move(event)));
     }
     // 线程安全地查询处理器是否已注册；不保证返回后处理器仍然存活。
@@ -59,12 +59,12 @@ class ProcessorEventLoop : public QObject {
     // active 为 false 时可登记订阅和能力，但激活前不能收发消息。
     std::unique_ptr<EventEndpoint> CreateEndpoint(const QString& name, EventEndpoint::Handler handler, bool active = true);
 
-   protected:
+protected:
     // 每次内部唤醒最多执行一个排队回调，防止嵌套事件循环递归派发。
     // 内部唤醒返回 true，其他事件交给 QObject 处理。
     bool event(QEvent* event) override;
 
-   private:
+private:
     friend class EventEndpoint;
     // 排队事件共享注册状态，以便注销后跳过投递；不拥有处理器。
     struct Registration {
@@ -104,10 +104,10 @@ class ProcessorEventLoop : public QObject {
 
     // 移除待处理请求并排队完成回调；非正常响应还会向就绪提供者排队取消通知。
     // 请求不存在时无操作；本方法不负责唤醒队列。
-    void FinishLocked(RequestId id, RequestStatus status, ProcessorEventPtr payload = {});
+    void FinishLocked(RequestId id, RequestStatus status, ProcessorEventPtr payload = { });
     // 排队投递，在执行时复查端点状态和请求期限；不在此处检查容量或唤醒。
     // sender 为空时只检查接收者，供取消通知使用。
-    void QueueDeliveryLocked(const std::shared_ptr<EventEndpointState>& receiver, EventDelivery delivery, const std::shared_ptr<EventEndpointState>& sender = {});
+    void QueueDeliveryLocked(const std::shared_ptr<EventEndpointState>& receiver, EventDelivery delivery, const std::shared_ptr<EventEndpointState>& sender = { });
     // 排队完成回调，仅在发送者仍就绪时执行；不在此处检查容量或唤醒。
     void QueueCompletionLocked(const std::shared_ptr<EventEndpointState>& sender, EventEndpoint::Completion completion, RequestResult result);
     // 在所属线程终结已超时请求，更新定时器并安排后续派发；内部获取锁。

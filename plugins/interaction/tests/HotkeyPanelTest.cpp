@@ -1,21 +1,19 @@
 #include "HotkeyPanel.hpp"
 
 #include <QJsonObject>
-#include <QLineEdit>
 #include <QLabel>
+#include <QLineEdit>
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QTableWidget>
 #include <QVBoxLayout>
 #include <QtTest>
 
-class HotkeyPanelTest : public QObject
-{
+class HotkeyPanelTest : public QObject {
     Q_OBJECT
     static QJsonObject binding(const QString& id, const QJsonArray& keys)
     {
-        return {{"id", id}, {"name", id}, {"action", "ToggleExpression"},
-            {"keys", keys}, {"enabled", true}, {"active", false}};
+        return { { "id", id }, { "name", id }, { "action", "ToggleExpression" }, { "keys", keys }, { "enabled", true }, { "active", false } };
     }
 
 private slots:
@@ -25,14 +23,15 @@ private slots:
         auto* table = panel.findChild<QTableWidget*>();
         auto* message = panel.findChild<QLabel*>();
         QCOMPARE(message->text(), QString("当前模型未配置快捷键。"));
-        const QStringList headers = {"名称", "按键", "动作", "状态", "操作"};
-        for (int i = 0; i < headers.size(); ++i)
+        const QStringList headers = { "名称", "按键", "动作", "状态", "操作" };
+        for (int i = 0; i < headers.size(); ++i) {
             QCOMPARE(table->horizontalHeaderItem(i)->text(), headers[i]);
+        }
         panel.setConnected(true);
-        auto inactive = binding("原始名称", {"N1"});
-        auto active = binding("active", {"N2"});
+        auto inactive = binding("原始名称", { "N1" });
+        auto active = binding("active", { "N2" });
         active["active"] = true;
-        panel.setBindings({inactive, active});
+        panel.setBindings({ inactive, active });
         QCOMPARE(table->item(0, 0)->text(), QString("原始名称"));
         QCOMPARE(table->item(0, 1)->text(), QString("N1"));
         QCOMPARE(table->item(0, 2)->text(), QString("切换表情"));
@@ -41,7 +40,7 @@ private slots:
         QCOMPARE(qobject_cast<QPushButton*>(table->cellWidget(0, 4))->text(), QString("切换"));
         QVERIFY(message->text().contains("活动状态"));
         inactive["reason"] = "Expression file missing or invalid";
-        panel.setBindings({inactive}, "Invalid VTube Studio hotkey configuration");
+        panel.setBindings({ inactive }, "Invalid VTube Studio hotkey configuration");
         QCOMPARE(table->item(0, 3)->text(), QString("表情文件缺失或无效"));
         QCOMPARE(message->text(), QString("VTube Studio 快捷键配置无效"));
         panel.setConnected(false);
@@ -59,7 +58,7 @@ private slots:
         layout->addWidget(edit);
         layout->addWidget(button);
         panel->setConnected(true);
-        panel->setBindings({binding("watermark", {"Tab"}), binding("blush", {"N1"})});
+        panel->setBindings({ binding("watermark", { "Tab" }), binding("blush", { "N1" }) });
         QSignalSpy spy(panel, &HotkeyPanel::triggered);
         window.show();
         window.activateWindow();
@@ -84,7 +83,7 @@ private slots:
         QTest::keyRelease(button, Qt::Key_Tab);
         QTest::keyClick(button, Qt::Key_1);
         QCOMPARE(spy.count(), 3);
-        panel->setBindings({});
+        panel->setBindings({ });
         QTest::keyClick(button, Qt::Key_Tab);
         QTest::keyClick(button, Qt::Key_Backtab, Qt::ShiftModifier);
         QCOMPARE(QApplication::focusWidget(), button);
@@ -97,7 +96,7 @@ private slots:
         auto* panel = new HotkeyPanel(&window);
         layout->addWidget(panel);
         panel->setConnected(true);
-        panel->setBindings({binding("one", {"Tab"}), binding("two", {"Tab"}), binding("unknown", {"MouseBack"})});
+        panel->setBindings({ binding("one", { "Tab" }), binding("two", { "Tab" }), binding("unknown", { "MouseBack" }) });
         auto* table = panel->findChild<QTableWidget*>();
         QCOMPARE(table->rowCount(), 3);
         QSignalSpy spy(panel, &HotkeyPanel::triggered);
@@ -111,12 +110,12 @@ private slots:
         toggle->click();
         QCOMPARE(spy.count(), 1);
         // 不支持的组合键不能遮蔽原本有效的绑定。
-        panel->setBindings({binding("valid", {"Tab"}), binding("invalid", {"Tab", "MouseBack"})});
+        panel->setBindings({ binding("valid", { "Tab" }), binding("invalid", { "Tab", "MouseBack" }) });
         QTest::keyClick(table, Qt::Key_Tab);
         QCOMPARE(spy.count(), 2);
         QCOMPARE(spy.last()[0].toString(), QString("valid"));
         spy.clear();
-        panel->setBindings({binding("new-model", {"N2"})});
+        panel->setBindings({ binding("new-model", { "N2" }) });
         QTest::keyClick(table, Qt::Key_Tab);
         QCOMPARE(spy.count(), 0);
         QTest::keyClick(table, Qt::Key_2);
@@ -139,7 +138,7 @@ private slots:
     {
         HotkeyPanel panel;
         panel.setConnected(true);
-        panel.setBindings({binding("chord", {"LeftControl", "N1"})});
+        panel.setBindings({ binding("chord", { "LeftControl", "N1" }) });
         QSignalSpy spy(&panel, &HotkeyPanel::triggered);
         panel.show();
         panel.activateWindow();
@@ -154,11 +153,10 @@ private slots:
     {
         QWidget survivor;
         survivor.show();
-        for (int index = 0; index < 16; ++index)
-        {
+        for (int index = 0; index < 16; ++index) {
             auto* panel = new HotkeyPanel;
             panel->setConnected(true);
-            panel->setBindings({binding("repeat", {"Tab"})});
+            panel->setBindings({ binding("repeat", { "Tab" }) });
             panel->show();
             panel->activateWindow();
             QVERIFY(QTest::qWaitForWindowActive(panel));

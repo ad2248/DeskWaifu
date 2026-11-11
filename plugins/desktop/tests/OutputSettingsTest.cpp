@@ -1,37 +1,51 @@
 #include "processor/interaction/config/OutputSettings.hpp"
-#include "processor/interaction/config/HoverOpacitySettings.hpp"
 #include "TestTemporaryDirectory.hpp"
+#include "processor/interaction/config/HoverOpacitySettings.hpp"
+#include <cerrno>
 #include <fstream>
 #include <iostream>
-#include <cerrno>
 #include <sys/stat.h>
 
-#define CHECK(c) do { if (!(c)) { std::cerr << __LINE__ << ": " << #c << '\n'; return 1; } } while (false)
+#define CHECK(c)                                                                                                                                                                   \
+    do {                                                                                                                                                                           \
+        if (!(c)) {                                                                                                                                                                \
+            std::cerr << __LINE__ << ": " << #c << '\n';                                                                                                                           \
+            return 1;                                                                                                                                                              \
+        }                                                                                                                                                                          \
+    } while (false)
 
 // 即使 CI 使用 root 权限运行，权限错误测试也必须具有确定性。
 static bool denyConfigWrites = false;
 extern "C" int __real_mkstemp(char*);
 extern "C" int __wrap_mkstemp(char* name)
 {
-    if (denyConfigWrites) { errno = EACCES; return -1; }
+    if (denyConfigWrites) {
+        errno = EACCES;
+        return -1;
+    }
     return __real_mkstemp(name);
 }
 
-struct Runtime : IApplicationRuntime
-{
+struct Runtime : IApplicationRuntime {
     int ModelIndex() const override { return 0; }
     int ModelCount() const override { return 1; }
     bool SetHidden(bool) override { return true; }
 };
 
-struct Backend : IOutputBackend
-{
-    std::vector<OutputSnapshot> outputs{{1, "DP-1", 0, 0, 1920, 1080}, {2, "HDMI-A-1", -1280, 0, 1280, 1024}};
+struct Backend : IOutputBackend {
+    std::vector<OutputSnapshot> outputs { { 1, "DP-1", 0, 0, 1920, 1080 }, { 2, "HDMI-A-1", -1280, 0, 1280, 1024 } };
     OutputId current = 1;
     bool fail = false;
     std::vector<OutputSnapshot> Outputs() const override { return outputs; }
     OutputId CurrentOutput() const override { return current; }
-    bool SwitchOutput(OutputId id) override { if (fail) return false; current = id; return true; }
+    bool SwitchOutput(OutputId id) override
+    {
+        if (fail) {
+            return false;
+        }
+        current = id;
+        return true;
+    }
 };
 
 int main()
@@ -41,10 +55,14 @@ int main()
     const auto path = directory + "/config.json";
     auto write = [&](const std::string& text) { std::ofstream(path) << text; };
     write(R"({"model_output":"HDMI-A-1","model_x":2,"model_y":-1,"model_scale":2,"model_region":{"x":10,"y":20,"width":100,"height":200}})");
-    Runtime runtime; ApplicationService service(runtime);
-    LAppConfig config; config.sourcePath = path;
-    TransformEditor editor(service, config); CHECK(editor.Initialize({}));
-    Backend backend; OutputSettings settings(backend, editor, config);
+    Runtime runtime;
+    ApplicationService service(runtime);
+    LAppConfig config;
+    config.sourcePath = path;
+    TransformEditor editor(service, config);
+    CHECK(editor.Initialize({ }));
+    Backend backend;
+    OutputSettings settings(backend, editor, config);
     CHECK(settings.Initialize().ok && backend.current == 2);
     CHECK(editor.Display().transform.x == 2 && editor.Display().cropped); // 重启后保留布局。
     CHECK(!settings.Select("missing").ok && backend.current == 2);
@@ -58,13 +76,15 @@ int main()
     CHECK(editor.Display().transform.x == 0 && editor.Display().transform.y == 0);
     CHECK(editor.Display().transform.scale == 2 && !editor.Display().cropped);
     CHECK(config.values.modelOutput == "DP-1");
-    ConfigStore store(path); ConfigStore::Snapshot disk; std::string error;
+    ConfigStore store(path);
+    ConfigStore::Snapshot disk;
+    std::string error;
     CHECK(store.Read(disk, error) && disk.values.at("model_output") == "\"DP-1\"");
     CHECK(!disk.values.count("model_region"));
     CHECK(editor.Reset("gui").ok);
     CHECK(config.values.modelOutput == "DP-1"); // 保存其他变换时保留显示器选择。
     CHECK(store.Read(disk, error) && disk.values.at("model_output") == "\"DP-1\"");
-    CHECK(service.SetTransform({2, 3, 4}).ok);
+    CHECK(service.SetTransform({ 2, 3, 4 }).ok);
     CHECK(settings.Select("DP-1").ok && service.Snapshot().transform.x == 3); // 选择相同输出设备不执行操作。
     write("broken");
     CHECK(!settings.Select("HDMI-A-1").ok && backend.current == 1);
@@ -74,20 +94,22 @@ int main()
     CHECK(settings.Initialize().ok && backend.current == 1);
     CHECK(config.values.modelOutput == "DP-1" && editor.Display().transform.x == 0);
     CHECK(store.Read(disk, error) && disk.values.at("model_output") == "\"DP-1\"");
-    write("{}"); CHECK(editor.ReloadAndDiscard("gui").ok);
+    write("{}");
+    CHECK(editor.ReloadAndDiscard("gui").ok);
     CHECK(settings.Initialize().ok && config.values.modelOutput == "DP-1");
     backend.outputs.clear();
     CHECK(!settings.Initialize().ok && config.values.modelOutput == "DP-1");
     CHECK(store.Read(disk, error) && disk.values.at("model_output") == "\"DP-1\"");
-    for (const auto* json : {"{\"model_output\":42}", "{\"model_output\":null}"}) {
+    for (const auto* json : { "{\"model_output\":42}", "{\"model_output\":null}" }) {
         CHECK(ConfigStore::Parse(json, disk, error));
-        LAppConfig::Values values; CHECK(!LAppConfig::Decode(disk, values, error));
+        LAppConfig::Values values;
+        CHECK(!LAppConfig::Decode(disk, values, error));
     }
     // 升级时，即使旧配置位于只读目录，只要可读取就应正常启动。
     const std::string legacy = R"({"model_x":0.25,"model_y":-0.5,"model_scale":2})";
     write(legacy);
     CHECK(editor.ReloadAndDiscard("gui").ok);
-    backend.outputs = {{1, "DP-1", 0, 0, 1920, 1080}, {2, "HDMI-A-1", 1920, 0, 1280, 1024}};
+    backend.outputs = { { 1, "DP-1", 0, 0, 1920, 1080 }, { 2, "HDMI-A-1", 1920, 0, 1280, 1024 } };
     backend.current = 2;
     backend.fail = true;
     CHECK(!settings.Initialize().ok && settings.Warning().empty()); // 真实显示设备故障仍为致命错误。

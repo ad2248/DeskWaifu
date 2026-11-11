@@ -1,32 +1,34 @@
-#include "ControlTestWindow.hpp"
 #include "ControlTabTitles.hpp"
+#include "ControlTestWindow.hpp"
 
+#include <QAbstractItemView>
 #include <QApplication>
 #include <QJsonArray>
 #include <QJsonObject>
-#include <QAbstractItemView>
 #include <QProxyStyle>
-#include <QStyleFactory>
-#include <QStyleOptionComboBox>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QStyleFactory>
+#include <QStyleOptionComboBox>
 #include <QtTest>
 
 // 部分桌面主题让表单字段保持初始建议尺寸，此时内容只有“自动”。
-class CompactFormStyle : public QProxyStyle
-{
+class CompactFormStyle : public QProxyStyle {
 public:
-    CompactFormStyle() : QProxyStyle(QStyleFactory::create("Fusion")) {}
-    int styleHint(StyleHint hint, const QStyleOption* option = nullptr,
-        const QWidget* widget = nullptr, QStyleHintReturn* data = nullptr) const override
+    CompactFormStyle()
+        : QProxyStyle(QStyleFactory::create("Fusion"))
     {
-        if (hint == SH_FormLayoutFieldGrowthPolicy) return QFormLayout::FieldsStayAtSizeHint;
+    }
+    int styleHint(StyleHint hint, const QStyleOption* option = nullptr, const QWidget* widget = nullptr, QStyleHintReturn* data = nullptr) const override
+    {
+        if (hint == SH_FormLayoutFieldGrowthPolicy) {
+            return QFormLayout::FieldsStayAtSizeHint;
+        }
         return QProxyStyle::styleHint(hint, option, widget, data);
     }
 };
 
-class ControlThemeTest : public QObject
-{
+class ControlThemeTest : public QObject {
     Q_OBJECT
 
     QPalette _originalPalette;
@@ -42,10 +44,7 @@ private slots:
         qputenv("XDG_RUNTIME_DIR", _runtime.path().toLocal8Bit());
     }
 
-    void cleanupTestCase()
-    {
-        qputenv("XDG_RUNTIME_DIR", _previousRuntime);
-    }
+    void cleanupTestCase() { qputenv("XDG_RUNTIME_DIR", _previousRuntime); }
 
     void panelUsesChineseText()
     {
@@ -55,12 +54,15 @@ private slots:
         QCOMPARE(window.windowTitle(), QString("DeskWaifu 控制面板"));
         const auto tabs = ExpectedControlTabs();
         QCOMPARE(ui.tabWidget->count(), tabs.size());
-        for (int i = 0; i < tabs.size(); ++i)
+        for (int i = 0; i < tabs.size(); ++i) {
             QCOMPARE(ui.tabWidget->tabText(i), tabs[i]);
-        for (auto* button : window.findChildren<QPushButton*>())
+        }
+        for (auto* button : window.findChildren<QPushButton*>()) {
             QVERIFY2(button->text().contains(QRegularExpression("[\\x{4e00}-\\x{9fff}]")), qPrintable(button->objectName()));
-        for (auto* group : window.findChildren<QGroupBox*>())
+        }
+        for (auto* group : window.findChildren<QGroupBox*>()) {
             QVERIFY2(group->title().contains(QRegularExpression("[\\x{4e00}-\\x{9fff}]")), qPrintable(group->objectName()));
+        }
         QCOMPARE(ui.respawnButton->text(), QString("重启"));
         QVERIFY(ui.respawnButton->toolTip().contains("重新启动"));
         QVERIFY(ui.renderDeviceCombo->toolTip().contains("“重启”"));
@@ -73,24 +75,25 @@ private slots:
         ui.setupUi(&window);
         QCOMPARE(window.findChildren<QTabWidget*>().size(), 1);
         const QList<QStringList> categories = {
-            {"spawnButton", "respawnButton", "statusGroup", "renderDeviceGroup"},
-            {"mouseLookGroup", "lookGroup", "hoverOpacityGroup", "hotkeyGroup"},
-            {"modelGroup", "toggleHiddenButton", "switchSkinButton", "expressionGroup", "motionGroup",
-                "mouthGroup", "outputCombo", "transformGroup", "positionEdit", "transformActionsLayout", "transformStatusLabel"},
+            { "spawnButton", "respawnButton", "statusGroup", "renderDeviceGroup" },
+            { "mouseLookGroup", "lookGroup", "hoverOpacityGroup", "hotkeyGroup" },
+            { "modelGroup", "toggleHiddenButton", "switchSkinButton", "expressionGroup", "motionGroup", "mouthGroup", "outputCombo", "transformGroup", "positionEdit",
+                "transformActionsLayout", "transformStatusLabel" },
 #if DESKWAIFU_TEST_SPEECH_PLUGIN
-            {"speechSettingsGroup"},
+            { "speechSettingsGroup" },
 #endif
 #if DESKWAIFU_TEST_VOICE_INPUT_PLUGIN
-            {"voiceInputEndpoint", "voiceInputApiKey", "voiceInputModel", "voiceInputDevice",
-                "voiceInputMaxRecordingSeconds", "startVoiceInput", "stopVoiceInput", "cancelVoiceInput",
-                "voiceInputResult", "retryVoiceInputCopy"},
+            { "voiceInputEndpoint", "voiceInputApiKey", "voiceInputModel", "voiceInputDevice", "voiceInputMaxRecordingSeconds", "startVoiceInput", "stopVoiceInput",
+                "cancelVoiceInput", "voiceInputResult", "retryVoiceInputCopy" },
 #endif
         };
         for (int tab = 0; tab < categories.size(); ++tab) {
             for (const auto& name : categories[tab]) {
                 auto* object = window.findChild<QObject*>(name);
                 QVERIFY2(object, qPrintable(name));
-                while (object && object != ui.tabWidget->widget(tab)) object = object->parent();
+                while (object && object != ui.tabWidget->widget(tab)) {
+                    object = object->parent();
+                }
                 QVERIFY2(object, qPrintable(name));
             }
         }
@@ -114,7 +117,7 @@ private slots:
         ui.setupUi(&window);
         window.resize(720, 560);
         window.show();
-        const QStringList lastControls = {"renderDeviceStatus", "hoverOpacityHintLabel", "transformStatusLabel"};
+        const QStringList lastControls = { "renderDeviceStatus", "hoverOpacityHintLabel", "transformStatusLabel" };
         for (int tab = 0; tab < lastControls.size(); ++tab) {
             ui.tabWidget->setCurrentIndex(tab);
             QCoreApplication::processEvents();
@@ -163,16 +166,14 @@ private slots:
         ControlTestWidgets ui;
         ui.setupUi(&window);
 
-        for (auto* coordinate : {ui.cropBox_x, ui.cropBox_y})
-        {
+        for (auto* coordinate : { ui.cropBox_x, ui.cropBox_y }) {
             QCOMPARE(coordinate->singleStep(), 1);
             coordinate->setValue(-1920);
             QCOMPARE(coordinate->value(), -1920);
             coordinate->setValue(3840);
             QCOMPARE(coordinate->value(), 3840);
         }
-        for (auto* dimension : {ui.cropBox_w, ui.cropBox_h})
-        {
+        for (auto* dimension : { ui.cropBox_w, ui.cropBox_h }) {
             QCOMPARE(dimension->minimum(), 1);
             QCOMPARE(dimension->singleStep(), 1);
             dimension->setValue(3840);
@@ -204,28 +205,27 @@ private slots:
         window.resize(720, 560);
         window.show();
         QCoreApplication::processEvents(); // 初始建议尺寸只包含“自动”。
-        ui.renderDeviceCombo->addItems({
-            "Mesa Intel(R) Graphics (ARL) (0000:00:02.0)",
-            "NVIDIA GeForce RTX 2070 SUPER (0000:02:00.0)"});
+        ui.renderDeviceCombo->addItems({ "Mesa Intel(R) Graphics (ARL) (0000:00:02.0)", "NVIDIA GeForce RTX 2070 SUPER (0000:02:00.0)" });
         ui.renderDeviceCombo->setEnabled(true);
         ui.renderDeviceCombo->setCurrentIndex(1);
         QCoreApplication::processEvents();
         QStyleOptionComboBox option;
         option.initFrom(ui.renderDeviceCombo);
-        const auto textRect = ui.renderDeviceCombo->style()->subControlRect(
-            QStyle::CC_ComboBox, &option, QStyle::SC_ComboBoxEditField, ui.renderDeviceCombo);
+        const auto textRect = ui.renderDeviceCombo->style()->subControlRect(QStyle::CC_ComboBox, &option, QStyle::SC_ComboBoxEditField, ui.renderDeviceCombo);
         for (int i = 0; i < ui.renderDeviceCombo->count(); ++i) {
             const auto text = ui.renderDeviceCombo->itemText(i);
             QVERIFY2(textRect.width() >= ui.renderDeviceCombo->fontMetrics().horizontalAdvance(text), qPrintable(text));
         }
         ui.renderDeviceCombo->showPopup();
         QCoreApplication::processEvents();
-        for (int i = 0; i < ui.renderDeviceCombo->count(); ++i)
-            QVERIFY(ui.renderDeviceCombo->view()->viewport()->width() >=
-                ui.renderDeviceCombo->view()->fontMetrics().horizontalAdvance(ui.renderDeviceCombo->itemText(i)));
+        for (int i = 0; i < ui.renderDeviceCombo->count(); ++i) {
+            QVERIFY(ui.renderDeviceCombo->view()->viewport()->width() >= ui.renderDeviceCombo->view()->fontMetrics().horizontalAdvance(ui.renderDeviceCombo->itemText(i)));
+        }
         ui.renderDeviceCombo->hidePopup();
         const auto screenshot = qEnvironmentVariable("DESKWAIFU_DROPDOWN_SCREENSHOT");
-        if (!screenshot.isEmpty() && fontSize == 13) QVERIFY(window.grab().save(screenshot));
+        if (!screenshot.isEmpty() && fontSize == 13) {
+            QVERIFY(window.grab().save(screenshot));
+        }
         // 特别长的设备名可以省略显示，但不能使窗口变宽。
         ui.renderDeviceCombo->addItem(QString(600, 'W'));
         ui.renderDeviceCombo->setCurrentIndex(ui.renderDeviceCombo->count() - 1);
@@ -283,26 +283,21 @@ private slots:
         ui.setupUi(&window);
         // Populate the real plugin-owned panel through its public host protocol.
         emit window.hostServices().connectionChanged(true, QStringLiteral("test"));
-        emit window.hostServices().responseReceived(QStringLiteral("get_hotkeys"), {{"ok", true},
-            {"model_token", "theme-test"}, {"hotkeys", QJsonArray{QJsonObject{
-            {"id", "expression"}, {"name", "Expression"},
-            {"action", "ToggleExpression"}, {"keys", QJsonArray{"N1"}},
-            {"enabled", true}, {"active", false}}}}});
+        emit window.hostServices().responseReceived(QStringLiteral("get_hotkeys"),
+            { { "ok", true }, { "model_token", "theme-test" },
+                { "hotkeys",
+                    QJsonArray { QJsonObject { { "id", "expression" }, { "name", "Expression" }, { "action", "ToggleExpression" }, { "keys", QJsonArray { "N1" } },
+                        { "enabled", true }, { "active", false } } } } });
         window.ensurePolished();
 
         QVERIFY(window.styleSheet().isEmpty());
         QCOMPARE(window.style(), QApplication::style());
-        for (auto* widget : window.findChildren<QWidget*>())
-        {
+        for (auto* widget : window.findChildren<QWidget*>()) {
             QVERIFY2(widget->styleSheet().isEmpty(), qPrintable(widget->objectName()));
             QCOMPARE(widget->style(), QApplication::style());
         }
-        for (QWidget* widget : {static_cast<QWidget*>(&window),
-                 static_cast<QWidget*>(ui.spawnButton),
-                 static_cast<QWidget*>(ui.statusBar),
-                 static_cast<QWidget*>(ui.currentModelLabel),
-                 static_cast<QWidget*>(ui.modelCombo)})
-        {
+        for (QWidget* widget : { static_cast<QWidget*>(&window), static_cast<QWidget*>(ui.spawnButton), static_cast<QWidget*>(ui.statusBar),
+                 static_cast<QWidget*>(ui.currentModelLabel), static_cast<QWidget*>(ui.modelCombo) }) {
             QCOMPARE(widget->palette().color(QPalette::Window), background);
             QCOMPARE(widget->palette().color(QPalette::WindowText), foreground);
             QCOMPARE(widget->font(), font);

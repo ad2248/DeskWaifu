@@ -7,17 +7,17 @@ namespace {
 void Log(const QString& text)
 {
     QFile file(qEnvironmentVariable("DESKWAIFU_GUI_TRANSPORT_TEST_LOG"));
-    if (file.open(QIODevice::WriteOnly | QIODevice::Append)) file.write((text + '\n').toUtf8());
+    if (file.open(QIODevice::WriteOnly | QIODevice::Append)) {
+        file.write((text + '\n').toUtf8());
+    }
 }
-class Transport : public IGuiTransport
-{
+class Transport : public IGuiTransport {
 public:
     bool isConnected() const override { return false; }
-    void sendCommand(const QString&, const QJsonObject&) override {}
-    void cancelQueuedCommand(const QString&) override {}
+    void sendCommand(const QString&, const QJsonObject&) override { }
+    void cancelQueuedCommand(const QString&) override { }
 };
-class Fixture : public IGuiPlugin
-{
+class Fixture : public IGuiPlugin {
 public:
     ~Fixture() override { Log("plugin:destroy"); }
     bool Initialize(GuiPluginContext& context, QString* error) override
@@ -26,9 +26,8 @@ public:
         _transport.reset(new Transport);
         auto* services = context.Services();
         QObject wrongOwner;
-        if (services->registerTransport(nullptr, &context) ||
-            services->registerTransport(_transport.get(), nullptr) ||
-            services->registerTransport(_transport.get(), &wrongOwner)) {
+        if (services->registerTransport(nullptr, &context) || services->registerTransport(_transport.get(), nullptr)
+            || services->registerTransport(_transport.get(), &wrongOwner)) {
             *error = "invalid transport ownership accepted";
             return false;
         }
@@ -44,10 +43,11 @@ public:
         services->unregisterTransport(&other);
         services->unregisterTransport(nullptr);
         auto* page = new QWidget;
-        if (!context.RegisterTab({"transport", "Transport"}, page, error)) { delete page; return false; }
-        const auto observe = [this](const QString&, const QJsonObject&) {
-            Log(_context->IsValid() ? "callback:active" : "bad-invalid-callback");
-        };
+        if (!context.RegisterTab({ "transport", "Transport" }, page, error)) {
+            delete page;
+            return false;
+        }
+        const auto observe = [this](const QString&, const QJsonObject&) { Log(_context->IsValid() ? "callback:active" : "bad-invalid-callback"); };
         QObject::connect(services, &GuiHostServices::responseReceived, &context, observe);
         QObject::connect(services, &GuiHostServices::responseReceived, &context, observe, Qt::QueuedConnection);
         QObject::connect(services, &GuiHostServices::responseReceived, page, observe, Qt::QueuedConnection);
@@ -80,12 +80,14 @@ public:
     {
         Log("plugin:stop");
         Transport replacement;
-        if (_context->IsValid() || _context->Services()->registerTransport(&replacement, _context))
+        if (_context->IsValid() || _context->Services()->registerTransport(&replacement, _context)) {
             Log("bad-stop-registration");
+        }
         _context->Services()->unregisterTransport(_transport.get());
         _context->Services()->unregisterTransport(nullptr);
         _transport.reset();
     }
+
 private:
     GuiPluginContext* _context = nullptr;
     std::unique_ptr<Transport> _transport;

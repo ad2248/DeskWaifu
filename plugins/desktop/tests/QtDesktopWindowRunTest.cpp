@@ -9,20 +9,30 @@
 namespace {
 void Check(bool value, const char* message)
 {
-    if (!value) { std::cerr << message << '\n'; std::abort(); }
+    if (!value) {
+        std::cerr << message << '\n';
+        std::abort();
+    }
 }
-class Window final : public QtDesktopWindow
-{
+class Window final : public QtDesktopWindow {
 public:
     bool Available() const override { return available; }
-    bool MakeCurrent() override { ++attempts; return false; }
+    bool MakeCurrent() override
+    {
+        ++attempts;
+        return false;
+    }
     bool available = true;
     int attempts = 0;
 };
 void DispatchLaterEvents()
 {
-    QElapsedTimer timer; timer.start();
-    while (timer.elapsed() < 50) { QCoreApplication::processEvents(); QThread::msleep(1); }
+    QElapsedTimer timer;
+    timer.start();
+    while (timer.elapsed() < 50) {
+        QCoreApplication::processEvents();
+        QThread::msleep(1);
+    }
 }
 }
 
@@ -34,7 +44,11 @@ int main(int argc, char** argv)
     for (int i = 0; i < 3; ++i) {
         QTimer::singleShot(0, [&] {
             QTimer::singleShot(0, [] { QCoreApplication::exit(17); });
-            Check(window.Run([] { std::abort(); return true; }), "external exit preserves Run result");
+            Check(window.Run([] {
+                std::abort();
+                return true;
+            }),
+                "external exit preserves Run result");
         });
         Check(app.exec() == 17, "external exit terminates the nested and application loops");
         DispatchLaterEvents();

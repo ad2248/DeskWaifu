@@ -1,38 +1,46 @@
-#include "plugin/GuiHostServices.hpp"
 #include "PluginPages.hpp"
+#include "plugin/GuiHostServices.hpp"
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDoubleSpinBox>
+#include <QFile>
 #include <QGroupBox>
 #include <QJsonArray>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
-#include <QSignalSpy>
 #include <QScopeGuard>
-#include <QFile>
+#include <QSignalSpy>
 #include <QSlider>
 #include <QTemporaryDir>
 #include <QtTest>
 
-class Services final : public GuiHostServices
-{
+class Services final : public GuiHostServices {
 public:
     bool connected = true;
     QList<QPair<QString, QJsonObject>> commands;
     bool isConnected() const override { return connected; }
-    void sendCommand(const QString& command, const QJsonObject& parameters = {}) override { commands.append({command, parameters}); }
-    void cancelQueuedCommand(const QString&) override {}
+    void sendCommand(const QString& command, const QJsonObject& parameters = { }) override { commands.append({ command, parameters }); }
+    void cancelQueuedCommand(const QString&) override { }
     void reply(const QString& command, const QJsonObject& response) { emit responseReceived(command, response); }
-    void disconnectBackend() { connected = false; emit connectionChanged(false, QStringLiteral("offline")); }
-    int count(const QString& command) const {
+    void disconnectBackend()
+    {
+        connected = false;
+        emit connectionChanged(false, QStringLiteral("offline"));
+    }
+    int count(const QString& command) const
+    {
         int result = 0;
-        for (const auto& entry : commands) if (entry.first == command) ++result;
+        for (const auto& entry : commands) {
+            if (entry.first == command) {
+                ++result;
+            }
+        }
         return result;
     }
 };
 
-template<class T> T* widget(QWidget& page, const char* name)
+template <class T> T* widget(QWidget& page, const char* name)
 {
     auto* result = page.findChild<T*>(QString::fromLatin1(name));
     Q_ASSERT(result);
@@ -41,14 +49,15 @@ template<class T> T* widget(QWidget& page, const char* name)
 
 bool triggerHotkey(QWidget& page, const QString& id)
 {
-    for (auto* child : page.findChildren<QObject*>())
-        if (child->metaObject()->indexOfSignal("triggered(QString)") >= 0)
+    for (auto* child : page.findChildren<QObject*>()) {
+        if (child->metaObject()->indexOfSignal("triggered(QString)") >= 0) {
             return QMetaObject::invokeMethod(child, "triggered", Qt::DirectConnection, Q_ARG(QString, id));
+        }
+    }
     return false;
 }
 
-class GuiTabsTest : public QObject
-{
+class GuiTabsTest : public QObject {
     Q_OBJECT
 private slots:
     void systemRestartUsesSharedRespawner()
@@ -73,7 +82,7 @@ private slots:
         restart->click();
         QCOMPARE(services.count(QStringLiteral("quit")), 1);
         QVERIFY(!restart->isEnabled());
-        services.reply(QStringLiteral("quit"), {{"ok", false}, {"error", "fixture refused"}});
+        services.reply(QStringLiteral("quit"), { { "ok", false }, { "error", "fixture refused" } });
         QVERIFY(restart->isEnabled());
     }
 
@@ -88,9 +97,9 @@ private slots:
         QCOMPARE(widget<QPushButton>(system, "spawnButton")->text(), QStringLiteral("启动"));
         QVERIFY(!widget<QPushButton>(system, "respawnButton")->isEnabled());
         QSignalSpy ready(&services, &GuiHostServices::backendReady);
-        services.reply(QStringLiteral("get_status"), {{"ok", false}});
+        services.reply(QStringLiteral("get_status"), { { "ok", false } });
         QCOMPARE(ready.count(), 0);
-        services.reply(QStringLiteral("get_status"), {{"ok", true}, {"model", "A"}, {"model_count", 2}, {"hidden", true}});
+        services.reply(QStringLiteral("get_status"), { { "ok", true }, { "model", "A" }, { "model_count", 2 }, { "hidden", true } });
         QCOMPARE(ready.count(), 1);
         QCOMPARE(widget<QLabel>(system, "currentModelLabel")->text(), QStringLiteral("A"));
         QCOMPARE(widget<QLabel>(system, "modelCountLabel")->text(), QStringLiteral("2"));
@@ -102,7 +111,7 @@ private slots:
         Services services;
         PluginPages pages(services);
         auto& interaction = pages.Page("interactionTab");
-        const QJsonObject bindings{{"ok", true}, {"model_token", "token-A"}, {"hotkeys", QJsonArray{}}};
+        const QJsonObject bindings { { "ok", true }, { "model_token", "token-A" }, { "hotkeys", QJsonArray { } } };
         services.reply(QStringLiteral("get_hotkeys"), bindings);
         QVERIFY(triggerHotkey(interaction, QStringLiteral("test-id")));
         QCOMPARE(services.commands.last().first, QStringLiteral("trigger_hotkey"));
@@ -145,9 +154,9 @@ private slots:
         QVERIFY(key->text().isEmpty());
         QCOMPARE(services.commands.last().second.value("api_key").toString(), QStringLiteral("private-key"));
         QVERIFY(!widget<QPushButton>(speech, "saveSpeechKey")->isEnabled());
-        services.reply(QStringLiteral("get_speech_settings"), {{"ok", true}, {"configured", false}});
+        services.reply(QStringLiteral("get_speech_settings"), { { "ok", true }, { "configured", false } });
         QVERIFY(!widget<QPushButton>(speech, "saveSpeechKey")->isEnabled());
-        services.reply(QStringLiteral("set_speech_settings"), {{"ok", true}, {"configured", true}});
+        services.reply(QStringLiteral("set_speech_settings"), { { "ok", true }, { "configured", true } });
         QVERIFY(widget<QPushButton>(speech, "clearSpeechKey")->isEnabled());
         services.disconnectBackend();
         QVERIFY(!widget<QPushButton>(speech, "saveSpeechKey")->isEnabled());
@@ -159,14 +168,14 @@ private slots:
         Services services;
         PluginPages pages(services);
         auto& interaction = pages.Page("interactionTab");
-        const QJsonObject initial{{"ok", true}, {"enabled", true}, {"opacity", 0.5}, {"idle_opacity", 1.0}};
+        const QJsonObject initial { { "ok", true }, { "enabled", true }, { "opacity", 0.5 }, { "idle_opacity", 1.0 } };
         services.reply(QStringLiteral("get_hover_opacity"), initial);
         auto* slider = widget<QSlider>(interaction, "hoverOpacitySlider");
         slider->setValue(35);
         QCOMPARE(services.count(QStringLiteral("set_hover_opacity")), 1);
         services.reply(QStringLiteral("get_hover_opacity"), initial);
         QCOMPARE(slider->value(), 35);
-        services.reply(QStringLiteral("set_hover_opacity"), {{"ok", false}});
+        services.reply(QStringLiteral("set_hover_opacity"), { { "ok", false } });
         QCOMPARE(slider->value(), 50);
         QVERIFY(widget<QGroupBox>(interaction, "hoverOpacityGroup")->isEnabled());
     }
@@ -176,14 +185,14 @@ private slots:
         Services services;
         PluginPages pages(services);
         auto& interaction = pages.Page("interactionTab");
-        services.reply(QStringLiteral("get_mouse_look"), {{"ok", true}, {"radius", 4.5}});
+        services.reply(QStringLiteral("get_mouse_look"), { { "ok", true }, { "radius", 4.5 } });
         auto* spin = widget<QDoubleSpinBox>(interaction, "mouseLookRadiusSpin");
         QCOMPARE(spin->value(), 4.5);
         QCOMPARE(widget<QSlider>(interaction, "mouseLookRadiusSlider")->value(), 200);
         spin->setValue(1.25);
-        services.reply(QStringLiteral("get_mouse_look"), {{"ok", true}, {"radius", 0.5}});
+        services.reply(QStringLiteral("get_mouse_look"), { { "ok", true }, { "radius", 0.5 } });
         QCOMPARE(spin->value(), 1.25);
-        services.reply(QStringLiteral("set_mouse_look"), {{"ok", false}});
+        services.reply(QStringLiteral("set_mouse_look"), { { "ok", false } });
         QCOMPARE(spin->value(), 4.5);
     }
 
@@ -192,17 +201,17 @@ private slots:
         Services services;
         PluginPages pages(services);
         auto& system = pages.Page("systemTab");
-        services.reply(QStringLiteral("get_render_device"), {{"ok", true}, {"device", "auto"},
-            {"devices", QJsonArray{}}, {"active_device", "auto"}, {"restart_required", false}});
+        services.reply(QStringLiteral("get_render_device"),
+            { { "ok", true }, { "device", "auto" }, { "devices", QJsonArray { } }, { "active_device", "auto" }, { "restart_required", false } });
         auto* combo = widget<QComboBox>(system, "renderDeviceCombo");
         QVERIFY(combo->isEnabled());
         combo->addItem(QStringLiteral("GPU"), QStringLiteral("0:0"));
         combo->setCurrentIndex(1);
         emit combo->activated(1);
         QVERIFY(!combo->isEnabled());
-        services.reply(QStringLiteral("get_render_device"), {{"ok", true}, {"device", "auto"}});
+        services.reply(QStringLiteral("get_render_device"), { { "ok", true }, { "device", "auto" } });
         QCOMPARE(combo->currentIndex(), 1);
-        services.reply(QStringLiteral("set_render_device"), {{"ok", false}});
+        services.reply(QStringLiteral("set_render_device"), { { "ok", false } });
         QCOMPARE(combo->currentData().toString(), QStringLiteral("auto"));
         QVERIFY(combo->isEnabled());
     }
@@ -212,11 +221,11 @@ private slots:
         Services services;
         PluginPages pages(services);
         auto& model = pages.Page("modelTab");
-        services.reply(QStringLiteral("get_current_model"), {{"ok", true}, {"model", "B"}});
-        services.reply(QStringLiteral("get_available_models"), {{"ok", true}, {"models", QJsonArray{"A", "B"}}});
+        services.reply(QStringLiteral("get_current_model"), { { "ok", true }, { "model", "B" } });
+        services.reply(QStringLiteral("get_available_models"), { { "ok", true }, { "models", QJsonArray { "A", "B" } } });
         QCOMPARE(widget<QComboBox>(model, "modelCombo")->currentText(), QStringLiteral("B"));
         services.commands.clear();
-        services.reply(QStringLiteral("next_model"), {{"ok", true}});
+        services.reply(QStringLiteral("next_model"), { { "ok", true } });
         QCOMPARE(services.count(QStringLiteral("get_expressions")), 1);
         QCOMPARE(services.count(QStringLiteral("get_motions")), 1);
     }
@@ -226,13 +235,14 @@ private slots:
         Services services;
         PluginPages pages(services);
         auto& model = pages.Page("modelTab");
-        QJsonObject transform{{"ok", true}, {"owned", false}, {"editing", false}, {"revision", 7},
-            {"zoom", 1.0}, {"surface_width", 100}, {"surface_height", 100}, {"cropped", false}};
+        QJsonObject transform { { "ok", true }, { "owned", false }, { "editing", false }, { "revision", 7 }, { "zoom", 1.0 }, { "surface_width", 100 }, { "surface_height", 100 },
+            { "cropped", false } };
         services.reply(QStringLiteral("get_transform_settings"), transform);
         widget<QDoubleSpinBox>(model, "positionXSpin")->setValue(0.25);
         QCOMPARE(services.commands.last().first, QStringLiteral("begin_transform_edit"));
         QCOMPARE(services.commands.last().second.value("expected_revision").toInt(), 7);
-        transform.insert("owned", true); transform.insert("editing", true);
+        transform.insert("owned", true);
+        transform.insert("editing", true);
         services.reply(QStringLiteral("begin_transform_edit"), transform);
         QCOMPARE(services.commands.last().first, QStringLiteral("update_transform_edit"));
         QCOMPARE(services.commands.last().second.value("x").toDouble(), 0.25);
@@ -246,8 +256,11 @@ private slots:
         services.connected = true;
         emit services.connectionChanged(true, QStringLiteral("online"));
         bool recovered = false;
-        for (const auto& command : services.commands)
-            if (command.first == QStringLiteral("get_transform_save_result") && command.second.value("request_id").toString() == request) recovered = true;
+        for (const auto& command : services.commands) {
+            if (command.first == QStringLiteral("get_transform_save_result") && command.second.value("request_id").toString() == request) {
+                recovered = true;
+            }
+        }
         QVERIFY(recovered);
     }
 };

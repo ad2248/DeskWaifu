@@ -11,12 +11,10 @@
 class AudioCapture;
 class NativeAsrClient;
 
-class VoiceInputController final : public QObject
-{
+class VoiceInputController final : public QObject {
     Q_OBJECT
 public:
-    VoiceInputController(EventEndpoint& endpoint, VoiceInputSettings& settings,
-                         AudioCapture& capture, NativeAsrClient& asr, QObject* parent = nullptr);
+    VoiceInputController(EventEndpoint& endpoint, VoiceInputSettings& settings, AudioCapture& capture, NativeAsrClient& asr, QObject* parent = nullptr);
     ~VoiceInputController() override;
     QJsonObject StartRecording();
     QJsonObject StopRecording(const QString& session);
@@ -30,10 +28,11 @@ public:
     void Shutdown();
 signals:
     void StateChanged(const QJsonObject& status);
+
 private:
     using State = VoiceInputState::State;
     using Event = VoiceInputState::Event;
-    QJsonObject Reply(bool ok, const QString& code = {}, const QString& error = {}) const;
+    QJsonObject Reply(bool ok, const QString& code = { }, const QString& error = { }) const;
     bool Prepare(QString& error);
     bool Move(Event event);
     bool IsCurrent(quint64 session) const;
@@ -41,9 +40,8 @@ private:
     void OnRecognized(quint64 session, const QString& text);
     void CopyResult(quint64 session);
     void Fail(quint64 session, const QString& code, const QString& error);
-    void Finish(const QString& outcome, const QString& code = {}, const QString& error = {});
-    void RespondRecognition(RequestId request, bool ok, const QString& text,
-                            const QString& code, const QString& error);
+    void Finish(const QString& outcome, const QString& code = { }, const QString& error = { });
+    void RespondRecognition(RequestId request, bool ok, const QString& text, const QString& code, const QString& error);
 
     EventEndpoint& _endpoint;
     VoiceInputSettings& _settings;

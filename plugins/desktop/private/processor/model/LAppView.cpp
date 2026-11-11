@@ -6,32 +6,32 @@
  */
 
 #include "LAppView.hpp"
-#include <math.h>
-#include <string>
-#include "LAppPal.hpp"
-#include "LAppLive2DManager.hpp"
-#include "LAppTextureManager.hpp"
 #include "LAppDefine.hpp"
-#include "TouchManager_Common.hpp"
+#include "LAppLive2DManager.hpp"
+#include "LAppModel.hpp"
+#include "LAppPal.hpp"
 #include "LAppSprite.hpp"
 #include "LAppSpriteShader.hpp"
-#include "LAppModel.hpp"
+#include "LAppTextureManager.hpp"
+#include "TouchManager_Common.hpp"
+#include <math.h>
+#include <string>
 
 #include <Rendering/OpenGL/CubismRenderer_OpenGLES2.hpp>
 
 using namespace std;
 using namespace LAppDefine;
 
-LAppView::LAppView(LAppLive2DManager& manager, LAppTextureManager& textures) :
-    LAppView_Common(),
-    _manager(manager),
-    _textures(textures),
-    _back(NULL),
-    _gear(NULL),
-    _power(NULL),
-    _renderSprite(NULL),
-    _renderTarget(SelectTarget_None),
-    _spriteShader(NULL)
+LAppView::LAppView(LAppLive2DManager& manager, LAppTextureManager& textures)
+    : LAppView_Common()
+    , _manager(manager)
+    , _textures(textures)
+    , _back(NULL)
+    , _gear(NULL)
+    , _power(NULL)
+    , _renderSprite(NULL)
+    , _renderTarget(SelectTarget_None)
+    , _spriteShader(NULL)
 {
     _clearColor[0] = 1.0f;
     _clearColor[1] = 1.0f;
@@ -43,7 +43,9 @@ LAppView::LAppView(LAppLive2DManager& manager, LAppTextureManager& textures) :
 #elif defined(USE_MODEL_RENDER_TARGET)
     _renderTarget = SelectTarget_ModelFrameBuffer;
 #endif
-    if (_renderTarget != SelectTarget_None) SetRenderTargetClearColor(0.0f, 0.0f, 0.0f);
+    if (_renderTarget != SelectTarget_None) {
+        SetRenderTargetClearColor(0.0f, 0.0f, 0.0f);
+    }
 
     // 管理触摸相关事件。
     _touchManager = new TouchManager_Common();
@@ -52,28 +54,22 @@ LAppView::LAppView(LAppLive2DManager& manager, LAppTextureManager& textures) :
 LAppView::~LAppView()
 {
     _renderBuffer.DestroyRenderTarget();
-   if (_renderSprite)
-    {
+    if (_renderSprite) {
         delete _renderSprite;
     }
-    if (_spriteShader)
-    {
+    if (_spriteShader) {
         delete _spriteShader;
     }
-    if (_touchManager)
-    {
+    if (_touchManager) {
         delete _touchManager;
     }
-    if (_back)
-    {
+    if (_back) {
         delete _back;
     }
-    if (_gear)
-    {
+    if (_gear) {
         delete _gear;
     }
-    if (_power)
-    {
+    if (_power) {
         delete _power;
     }
 }
@@ -85,8 +81,7 @@ void LAppView::Initialize(int width, int height)
     LAppView_Common::Initialize(width, height);
 
     // 创建着色器。
-    if(_spriteShader == NULL)
-    {
+    if (_spriteShader == NULL) {
         _spriteShader = new LAppSpriteShader();
     }
 }
@@ -101,29 +96,27 @@ void LAppView::Render(ModelTransform transform, const ModelFrameInput& input)
     _manager.SetViewMatrix(_viewMatrix);
 
     // 更新并绘制 Cubism 模型。
-    _manager.OnUpdate(_width, _height, transform, input,
-        [this](LAppModel& model) { PreModelDraw(model); },
-        [this](LAppModel& model) { PostModelDraw(model); });
+    _manager.OnUpdate(_width, _height, transform, input, [this](LAppModel& model) { PreModelDraw(model); }, [this](LAppModel& model) { PostModelDraw(model); });
 
     // 将各模型持有的绘制目标作为纹理时。
-    if (_renderTarget == SelectTarget_ModelFrameBuffer && _renderSprite)
-    {
-        const GLfloat uvVertex[] =
-        {
-            1.0f, 1.0f,
-            0.0f, 1.0f,
-            0.0f, 0.0f,
-            1.0f, 0.0f,
+    if (_renderTarget == SelectTarget_ModelFrameBuffer && _renderSprite) {
+        const GLfloat uvVertex[] = {
+            1.0f,
+            1.0f,
+            0.0f,
+            1.0f,
+            0.0f,
+            0.0f,
+            1.0f,
+            0.0f,
         };
 
-        for(csmUint32 i=0; i<_manager.GetModelNum(); i++)
-        {
+        for (csmUint32 i = 0; i < _manager.GetModelNum(); i++) {
             LAppModel* model = _manager.GetModel(i);
             float alpha = i < 1 ? 1.0f : model->GetOpacity(); // 只对其中一个模型获取透明度。
             _renderSprite->SetColor(1.0f * alpha, 1.0f * alpha, 1.0f * alpha, alpha);
 
-            if (model)
-            {
+            if (model) {
                 _renderSprite->RenderImmidiate(model->GetRenderBuffer().GetColorBuffer(), uvVertex, _width, _height);
             }
         }
@@ -133,7 +126,7 @@ void LAppView::Render(ModelTransform transform, const ModelFrameInput& input)
 void LAppView::PresentOpacityFrame(float opacity)
 {
     _opacityFrame.Present(opacity, [this](GLuint texture, float alpha) {
-        const GLfloat uv[] = {1, 1, 0, 1, 0, 0, 1, 0};
+        const GLfloat uv[] = { 1, 1, 0, 1, 0, 0, 1, 0 };
         glUseProgram(_spriteShader->GetShaderId());
         glActiveTexture(GL_TEXTURE0);
         glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -161,13 +154,9 @@ void LAppView::InitializeSprite()
     float x = width * 0.5f;
     float y = height * 0.5f;
     _renderSprite = new LAppSprite(x, y, static_cast<float>(width), static_cast<float>(height), 0, programId);
-
 }
 
-void LAppView::OnTouchesBegan(float px, float py) const
-{
-    _touchManager->TouchesBegan(px, py);
-}
+void LAppView::OnTouchesBegan(float px, float py) const { _touchManager->TouchesBegan(px, py); }
 
 void LAppView::OnTouchesMoved(float px, float py) const
 {
@@ -186,11 +175,12 @@ void LAppView::OnTouchesEnded(float px, float py, ModelTransform transform) cons
     {
 
         // 单击。
-        if (_width <= 0 || _height <= 0) return;
+        if (_width <= 0 || _height <= 0) {
+            return;
+        }
         const float x = 2.0f * px / _width - 1.0f;
         const float y = 1.0f - 2.0f * py / _height;
-        if (DebugTouchLogEnable)
-        {
+        if (DebugTouchLogEnable) {
             LAppPal::PrintLogLn("[APP]touchesEnded x:%.2f y:%.2f", x, y);
         }
         _manager.SetViewMatrix(_viewMatrix);
@@ -198,13 +188,12 @@ void LAppView::OnTouchesEnded(float px, float py, ModelTransform transform) cons
     }
 }
 
-void LAppView::PreModelDraw(LAppModel &refModel)
+void LAppView::PreModelDraw(LAppModel& refModel)
 {
     // 绘制到其他渲染目标时使用的帧缓冲。
     Csm::Rendering::CubismRenderTarget_OpenGLES2* useTarget = NULL;
 
-    if (_renderTarget != SelectTarget_None)
-    {// 绘制到其他渲染目标时。
+    if (_renderTarget != SelectTarget_None) { // 绘制到其他渲染目标时。
 
         // 透過設定
         glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
@@ -212,12 +201,10 @@ void LAppView::PreModelDraw(LAppModel &refModel)
         // 使用的目标。
         useTarget = (_renderTarget == SelectTarget_ViewFrameBuffer) ? &_renderBuffer : &refModel.GetRenderBuffer();
 
-        if (!useTarget->IsValid())
-        {// 绘制目标尚未创建时，在此创建。
+        if (!useTarget->IsValid()) { // 绘制目标尚未创建时，在此创建。
             int bufWidth = _width, bufHeight = _height;
 
-            if(bufWidth!=0 && bufHeight!=0)
-            {
+            if (bufWidth != 0 && bufHeight != 0) {
                 // 模型绘制画布。
                 useTarget->CreateRenderTarget(static_cast<csmUint32>(bufWidth), static_cast<csmUint32>(bufHeight));
             }
@@ -229,13 +216,12 @@ void LAppView::PreModelDraw(LAppModel &refModel)
     }
 }
 
-void LAppView::PostModelDraw(LAppModel &refModel)
+void LAppView::PostModelDraw(LAppModel& refModel)
 {
     // 绘制到其他渲染目标时使用的帧缓冲。
     Csm::Rendering::CubismRenderTarget_OpenGLES2* useTarget = NULL;
 
-    if (_renderTarget != SelectTarget_None)
-    {// 绘制到其他渲染目标时。
+    if (_renderTarget != SelectTarget_None) { // 绘制到其他渲染目标时。
 
         // 使用的目标。
         useTarget = (_renderTarget == SelectTarget_ViewFrameBuffer) ? &_renderBuffer : &refModel.GetRenderBuffer();
@@ -244,14 +230,16 @@ void LAppView::PostModelDraw(LAppModel &refModel)
         useTarget->EndDraw();
 
         // 使用 LAppView 持有的帧缓冲时，在此绘制到精灵。
-        if (_renderTarget == SelectTarget_ViewFrameBuffer && _renderSprite)
-        {
-            const GLfloat uvVertex[] =
-            {
-                1.0f, 1.0f,
-                0.0f, 1.0f,
-                0.0f, 0.0f,
-                1.0f, 0.0f,
+        if (_renderTarget == SelectTarget_ViewFrameBuffer && _renderSprite) {
+            const GLfloat uvVertex[] = {
+                1.0f,
+                1.0f,
+                0.0f,
+                1.0f,
+                0.0f,
+                0.0f,
+                1.0f,
+                0.0f,
             };
 
             _renderSprite->SetColor(1.0f * GetSpriteAlpha(0), 1.0f * GetSpriteAlpha(0), 1.0f * GetSpriteAlpha(0), GetSpriteAlpha(0));
@@ -260,10 +248,7 @@ void LAppView::PostModelDraw(LAppModel &refModel)
     }
 }
 
-void LAppView::SwitchRenderingTarget(SelectTarget targetType)
-{
-    _renderTarget = targetType;
-}
+void LAppView::SwitchRenderingTarget(SelectTarget targetType) { _renderTarget = targetType; }
 
 void LAppView::SetRenderTargetClearColor(float r, float g, float b)
 {
@@ -272,17 +257,14 @@ void LAppView::SetRenderTargetClearColor(float r, float g, float b)
     _clearColor[2] = b;
 }
 
-
 float LAppView::GetSpriteAlpha(int assign) const
 {
     // 根据 assign 的数值选择透明度。
     float alpha = 0.4f + static_cast<float>(assign) * 0.5f; // 为示例中的 alpha 设置适当差异。
-    if (alpha > 1.0f)
-    {
+    if (alpha > 1.0f) {
         alpha = 1.0f;
     }
-    if (alpha < 0.1f)
-    {
+    if (alpha < 0.1f) {
         alpha = 0.1f;
     }
 
@@ -292,8 +274,7 @@ float LAppView::GetSpriteAlpha(int assign) const
 void LAppView::ResizeSprite()
 {
     LAppTextureManager* textureManager = &_textures;
-    if (!textureManager)
-    {
+    if (!textureManager) {
         return;
     }
 
@@ -305,12 +286,10 @@ void LAppView::ResizeSprite()
     float fWidth = 0.0f;
     float fHeight = 0.0f;
 
-    if (_back)
-    {
+    if (_back) {
         GLuint id = _back->GetTextureId();
         LAppTextureManager::TextureInfo* texInfo = textureManager->GetTextureInfoById(id);
-        if (texInfo)
-        {
+        if (texInfo) {
             x = width * 0.5f;
             y = height * 0.5f;
             fHeight = static_cast<float>(height) * 0.95f;
@@ -320,12 +299,10 @@ void LAppView::ResizeSprite()
         }
     }
 
-    if (_power)
-    {
+    if (_power) {
         GLuint id = _power->GetTextureId();
         LAppTextureManager::TextureInfo* texInfo = textureManager->GetTextureInfoById(id);
-        if (texInfo)
-        {
+        if (texInfo) {
             x = static_cast<float>(width - texInfo->width * 0.5f);
             y = static_cast<float>(texInfo->height * 0.5f);
             fWidth = static_cast<float>(texInfo->width);
@@ -334,12 +311,10 @@ void LAppView::ResizeSprite()
         }
     }
 
-    if (_gear)
-    {
+    if (_gear) {
         GLuint id = _gear->GetTextureId();
         LAppTextureManager::TextureInfo* texInfo = textureManager->GetTextureInfoById(id);
-        if (texInfo)
-        {
+        if (texInfo) {
             x = static_cast<float>(width - texInfo->width * 0.5f);
             y = static_cast<float>(height - texInfo->height * 0.5f);
             fWidth = static_cast<float>(texInfo->width);
@@ -348,8 +323,7 @@ void LAppView::ResizeSprite()
         }
     }
 
-    if (_renderSprite)
-    {
+    if (_renderSprite) {
         x = width * 0.5f;
         y = height * 0.5f;
         _renderSprite->ResetRect(x, y, static_cast<float>(width), static_cast<float>(height));
@@ -358,17 +332,12 @@ void LAppView::ResizeSprite()
 
 void LAppView::DestroySpriteRenderTarget()
 {
-    if (_renderTarget == SelectTarget_ViewFrameBuffer)
-    {
+    if (_renderTarget == SelectTarget_ViewFrameBuffer) {
         _renderBuffer.DestroyRenderTarget();
-    }
-    else if (_renderTarget == SelectTarget_ModelFrameBuffer)
-    {
-        for (csmUint32 i = 0; i < _manager.GetModelNum(); i++)
-        {
+    } else if (_renderTarget == SelectTarget_ModelFrameBuffer) {
+        for (csmUint32 i = 0; i < _manager.GetModelNum(); i++) {
             LAppModel* model = _manager.GetModel(i);
-            if (model)
-            {
+            if (model) {
                 model->GetRenderBuffer().DestroyRenderTarget();
             }
         }

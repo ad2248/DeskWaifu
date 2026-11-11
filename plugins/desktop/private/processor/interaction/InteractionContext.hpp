@@ -1,22 +1,20 @@
 #pragma once
 
-#include "processor/interaction/window/DesktopWindow.hpp"
 #include "ModelWindowState.hpp"
 #include "TransformEditor.hpp"
+#include "contracts/InputSample.hpp"
+#include "event/ProcessorEventLoop.hpp"
 #include "processor/interaction/config/HoverOpacitySettings.hpp"
 #include "processor/interaction/config/OutputSettings.hpp"
 #include "processor/interaction/window/CompositorAdapter.hpp"
+#include "processor/interaction/window/DesktopWindow.hpp"
 #include "processor/model/RenderFrame.hpp"
-#include "contracts/InputSample.hpp"
-#include "event/ProcessorEventLoop.hpp"
 
 // InteractionProcessor 的内部状态，不是处理器之间的服务定位器。
 // 窗口、编辑事务、配置和外部控制的生命周期同属 GUI 交互域。
-class InteractionContext final : public IApplicationRuntime, public IDesktopWindowEvents
-{
+class InteractionContext final : public IApplicationRuntime, public IDesktopWindowEvents {
 public:
-    InteractionContext(ProcessorEventLoop& loop, IProcessorPlugin& owner,
-        std::unique_ptr<DesktopWindow> window, LAppConfig config);
+    InteractionContext(ProcessorEventLoop& loop, IProcessorPlugin& owner, std::unique_ptr<DesktopWindow> window, LAppConfig config);
     // 初始化窗口、变换和输出选择；必要步骤失败时返回 false。
     bool Start(int width, int height);
     // 关闭窗口并完成状态机收尾；应先停止并回收模型渲染资源。
@@ -59,14 +57,14 @@ public:
     int frameWidth = 0, frameHeight = 0;
 
 private:
-    void Input(const QString& kind, QVariantMap data = {});
-    void PointerEntered(double x, double y) override { Input("enter", {{"x", x}, {"y", y}}); }
+    void Input(const QString& kind, QVariantMap data = { });
+    void PointerEntered(double x, double y) override { Input("enter", { { "x", x }, { "y", y } }); }
     void PointerLeft() override { Input("leave"); }
-    void PointerMoved(double x, double y) override { Input("move", {{"x", x}, {"y", y}}); }
-    void PointerButton(int button, bool pressed) override { Input("button", {{"button", button}, {"pressed", pressed}}); }
-    void PointerScroll(double value) override { Input("scroll", {{"vertical", value}}); }
+    void PointerMoved(double x, double y) override { Input("move", { { "x", x }, { "y", y } }); }
+    void PointerButton(int button, bool pressed) override { Input("button", { { "button", button }, { "pressed", pressed } }); }
+    void PointerScroll(double value) override { Input("scroll", { { "vertical", value } }); }
     void KeyboardChanged() override { Input("keyboard_reset"); }
-    void KeyboardKey(uint32_t code, bool pressed) override { Input("key", {{"code", code}, {"pressed", pressed}}); }
+    void KeyboardKey(uint32_t code, bool pressed) override { Input("key", { { "code", code }, { "pressed", pressed } }); }
     void SurfaceClosed() override { AppEnd(); }
     void OutputSwitchStarted() override;
     void OutputSwitchFinished() override;

@@ -27,52 +27,58 @@ bool ControlHostServices::isConnected() const { return _transport && _transport-
 bool ControlHostServices::isActive() const { return _window.isActiveWindow(); }
 void ControlHostServices::sendCommand(const QString& command, const QJsonObject& parameters)
 {
-    if (_transport) _transport->sendCommand(command, parameters);
-    else {
+    if (_transport) {
+        _transport->sendCommand(command, parameters);
+    } else {
         const auto error = MainWindow::tr("命令传输服务不可用");
         emit protocolError(error);
-        emit responseReceived(command, {{"ok", false}, {"error", error}});
+        emit responseReceived(command, { { "ok", false }, { "error", error } });
     }
 }
 void ControlHostServices::cancelQueuedCommand(const QString& command)
 {
-    if (_transport) _transport->cancelQueuedCommand(command);
+    if (_transport) {
+        _transport->cancelQueuedCommand(command);
+    }
 }
-void ControlHostServices::setStatusMessage(const QString& message, int timeoutMs)
-{
-    _window.setStatusMessage(message, timeoutMs);
-}
+void ControlHostServices::setStatusMessage(const QString& message, int timeoutMs) { _window.setStatusMessage(message, timeoutMs); }
 void ControlHostServices::connectToServer()
 {
-    if (_transport) _transport->connectToServer();
-    else emit connectionChanged(false, MainWindow::tr("命令传输服务不可用"));
+    if (_transport) {
+        _transport->connectToServer();
+    } else {
+        emit connectionChanged(false, MainWindow::tr("命令传输服务不可用"));
+    }
 }
 
 bool ControlHostServices::registerTransport(IGuiTransport* transport, QObject* owner)
 {
-    if (_transport || !transport || !owner || transport->thread() != thread() || owner->thread() != thread()) return false;
+    if (_transport || !transport || !owner || transport->thread() != thread() || owner->thread() != thread()) {
+        return false;
+    }
     _transport = transport;
     _transportOwner = owner;
-    _transportConnections = {
-        connect(transport, &GuiHostServices::connectionChanged, this, &GuiHostServices::connectionChanged),
+    _transportConnections = { connect(transport, &GuiHostServices::connectionChanged, this, &GuiHostServices::connectionChanged),
         connect(transport, &GuiHostServices::responseReceived, this, &GuiHostServices::responseReceived),
         connect(transport, &GuiHostServices::protocolError, this, &GuiHostServices::protocolError),
         connect(transport, &GuiHostServices::commandOutcomeUnknown, this, &GuiHostServices::commandOutcomeUnknown),
         connect(transport, &GuiHostServices::commandCancelled, this, &GuiHostServices::commandCancelled),
-        connect(transport, &QObject::destroyed, this, [this] { clearTransport(); }),
-        connect(owner, &QObject::destroyed, this, [this] { clearTransport(); })
-    };
+        connect(transport, &QObject::destroyed, this, [this] { clearTransport(); }), connect(owner, &QObject::destroyed, this, [this] { clearTransport(); }) };
     return true;
 }
 
 void ControlHostServices::unregisterTransport(IGuiTransport* transport)
 {
-    if (_transport == transport) clearTransport();
+    if (_transport == transport) {
+        clearTransport();
+    }
 }
 
 void ControlHostServices::clearTransport()
 {
-    for (const auto& connection : _transportConnections) disconnect(connection);
+    for (const auto& connection : _transportConnections) {
+        disconnect(connection);
+    }
     _transportConnections.clear();
     _transport.clear();
     _transportOwner.clear();

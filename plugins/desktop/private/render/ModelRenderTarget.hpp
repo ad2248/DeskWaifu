@@ -8,8 +8,7 @@ class QThread;
 
 // 在 GUI 线程构造和准备；所有 GL 方法、初始化和关闭操作均在渲染线程执行。
 // 等待渲染线程结束后，在 GUI 线程销毁此对象。
-class ModelRenderTarget
-{
+class ModelRenderTarget {
 public:
     virtual ~ModelRenderTarget() = default;
     // 在 GUI 线程准备上下文并转移至指定工作线程；失败返回 false。

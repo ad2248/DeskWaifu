@@ -1,13 +1,13 @@
 #pragma once
 
-#include "processor/Processor.hpp"
-#include "processor/model/RenderFrame.hpp"
-#include "processor/model/ModelExchange.hpp"
-#include "InteractionContext.hpp"
 #include "CursorLook.hpp"
-#include "processor/interaction/window/DesktopWindow.hpp"
+#include "InteractionContext.hpp"
 #include "ModelWindowState.hpp"
 #include "ScreenCropInteraction.hpp"
+#include "processor/Processor.hpp"
+#include "processor/interaction/window/DesktopWindow.hpp"
+#include "processor/model/ModelExchange.hpp"
+#include "processor/model/RenderFrame.hpp"
 #include <QTimer>
 #include <functional>
 #include <optional>
@@ -16,14 +16,10 @@ class AppCommandHandler;
 
 // GUI 状态所有者；窗口操作和编辑事务不进入渲染线程。
 // 生产构造器独占 Context；策略测试构造器可借用同域辅助对象。
-class InteractionProcessor final : public Processor
-{
+class InteractionProcessor final : public Processor {
 public:
-    InteractionProcessor(ProcessorEventLoop& loop, DesktopWindow& window,
-        ModelWindowState& mode, ApplicationService& service, TransformEditor& settings,
-        IProcessorPlugin& model);
-    InteractionProcessor(ProcessorEventLoop& loop, IProcessorPlugin& model,
-        std::unique_ptr<DesktopWindow> window, LAppConfig config, std::shared_ptr<ModelExchange> exchange);
+    InteractionProcessor(ProcessorEventLoop& loop, DesktopWindow& window, ModelWindowState& mode, ApplicationService& service, TransformEditor& settings, IProcessorPlugin& model);
+    InteractionProcessor(ProcessorEventLoop& loop, IProcessorPlugin& model, std::unique_ptr<DesktopWindow> window, LAppConfig config, std::shared_ptr<ModelExchange> exchange);
     // 生产实例初始化交互上下文及首帧共享状态；测试借用实例返回 false。
     bool Start(int width, int height);
     // 阻塞呈现直至退出；窗口运行或模型渲染失败时返回 false。
@@ -36,11 +32,15 @@ public:
     std::unique_ptr<ModelRenderTarget> RenderTarget(const std::string& device);
     ~InteractionProcessor() override;
     bool HandleEvent(const ProcessorEvent& event) override;
-    void PointerButton(int button, bool pressed, std::optional<uint32_t> time = {});
+    void PointerButton(int button, bool pressed, std::optional<uint32_t> time = { });
     void PointerMoved(double x, double y);
     void PointerScroll(double vertical);
     void Position(double x, double y);
-    void Enter(double x, double y) { _inside = true; Position(x, y); }
+    void Enter(double x, double y)
+    {
+        _inside = true;
+        Position(x, y);
+    }
     void Leave() { _inside = false; }
     void CursorPosition(double x, double y) { _cursor.LocalPosition(x, y); }
     void Key(uint32_t code, bool pressed);
@@ -49,8 +49,7 @@ public:
     void Stop() noexcept override;
     bool Captured() const { return _input.IsCaptured(); }
     // 每次用当前布局重新计算，静止光标也能响应变换、缩放和配置变化。
-    void ApplyLook(ModelRenderState& state, const OutputSnapshot* output,
-        float centerX, float centerY, float radius) const;
+    void ApplyLook(ModelRenderState& state, const OutputSnapshot* output, float centerX, float centerY, float radius) const;
     // 查询窗口局部位置的模型命中；不可用时返回空结果并按需请求新命中接口。
     ModelHitResult HitAt(double x, double y);
     // 查询当前指针命中；指针不在表面内时清除 inside 与命中部位。

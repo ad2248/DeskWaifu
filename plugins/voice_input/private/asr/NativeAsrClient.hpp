@@ -7,8 +7,7 @@
 #include <QTimer>
 #include <QUrl>
 
-class NativeAsrClient : public QObject
-{
+class NativeAsrClient : public QObject {
     Q_OBJECT
 public:
     explicit NativeAsrClient(QObject* parent = nullptr);
@@ -20,6 +19,7 @@ public:
 signals:
     void Recognized(quint64 sessionId, const QString& text);
     void Failed(quint64 sessionId, const QString& code, const QString& message);
+
 private:
     friend class AsrTest; // Exercise real deadline timers without a two-minute offline test.
     void Fail(const QString& code, const QString& message);

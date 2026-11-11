@@ -5,23 +5,24 @@
 #include <iostream>
 #include <unistd.h>
 
-#define CHECK(condition) do { if (!(condition)) { \
-    std::cerr << "Failed at line " << __LINE__ << ": " << #condition << '\n'; return 1; } } while (0)
+#define CHECK(condition)                                                                                                                                                           \
+    do {                                                                                                                                                                           \
+        if (!(condition)) {                                                                                                                                                        \
+            std::cerr << "Failed at line " << __LINE__ << ": " << #condition << '\n';                                                                                              \
+            return 1;                                                                                                                                                              \
+        }                                                                                                                                                                          \
+    } while (0)
 
 bool SameSettings(const LAppConfig::Values& a, const LAppConfig::Values& b)
 {
-    return a.additionalModelDirs == b.additionalModelDirs && a.defaultModel == b.defaultModel
-        && a.emotionTimeout == b.emotionTimeout && a.modelScale == b.modelScale
-        && a.modelX == b.modelX && a.modelY == b.modelY
-        && a.renderDevice == b.renderDevice
-        && a.pluginDir == b.pluginDir && a.unknownFields == b.unknownFields
-        && a.windowWidth == b.windowWidth && a.windowHeight == b.windowHeight
-        && a.hoverOpacityEnabled == b.hoverOpacityEnabled && a.hoverOpacity == b.hoverOpacity
-        && a.idleOpacity == b.idleOpacity && a.fullscreenOpacityEnabled == b.fullscreenOpacityEnabled
-        && a.fullscreenOpacity == b.fullscreenOpacity && a.mouseLookRadius == b.mouseLookRadius
-        && bool(a.modelRegion) == bool(b.modelRegion)
-        && (!a.modelRegion || (a.modelRegion->x == b.modelRegion->x && a.modelRegion->y == b.modelRegion->y
-        && a.modelRegion->width == b.modelRegion->width && a.modelRegion->height == b.modelRegion->height));
+    return a.additionalModelDirs == b.additionalModelDirs && a.defaultModel == b.defaultModel && a.emotionTimeout == b.emotionTimeout && a.modelScale == b.modelScale
+        && a.modelX == b.modelX && a.modelY == b.modelY && a.renderDevice == b.renderDevice && a.pluginDir == b.pluginDir && a.unknownFields == b.unknownFields
+        && a.windowWidth == b.windowWidth && a.windowHeight == b.windowHeight && a.hoverOpacityEnabled == b.hoverOpacityEnabled && a.hoverOpacity == b.hoverOpacity
+        && a.idleOpacity == b.idleOpacity && a.fullscreenOpacityEnabled == b.fullscreenOpacityEnabled && a.fullscreenOpacity == b.fullscreenOpacity
+        && a.mouseLookRadius == b.mouseLookRadius && bool(a.modelRegion) == bool(b.modelRegion)
+        && (!a.modelRegion
+            || (a.modelRegion->x == b.modelRegion->x && a.modelRegion->y == b.modelRegion->y && a.modelRegion->width == b.modelRegion->width
+                && a.modelRegion->height == b.modelRegion->height));
 }
 
 int main()
@@ -29,12 +30,22 @@ int main()
     const auto directory = MakeTestTemporaryDirectory("deskwaifu-config");
     CHECK(!directory.empty());
     const std::string path = directory + "/config.json";
-    struct Cleanup { std::string path, directory; ~Cleanup() { std::remove(path.c_str()); rmdir(directory.c_str()); } } cleanup{path, directory};
+    struct Cleanup {
+        std::string path, directory;
+        ~Cleanup()
+        {
+            std::remove(path.c_str());
+            rmdir(directory.c_str());
+        }
+    } cleanup { path, directory };
     const LAppConfig::Values defaults;
     LAppConfig application;
     auto& config = application.values;
     const auto load = [&](const std::string& text) {
-        { std::ofstream file(path); file << text; }
+        {
+            std::ofstream file(path);
+            file << text;
+        }
         return application.LoadFromFile(path);
     };
     CHECK(load("{}"));
@@ -51,7 +62,7 @@ int main()
         "window_width":800,"window_height":600,"hover_opacity_enabled":true,"hover_opacity":0.25,
         "idle_opacity":0.375,"fullscreen_opacity_enabled":true,"fullscreen_opacity":0.25,"mouse_look_radius":0.3,"model_region":{"x":1,"y":2,"width":300,"height":400}})";
     CHECK(load(configured));
-    CHECK(config.additionalModelDirs == std::vector<std::string>{"/models"});
+    CHECK(config.additionalModelDirs == std::vector<std::string> { "/models" });
     CHECK(config.defaultModel == "sample" && config.emotionTimeout == 9);
     CHECK(config.modelScale == 2 && config.modelX == 3 && config.modelY == 4);
     CHECK(config.windowWidth == 800 && config.windowHeight == 600);
@@ -88,7 +99,7 @@ int main()
 
     config.defaultModel = "模型 \"quoted\" \\ line\n\t\r";
     config.defaultModel.push_back('\0');
-    config.additionalModelDirs = {"~/models", "with \\ and \" and\nnewline", "夕颜"};
+    config.additionalModelDirs = { "~/models", "with \\ and \" and\nnewline", "夕颜" };
     config.modelX = 0.123456789f;
     config.modelY = -0.987654321f;
     config.modelScale = 1.23456789f;
@@ -112,7 +123,10 @@ int main()
     CHECK(config.renderDevice == "0000:00:02.0");
     CHECK(load(R"({"render_device":"auto"})") && config.renderDevice == "auto");
     CHECK(load("{}") && config.renderDevice.empty());
-    { std::ofstream file(path); file << R"({"render_device":false})"; }
+    {
+        std::ofstream file(path);
+        file << R"({"render_device":false})";
+    }
     CHECK(!application.LoadFromFile(path, &error));
     CHECK(error.find("render_device") != std::string::npos);
 
@@ -121,7 +135,7 @@ int main()
     CHECK(LAppConfig::Serialize(config, document, error));
     CHECK(load(document) && config.pluginDir == "/opt/插件 \"quoted\"");
     const auto pluginConfig = config;
-    for (const auto value : {"null", "42", "true", "[]", "{}"}) {
+    for (const auto value : { "null", "42", "true", "[]", "{}" }) {
         CHECK(!load("{\"plugin_dir\":" + std::string(value) + "}"));
         CHECK(SameSettings(config, pluginConfig));
     }
@@ -134,7 +148,7 @@ int main()
     CHECK(LAppConfig::Serialize(config, document, error));
     CHECK(ConfigStore::Parse(document, snapshot, error));
     CHECK(!snapshot.values.count("minimax_api_key"));
-    for (const auto value : {R"("legacy\nkey")", "42", "null", R"({"opaque":true})"}) {
+    for (const auto value : { R"("legacy\nkey")", "42", "null", R"({"opaque":true})" }) {
         CHECK(load("{\"minimax_api_key\":" + std::string(value) + ",\"extension\":{\"enabled\":true}}"));
         CHECK(config.unknownFields.at("minimax_api_key") == value);
         const auto opaque = config;

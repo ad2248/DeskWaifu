@@ -1,6 +1,6 @@
+#include "contracts/ConfigStore.hpp"
 #include "plugin/PluginManager.hpp"
 #include "processor/Processor.hpp"
-#include "contracts/ConfigStore.hpp"
 #include <QCoreApplication>
 #include <QDir>
 #include <QElapsedTimer>
@@ -14,16 +14,25 @@
 #include <QThread>
 #include <QTimer>
 #include <fcntl.h>
-#include <unistd.h>
 #include <iostream>
 #include <stdexcept>
+#include <unistd.h>
 
 namespace {
-void Check(bool value, const char* message) { if (!value) throw std::runtime_error(message); }
+void Check(bool value, const char* message)
+{
+    if (!value) {
+        throw std::runtime_error(message);
+    }
+}
 void Wait(const std::function<bool()>& done, const char* message)
 {
-    QElapsedTimer timer; timer.start();
-    while (!done() && timer.elapsed() < 5000) { QCoreApplication::processEvents(); QThread::msleep(1); }
+    QElapsedTimer timer;
+    timer.start();
+    while (!done() && timer.elapsed() < 5000) {
+        QCoreApplication::processEvents();
+        QThread::msleep(1);
+    }
     Check(done(), message);
 }
 void Write(const QString& path, const QByteArray& contents)
@@ -43,14 +52,15 @@ QJsonObject Request(QLocalSocket& socket, const QJsonObject& request)
     Wait([&] { return socket.canReadLine(); }, "public command completion timed out");
     return QJsonDocument::fromJson(socket.readLine()).object();
 }
-class QuitObserver final : public Processor
-{
+class QuitObserver final : public Processor {
 public:
     using Processor::Processor;
     int requests = 0;
     bool HandleEvent(const ProcessorEvent& event) override
     {
-        if (event.type == "application.quit") ++requests;
+        if (event.type == "application.quit") {
+            ++requests;
+        }
         return false;
     }
 };
@@ -91,33 +101,26 @@ try {
     PluginManager plugins(loop, pluginRoot, configRoot);
     QString error;
     Check(plugins.Start(&error), qPrintable(error));
-    Check(plugins.LoadedPlugins() == QStringList{"desktop", "ipc", "speech"}, "all three actual plugins must load");
+    Check(plugins.LoadedPlugins() == QStringList { "desktop", "ipc", "speech" }, "all three actual plugins must load");
     QLocalSocket socket;
     socket.connectToServer(runtime + "/deskwaifu.sock");
     Check(socket.waitForConnected(1000), "connect private actual IPC transport");
-    const auto initial = Request(socket, {{"command", "get_hotkeys"}});
+    const auto initial = Request(socket, { { "command", "get_hotkeys" } });
     const auto oldToken = initial.value("model_token").toString();
     Check(initial.value("ok").toBool() && !oldToken.isEmpty(), "initial real model token");
-    Check(Request(socket, {{"command", "set_model"}, {"index", 1}}).value("ok").toBool(), "select second real model");
-    Check(Request(socket, {{"command", "set_model"}, {"index", 0}}).value("ok").toBool(), "restore first real model");
-    const auto token = Request(socket, {{"command", "get_hotkeys"}}).value("model_token").toString();
+    Check(Request(socket, { { "command", "set_model" }, { "index", 1 } }).value("ok").toBool(), "select second real model");
+    Check(Request(socket, { { "command", "set_model" }, { "index", 0 } }).value("ok").toBool(), "restore first real model");
+    const auto token = Request(socket, { { "command", "get_hotkeys" } }).value("model_token").toString();
     Check(!token.isEmpty() && token != oldToken, "model replacement invalidates the old token");
     QByteArray requests;
-    const QList<QJsonObject> pipeline{
-        {{"command", "trigger_hotkey"}, {"id", "binding-42"}, {"model_token", oldToken}},
-        {{"command", "trigger_hotkey"}, {"id", "binding-42"}, {"model_token", token}},
-        {{"command", "get_hotkeys"}},
-        {{"command", "get_render_device"}},
-        {{"command", "set_render_device"}, {"device", "ffff:ff:1f.7"}},
-        {{"command", "set_render_device"}, {"device", "auto"}},
-        {{"command", "get_speech_settings"}},
-        {{"command", "set_speech_settings"}, {"api_key", "offline-plugin-secret"}},
-        {{"command", "get_speech_settings"}},
-        {{"command", "set_speech_settings"}, {"api_key", ""}},
-        {{"command", "get_speech_settings"}},
-        {{"command", "quit"}}
-    };
-    for (const auto& request : pipeline) requests += QJsonDocument(request).toJson(QJsonDocument::Compact) + '\n';
+    const QList<QJsonObject> pipeline { { { "command", "trigger_hotkey" }, { "id", "binding-42" }, { "model_token", oldToken } },
+        { { "command", "trigger_hotkey" }, { "id", "binding-42" }, { "model_token", token } }, { { "command", "get_hotkeys" } }, { { "command", "get_render_device" } },
+        { { "command", "set_render_device" }, { "device", "ffff:ff:1f.7" } }, { { "command", "set_render_device" }, { "device", "auto" } },
+        { { "command", "get_speech_settings" } }, { { "command", "set_speech_settings" }, { "api_key", "offline-plugin-secret" } }, { { "command", "get_speech_settings" } },
+        { { "command", "set_speech_settings" }, { "api_key", "" } }, { { "command", "get_speech_settings" } }, { { "command", "quit" } } };
+    for (const auto& request : pipeline) {
+        requests += QJsonDocument(request).toJson(QJsonDocument::Compact) + '\n';
+    }
     Check(socket.write(requests) == requests.size() && socket.flush(), "enqueue complete command pipeline");
     QTimer deadline;
     deadline.setSingleShot(true);
@@ -139,14 +142,16 @@ try {
     Check(status.value("model_token") == token && bindings.size() == 2 && bindings[0].toObject().value("active").toBool(), "actual hotkey state and token");
     Check(!bindings[1].toObject().value("active").toBool(true) && !bindings[1].toObject().value("reason").toString().isEmpty(), "duplicate binding stays disabled");
     const auto render = reply(3);
-    Check(render.value("ok").toBool() && render.value("device") == "auto" && render.value("active_device") == "auto" &&
-        render.value("devices").isArray() && !render.value("restart_required").toBool(true), "actual render-device status");
-    Check(!reply(4).value("ok").toBool(true) && reply(4).value("error").toString().contains("unavailable") &&
-        reply(4).value("device") == "auto", "unavailable device cannot replace active preference");
+    Check(render.value("ok").toBool() && render.value("device") == "auto" && render.value("active_device") == "auto" && render.value("devices").isArray()
+            && !render.value("restart_required").toBool(true),
+        "actual render-device status");
+    Check(!reply(4).value("ok").toBool(true) && reply(4).value("error").toString().contains("unavailable") && reply(4).value("device") == "auto",
+        "unavailable device cannot replace active preference");
     Check(reply(5).value("ok").toBool(), "save valid render-device preference");
-    const bool configured[] = {false, true, true, false, false};
-    for (int i = 0; i < 5; ++i)
+    const bool configured[] = { false, true, true, false, false };
+    for (int i = 0; i < 5; ++i) {
         Check(reply(6 + i).value("ok").toBool() && reply(6 + i).value("configured").toBool() == configured[i], "real speech settings query/save/clear sequence");
+    }
     Check(!response.contains("offline-plugin-secret") && !response.contains("api_key"), "wire replies must never expose credentials");
     QFile credentials(configRoot + "/plugin/speech/config.json");
     Check(credentials.open(QIODevice::ReadOnly), "speech owns a separate configuration file");
@@ -159,4 +164,7 @@ try {
     Check(reply(11).value("ok").toBool(), "quit acknowledgment is the final actual reply");
     std::cout << "Loaded desktop/IPC/speech command pipeline, model tokens, settings isolation and quit passed\n";
     return 0;
-} catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
+} catch (const std::exception& error) {
+    std::cerr << error.what() << '\n';
+    return 1;
+}

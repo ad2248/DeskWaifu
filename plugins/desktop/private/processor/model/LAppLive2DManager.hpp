@@ -7,24 +7,23 @@
 #pragma once
 #include "ModelHitTest.hpp"
 
+#include "contracts/ModelFrameInput.hpp"
+#include "contracts/ModelTransform.hpp"
+#include "processor/model/ModelCache.hpp"
+#include "processor/model/ModelLoader.hpp"
+#include "processor/model/ModelSession.hpp"
 #include <CubismFramework.hpp>
 #include <Math/CubismMatrix44.hpp>
 #include <Type/csmVector.hpp>
 #include <functional>
 #include <string>
 #include <vector>
-#include "contracts/ModelTransform.hpp"
-#include "contracts/ModelFrameInput.hpp"
-#include "processor/model/ModelCache.hpp"
-#include "processor/model/ModelSession.hpp"
-#include "processor/model/ModelLoader.hpp"
 
 class LAppModel;
 class LAppTextureManager;
 
 // 模型目录发现、默认选择和表情超时的初始化参数。
-struct ModelDiscoveryOptions
-{
+struct ModelDiscoveryOptions {
     std::string primaryDirectory;
     std::vector<std::string> additionalDirectories;
     std::string defaultModel;
@@ -32,34 +31,33 @@ struct ModelDiscoveryOptions
 };
 
 /**
-* @brief 在应用中管理 CubismModel 的类。<br>
-*        负责模型创建和销毁、点击事件处理以及模型切换。
-*
-*/
+ * @brief 在应用中管理 CubismModel 的类。<br>
+ *        负责模型创建和销毁、点击事件处理以及模型切换。
+ *
+ */
 // 在单一渲染线程拥有模型会话；借用的纹理管理器必须存活至本对象析构之后。
-class LAppLive2DManager
-{
+class LAppLive2DManager {
 
 public:
     // 目录信息按发现顺序返回副本，不转移模型所有权。
     /**
-    * @brief 获取 Resources 下的模型目录名称。
-    *
-    */
+     * @brief 获取 Resources 下的模型目录名称。
+     *
+     */
     Csm::csmVector<Csm::csmString> GetModelDir() const;
 
     /**
-    * @brief 获取 Resources 下的模型目录数量。
-    *
-    */
+     * @brief 获取 Resources 下的模型目录数量。
+     *
+     */
     Csm::csmInt32 GetModelDirSize() const;
 
     /**
-    * @brief 返回当前场景持有的模型。
-    *
-    * @param[in]   no 模型列表中的索引。
-    * @return 模型实例；索引越界时返回 NULL。
-    */
+     * @brief 返回当前场景持有的模型。
+     *
+     * @param[in]   no 模型列表中的索引。
+     * @return 模型实例；索引越界时返回 NULL。
+     */
     LAppModel* GetModel(Csm::csmUint32 no) const;
     // 复制当前模型的 CPU 命中信息；返回值不借用 SDK 顶点或矩阵。
     ModelHitSnapshot HitSnapshot(int width, int height, ModelTransform transform) const;
@@ -73,51 +71,50 @@ public:
     void SetRenderTargetSize(Csm::csmUint32 width, Csm::csmUint32 height);
 
     /**
-    * @brief 释放当前场景持有的全部模型。
-    *
-    */
+     * @brief 释放当前场景持有的全部模型。
+     *
+     */
     void ReleaseAllModel();
 
     /**
-    * @brief 处理画面拖动。
-    *
-    * @param[in]   x 画面 X 坐标。
-    * @param[in]   y 画面 Y 坐标。
-    */
+     * @brief 处理画面拖动。
+     *
+     * @param[in]   x 画面 X 坐标。
+     * @param[in]   y 画面 Y 坐标。
+     */
     void OnDrag(Csm::csmFloat32 x, Csm::csmFloat32 y) const;
 
     /**
-    * @brief 处理画面点击。
-    *
-    * @param[in]   x 裁剪空间 X 坐标（-1..1）。
-    * @param[in]   y 裁剪空间 Y 坐标（-1..1）。
-    */
+     * @brief 处理画面点击。
+     *
+     * @param[in]   x 裁剪空间 X 坐标（-1..1）。
+     * @param[in]   y 裁剪空间 Y 坐标（-1..1）。
+     */
     void OnTap(Csm::csmFloat32 x, Csm::csmFloat32 y, int width, int height, ModelTransform transform);
 
     /**
-    * @brief 处理画面更新。
-    *        更新并绘制模型。
-    */
-    void OnUpdate(int width, int height, ModelTransform transform, const ModelFrameInput& input,
-        const std::function<void(LAppModel&)>& beforeDraw,
+     * @brief 处理画面更新。
+     *        更新并绘制模型。
+     */
+    void OnUpdate(int width, int height, ModelTransform transform, const ModelFrameInput& input, const std::function<void(LAppModel&)>& beforeDraw,
         const std::function<void(LAppModel&)>& afterDraw) const;
 
     /**
-    * @brief 切换到下一个场景。<br>
-    *        示例应用中用于切换模型集合。
-    */
+     * @brief 切换到下一个场景。<br>
+     *        示例应用中用于切换模型集合。
+     */
     // 没有候选模型或下一模型加载失败时返回 false。
     bool NextScene();
 
     /**
-    * @brief 切换当前模型的皮肤。
-    */
+     * @brief 切换当前模型的皮肤。
+     */
     void SwitchSkin();
 
     /**
-    * @brief 切换场景。<br>
-    *        示例应用中用于切换模型集合。
-    */
+     * @brief 切换场景。<br>
+     *        示例应用中用于切换模型集合。
+     */
     // 无效索引或加载失败返回 false，保持原活动模型；成功后重置新模型的热键状态。
     bool ChangeScene(Csm::csmInt32 index);
 
@@ -138,8 +135,7 @@ public:
     Csm::csmInt32 GetSceneIndex() const { return _session.CurrentIndex(); }
 
 public:
-    LAppLive2DManager(LAppTextureManager& textures, int width, int height,
-        ModelDiscoveryOptions discovery);
+    LAppLive2DManager(LAppTextureManager& textures, int width, int height, ModelDiscoveryOptions discovery);
     virtual ~LAppLive2DManager();
     bool HasModels() const { return _session.Current() != nullptr; }
 

@@ -5,8 +5,7 @@
 
 // Replace only the desktop runtime boundary, not DesktopCommands or its entry.
 // 命令测试运行时替身：保留正式命令入口，以事件边界模拟模型和交互回复。
-class LAppDelegate
-{
+class LAppDelegate {
 public:
     static LAppDelegate* GetInstance();
     static void ReleaseInstance();
@@ -16,6 +15,7 @@ public:
     bool StartFrames(std::function<void(bool)>);
     // 停止模拟边界的事件接收；对象由 ReleaseInstance 解除持有。
     bool Release();
+
 private:
     ProcessorEventLoop* _loop = nullptr;
     std::unique_ptr<Processor> _boundary;

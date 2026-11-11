@@ -3,41 +3,53 @@
 #include <iostream>
 #include <vector>
 
-#define CHECK(c) do { if (!(c)) { std::cerr << __LINE__ << ": " << #c << '\n'; return 1; } } while (false)
+#define CHECK(c)                                                                                                                                                                   \
+    do {                                                                                                                                                                           \
+        if (!(c)) {                                                                                                                                                                \
+            std::cerr << __LINE__ << ": " << #c << '\n';                                                                                                                           \
+            return 1;                                                                                                                                                              \
+        }                                                                                                                                                                          \
+    } while (false)
 
 namespace {
-void Drain() { for (int i = 0; i < 20; ++i) QCoreApplication::processEvents(); }
-
-class Caller final : public Processor
+void Drain()
 {
+    for (int i = 0; i < 20; ++i) {
+        QCoreApplication::processEvents();
+    }
+}
+
+class Caller final : public Processor {
 public:
     using Processor::Processor;
     std::vector<ProcessorEvent> replies;
     bool HandleEvent(const ProcessorEvent& event) override
     {
-        if (event.type != "ipc.command.result") return false;
+        if (event.type != "ipc.command.result") {
+            return false;
+        }
         replies.push_back(event);
         return true;
     }
 };
 
-class LegacyObserver final : public Processor
-{
+class LegacyObserver final : public Processor {
 public:
     using Processor::Processor;
     int commands = 0, disconnects = 0;
     bool HandleEvent(const ProcessorEvent& event) override
     {
-        if (event.type == "interaction.command") ++commands;
-        if (event.type == "command.disconnected") ++disconnects;
+        if (event.type == "interaction.command") {
+            ++commands;
+        }
+        if (event.type == "command.disconnected") {
+            ++disconnects;
+        }
         return false;
     }
 };
 
-ProcessorEventPtr Reply(const QString& json)
-{
-    return std::make_shared<ProcessorEvent>("command.result", nullptr, nullptr, QVariantMap{{"json", json}});
-}
+ProcessorEventPtr Reply(const QString& json) { return std::make_shared<ProcessorEvent>("command.result", nullptr, nullptr, QVariantMap { { "json", json } }); }
 }
 
 int main(int argc, char** argv)
@@ -48,7 +60,7 @@ int main(int argc, char** argv)
     Caller caller(loop);
     LegacyObserver observer(loop);
     const auto send = [&](const QString& json, const QString& connection = "client") {
-        loop.Post({"command.request", &caller, &gateway, {{"json", json}, {"connection", connection}}});
+        loop.Post({ "command.request", &caller, &gateway, { { "json", json }, { "connection", connection } } });
         Drain();
     };
     const auto lastJson = [&] { return caller.replies.back().data.value("json").toString(); };
@@ -61,8 +73,12 @@ int main(int argc, char** argv)
     std::vector<EventDelivery> requests;
     int cancellations = 0;
     auto provider = loop.CreateEndpoint("test-command-provider", [&](const EventDelivery& delivery) {
-        if (delivery.kind == EventDelivery::Kind::Request) requests.push_back(delivery);
-        if (delivery.kind == EventDelivery::Kind::Cancellation) ++cancellations;
+        if (delivery.kind == EventDelivery::Kind::Request) {
+            requests.push_back(delivery);
+        }
+        if (delivery.kind == EventDelivery::Kind::Cancellation) {
+            ++cancellations;
+        }
     });
     CHECK(provider->Provide("command.custom/v1"));
     CHECK(provider->Provide("command.quit/v1"));
@@ -97,13 +113,13 @@ int main(int argc, char** argv)
     send(R"({"command":"custom"})", "disconnected");
     const auto abandoned = requests.back().requestId;
     const auto beforeDisconnect = caller.replies.size();
-    loop.Post({"command.disconnected", &caller, nullptr, {{"connection", "disconnected"}}});
+    loop.Post({ "command.disconnected", &caller, nullptr, { { "connection", "disconnected" } } });
     Drain();
     CHECK(observer.disconnects == 1 && cancellations == 1);
     CHECK(!provider->Respond(abandoned, Reply(R"({"ok":true})")));
     CHECK(caller.replies.size() == beforeDisconnect);
 
-    auto duplicate = loop.CreateEndpoint("duplicate-command-provider", [](const EventDelivery&) {});
+    auto duplicate = loop.CreateEndpoint("duplicate-command-provider", [](const EventDelivery&) { });
     CHECK(duplicate->Provide("command.custom/v1"));
     send(R"({"command":"custom"})");
     CHECK(lastJson().contains("ambiguous provider"));

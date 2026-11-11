@@ -12,7 +12,9 @@
 #include <QtTest>
 #include <unistd.h>
 
-namespace { bool disconnectDuringFlush = false; }
+namespace {
+bool disconnectDuringFlush = false;
+}
 extern "C" bool __real__ZN12QLocalSocket5flushEv(QLocalSocket* socket);
 extern "C" bool __wrap__ZN12QLocalSocket5flushEv(QLocalSocket* socket)
 {
@@ -24,8 +26,7 @@ extern "C" bool __wrap__ZN12QLocalSocket5flushEv(QLocalSocket* socket)
     return __real__ZN12QLocalSocket5flushEv(socket);
 }
 
-class DeskWaifuClientTest : public QObject
-{
+class DeskWaifuClientTest : public QObject {
     Q_OBJECT
 
 private slots:
@@ -73,13 +74,14 @@ void DeskWaifuClientTest::synchronousWriteDisconnect()
     client.sendCommand(command);
     QVERIFY(!disconnectDuringFlush);
     QCOMPARE(unknown.count(), retry ? 0 : 1);
-    if (!retry) QCOMPARE(unknown.first().first().toString(), command);
+    if (!retry) {
+        QCOMPARE(unknown.first().first().toString(), command);
+    }
     QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections() && client.isConnected(), 4000);
     auto* replacement = server.nextPendingConnection();
     client.sendCommand(QStringLiteral("get_status"));
     QTRY_VERIFY(replacement->canReadLine());
-    QCOMPARE(QJsonDocument::fromJson(replacement->readLine()).object().value("command").toString(),
-             retry ? command : QStringLiteral("get_status"));
+    QCOMPARE(QJsonDocument::fromJson(replacement->readLine()).object().value("command").toString(), retry ? command : QStringLiteral("get_status"));
     replacement->write("{\"ok\":true}\n");
     replacement->flush();
     if (retry) {
@@ -127,12 +129,18 @@ void DeskWaifuClientTest::reconnectsAfterFailedAttempts()
             QTRY_VERIFY(!client.isConnected());
         }
         // 保留没有监听者的文件系统条目，以模拟残留套接字。
-        if (staleSocket) QVERIFY(QFile::rename(client.socketPath(), client.socketPath() + ".stale"));
+        if (staleSocket) {
+            QVERIFY(QFile::rename(client.socketPath(), client.socketPath() + ".stale"));
+        }
         server.close();
-        if (staleSocket) QVERIFY(QFile::rename(client.socketPath() + ".stale", client.socketPath()));
+        if (staleSocket) {
+            QVERIFY(QFile::rename(client.socketPath() + ".stale", client.socketPath()));
+        }
     }
     QSignalSpy connectionSpy(&client, &DeskWaifuClient::connectionChanged);
-    if (!restart) client.connectToServer();
+    if (!restart) {
+        client.connectToServer();
+    }
     QTest::qWait(3400); // 后端不可用时间超过两个重试间隔。
     QVERIFY(!client.isConnected());
     QVERIFY(connectionSpy.size() >= 2);
@@ -157,10 +165,7 @@ void DeskWaifuClientTest::sendsJsonAndParsesResponse()
 
     DeskWaifuClient client;
     QSignalSpy responseSpy(&client, &DeskWaifuClient::responseReceived);
-    client.sendCommand(QStringLiteral("set_model_position"), {
-        {QStringLiteral("x"), 0.25},
-        {QStringLiteral("y"), -0.5}
-    });
+    client.sendCommand(QStringLiteral("set_model_position"), { { QStringLiteral("x"), 0.25 }, { QStringLiteral("y"), -0.5 } });
 
     QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 2000);
     QLocalSocket* connection = server.nextPendingConnection();
@@ -200,8 +205,8 @@ void DeskWaifuClientTest::doesNotReplayUnacknowledgedMutation()
     QSignalSpy unknownSpy(&client, &DeskWaifuClient::commandOutcomeUnknown);
     client.sendCommand(command);
     client.sendCommand(QStringLiteral("trigger_hotkey"));
-    client.sendCommand(QStringLiteral("set_hover_opacity"), {{QStringLiteral("opacity"), 0.5}});
-    client.sendCommand(QStringLiteral("set_mouse_look"), {{QStringLiteral("radius"), 0.5}});
+    client.sendCommand(QStringLiteral("set_hover_opacity"), { { QStringLiteral("opacity"), 0.5 } });
+    client.sendCommand(QStringLiteral("set_mouse_look"), { { QStringLiteral("radius"), 0.5 } });
     client.sendCommand(QStringLiteral("quit"));
     client.sendCommand(QStringLiteral("get_status"));
 
@@ -259,16 +264,14 @@ void DeskWaifuClientTest::retriesUnacknowledgedQuery()
     QLocalSocket* firstConnection = server.nextPendingConnection();
     QVERIFY(firstConnection);
     QTRY_VERIFY_WITH_TIMEOUT(firstConnection->canReadLine(), 2000);
-    QCOMPARE(QJsonDocument::fromJson(firstConnection->readLine()).object()
-        .value(QStringLiteral("command")).toString(), command);
+    QCOMPARE(QJsonDocument::fromJson(firstConnection->readLine()).object().value(QStringLiteral("command")).toString(), command);
     firstConnection->disconnectFromServer();
 
     QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 4000);
     QLocalSocket* secondConnection = server.nextPendingConnection();
     QVERIFY(secondConnection);
     QTRY_VERIFY_WITH_TIMEOUT(secondConnection->canReadLine(), 2000);
-    QCOMPARE(QJsonDocument::fromJson(secondConnection->readLine()).object()
-        .value(QStringLiteral("command")).toString(), command);
+    QCOMPARE(QJsonDocument::fromJson(secondConnection->readLine()).object().value(QStringLiteral("command")).toString(), command);
     QCOMPARE(unknownSpy.count(), 0);
 
     secondConnection->write("{\"ok\":true}\n");
@@ -294,13 +297,14 @@ void DeskWaifuClientTest::discardsQueuedMutations()
     QLocalServer server;
     DeskWaifuClient client;
     QVERIFY(server.listen(client.socketPath()));
-    const QStringList mutations{"toggle_hidden", "next_model", "prev_model", "switch_skin",
-        "set_expression", "do_motion", "set_output", "set_hover_opacity", "set_mouse_look",
-        "begin_transform_edit", "update_transform_edit", "apply_transform_edit", "quit", "future_mutation"};
+    const QStringList mutations { "toggle_hidden", "next_model", "prev_model", "switch_skin", "set_expression", "do_motion", "set_output", "set_hover_opacity", "set_mouse_look",
+        "begin_transform_edit", "update_transform_edit", "apply_transform_edit", "quit", "future_mutation" };
     QSignalSpy cancelled(&client, &DeskWaifuClient::commandCancelled);
     QSignalSpy unknown(&client, &DeskWaifuClient::commandOutcomeUnknown);
     client.sendCommand("get_status");
-    for (const auto& command : mutations) client.sendCommand(command);
+    for (const auto& command : mutations) {
+        client.sendCommand(command);
+    }
     client.sendCommand("get_current_model");
     QTRY_VERIFY(server.hasPendingConnections());
     auto* first = server.nextPendingConnection();
@@ -310,9 +314,11 @@ void DeskWaifuClientTest::discardsQueuedMutations()
     QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 4000);
     auto* replacement = server.nextPendingConnection();
     QCOMPARE(cancelled.size(), mutations.size());
-    for (qsizetype i = 0; i < mutations.size(); ++i) QCOMPARE(cancelled[i][0].toString(), mutations[i]);
+    for (qsizetype i = 0; i < mutations.size(); ++i) {
+        QCOMPARE(cancelled[i][0].toString(), mutations[i]);
+    }
     QCOMPARE(unknown.size(), 0);
-    for (const auto& command : {"get_status", "get_current_model"}) {
+    for (const auto& command : { "get_status", "get_current_model" }) {
         QTRY_VERIFY(replacement->canReadLine());
         QCOMPARE(QJsonDocument::fromJson(replacement->readLine()).object().value("command").toString(), command);
         replacement->write("{\"ok\":true}\n");
@@ -326,8 +332,7 @@ void DeskWaifuClientTest::recoversFromInvalidResponse_data()
 {
     QTest::addColumn<QString>("command");
     QTest::addColumn<QByteArray>("reply");
-    for (const auto& command : {"get_status", "set_hover_opacity", "set_mouse_look",
-            "begin_transform_edit", "update_transform_edit", "apply_transform_edit"}) {
+    for (const auto& command : { "get_status", "set_hover_opacity", "set_mouse_look", "begin_transform_edit", "update_transform_edit", "apply_transform_edit" }) {
         QTest::newRow(command) << QString(command) << QByteArray("broken-json\n");
     }
     QTest::newRow("non-object") << QString("get_status") << QByteArray("[]\n");
@@ -364,11 +369,15 @@ void DeskWaifuClientTest::recoversFromInvalidResponse()
     QCOMPARE(responses.size(), 0);
     const bool query = command == "get_status";
     QCOMPARE(unknown.size(), query ? 0 : 1);
-    if (!query) QCOMPARE(unknown[0][0].toString(), command);
+    if (!query) {
+        QCOMPARE(unknown[0][0].toString(), command);
+    }
     QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 4000);
     auto* replacement = server.nextPendingConnection();
     QStringList expected;
-    if (query) expected << command;
+    if (query) {
+        expected << command;
+    }
     expected << "get_current_model";
     for (const auto& next : expected) {
         QTRY_VERIFY(replacement->canReadLine());
@@ -377,7 +386,9 @@ void DeskWaifuClientTest::recoversFromInvalidResponse()
         replacement->flush();
     }
     QTRY_COMPARE(responses.size(), expected.size());
-    for (qsizetype i = 0; i < expected.size(); ++i) QCOMPARE(responses[i][0].toString(), expected[i]);
+    for (qsizetype i = 0; i < expected.size(); ++i) {
+        QCOMPARE(responses[i][0].toString(), expected[i]);
+    }
     QTest::qWait(100);
     QVERIFY(!replacement->canReadLine());
 }

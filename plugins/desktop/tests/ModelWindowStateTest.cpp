@@ -3,9 +3,13 @@
 #include <QTimer>
 #include <iostream>
 
-#define CHECK(condition) do { if (!(condition)) { \
-    std::cerr << "Line " << __LINE__ << ": " << #condition << '\n'; return 1; \
-} } while (false)
+#define CHECK(condition)                                                                                                                                                           \
+    do {                                                                                                                                                                           \
+        if (!(condition)) {                                                                                                                                                        \
+            std::cerr << "Line " << __LINE__ << ": " << #condition << '\n';                                                                                                        \
+            return 1;                                                                                                                                                              \
+        }                                                                                                                                                                          \
+    } while (false)
 
 int main(int argc, char** argv)
 {
@@ -29,9 +33,8 @@ int main(int argc, char** argv)
     CHECK(policy.Send(Event::Press));
     CHECK(policy.Send(Event::ScreenMode) && policy.Current() == State::EditIdle);
     CHECK(cancelled == 1);
-    for (const auto event : {Event::DragModel, Event::MoveCrop, Event::ResizeCrop}) {
-        const auto expected = event == Event::DragModel ? State::DraggingModel :
-            event == Event::MoveCrop ? State::MovingCrop : State::ResizingCrop;
+    for (const auto event : { Event::DragModel, Event::MoveCrop, Event::ResizeCrop }) {
+        const auto expected = event == Event::DragModel ? State::DraggingModel : event == Event::MoveCrop ? State::MovingCrop : State::ResizingCrop;
         CHECK(policy.Send(event) && policy.Current() == expected);
         CHECK(policy.ScreenEditing() && policy.Running() && policy.GestureActive());
         CHECK(!policy.Send(Event::Press));
@@ -56,11 +59,15 @@ int main(int argc, char** argv)
     CHECK(policy.Send(Event::Released) && policy.Current() == State::Closed);
     CHECK(!policy.Send(Event::Initialize) && !policy.Send(Event::Close));
     CHECK(!unrelatedEvent); // 派发不能处理应用事件循环中的其他事件。
-    for (const auto event : {Event::Initialize, Event::Initialized, Event::SwitchOutput}) {
+    for (const auto event : { Event::Initialize, Event::Initialized, Event::SwitchOutput }) {
         ModelWindowState failure;
         failure.Send(Event::Initialize);
-        if (event != Event::Initialize) failure.Send(Event::Initialized);
-        if (event == Event::SwitchOutput) failure.Send(Event::SwitchOutput);
+        if (event != Event::Initialize) {
+            failure.Send(Event::Initialized);
+        }
+        if (event == Event::SwitchOutput) {
+            failure.Send(Event::SwitchOutput);
+        }
         CHECK(failure.Send(Event::Close));
         CHECK(!failure.Send(Event::OutputReady));
         CHECK(failure.Send(Event::Released) && failure.Current() == State::Closed);

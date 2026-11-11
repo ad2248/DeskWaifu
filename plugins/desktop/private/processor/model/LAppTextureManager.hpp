@@ -7,32 +7,31 @@
 
 #pragma once
 
-#include <string>
 #include <GL/glew.h>
 #include <Type/csmVector.hpp>
+#include <string>
 
 #include "LAppTextureManager_Common.hpp"
 #include "TextureResidency.hpp"
 
 /**
-* @brief 纹理管理类。
-*
-* 负责图像读取与管理。
-*/
+ * @brief 纹理管理类。
+ *
+ * 负责图像读取与管理。
+ */
 // 在渲染线程按文件名共享 GL 纹理；所有租约必须先于管理器释放。
 // 获取和最后一次租约释放均需要对应的当前 GL 上下文。
-class LAppTextureManager : public LAppTextureManager_Common
-{
+class LAppTextureManager : public LAppTextureManager_Common {
 public:
     /**
-    * @brief 构造函数。
-    */
+     * @brief 构造函数。
+     */
     LAppTextureManager();
 
     /**
-    * @brief 析构函数。
-    *
-    */
+     * @brief 析构函数。
+     *
+     */
     ~LAppTextureManager();
 
     using TextureLease = TextureResidency<GLuint>::Lease;

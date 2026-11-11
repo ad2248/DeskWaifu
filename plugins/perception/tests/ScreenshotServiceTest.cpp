@@ -23,7 +23,9 @@ const QString RequestInterface = "org.freedesktop.portal.Request";
 
 void Check(bool condition, const char* message)
 {
-    if (!condition) throw std::runtime_error(message);
+    if (!condition) {
+        throw std::runtime_error(message);
+    }
 }
 
 void Wait(const std::function<bool()>& predicate)
@@ -37,26 +39,41 @@ void Wait(const std::function<bool()>& predicate)
     Check(predicate(), "event-loop wait timed out");
 }
 
-class FakeRequest : public QObject
-{
+class FakeRequest : public QObject {
     Q_OBJECT
     Q_CLASSINFO("D-Bus Interface", "org.freedesktop.portal.Request")
 public:
-    explicit FakeRequest(QObject* parent) : QObject(parent) {}
+    explicit FakeRequest(QObject* parent)
+        : QObject(parent)
+    {
+    }
 public slots:
     void Close() { emit Closed(); }
 signals:
     void Closed();
 };
 
-class FakePortal : public QObject, protected QDBusContext
-{
+class FakePortal : public QObject, protected QDBusContext {
     Q_OBJECT
     Q_CLASSINFO("D-Bus Interface", "org.freedesktop.portal.Screenshot")
 public:
-    enum class Mode { Success, Cancelled, Rejected, MissingUri, RemoteUri, MissingFile,
-        BrokenImage, LargeImage, NoResponse, EarlyResponse, DelayedReply, DifferentHandle,
-        DuplicateResponse, MethodError, BadHandle };
+    enum class Mode {
+        Success,
+        Cancelled,
+        Rejected,
+        MissingUri,
+        RemoteUri,
+        MissingFile,
+        BrokenImage,
+        LargeImage,
+        NoResponse,
+        EarlyResponse,
+        DelayedReply,
+        DifferentHandle,
+        DuplicateResponse,
+        MethodError,
+        BadHandle
+    };
     QDBusConnection bus;
     QTemporaryDir files;
     QString goodFile, badFile, largeFile;
@@ -66,7 +83,8 @@ public:
     bool optionsValid = true;
     QString parent;
 
-    explicit FakePortal(QDBusConnection connection) : bus(connection)
+    explicit FakePortal(QDBusConnection connection)
+        : bus(connection)
     {
         goodFile = files.filePath(QString::fromUtf8("test 截图 #%.png"));
         badFile = files.filePath("broken.png");
@@ -75,15 +93,20 @@ public:
         image.fill(QColor(12, 34, 56, 255));
         Check(image.save(goodFile), "write synthetic image");
         QImage large(16385, 1, QImage::Format_ARGB32);
-        large.fill(Qt::white); Check(large.save(largeFile), "write oversized synthetic image");
-        QFile bad(badFile); Check(bad.open(QIODevice::WriteOnly), "write invalid image"); bad.write("not an image");
+        large.fill(Qt::white);
+        Check(large.save(largeFile), "write oversized synthetic image");
+        QFile bad(badFile);
+        Check(bad.open(QIODevice::WriteOnly), "write invalid image");
+        bad.write("not an image");
         Check(bus.registerService(PortalService), "register private fake portal service");
         Check(bus.registerObject(DesktopPath, this, QDBusConnection::ExportAllSlots), "register private fake portal");
     }
 
     ~FakePortal() override
     {
-        for (const auto& path : paths) bus.unregisterObject(path);
+        for (const auto& path : paths) {
+            bus.unregisterObject(path);
+        }
         bus.unregisterObject(DesktopPath);
         bus.unregisterService(PortalService);
     }
@@ -96,7 +119,7 @@ public:
         paths.append(path);
     }
 
-    void Respond(const QString& path, uint code = 0, QVariantMap results = {})
+    void Respond(const QString& path, uint code = 0, QVariantMap results = { })
     {
         auto signal = QDBusMessage::createSignal(path, RequestInterface, "Response");
         signal << code << results;
@@ -109,17 +132,21 @@ public slots:
         ++calls;
         parent = parentWindow;
         const auto token = options.value("handle_token").toString();
-        optionsValid = optionsValid && token.startsWith("deskwaifu_") &&
-            options.value("interactive").toBool() && options.value("modal").toBool();
+        optionsValid = optionsValid && token.startsWith("deskwaifu_") && options.value("interactive").toBool() && options.value("modal").toBool();
         QString sender = message().service();
-        sender.remove(':'); sender.replace('.', '_');
+        sender.remove(':');
+        sender.replace('.', '_');
         QString path = DesktopPath + "/request/" + sender + '/' + token;
         if (mode == Mode::MethodError) {
             sendErrorReply(QDBusError::Failed, "test portal method error");
             return QDBusObjectPath("/");
         }
-        if (mode == Mode::BadHandle) return QDBusObjectPath("/");
-        if (mode == Mode::DifferentHandle) path += "_alternate";
+        if (mode == Mode::BadHandle) {
+            return QDBusObjectPath("/");
+        }
+        if (mode == Mode::DifferentHandle) {
+            path += "_alternate";
+        }
         if (mode == Mode::DelayedReply) {
             setDelayedReply(true);
             const auto call = message();
@@ -130,29 +157,49 @@ public slots:
             return QDBusObjectPath("/");
         }
         AddRequest(path);
-        if (mode == Mode::NoResponse) return QDBusObjectPath(path);
-        uint code = 0;
-        QVariantMap results{{"uri", QUrl::fromLocalFile(goodFile).toString(QUrl::FullyEncoded)}};
-        switch (mode) {
-        case Mode::Cancelled: code = 1; break;
-        case Mode::Rejected: code = 2; break;
-        case Mode::MissingUri: results.clear(); break;
-        case Mode::RemoteUri: results["uri"] = "https://example.invalid/screenshot.png"; break;
-        case Mode::MissingFile: results["uri"] = QUrl::fromLocalFile(files.filePath("missing.png")).toString(); break;
-        case Mode::BrokenImage: results["uri"] = QUrl::fromLocalFile(badFile).toString(); break;
-        case Mode::LargeImage: results["uri"] = QUrl::fromLocalFile(largeFile).toString(); break;
-        default: break;
+        if (mode == Mode::NoResponse) {
+            return QDBusObjectPath(path);
         }
-        if (mode == Mode::EarlyResponse) Respond(path, code, results);
-        else QTimer::singleShot(10, this, [this, path, code, results] { Respond(path, code, results); });
-        if (mode == Mode::DuplicateResponse)
+        uint code = 0;
+        QVariantMap results { { "uri", QUrl::fromLocalFile(goodFile).toString(QUrl::FullyEncoded) } };
+        switch (mode) {
+        case Mode::Cancelled:
+            code = 1;
+            break;
+        case Mode::Rejected:
+            code = 2;
+            break;
+        case Mode::MissingUri:
+            results.clear();
+            break;
+        case Mode::RemoteUri:
+            results["uri"] = "https://example.invalid/screenshot.png";
+            break;
+        case Mode::MissingFile:
+            results["uri"] = QUrl::fromLocalFile(files.filePath("missing.png")).toString();
+            break;
+        case Mode::BrokenImage:
+            results["uri"] = QUrl::fromLocalFile(badFile).toString();
+            break;
+        case Mode::LargeImage:
+            results["uri"] = QUrl::fromLocalFile(largeFile).toString();
+            break;
+        default:
+            break;
+        }
+        if (mode == Mode::EarlyResponse) {
+            Respond(path, code, results);
+        } else {
+            QTimer::singleShot(10, this, [this, path, code, results] { Respond(path, code, results); });
+        }
+        if (mode == Mode::DuplicateResponse) {
             QTimer::singleShot(20, this, [this, path, code, results] { Respond(path, code, results); });
+        }
         return QDBusObjectPath(path);
     }
 };
 
-struct Observer
-{
+struct Observer {
     QString id;
     QImage image;
     IScreenshotService::Error error = IScreenshotService::Error::BackendFailure;
@@ -160,17 +207,21 @@ struct Observer
     explicit Observer(IScreenshotService& service)
     {
         QObject::connect(&service, &IScreenshotService::Captured, &service, [this](const QString& request, const QImage& capture) {
-            id = request; image = capture; ++successes;
+            id = request;
+            image = capture;
+            ++successes;
         });
         QObject::connect(&service, &IScreenshotService::Failed, &service, [this](const QString& request, IScreenshotService::Error code, const QString& message) {
-            Check(!message.isEmpty(), "error message"); id = request; error = code; ++failures;
+            Check(!message.isEmpty(), "error message");
+            id = request;
+            error = code;
+            ++failures;
         });
     }
     int Count() const { return successes + failures; }
 };
 
-struct PausedDecoder
-{
+struct PausedDecoder {
     QThreadPool* pool = QThreadPool::globalInstance();
     int previousThreads = pool->maxThreadCount();
     QSemaphore entered, released;
@@ -179,11 +230,25 @@ struct PausedDecoder
     PausedDecoder()
     {
         pool->setMaxThreadCount(1);
-        blocker = QtConcurrent::run([this] { entered.release(); released.acquire(); });
+        blocker = QtConcurrent::run([this] {
+            entered.release();
+            released.acquire();
+        });
         Check(entered.tryAcquire(1, 2000), "pause decoder pool");
     }
-    void Resume() { if (!resumed) { resumed = true; released.release(); } }
-    ~PausedDecoder() { Resume(); blocker.waitForFinished(); pool->setMaxThreadCount(previousThreads); }
+    void Resume()
+    {
+        if (!resumed) {
+            resumed = true;
+            released.release();
+        }
+    }
+    ~PausedDecoder()
+    {
+        Resume();
+        blocker.waitForFinished();
+        pool->setMaxThreadCount(previousThreads);
+    }
 };
 }
 
@@ -198,8 +263,7 @@ try {
         auto service = CreateScreenshotService();
         Check(!service->Busy() && portal.calls == 0, "factory construction must not capture");
     }
-    for (auto mode : {FakePortal::Mode::Success, FakePortal::Mode::EarlyResponse,
-         FakePortal::Mode::DifferentHandle, FakePortal::Mode::DuplicateResponse}) {
+    for (auto mode : { FakePortal::Mode::Success, FakePortal::Mode::EarlyResponse, FakePortal::Mode::DifferentHandle, FakePortal::Mode::DuplicateResponse }) {
         portal.mode = mode;
         PortalScreenshotService service(client, 1000);
         Observer observed(service);
@@ -213,20 +277,23 @@ try {
         Check(QFile::exists(portal.goodFile), "must not delete portal-owned files");
         Check(portal.optionsValid && portal.parent == "wayland:test-parent", "interactive options and optional parent");
         Check(!service.Cancel(id), "cannot cancel completed request");
-        QElapsedTimer elapsed; elapsed.start();
-        while (elapsed.elapsed() < 30) { QCoreApplication::processEvents(); QThread::msleep(1); }
+        QElapsedTimer elapsed;
+        elapsed.start();
+        while (elapsed.elapsed() < 30) {
+            QCoreApplication::processEvents();
+            QThread::msleep(1);
+        }
         Check(observed.Count() == 1, "duplicate response must not produce duplicate results");
     }
-    for (const auto& item : {
-        std::make_pair(FakePortal::Mode::Cancelled, IScreenshotService::Error::Cancelled),
-        std::make_pair(FakePortal::Mode::Rejected, IScreenshotService::Error::BackendFailure),
-        std::make_pair(FakePortal::Mode::MissingUri, IScreenshotService::Error::InvalidResponse),
-        std::make_pair(FakePortal::Mode::RemoteUri, IScreenshotService::Error::InvalidResponse),
-        std::make_pair(FakePortal::Mode::MissingFile, IScreenshotService::Error::ImageReadFailed),
-        std::make_pair(FakePortal::Mode::BrokenImage, IScreenshotService::Error::ImageReadFailed),
-        std::make_pair(FakePortal::Mode::LargeImage, IScreenshotService::Error::ImageReadFailed),
-        std::make_pair(FakePortal::Mode::MethodError, IScreenshotService::Error::BackendFailure),
-        std::make_pair(FakePortal::Mode::BadHandle, IScreenshotService::Error::InvalidResponse)}) {
+    for (const auto& item :
+        { std::make_pair(FakePortal::Mode::Cancelled, IScreenshotService::Error::Cancelled), std::make_pair(FakePortal::Mode::Rejected, IScreenshotService::Error::BackendFailure),
+            std::make_pair(FakePortal::Mode::MissingUri, IScreenshotService::Error::InvalidResponse),
+            std::make_pair(FakePortal::Mode::RemoteUri, IScreenshotService::Error::InvalidResponse),
+            std::make_pair(FakePortal::Mode::MissingFile, IScreenshotService::Error::ImageReadFailed),
+            std::make_pair(FakePortal::Mode::BrokenImage, IScreenshotService::Error::ImageReadFailed),
+            std::make_pair(FakePortal::Mode::LargeImage, IScreenshotService::Error::ImageReadFailed),
+            std::make_pair(FakePortal::Mode::MethodError, IScreenshotService::Error::BackendFailure),
+            std::make_pair(FakePortal::Mode::BadHandle, IScreenshotService::Error::InvalidResponse) }) {
         portal.mode = item.first;
         PortalScreenshotService service(client, 1000);
         Observer observed(service);
@@ -268,19 +335,20 @@ try {
         Check(service.Cancel(first) && observed.failures == 1 && observed.error == IScreenshotService::Error::Cancelled, "explicit cancellation");
         portal.mode = FakePortal::Mode::Success;
         const auto next = service.Capture();
-        portal.Respond(oldPath, 0, {{"uri", QUrl::fromLocalFile(portal.goodFile).toString()}});
+        portal.Respond(oldPath, 0, { { "uri", QUrl::fromLocalFile(portal.goodFile).toString() } });
         Wait([&] { return observed.Count() == 2; });
         Check(observed.id == next && observed.successes == 1, "late old response must not complete a new request");
     }
-    for (bool destroy : {false, true}) {
+    for (bool destroy : { false, true }) {
         portal.mode = FakePortal::Mode::Success;
         PausedDecoder paused;
         auto service = std::make_unique<PortalScreenshotService>(client, 1000);
         Observer observed(*service);
         const auto id = service->Capture();
         Wait([&] { return service->findChild<QFutureWatcherBase*>() != nullptr; });
-        if (destroy) service.reset();
-        else {
+        if (destroy) {
+            service.reset();
+        } else {
             Check(service->Cancel(id), "cancel queued decode");
             Check(service->Busy() && service->Capture().isEmpty(), "cancelled decode must not accumulate more workers");
         }
@@ -296,14 +364,17 @@ try {
             Check(observed.id == retry && observed.successes == 1, "capture after decoder cleanup");
         }
     }
-    for (bool destroy : {false, true}) {
+    for (bool destroy : { false, true }) {
         portal.mode = FakePortal::Mode::DelayedReply;
         const auto calls = portal.calls, closes = portal.closes;
         auto service = std::make_unique<PortalScreenshotService>(client, 1000);
         const auto id = service->Capture();
         Wait([&] { return portal.calls > calls; });
-        if (destroy) service.reset();
-        else Check(service->Cancel(id), "cancel before delayed handle reply");
+        if (destroy) {
+            service.reset();
+        } else {
+            Check(service->Cancel(id), "cancel before delayed handle reply");
+        }
         Wait([&] { return portal.closes > closes; });
     }
     std::cout << "Screenshot interface and private portal lifecycle tests passed\n";
