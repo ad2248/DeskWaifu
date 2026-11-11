@@ -1,56 +1,62 @@
-#include <GL/glew.h>
-#include <EGL/egl.h>
-#include "TestApplication.hpp"
-#include "processor/model/LAppView.hpp"
-#include "processor/model/LAppModel.hpp"
-#include "processor/model/LAppLive2DManager.hpp"
-#include "processor/model/LAppDefine.hpp"
-#include "processor/model/LAppTextureManager.hpp"
+#include "DispatchedInput.hpp"
 #include "LAppAllocator_Common.hpp"
 #include "ModelProcessorTestHelpers.hpp"
-#include "DispatchedInput.hpp"
-#include "processor/input/KWinCursorTracker.hpp"
-#include <Rendering/OpenGL/CubismRenderer_OpenGLES2.hpp>
-#include <Id/CubismIdManager.hpp>
+#include "TestApplication.hpp"
 #include "TestTemporaryDirectory.hpp"
+#include "processor/input/KWinCursorTracker.hpp"
+#include "processor/model/LAppDefine.hpp"
+#include "processor/model/LAppLive2DManager.hpp"
+#include "processor/model/LAppModel.hpp"
+#include "processor/model/LAppTextureManager.hpp"
+#include "processor/model/LAppView.hpp"
+#include <EGL/egl.h>
+#include <GL/glew.h>
+#include <Id/CubismIdManager.hpp>
+#include <QCoreApplication>
+#include <QEventLoop>
+#include <QTimer>
+#include <Rendering/OpenGL/CubismRenderer_OpenGLES2.hpp>
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
 #include <iostream>
-#include <sys/stat.h>
-#include <sys/socket.h>
-#include <sys/un.h>
 #include <poll.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/un.h>
 #include <thread>
-#include <atomic>
-#include <chrono>
 #include <unistd.h>
-#include <QCoreApplication>
-#include <QEventLoop>
-#include <QTimer>
 
-#define CHECK(condition) do { if (!(condition)) { \
-    std::cerr << "Line " << __LINE__ << ": " << #condition << '\n'; return 1; \
-} } while (false)
+#define CHECK(condition)                                                                                                                                                           \
+    do {                                                                                                                                                                           \
+        if (!(condition)) {                                                                                                                                                        \
+            std::cerr << "Line " << __LINE__ << ": " << #condition << '\n';                                                                                                        \
+            return 1;                                                                                                                                                              \
+        }                                                                                                                                                                          \
+    } while (false)
 
 namespace {
-struct Hit { std::string area; float x, y; bool result; };
+struct Hit {
+    std::string area;
+    float x, y;
+    bool result;
+};
 std::vector<Hit> hits;
 int expressionCalls = 0;
 bool syntheticCursor = false;
 int cursorStarts = 0, cursorPolls = 0;
 
-class Window : public DesktopWindow
-{
+class Window : public DesktopWindow {
 public:
     std::unique_ptr<ModelRenderTarget> RenderTarget(const std::string&) override { return CreateEglModelRenderTarget("auto"); }
     bool UploadFrame(const RenderFrame&) override { return true; }
     IDesktopWindowEvents* events = nullptr;
     DispatchedInput input;
-    std::vector<OutputSnapshot> outputs{{1, "left", 0, 0, 800, 600},
-        {2, "right", 800, 0, 1000, 800}};
+    std::vector<OutputSnapshot> outputs { { 1, "left", 0, 0, 800, 600 }, { 2, "right", 800, 0, 1000, 800 } };
     OutputId current = 1;
     bool failSwitch = false, grabbed = false;
     bool needsRebind = false;
@@ -63,24 +69,35 @@ public:
     EGLContext context = EGL_NO_CONTEXT;
     bool Initialize(int, int, IDesktopWindowEvents& sink) override
     {
-        input.Set(sink); events = &input;
+        input.Set(sink);
+        events = &input;
         display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
-        if (display == EGL_NO_DISPLAY || !eglInitialize(display, nullptr, nullptr)) return false;
-        const EGLint attributes[] = {EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
-            EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT, EGL_NONE};
-        EGLConfig config; EGLint count = 0;
-        if (!eglChooseConfig(display, attributes, &config, 1, &count) || count != 1 || !eglBindAPI(EGL_OPENGL_API)) return false;
-        const EGLint size[] = {EGL_WIDTH, 16, EGL_HEIGHT, 16, EGL_NONE};
+        if (display == EGL_NO_DISPLAY || !eglInitialize(display, nullptr, nullptr)) {
+            return false;
+        }
+        const EGLint attributes[] = { EGL_SURFACE_TYPE, EGL_PBUFFER_BIT, EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT, EGL_NONE };
+        EGLConfig config;
+        EGLint count = 0;
+        if (!eglChooseConfig(display, attributes, &config, 1, &count) || count != 1 || !eglBindAPI(EGL_OPENGL_API)) {
+            return false;
+        }
+        const EGLint size[] = { EGL_WIDTH, 16, EGL_HEIGHT, 16, EGL_NONE };
         surface = eglCreatePbufferSurface(display, config, size);
         context = eglCreateContext(display, config, EGL_NO_CONTEXT, nullptr);
         return surface != EGL_NO_SURFACE && context != EGL_NO_CONTEXT && MakeCurrent();
     }
-    bool Run(const std::function<bool()>& frame) override { ++runs; return script && script(frame); }
+    bool Run(const std::function<bool()>& frame) override
+    {
+        ++runs;
+        return script && script(frame);
+    }
     bool MakeCurrent() override { return eglMakeCurrent(display, surface, surface, context); }
     void Shutdown() override
     {
         eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
-        eglDestroyContext(display, context); eglDestroySurface(display, surface); eglTerminate(display);
+        eglDestroyContext(display, context);
+        eglDestroySurface(display, surface);
+        eglTerminate(display);
     }
     bool Available() const override { return true; }
     int Width() const override { return current == 1 ? outputs[0].width : outputs[1].width; }
@@ -89,16 +106,29 @@ public:
     bool SetInputRegion(const std::vector<ModelRegion>&) override { return true; }
     bool KeyboardGrabbed() const override { return grabbed; }
     ModelKeyboardGrabState::GrabResult SetKeyboardGrab(bool value) override
-    { grabbed = value; return ModelKeyboardGrabState::GrabResult::Changed; }
+    {
+        grabbed = value;
+        return ModelKeyboardGrabState::GrabResult::Changed;
+    }
     bool OutputNeedsRebind() const override { return needsRebind; }
-    void ReconcileOutputs() override { if (needsRebind) SwitchOutput(current); }
+    void ReconcileOutputs() override
+    {
+        if (needsRebind) {
+            SwitchOutput(current);
+        }
+    }
     std::vector<OutputSnapshot> Outputs() const override { return outputs; }
     OutputId CurrentOutput() const override { return current; }
     bool SwitchOutput(OutputId id) override
     {
         events->OutputSwitchStarted();
-        if (duringSwitch) duringSwitch();
-        if (!failSwitch) { current = id; ++switches; }
+        if (duringSwitch) {
+            duringSwitch();
+        }
+        if (!failSwitch) {
+            current = id;
+            ++switches;
+        }
         needsRebind = false;
         events->OutputSwitchFinished();
         return !failSwitch;
@@ -113,17 +143,23 @@ int cursorTest(TestApplication& app)
     window->events->PointerEntered(300, 200);
     window->events->PointerButton(0, true);
     const int before = cursorPolls;
-    ModelRenderState gaze; gaze.width = 800; gaze.height = 600;
+    ModelRenderState gaze;
+    gaze.width = 800;
+    gaze.height = 600;
     const auto output = window->outputs.front();
-    QElapsedTimer deadline; deadline.start();
+    QElapsedTimer deadline;
+    deadline.start();
     while (deadline.elapsed() < 5000) {
         QCoreApplication::processEvents();
         app.Interaction().ApplyLook(gaze, &output, .5f, .5f, 1);
-        if (cursorPolls >= before + 2 && gaze.hasLook && gaze.lookX > 0) break;
+        if (cursorPolls >= before + 2 && gaze.hasLook && gaze.lookX > 0) {
+            break;
+        }
         QThread::msleep(1);
     }
     if (!(cursorPolls >= before + 2 && gaze.hasLook && gaze.lookX > 0)) {
-        std::cerr << "periodic cursor sampling must progress without presentation frames\n"; return 1;
+        std::cerr << "periodic cursor sampling must progress without presentation frames\n";
+        return 1;
     }
     CHECK(window->runs == 0 && app.Interaction().Captured() && !app.Settings().Editing());
     app.Interaction().Cancel();
@@ -139,19 +175,21 @@ void click(int x, int y)
 
 int releaseTest(TestApplication& app)
 {
-    CHECK(AwaitModel(app.Models(), {{"command", "tap_model"}, {"mouse_x", 150}, {"mouse_y", 120}})["ok"].toBool());
+    CHECK(AwaitModel(app.Models(), { { "command", "tap_model" }, { "mouse_x", 150 }, { "mouse_y", 120 } })["ok"].toBool());
     CHECK(!hits.empty());
     CHECK(near(hits[0].x, -250.f / 300) && near(hits[0].y, 180.f / 300));
     hits.clear();
-    CHECK(AwaitModel(app.Models(), {{"command", "tap_model"}, {"mouse_x", 700}, {"mouse_y", 500}})["ok"].toBool());
+    CHECK(AwaitModel(app.Models(), { { "command", "tap_model" }, { "mouse_x", 700 }, { "mouse_y", 500 } })["ok"].toBool());
     CHECK(!hits.empty());
     CHECK(near(hits[0].x, 1) && near(hits[0].y, -200.f / 300));
     hits.clear();
     // 真实 Delegate 的延迟单击只派发一次。远处的第二次释放会立即派发它，
     // 无需等待帧定时器。
-    QElapsedTimer ready; ready.start();
+    QElapsedTimer ready;
+    ready.start();
     while (!ModelFrameOf(app.Models()) && ready.elapsed() < 5000) {
-        QCoreApplication::processEvents(); QThread::msleep(1);
+        QCoreApplication::processEvents();
+        QThread::msleep(1);
     }
     CHECK(ModelFrameOf(app.Models()));
     click(300, 200);
@@ -170,7 +208,7 @@ int releaseTest(TestApplication& app)
     const auto before = app.Service().Snapshot().transform;
     window->events->PointerScroll(1);
     CHECK(app.Service().Snapshot().transform.scale > before.scale);
-    CHECK(app.Service().SetTransform({2, .1f, -.2f}).ok);
+    CHECK(app.Service().SetTransform({ 2, .1f, -.2f }).ok);
     hits.clear();
     click(400, 300);
     CHECK(hits.empty());
@@ -187,15 +225,18 @@ int transformTest(TestApplication& app)
 {
     // 模型命中测试坐标中的可见点为 (0.2, 0.3)。
     // 独立于渲染实现约定推导其像素位置。
-    for (const auto size : {std::pair<int, int>{800, 600}, {600, 800}}) {
-        window->outputs[0].width = size.first; window->outputs[0].height = size.second;
-        for (const auto t : {ModelTransform{1, 0, 0}, {1, .2f, -.1f}, {2, 0, 0}, {2, .1f, -.2f}}) {
+    for (const auto size : { std::pair<int, int> { 800, 600 }, { 600, 800 } }) {
+        window->outputs[0].width = size.first;
+        window->outputs[0].height = size.second;
+        for (const auto t : { ModelTransform { 1, 0, 0 }, { 1, .2f, -.1f }, { 2, 0, 0 }, { 2, .1f, -.2f } }) {
             CHECK(app.Service().SetTransform(t).ok);
             const float x = size.first * .5f + (.2f + t.x) * t.scale * size.second * .5f;
             const float y = size.second * .5f - (.3f + t.y) * t.scale * size.second * .5f;
             hits.clear();
-            CHECK(AwaitModel(app.Models(), {{"command", "tap_model"}, {"mouse_x", x}, {"mouse_y", y},
-                {"width", size.first}, {"height", size.second}, {"zoom", t.scale}, {"x", t.x}, {"y", t.y}})["ok"].toBool());
+            CHECK(AwaitModel(app.Models(),
+                { { "command", "tap_model" }, { "mouse_x", x }, { "mouse_y", y }, { "width", size.first }, { "height", size.second }, { "zoom", t.scale }, { "x", t.x },
+                    { "y", t.y } })["ok"]
+                    .toBool());
             CHECK(!hits.empty() && near(hits[0].x, .2f) && near(hits[0].y, .3f));
             CHECK(hits[0].area == "Head" && hits[0].result); // 实际的回退命中测试。
         }
@@ -209,30 +250,41 @@ int transformTest(TestApplication& app)
     CHECK(eglInitialize(window->display, nullptr, nullptr));
     CHECK(window->MakeCurrent());
     LAppAllocator_Common allocator;
-    Csm::CubismFramework::Option option{};
+    Csm::CubismFramework::Option option { };
     CHECK(Csm::CubismFramework::StartUp(&allocator, &option));
     Csm::CubismFramework::Initialize();
-    struct Cleanup { ~Cleanup() { Csm::CubismFramework::Dispose(); Csm::CubismFramework::CleanUp(); } } cleanup;
+    struct Cleanup {
+        ~Cleanup()
+        {
+            Csm::CubismFramework::Dispose();
+            Csm::CubismFramework::CleanUp();
+        }
+    } cleanup;
     LAppTextureManager textures;
-    LAppLive2DManager manager(textures, 800, 600,
-        {LAppDefine::ModelsDir, {}, "", -1});
+    LAppLive2DManager manager(textures, 800, 600, { LAppDefine::ModelsDir, { }, "", -1 });
     class View : public LAppView {
     public:
         using LAppView::LAppView;
-        void ChangeView() { _viewMatrix->Scale(1.3f, 1.3f); _viewMatrix->Translate(.1f, -.2f); }
+        void ChangeView()
+        {
+            _viewMatrix->Scale(1.3f, 1.3f);
+            _viewMatrix->Translate(.1f, -.2f);
+        }
     } view(manager, textures);
     for (int index = 0; index < manager.GetModelDirSize(); ++index) {
         CHECK(manager.ChangeScene(index));
         auto* model = manager.GetModel(0);
-        if (index == 2) CHECK(model->GetModel()->GetCanvasWidth() > 1.f);
-        for (const auto size : {std::pair<int, int>{800, 600}, {600, 800}}) {
+        if (index == 2) {
+            CHECK(model->GetModel()->GetCanvasWidth() > 1.f);
+        }
+        for (const auto size : { std::pair<int, int> { 800, 600 }, { 600, 800 } }) {
             view.Initialize(size.first, size.second);
             view.ChangeView();
             manager.SetRenderTargetSize(size.first, size.second);
-            for (const auto t : {ModelTransform{1, 0, 0}, {1, .2f, -.1f}, {2, 0, 0}, {2, .1f, -.2f}}) {
-                view.Render(t, {});
+            for (const auto t : { ModelTransform { 1, 0, 0 }, { 1, .2f, -.1f }, { 2, 0, 0 }, { 2, .1f, -.2f } }) {
+                view.Render(t, { });
                 auto mvp = model->GetRenderer<Csm::Rendering::CubismRenderer_OpenGLES2>()->GetMvpMatrix();
-                for (const bool head : {true, false}) {
+                for (const bool head : { true, false }) {
                     float x = .2f, y = head ? .3f : -.3f;
                     if (index == 1) {
                         const auto id = Csm::CubismFramework::GetIdManager()->GetId(head ? "HitArea" : "HitArea2");
@@ -243,8 +295,10 @@ int transformTest(TestApplication& app)
                         CHECK(count > 0);
                         float left = vertices[0], right = left, bottom = vertices[1], top = bottom;
                         for (int i = 1; i < count; ++i) {
-                            left = std::min(left, vertices[i * 2]); right = std::max(right, vertices[i * 2]);
-                            bottom = std::min(bottom, vertices[i * 2 + 1]); top = std::max(top, vertices[i * 2 + 1]);
+                            left = std::min(left, vertices[i * 2]);
+                            right = std::max(right, vertices[i * 2]);
+                            bottom = std::min(bottom, vertices[i * 2 + 1]);
+                            top = std::max(top, vertices[i * 2 + 1]);
                         }
                         x = model->GetModelMatrix()->TransformX((left + right) * .5f);
                         y = model->GetModelMatrix()->TransformY((bottom + top) * .5f);
@@ -257,7 +311,7 @@ int transformTest(TestApplication& app)
                     CHECK(hits.size() == 1 && near(hits[0].x, x) && near(hits[0].y, y));
                     CHECK(hits[0].area == (head ? "Head" : "Body") && hits[0].result);
                     const auto snapshot = manager.HitSnapshot(size.first, size.second, t);
-                    const auto hit = snapshot.Test({px, py, size.first, size.second, snapshot.modelToken});
+                    const auto hit = snapshot.Test({ px, py, size.first, size.second, snapshot.modelToken });
                     CHECK(hit.available);
                     CHECK(std::find(hit.parts.begin(), hit.parts.end(), head ? "Head" : "Body") != hit.parts.end());
                 }
@@ -275,20 +329,28 @@ int releaseWithCursor(int x, int y)
     const auto path = directory + "/pointer-test/.socket.sock";
     const int server = socket(AF_UNIX, SOCK_STREAM, 0);
     CHECK(server >= 0);
-    sockaddr_un address{}; address.sun_family = AF_UNIX;
+    sockaddr_un address { };
+    address.sun_family = AF_UNIX;
     CHECK(path.size() < sizeof(address.sun_path));
     std::strcpy(address.sun_path, path.c_str());
     CHECK(bind(server, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == 0);
     CHECK(listen(server, 1) == 0);
     bool queried = false;
-    std::atomic<bool> completed{false};
+    std::atomic<bool> completed { false };
     std::thread compositor([&] {
-        struct Done { std::atomic<bool>& value; ~Done() { value = true; } } done{completed};
-        pollfd ready{server, POLLIN, 0};
-        if (poll(&ready, 1, 1000) <= 0) return;
+        struct Done {
+            std::atomic<bool>& value;
+            ~Done() { value = true; }
+        } done { completed };
+        pollfd ready { server, POLLIN, 0 };
+        if (poll(&ready, 1, 1000) <= 0) {
+            return;
+        }
         const int client = accept(server, nullptr, nullptr);
-        if (client < 0) return;
-        char request[32]{};
+        if (client < 0) {
+            return;
+        }
+        char request[32] { };
         const auto n = read(client, request, sizeof(request));
         queried = n == 12 && std::string(request, n) == "-j/cursorpos";
         const std::string response = "{\"x\":" + std::to_string(x) + ",\"y\":" + std::to_string(y) + "}";
@@ -298,10 +360,15 @@ int releaseWithCursor(int x, int y)
     window->events->PointerButton(0, false);
     // InputListener now queues native input. Do not block the GUI dispatcher on
     // the fake compositor thread before the release has actually been handled.
-    while (!completed) { QCoreApplication::processEvents(); QThread::msleep(1); }
+    while (!completed) {
+        QCoreApplication::processEvents();
+        QThread::msleep(1);
+    }
     compositor.join();
-    close(server); unlink(path.c_str());
-    rmdir((directory + "/pointer-test").c_str()); rmdir(directory.c_str());
+    close(server);
+    unlink(path.c_str());
+    rmdir((directory + "/pointer-test").c_str());
+    rmdir(directory.c_str());
     CHECK(queried);
     return 0;
 }
@@ -456,7 +523,7 @@ int stateTest(TestApplication& app)
     window->needsRebind = true;
     window->ReconcileOutputs();
     CHECK(!app.Settings().Editing() && app.WindowState() == State::NormalIdle);
-    window->duringSwitch = {};
+    window->duringSwitch = { };
     // 嵌套等待输出设备时触发的关闭，不能被 OutputReady 撤销。
     window->duringSwitch = [&] { app.AppEnd(); };
     CHECK(window->SwitchOutput(1));
@@ -481,16 +548,20 @@ extern "C" void __wrap__ZN9LAppModel19SetRandomExpressionEv(LAppModel* model)
 
 extern "C" void __wrap__ZN7LAppPal10PrintLogLnEPKcz(const char* format, ...)
 {
-    va_list args; va_start(args, format);
+    va_list args;
+    va_start(args, format);
     if (std::strcmp(format, "[APP]tap point: {x:%.2f y:%.2f}") == 0) {
         const float x = va_arg(args, double), y = va_arg(args, double);
-        hits.push_back({{}, x, y, false});
+        hits.push_back({ { }, x, y, false });
     } else if (std::strcmp(format, "[APP]hit area: [%s]") == 0 && !hits.empty()) {
         hits.back().area = va_arg(args, const char*);
         hits.back().result = true;
     }
     va_end(args);
-    va_start(args, format); std::vprintf(format, args); std::puts(""); va_end(args);
+    va_start(args, format);
+    std::vprintf(format, args);
+    std::puts("");
+    va_end(args);
 }
 std::unique_ptr<DesktopWindow> CreateDesktopWindow()
 {
@@ -504,20 +575,29 @@ std::unique_ptr<DesktopWindow> CreateDesktopWindow()
 extern "C" bool __real__ZN17KWinCursorTracker5StartEv(KWinCursorTracker*);
 extern "C" bool __wrap__ZN17KWinCursorTracker5StartEv(KWinCursorTracker* tracker)
 {
-    if (!syntheticCursor) return __real__ZN17KWinCursorTracker5StartEv(tracker);
-    ++cursorStarts; return true;
+    if (!syntheticCursor) {
+        return __real__ZN17KWinCursorTracker5StartEv(tracker);
+    }
+    ++cursorStarts;
+    return true;
 }
 extern "C" void __real__ZN17KWinCursorTracker4PollERKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEE(KWinCursorTracker*, const std::string&);
 extern "C" void __wrap__ZN17KWinCursorTracker4PollERKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEE(KWinCursorTracker* tracker, const std::string& output)
 {
-    if (!syntheticCursor) return __real__ZN17KWinCursorTracker4PollERKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEE(tracker, output);
+    if (!syntheticCursor) {
+        return __real__ZN17KWinCursorTracker4PollERKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEE(tracker, output);
+    }
     ++cursorPolls;
 }
 extern "C" bool __real__ZNK17KWinCursorTracker13LocalPositionEiiRdS0_(const KWinCursorTracker*, int, int, double&, double&);
 extern "C" bool __wrap__ZNK17KWinCursorTracker13LocalPositionEiiRdS0_(const KWinCursorTracker* tracker, int width, int height, double& x, double& y)
 {
-    if (!syntheticCursor) return __real__ZNK17KWinCursorTracker13LocalPositionEiiRdS0_(tracker, width, height, x, y);
-    x = 700; y = 400; return cursorPolls > 0;
+    if (!syntheticCursor) {
+        return __real__ZNK17KWinCursorTracker13LocalPositionEiiRdS0_(tracker, width, height, x, y);
+    }
+    x = 700;
+    y = 400;
+    return cursorPolls > 0;
 }
 
 int main(int argc, char** argv)
@@ -549,56 +629,70 @@ int main(int argc, char** argv)
     {
         std::ofstream file(configured);
         file << "{\"Version\":3,\"FileReferences\":{\"Moc\":\"pointer.moc3\"},"
-            "\"HitAreas\":[{\"Id\":\"HitArea\",\"Name\":\"Head\"},{\"Id\":\"HitArea2\",\"Name\":\"Body\"}]}";
+                "\"HitAreas\":[{\"Id\":\"HitArea\",\"Name\":\"Head\"},{\"Id\":\"HitArea2\",\"Name\":\"Body\"}]}";
         CHECK(file.good());
     }
-    { std::ofstream file(wide); file << "{\"Version\":3,\"FileReferences\":{\"Moc\":\"wide.moc3\"}}"; }
+    {
+        std::ofstream file(wide);
+        file << "{\"Version\":3,\"FileReferences\":{\"Moc\":\"wide.moc3\"}}";
+    }
     const auto configPath = directory + "/config.json";
-    { std::ofstream file(configPath); file << "{\"model_scale\":1,\"model_output\":\"left\"}"; }
+    {
+        std::ofstream file(configPath);
+        file << "{\"model_scale\":1,\"model_output\":\"left\"}";
+    }
     auto& config = LAppConfig::GetInstance();
     CHECK(config.LoadFromFile(configPath));
     LAppDefine::ModelsDir = models;
     auto* app = TestApplication::GetInstance();
-    if (!app->Initialize()) return window->context == EGL_NO_CONTEXT ? 77 : 1;
+    if (!app->Initialize()) {
+        return window->context == EGL_NO_CONTEXT ? 77 : 1;
+    }
     ConfigStore configStore(configPath);
     ConfigStore::Snapshot beforeDrag;
     std::string configError;
     CHECK(configStore.Read(beforeDrag, configError));
     const std::string scenario = argv[1];
-    const int result = scenario == "release" ? releaseTest(*app) :
-        scenario == "cursor" ? cursorTest(*app) :
-        scenario == "transform" ? transformTest(*app) : scenario == "state" ? stateTest(*app) : dragTest(*app);
+    const int result = scenario == "release" ? releaseTest(*app)
+        : scenario == "cursor"               ? cursorTest(*app)
+        : scenario == "transform"            ? transformTest(*app)
+        : scenario == "state"                ? stateTest(*app)
+                                             : dragTest(*app);
     if (result == 0 && scenario == "drag") {
         ConfigStore::Snapshot disk;
         CHECK(configStore.Read(disk, configError) && disk.document == beforeDrag.document);
     }
     if (result == 0 && scenario != "transform" && scenario != "state" && scenario != "cursor") {
         window->script = [&](const std::function<bool()>& frame) {
-            if (!frame()) return false;
+            if (!frame()) {
+                return false;
+            }
             // 主动跨输出设备重绑定后的第一个真实帧，
             // 不能进入热插拔或尺寸变化的取消路径。
             if (scenario == "drag") {
-                if (window->current != 2 || !app->Settings().LocalScreenEditing() ||
-                    app->Settings().Display().region.width != 1000) return false;
+                if (window->current != 2 || !app->Settings().LocalScreenEditing() || app->Settings().Display().region.width != 1000) {
+                    return false;
+                }
                 const auto draft = app->Settings().Display();
                 ConfigStore::Snapshot disk;
-                if (!configStore.Read(disk, configError) || disk.document != beforeDrag.document) return false;
+                if (!configStore.Read(disk, configError) || disk.document != beforeDrag.document) {
+                    return false;
+                }
                 // 将真实编辑器时间推进到 0.5 秒自动保存防抖期之后，
                 // 不为指针回归测试添加实际等待。
-                const double now = std::chrono::duration<double>(
-                    std::chrono::steady_clock::now().time_since_epoch()).count();
+                const double now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
                 app->Settings().Tick(now + 1);
-                if (!frame() || !app->Settings().LocalScreenEditing() ||
-                    !configStore.Read(disk, configError) || disk.document != beforeDrag.document) return false;
-                if (!app->Settings().Apply("local-screen").ok || app->Settings().Editing() ||
-                    !configStore.Read(disk, configError) || disk.document == beforeDrag.document) return false;
+                if (!frame() || !app->Settings().LocalScreenEditing() || !configStore.Read(disk, configError) || disk.document != beforeDrag.document) {
+                    return false;
+                }
+                if (!app->Settings().Apply("local-screen").ok || app->Settings().Editing() || !configStore.Read(disk, configError) || disk.document == beforeDrag.document) {
+                    return false;
+                }
                 TransformSettings saved;
-                return TransformEditor::Decode(disk, saved, configError) && saved.cropped == draft.cropped &&
-                    saved.region.x == draft.region.x && saved.region.y == draft.region.y &&
-                    saved.region.width == draft.region.width && saved.region.height == draft.region.height &&
-                    near(saved.transform.scale, draft.transform.scale) &&
-                    near(saved.transform.x, draft.transform.x) && near(saved.transform.y, draft.transform.y) &&
-                    disk.values.at("model_output") == beforeDrag.values.at("model_output");
+                return TransformEditor::Decode(disk, saved, configError) && saved.cropped == draft.cropped && saved.region.x == draft.region.x && saved.region.y == draft.region.y
+                    && saved.region.width == draft.region.width && saved.region.height == draft.region.height && near(saved.transform.scale, draft.transform.scale)
+                    && near(saved.transform.x, draft.transform.x) && near(saved.transform.y, draft.transform.y)
+                    && disk.values.at("model_output") == beforeDrag.values.at("model_output");
             }
             AwaitModel(app->Models());
             return expressionCalls >= 2;
@@ -608,9 +702,8 @@ int main(int argc, char** argv)
         CHECK(app->Release());
         TestApplication::ReleaseInstance();
     }
-    CHECK(unlink(model.c_str()) == 0 && unlink(moc.c_str()) == 0 && unlink(configured.c_str()) == 0 &&
-        unlink(wide.c_str()) == 0 && unlink(wideMoc.c_str()) == 0 &&
-        rmdir(modelDirectory.c_str()) == 0 && rmdir(models.c_str()) == 0);
+    CHECK(unlink(model.c_str()) == 0 && unlink(moc.c_str()) == 0 && unlink(configured.c_str()) == 0 && unlink(wide.c_str()) == 0 && unlink(wideMoc.c_str()) == 0
+        && rmdir(modelDirectory.c_str()) == 0 && rmdir(models.c_str()) == 0);
     CHECK(unlink(configPath.c_str()) == 0);
     // IPC 所有权锁刻意保留在运行时目录中。
     unlink((directory + "/deskwaifu.sock.lock").c_str());

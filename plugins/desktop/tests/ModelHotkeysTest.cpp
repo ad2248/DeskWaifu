@@ -1,6 +1,9 @@
 #include "processor/model/ModelHotkeys.hpp"
 #include "LAppAllocator_Common.hpp"
 
+#include <Id/CubismIdManager.hpp>
+#include <Model/CubismMoc.hpp>
+#include <Model/CubismModel.hpp>
 #include <QDir>
 #include <QFile>
 #include <QJsonArray>
@@ -8,15 +11,11 @@
 #include <QJsonObject>
 #include <QTemporaryDir>
 #include <QtTest>
-#include <Id/CubismIdManager.hpp>
-#include <Model/CubismMoc.hpp>
-#include <Model/CubismModel.hpp>
 #include <limits>
 
 using namespace Live2D::Cubism::Framework;
 
-class ModelHotkeysTest : public QObject
-{
+class ModelHotkeysTest : public QObject {
     Q_OBJECT
     LAppAllocator_Common allocator;
 
@@ -28,14 +27,13 @@ class ModelHotkeysTest : public QObject
     }
     static QJsonObject binding(const QString& id, const QString& file, const QString& key = "Tab")
     {
-        return {{"HotkeyID", id}, {"Name", ""}, {"Action", "ToggleExpression"}, {"File", file},
-            {"Triggers", QJsonObject{{"Trigger1", key}}}, {"IsActive", true}, {"IsGlobal", true},
-            {"FadeSecondsAmount", 0.5}};
+        return { { "HotkeyID", id }, { "Name", "" }, { "Action", "ToggleExpression" }, { "File", file }, { "Triggers", QJsonObject { { "Trigger1", key } } }, { "IsActive", true },
+            { "IsGlobal", true }, { "FadeSecondsAmount", 0.5 } };
     }
     static void fixture(const QString& path, const QJsonArray& bindings)
     {
         QVERIFY(QDir(path).mkpath("exp"));
-        write(path + "/test.vtube.json", QJsonDocument(QJsonObject{{"Hotkeys", bindings}}).toJson(QJsonDocument::Compact));
+        write(path + "/test.vtube.json", QJsonDocument(QJsonObject { { "Hotkeys", bindings } }).toJson(QJsonDocument::Compact));
         write(path + "/exp/水印.exp3.json", R"({"Type":"Live2D Expression","Parameters":[{"Id":"ParamAngleX","Value":1,"Blend":"Add"}]})");
         write(path + "/exp/脸红.exp3.json", R"({"Parameters":[{"Id":"ParamAngleY","Value":2,"Blend":"Overwrite"}]})");
     }
@@ -54,7 +52,7 @@ private slots:
     void discoversExpAndKeepsIndependentPersistentState()
     {
         QTemporaryDir directory;
-        fixture(directory.path(), {binding("watermark", "水印.exp3.json"), binding("blush", "脸红.exp3.json", "N1")});
+        fixture(directory.path(), { binding("watermark", "水印.exp3.json"), binding("blush", "脸红.exp3.json", "N1") });
         ModelHotkeys hotkeys;
         hotkeys.Load(directory.path().toStdString() + "/", "test.model3.json");
         QCOMPARE(hotkeys.Bindings().size(), size_t(2));
@@ -89,7 +87,7 @@ private slots:
     void resolvesOnlyCurrentBindingIds()
     {
         QTemporaryDir directory;
-        fixture(directory.path(), {binding("watermark", "水印.exp3.json")});
+        fixture(directory.path(), { binding("watermark", "水印.exp3.json") });
         ModelHotkeys hotkeys;
         ModelHotkeys other;
         other.Load(directory.path().toStdString() + "/", "test.model3.json");
@@ -107,7 +105,7 @@ private slots:
         QVERIFY(!hotkeys.IsActive("missing"));
         QVERIFY(!hotkeys.IsActive(""));
 
-        fixture(directory.path(), {binding("replacement", "脸红.exp3.json")});
+        fixture(directory.path(), { binding("replacement", "脸红.exp3.json") });
         hotkeys.Load(directory.path().toStdString() + "/", "test.model3.json");
         QVERIFY(token != hotkeys.Token());
         QVERIFY(hotkeys.Trigger("replacement", error));
@@ -126,13 +124,14 @@ private slots:
         disabled["IsActive"] = false;
         auto unsupported = binding("unsupported", "水印.exp3.json");
         unsupported["Action"] = "ChangeBackground";
-        fixture(directory.path(), {timed, disabled, unsupported, binding("missing", "absent.exp3.json")});
+        fixture(directory.path(), { timed, disabled, unsupported, binding("missing", "absent.exp3.json") });
         ModelHotkeys hotkeys;
         hotkeys.Load(directory.path().toStdString() + "/", "test.model3.json");
         QCOMPARE(hotkeys.Bindings().size(), size_t(4));
         std::string error;
-        for (const auto& id : {"disabled", "unsupported", "missing", "unknown"})
+        for (const auto& id : { "disabled", "unsupported", "missing", "unknown" }) {
             QVERIFY(!hotkeys.Trigger(id, error));
+        }
         QVERIFY(hotkeys.Trigger("timed", error));
         hotkeys.Update(0.5f);
         QVERIFY(hotkeys.IsActive(hotkeys.Bindings()[0].id));
@@ -154,7 +153,7 @@ private slots:
         auto* model = moc->CreateModel();
         QVERIFY(model);
         QTemporaryDir directory;
-        fixture(directory.path(), {binding("watermark", "水印.exp3.json"), binding("blush", "脸红.exp3.json")});
+        fixture(directory.path(), { binding("watermark", "水印.exp3.json"), binding("blush", "脸红.exp3.json") });
         ModelHotkeys hotkeys;
         hotkeys.Load(directory.path().toStdString() + "/", "test.model3.json");
         const auto x = CubismFramework::GetIdManager()->GetId("ParamAngleX");
@@ -165,8 +164,7 @@ private slots:
         std::string error;
         QVERIFY(hotkeys.Trigger("watermark", error));
         QVERIFY(hotkeys.Trigger("blush", error));
-        for (int frame = 0; frame < 600; ++frame)
-        {
+        for (int frame = 0; frame < 600; ++frame) {
             model->LoadParameters();
             hotkeys.Update(1.0f / 60);
             hotkeys.Apply(model);
@@ -185,17 +183,17 @@ private slots:
     void importsLocalModelWhenProvided()
     {
         const QString path = qEnvironmentVariable("DESKWAIFU_TEST_MODEL_DIR");
-        if (path.isEmpty()) QSKIP("Optional local model assets were not provided");
+        if (path.isEmpty()) {
+            QSKIP("Optional local model assets were not provided");
+        }
         ModelHotkeys hotkeys;
         hotkeys.Load(path.toStdString() + "/", QDir(path).dirName().toStdString() + ".model3.json");
         QVERIFY(hotkeys.Error().empty());
         QVERIFY(!hotkeys.Bindings().empty());
         bool foundWatermark = false;
-        for (const auto& binding : hotkeys.Bindings())
-        {
+        for (const auto& binding : hotkeys.Bindings()) {
             QVERIFY2(binding.reason.empty(), binding.reason.c_str());
-            if (binding.keys == std::vector<std::string>{"Tab"} && binding.file == "水印.exp3.json")
-            {
+            if (binding.keys == std::vector<std::string> { "Tab" } && binding.file == "水印.exp3.json") {
                 const auto& expression = hotkeys.Expressions()[binding.expression];
                 QCOMPARE(expression.parameters[0].id, std::string("Param144"));
                 QCOMPARE(expression.parameters[0].blend, std::string("Add"));

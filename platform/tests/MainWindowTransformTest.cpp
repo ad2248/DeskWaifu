@@ -1,29 +1,29 @@
-#include "MainWindow.hpp"
 #include "ControlTabTitles.hpp"
 #include "DesktopBackend.hpp"
+#include "MainWindow.hpp"
 #include "contracts/ConfigStore.hpp"
-#include <QLineEdit>
-#include <QLabel>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDir>
 #include <QDoubleSpinBox>
-#include <QSpinBox>
-#include <QSlider>
-#include <QStyleOptionSlider>
-#include <QPushButton>
-#include <QTabWidget>
-#include <QTabBar>
-#include <QTableWidget>
-#include <QScrollArea>
-#include <QScrollBar>
-#include <QStatusBar>
+#include <QFile>
 #include <QJsonDocument>
+#include <QLabel>
+#include <QLineEdit>
 #include <QLocalServer>
 #include <QLocalSocket>
-#include <QTemporaryDir>
-#include <QDir>
-#include <QFile>
+#include <QPushButton>
 #include <QScopeGuard>
+#include <QScrollArea>
+#include <QScrollBar>
+#include <QSlider>
+#include <QSpinBox>
+#include <QStatusBar>
+#include <QStyleOptionSlider>
+#include <QTabBar>
+#include <QTabWidget>
+#include <QTableWidget>
+#include <QTemporaryDir>
 #include <QTimer>
 #include <QtTest>
 #include <cerrno>
@@ -32,8 +32,7 @@
 #include <sys/un.h>
 #include <unistd.h>
 
-class MainWindowTransformTest : public QObject
-{
+class MainWindowTransformTest : public QObject {
     Q_OBJECT
 private slots:
     void disabledPluginsLeaveOnlyTheShell()
@@ -73,7 +72,7 @@ private slots:
         QVERIFY(feedback->text().contains(QStringLiteral("执行结果未知")));
         emit services.commandCancelled(QStringLiteral("set_model"));
         QVERIFY(feedback->text().contains(QStringLiteral("发送前取消")));
-        emit services.responseReceived(QStringLiteral("set_speech_settings"), {{"api_key", "must-not-log"}});
+        emit services.responseReceived(QStringLiteral("set_speech_settings"), { { "api_key", "must-not-log" } });
         QVERIFY(!window.findChild<QWidget*>("responseLog"));
     }
 
@@ -102,21 +101,25 @@ private slots:
                 while (socket->canReadLine()) {
                     const auto request = QJsonDocument::fromJson(socket->readLine()).object();
                     const auto command = request.value("command").toString();
-                    QJsonObject reply{{"ok", true}};
+                    QJsonObject reply { { "ok", true } };
                     if (command == "get_status" || command == "get_current_model") {
                         reply.insert("model", "测试模型");
                         reply.insert("model_count", 1);
                         reply.insert("hidden", false);
-                    } else if (command == "get_available_models") reply.insert("models", QJsonArray{"测试模型"});
-                    else if (command == "get_expressions") reply.insert("expressions", QJsonArray{"smile"});
-                    else if (command == "get_speech_settings") reply.insert("configured", true);
-                    else if (command == "get_render_device") {
+                    } else if (command == "get_available_models") {
+                        reply.insert("models", QJsonArray { "测试模型" });
+                    } else if (command == "get_expressions") {
+                        reply.insert("expressions", QJsonArray { "smile" });
+                    } else if (command == "get_speech_settings") {
+                        reply.insert("configured", true);
+                    } else if (command == "get_render_device") {
                         reply.insert("device", "auto");
                         reply.insert("active_device", "auto");
-                        reply.insert("devices", QJsonArray{});
+                        reply.insert("devices", QJsonArray { });
                         reply.insert("restart_required", false);
-                    } else if (command == "get_mouse_look") reply.insert("radius", .5);
-                    else if (command == "get_hover_opacity") {
+                    } else if (command == "get_mouse_look") {
+                        reply.insert("radius", .5);
+                    } else if (command == "get_hover_opacity") {
                         reply.insert("enabled", true);
                         reply.insert("opacity", .5);
                         reply.insert("idle_opacity", 1.);
@@ -124,13 +127,13 @@ private slots:
                         reply.insert("zoom", 1.);
                         reply.insert("surface_width", 1920);
                         reply.insert("surface_height", 1080);
-                        reply.insert("outputs", QJsonArray{QJsonObject{{"name", "eDP-1"}, {"current", true}}});
+                        reply.insert("outputs", QJsonArray { QJsonObject { { "name", "eDP-1" }, { "current", true } } });
                     }
                     if (command == "get_hotkeys" || command == "trigger_hotkey") {
                         reply.insert("model_token", "test-model");
-                        reply.insert("hotkeys", QJsonArray{QJsonObject{
-                            {"id", "expression"}, {"name", "测试表情"}, {"keys", QJsonArray{"N1"}},
-                            {"action", "ToggleExpression"}, {"enabled", true}, {"active", false}}});
+                        reply.insert("hotkeys",
+                            QJsonArray { QJsonObject { { "id", "expression" }, { "name", "测试表情" }, { "keys", QJsonArray { "N1" } }, { "action", "ToggleExpression" },
+                                { "enabled", true }, { "active", false } } });
                         if (command == "trigger_hotkey") {
                             QCOMPARE(request.value("id").toString(), QString("expression"));
                             QCOMPARE(request.value("model_token").toString(), QString("test-model"));
@@ -151,7 +154,7 @@ private slots:
         auto* table = window.findChild<QTableWidget*>("hotkeyTable");
         QTRY_COMPARE(table->rowCount(), 1);
         const auto titles = ExpectedControlTabs();
-        const QStringList lastControls = {"renderDeviceStatus", "hoverOpacityHintLabel", "transformStatusLabel"};
+        const QStringList lastControls = { "renderDeviceStatus", "hoverOpacityHintLabel", "transformStatusLabel" };
         QCOMPARE(tabs->count(), titles.size());
         for (int tab = 0; tab < tabs->count(); ++tab) {
             QCOMPARE(tabs->tabText(tab), titles[tab]);
@@ -173,7 +176,9 @@ private slots:
             QCOMPARE(window.size(), QSize(720, 560));
             const auto screenshots = qEnvironmentVariable("DESKWAIFU_TABS_SCREENSHOT_DIR");
             if (!screenshots.isEmpty()) {
-                if (auto* scroll = qobject_cast<QScrollArea*>(tabs->widget(tab))) scroll->verticalScrollBar()->setValue(0);
+                if (auto* scroll = qobject_cast<QScrollArea*>(tabs->widget(tab))) {
+                    scroll->verticalScrollBar()->setValue(0);
+                }
                 QCoreApplication::processEvents();
                 QVERIFY(window.grab().save(QDir(screenshots).filePath(QStringLiteral("panel-tab-%1.png").arg(tab))));
             }
@@ -211,19 +216,21 @@ private slots:
                     const auto line = socket->readLine();
                     const auto request = QJsonDocument::fromJson(line).object();
                     const auto command = request.value("command").toString();
-                    QJsonObject reply{{"ok", true}};
+                    QJsonObject reply { { "ok", true } };
                     if (command == "get_render_device" || command == "set_render_device") {
                         const bool mutation = command == "set_render_device";
-                        if (mutation) ++mutations;
-                        reply = !supported ? QJsonObject{{"ok", false}, {"error", "unknown command"}}
-                            : mutation && failSave ? QJsonObject{{"ok", false}, {"error", "read-only config"}}
-                            : backend.Call(command, request);
+                        if (mutation) {
+                            ++mutations;
+                        }
+                        reply = !supported         ? QJsonObject { { "ok", false }, { "error", "unknown command" } }
+                            : mutation && failSave ? QJsonObject { { "ok", false }, { "error", "read-only config" } }
+                                                   : backend.Call(command, request);
                         if (supported) {
                             reply.insert("active_device", "auto");
                             reply.insert("restart_required", reply.value("device") != "auto");
-                            reply.insert("devices", QJsonArray{
-                                QJsonObject{{"id", "0000:00:02.0"}, {"name", "Intel Graphics"}},
-                                QJsonObject{{"id", "0000:02:00.0"}, {"name", "NVIDIA Graphics"}}});
+                            reply.insert("devices",
+                                QJsonArray { QJsonObject { { "id", "0000:00:02.0" }, { "name", "Intel Graphics" } },
+                                    QJsonObject { { "id", "0000:02:00.0" }, { "name", "NVIDIA Graphics" } } });
                         }
                         if (mutation && loseAcknowledgement) {
                             loseAcknowledgement = false;
@@ -259,8 +266,12 @@ private slots:
         QCOMPARE(combo->currentData().toString(), QStringLiteral("0000:00:02.0"));
         QVERIFY(status->text().contains("重启"));
         const auto screenshot = qEnvironmentVariable("DESKWAIFU_RENDER_DEVICE_SCREENSHOT");
-        if (!screenshot.isEmpty()) QVERIFY(window.grab().save(screenshot));
-        ConfigStore saved(configPath.toStdString()); ConfigStore::Snapshot disk; std::string error;
+        if (!screenshot.isEmpty()) {
+            QVERIFY(window.grab().save(screenshot));
+        }
+        ConfigStore saved(configPath.toStdString());
+        ConfigStore::Snapshot disk;
+        std::string error;
         QVERIFY(saved.Read(disk, error));
         QCOMPARE(disk.values.at("render_device"), std::string("\"0000:00:02.0\""));
         failSave = true;
@@ -278,7 +289,7 @@ private slots:
         QCOMPARE(mutations, 3); // 重连后重新查询，不能重试保存。
         QVERIFY(saved.Read(disk, error));
         QCOMPARE(disk.values.at("render_device"), std::string("\"auto\""));
-        QVERIFY(backend.Call("set_render_device", {{"device", "ffff:ff:1f.7"}}).value("ok").toBool());
+        QVERIFY(backend.Call("set_render_device", { { "device", "ffff:ff:1f.7" } }).value("ok").toBool());
         connection->abort();
         QTRY_COMPARE_WITH_TIMEOUT(combo->currentData().toString(), QStringLiteral("ffff:ff:1f.7"), 6000);
         QVERIFY(combo->currentText().contains("不可用"));
@@ -313,13 +324,13 @@ private slots:
                     const auto line = socket->readLine();
                     const auto request = QJsonDocument::fromJson(line).object();
                     const auto command = request.value("command").toString();
-                    QJsonObject reply{{"ok", true}};
+                    QJsonObject reply { { "ok", true } };
                     if (command == "set_speech_settings" || command == "get_speech_settings") {
                         QFile credentials(credentialsPath);
                         if (command == "set_speech_settings") {
                             QVERIFY(request.value("api_key").isString());
                             QVERIFY(credentials.open(QIODevice::WriteOnly));
-                            const auto document = QJsonDocument(QJsonObject{{"api_key", request.value("api_key")}}).toJson();
+                            const auto document = QJsonDocument(QJsonObject { { "api_key", request.value("api_key") } }).toJson();
                             QCOMPARE(credentials.write(document), document.size());
                             credentials.close();
                             ++saves;
@@ -329,7 +340,7 @@ private slots:
                             QVERIFY(credentials.open(QIODevice::ReadOnly));
                             storedKey = QJsonDocument::fromJson(credentials.readAll()).object().value("api_key").toString();
                         }
-                        reply = {{"ok", true}, {"configured", !storedKey.isEmpty()}};
+                        reply = { { "ok", true }, { "configured", !storedKey.isEmpty() } };
                     }
                     socket->write(QJsonDocument(reply).toJson(QJsonDocument::Compact) + '\n');
                     socket->flush();
@@ -341,8 +352,9 @@ private slots:
         auto* tabs = window.findChild<QTabWidget*>("tabWidget");
         const auto titles = ExpectedControlTabs();
         QCOMPARE(tabs->count(), titles.size());
-        for (int i = 0; i < titles.size(); ++i)
+        for (int i = 0; i < titles.size(); ++i) {
             QCOMPARE(tabs->tabText(i), titles[i]);
+        }
         QVERIFY(tabs->widget(3)->isAncestorOf(key));
         QVERIFY(tabs->widget(3)->isAncestorOf(window.findChild<QWidget*>("speechSettingsGroup")));
         QVERIFY(tabs->widget(1)->isAncestorOf(window.findChild<QWidget*>("hotkeyTable")));
@@ -442,10 +454,10 @@ private slots:
     {
         QTest::addColumn<QString>("failedCommand");
         QTest::addColumn<bool>("delayInvalidSaveReply");
-        for (const auto& command : {"get_hover_opacity", "set_hover_opacity", "get_mouse_look",
-                "set_mouse_look", "get_transform_settings", "begin_transform_edit",
-                "update_transform_edit", "apply_transform_edit", "get_transform_save_result"})
+        for (const auto& command : { "get_hover_opacity", "set_hover_opacity", "get_mouse_look", "set_mouse_look", "get_transform_settings", "begin_transform_edit",
+                 "update_transform_edit", "apply_transform_edit", "get_transform_save_result" }) {
             QTest::newRow(command) << QString(command) << false;
+        }
         QTest::newRow("queued-save-cancelled") << QString("queued_apply_transform_edit") << false;
         QTest::newRow("delayed-invalid-save-reply") << QString("get_transform_save_result") << true;
     }
@@ -490,11 +502,14 @@ private slots:
                     }
                     auto response = backend.Call(command, input);
                     // 先丢弃应用确认，测试通过回执查询恢复。
-                    const bool loseSave = failedCommand == "get_transform_save_result" &&
-                        command == "apply_transform_edit" && !lostSaveReply;
-                    if (loseSave) lostSaveReply = true;
+                    const bool loseSave = failedCommand == "get_transform_save_result" && command == "apply_transform_edit" && !lostSaveReply;
+                    if (loseSave) {
+                        lostSaveReply = true;
+                    }
                     if (loseSave || (command == failedCommand && invalidReplies == 0)) {
-                        if (!loseSave) ++invalidReplies;
+                        if (!loseSave) {
+                            ++invalidReplies;
+                        }
                         if (delayInvalidSaveReply && !loseSave) {
                             // 服务端已计数，但客户端尚未收到第二次协议错误。
                             QTimer::singleShot(200, socket, [socket] {
@@ -504,7 +519,9 @@ private slots:
                             continue;
                         }
                         socket->write("broken-json\n");
-                    } else socket->write(QJsonDocument(response).toJson(QJsonDocument::Compact) + '\n');
+                    } else {
+                        socket->write(QJsonDocument(response).toJson(QJsonDocument::Compact) + '\n');
+                    }
                     socket->flush();
                 }
             });
@@ -520,9 +537,11 @@ private slots:
         QVERIFY(hoverGroup && lookGroup && x && apply);
         if (!failedCommand.startsWith("get_") || failedCommand == "get_transform_save_result") {
             QTRY_VERIFY(hoverGroup->isEnabled() && lookGroup->isEnabled() && x->isEnabled());
-            if (failedCommand == "set_hover_opacity") window.findChild<QCheckBox*>("hoverOpacityEnabledCheck")->click();
-            else if (failedCommand == "set_mouse_look") window.findChild<QDoubleSpinBox*>("mouseLookRadiusSpin")->setValue(.7);
-            else {
+            if (failedCommand == "set_hover_opacity") {
+                window.findChild<QCheckBox*>("hoverOpacityEnabledCheck")->click();
+            } else if (failedCommand == "set_mouse_look") {
+                window.findChild<QDoubleSpinBox*>("mouseLookRadiusSpin")->setValue(.7);
+            } else {
                 x->setValue(2.5);
                 if (failedCommand == "apply_transform_edit" || failedCommand == "get_transform_save_result") {
                     QTRY_VERIFY(apply->isEnabled());
@@ -548,7 +567,9 @@ private slots:
             QCOMPARE(commands.count("apply_transform_edit"), 0);
             QCOMPARE(commands.count("get_transform_save_result"), 0);
             QVERIFY(window.findChild<QPushButton*>("xformResetButton")->isEnabled());
-        } else if (!failedCommand.startsWith("get_")) QCOMPARE(commands.count(failedCommand), 1);
+        } else if (!failedCommand.startsWith("get_")) {
+            QCOMPARE(commands.count(failedCommand), 1);
+        }
         if (failedCommand == "set_hover_opacity") {
             QCOMPARE(backend.State().value("enabled").toBool(), !initialHoverEnabled);
             QCOMPARE(window.findChild<QCheckBox*>("hoverOpacityEnabledCheck")->isChecked(), backend.State().value("enabled").toBool());
@@ -578,14 +599,18 @@ private slots:
         const bool initialChecked = check->isChecked();
         const auto before = commands.count("set_hover_opacity");
         bool accepted = false;
-        return QTest::qWaitFor([&] {
-            if (commands.count("set_hover_opacity") != before) return true;
-            if (!accepted) {
-                check->click();
-                accepted = check->isChecked() != initialChecked;
-            }
-            return commands.count("set_hover_opacity") == before + 1;
-        }, 6000);
+        return QTest::qWaitFor(
+            [&] {
+                if (commands.count("set_hover_opacity") != before) {
+                    return true;
+                }
+                if (!accepted) {
+                    check->click();
+                    accepted = check->isChecked() != initialChecked;
+                }
+                return commands.count("set_hover_opacity") == before + 1;
+            },
+            6000);
     }
 
     // 回归测试：分组禁用期间的点击会被丢弃，重连完成后重试点击必须只发出一次设置命令。
@@ -728,12 +753,13 @@ private slots:
                     const auto input = QJsonDocument::fromJson(json).object();
                     const auto command = input.value("command").toString();
                     journal.append(command + (supported ? QStringLiteral(":supported") : QStringLiteral(":unsupported")));
-                    QJsonObject response{{"ok", true}};
+                    QJsonObject response { { "ok", true } };
                     if (command == "get_mouse_look" || command == "set_mouse_look") {
                         const bool mutation = command == "set_mouse_look";
-                        if (mutation) ++mutations;
-                        response = supported ? backend.Call(command, input)
-                            : QJsonObject{{"ok", false}, {"error", "unknown command"}};
+                        if (mutation) {
+                            ++mutations;
+                        }
+                        response = supported ? backend.Call(command, input) : QJsonObject { { "ok", false }, { "error", "unknown command" } };
                         if (!mutation && delayQuery) {
                             delayQuery = false;
                             delayedResponse = QJsonDocument(response).toJson(QJsonDocument::Compact) + '\n';
@@ -751,7 +777,8 @@ private slots:
             });
         });
         MainWindow window;
-        window.show(); window.activateWindow();
+        window.show();
+        window.activateWindow();
         auto* tabs = window.findChild<QTabWidget*>("tabWidget");
         auto* lookTab = window.findChild<QWidget*>("interactionTab");
         QVERIFY(tabs && lookTab);
@@ -793,14 +820,23 @@ private slots:
         DesktopBackend restarted(path);
         QCOMPARE(float(restarted.State().value("radius").toDouble()), 0.f);
         ConfigStore store(path.toStdString());
-        ConfigStore::Snapshot disk; std::string error;
+        ConfigStore::Snapshot disk;
+        std::string error;
         QVERIFY(store.Read(disk, error));
-        { QFile file(path); QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate)); file.write("{invalid"); }
+        {
+            QFile file(path);
+            QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+            file.write("{invalid");
+        }
         slider->setValue(80);
         QTRY_VERIFY(group->isEnabled() && status->text().contains("Invalid JSON"));
         QCOMPARE(slider->value(), 0);
         QCOMPARE(spin->value(), 0.);
-        { QFile file(path); QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate)); file.write(QByteArray::fromStdString(disk.document)); }
+        {
+            QFile file(path);
+            QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+            file.write(QByteArray::fromStdString(disk.document));
+        }
         disconnectAfterSave = true;
         const int beforeDisconnect = mutations;
         slider->setValue(35);
@@ -808,7 +844,9 @@ private slots:
         QCOMPARE(mutations, beforeDisconnect + 1);
         QCOMPARE(slider->value(), 35);
         const auto screenshot = qEnvironmentVariable("DESKWAIFU_GAZE_SCREENSHOT");
-        if (!screenshot.isEmpty()) QVERIFY(window.grab().save(screenshot));
+        if (!screenshot.isEmpty()) {
+            QVERIFY(window.grab().save(screenshot));
+        }
         // 编辑保护只能阻止有效读数覆盖输入，不能吞掉后端不支持的响应。
         tabs->tabBar()->setFocus();
         supported = false;
@@ -836,8 +874,8 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(journal.count(QStringLiteral("connected")) > connections, 5000);
         QTRY_VERIFY(!group->isEnabled());
         QTRY_VERIFY2_WITH_TIMEOUT(group->toolTip() == "unknown command",
-            qPrintable(QStringLiteral("tooltip=%1 enabled=%2 focus=%3 events=%4")
-                .arg(group->toolTip()).arg(group->isEnabled()).arg(spin->hasFocus()).arg(journal.join(" | "))), 5000);
+            qPrintable(QStringLiteral("tooltip=%1 enabled=%2 focus=%3 events=%4").arg(group->toolTip()).arg(group->isEnabled()).arg(spin->hasFocus()).arg(journal.join(" | "))),
+            5000);
         QCOMPARE(mutations, beforeDisconnect + 1); // 重连不能重放修改操作。
     }
 
@@ -863,18 +901,21 @@ private slots:
                 while (socket->canReadLine()) {
                     const auto input = QJsonDocument::fromJson(socket->readLine()).object();
                     const auto command = input.value("command").toString();
-                    QJsonObject response{{"ok", true}};
+                    QJsonObject response { { "ok", true } };
                     if (command == "get_transform_settings") {
-                        response.insert("outputs", QJsonArray{
-                            QJsonObject{{"name", "DP-1"}, {"current", selected == "DP-1"}},
-                            QJsonObject{{"name", "HDMI-A-1"}, {"current", selected == "HDMI-A-1"}}});
+                        response.insert("outputs",
+                            QJsonArray { QJsonObject { { "name", "DP-1" }, { "current", selected == "DP-1" } },
+                                QJsonObject { { "name", "HDMI-A-1" }, { "current", selected == "HDMI-A-1" } } });
                         response.insert("editing", editing);
                         response.insert("zoom", 2);
                     } else if (command == "set_output") {
                         ++switches;
                         response.insert("ok", !fail);
-                        if (fail) response.insert("error", "Display is no longer available");
-                        else selected = input.value("name").toString();
+                        if (fail) {
+                            response.insert("error", "Display is no longer available");
+                        } else {
+                            selected = input.value("name").toString();
+                        }
                     }
                     socket->write(QJsonDocument(response).toJson(QJsonDocument::Compact) + '\n');
                     socket->flush();
@@ -882,7 +923,8 @@ private slots:
             });
         });
         MainWindow window;
-        window.show(); window.activateWindow();
+        window.show();
+        window.activateWindow();
         window.findChild<QTabWidget*>("tabWidget")->setCurrentWidget(window.findChild<QWidget*>("modelTab"));
         auto* combo = window.findChild<QComboBox*>("outputCombo");
         QVERIFY(combo);
@@ -926,7 +968,9 @@ private slots:
         const QString configPath = directory.path() + "/custom.json";
         const auto writeConfig = [&](const QByteArray& text) {
             QFile file(configPath);
-            if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) return false;
+            if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+                return false;
+            }
             return file.write(text) == text.size();
         };
         QVERIFY(writeConfig("{\"hover_opacity_enabled\":true,\"hover_opacity\":0.37,\"model_x\":2.5,\"extra\":\"keep\"}"));
@@ -949,17 +993,24 @@ private slots:
                     const auto json = socket->readLine();
                     const auto input = QJsonDocument::fromJson(json).object();
                     const auto command = input.value("command").toString();
-                    QJsonObject response{{"ok", true}};
+                    QJsonObject response { { "ok", true } };
                     if (command == "get_transform_settings") {
                         response = backend.Call(command, input);
                     }
                     if (command == "get_hover_opacity" || command == "set_hover_opacity") {
-                        if (command == "get_hover_opacity") ++queries;
-                        else mutations.append(input);
+                        if (command == "get_hover_opacity") {
+                            ++queries;
+                        } else {
+                            mutations.append(input);
+                        }
                         if (supported) {
                             response = backend.Call(command, input);
-                            if (!idleSupported) response.remove("idle_opacity");
-                        } else response = {{"ok", false}, {"error", "unknown command"}};
+                            if (!idleSupported) {
+                                response.remove("idle_opacity");
+                            }
+                        } else {
+                            response = { { "ok", false }, { "error", "unknown command" } };
+                        }
                         if (delayQuery && command == "get_hover_opacity") {
                             delayQuery = false;
                             delayedResponse = QJsonDocument(response).toJson(QJsonDocument::Compact) + '\n';
@@ -979,7 +1030,8 @@ private slots:
         MainWindow window;
         auto* respawn = window.findChild<QPushButton*>("respawnButton");
         QVERIFY(respawn);
-        window.show(); window.activateWindow();
+        window.show();
+        window.activateWindow();
         window.findChild<QTabWidget*>("tabWidget")->setCurrentWidget(window.findChild<QWidget*>("interactionTab"));
         auto* group = window.findChild<QWidget*>("hoverOpacityGroup");
         auto* slider = window.findChild<QSlider*>("hoverOpacitySlider");
@@ -1029,7 +1081,8 @@ private slots:
         QStyleOptionSlider option;
         option.initFrom(slider);
         option.orientation = Qt::Horizontal;
-        option.minimum = 0; option.maximum = 100;
+        option.minimum = 0;
+        option.maximum = 100;
         option.sliderPosition = option.sliderValue = slider->value();
         const auto handle = slider->style()->subControlRect(QStyle::CC_Slider, &option, QStyle::SC_SliderHandle, slider);
         QTest::mousePress(slider, Qt::LeftButton, Qt::NoModifier, handle.center());
@@ -1044,8 +1097,7 @@ private slots:
         QVERIFY(mutations.isEmpty());
         // 释放时仍有旧查询在途；其回复不能用 37% 覆盖
         // 用户释放后等待发送的值。
-        QTest::mouseRelease(slider, Qt::LeftButton, Qt::NoModifier,
-            QPoint(slider->width() * 4 / 5, handle.center().y()));
+        QTest::mouseRelease(slider, Qt::LeftButton, Qt::NoModifier, QPoint(slider->width() * 4 / 5, handle.center().y()));
         QCOMPARE(slider->value(), released);
         connection->write(delayedResponse);
         connection->flush();
@@ -1064,9 +1116,12 @@ private slots:
         QCOMPARE(status->text(), QStringLiteral("已设置并保存"));
         QCOMPARE(connectionStatus->text(), connectedText);
         const auto screenshot = qEnvironmentVariable("DESKWAIFU_HOVER_SCREENSHOT");
-        if (!screenshot.isEmpty()) QVERIFY(window.grab().save(screenshot));
+        if (!screenshot.isEmpty()) {
+            QVERIFY(window.grab().save(screenshot));
+        }
         ConfigStore store(configPath.toStdString());
-        ConfigStore::Snapshot disk; std::string error;
+        ConfigStore::Snapshot disk;
+        std::string error;
         QVERIFY(store.Read(disk, error));
         QCOMPARE(disk.values.at("model_x"), std::string("2.5"));
         QCOMPARE(disk.values.at("extra"), std::string("\"keep\""));
@@ -1075,8 +1130,8 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(backend.State().value("opacity").toDouble() == 0 && group->isEnabled(), 2000);
         QTest::keyClick(slider, Qt::Key_End);
         QTRY_VERIFY_WITH_TIMEOUT(backend.State().value("opacity").toDouble() == 1 && group->isEnabled(), 2000);
-        QVERIFY(backend.Call("begin_transform_edit", {}, "another-client").value("ok").toBool());
-        QVERIFY(backend.Call("update_transform_edit", {{"x", 4.5}}, "another-client").value("ok").toBool());
+        QVERIFY(backend.Call("begin_transform_edit", { }, "another-client").value("ok").toBool());
+        QVERIFY(backend.Call("update_transform_edit", { { "x", 4.5 } }, "another-client").value("ok").toBool());
         QTRY_VERIFY_WITH_TIMEOUT(!window.findChild<QDoubleSpinBox*>("positionXSpin")->isEnabled(), 2000);
         QVERIFY(group->isEnabled()); // 与正在进行的位置或裁剪编辑独立。
         enabled->click();
@@ -1086,11 +1141,11 @@ private slots:
         QVERIFY(backend.State().value("editing").toBool());
         QCOMPARE(float(backend.State().value("runtime_x").toDouble()), 4.5f);
         // 整个文档保存会检测编辑期间独立发生的悬停配置写入。
-        QVERIFY(!backend.Call("apply_transform_edit", {}, "another-client").value("ok").toBool());
-        QVERIFY(backend.Call("cancel_transform_edit", {}, "another-client").value("ok").toBool());
+        QVERIFY(!backend.Call("apply_transform_edit", { }, "another-client").value("ok").toBool());
+        QVERIFY(backend.Call("cancel_transform_edit", { }, "another-client").value("ok").toBool());
         QCOMPARE(float(backend.State().value("runtime_x").toDouble()), 2.5f);
         backend.Call("test.reload"); // 后端会定期刷新比较快照。
-        QVERIFY(backend.Call("reset_transform_settings", {}, "another-client").value("ok").toBool());
+        QVERIFY(backend.Call("reset_transform_settings", { }, "another-client").value("ok").toBool());
         QVERIFY(store.Read(disk, error));
         QVERIFY(disk.values.count("hover_opacity") && disk.values.count("hover_opacity_enabled"));
         QVERIFY(!backend.State().value("enabled").toBool() && backend.State().value("opacity").toDouble() == 1);
@@ -1160,7 +1215,7 @@ private slots:
         QVERIFY(directory.isValid());
         QVERIFY(directory.path().startsWith(QDir::tempPath() + "/"));
         if (qEnvironmentVariable("DESKWAIFU_EXPECT_LONG_TEMP") == QStringLiteral("ON")) {
-            sockaddr_un address{};
+            sockaddr_un address { };
             QVERIFY(QFile::encodeName(directory.path() + "/deskwaifu.sock").size() >= qsizetype(sizeof(address.sun_path)));
         }
         // Linux Unix 套接字名称受 sun_path 大小限制，即使所在目录是合法长路径。
@@ -1213,11 +1268,16 @@ private slots:
         QCOMPARE(connectionStatus->text(), connectedText);
         QTRY_VERIFY_WITH_TIMEOUT(!width->isEnabled(), 2000);
         QTest::qWait(100); // 首次用户编辑前，初始查询已经完成。
-        x->setValue(2.5); zoom->setValue(1.5); enabled->setChecked(true);
+        x->setValue(2.5);
+        zoom->setValue(1.5);
+        enabled->setChecked(true);
         QTRY_VERIFY_WITH_TIMEOUT(apply->isEnabled(), 2000);
         QCOMPARE(width->value(), 1920);
-        ConfigStore store(path); ConfigStore::Snapshot disk; std::string error;
-        QVERIFY(store.Read(disk, error)); QVERIFY(disk.values.empty());
+        ConfigStore store(path);
+        ConfigStore::Snapshot disk;
+        std::string error;
+        QVERIFY(store.Read(disk, error));
+        QVERIFY(disk.values.empty());
         apply->click();
         QTRY_VERIFY_WITH_TIMEOUT(!backend.State().value("editing").toBool(), 2000);
         QVERIFY(store.Read(disk, error));
@@ -1227,7 +1287,9 @@ private slots:
         screen->click();
         QTRY_VERIFY_WITH_TIMEOUT(cancel->isEnabled(), 2000);
         const auto screenshot = qEnvironmentVariable("DESKWAIFU_TEST_SCREENSHOT");
-        if (!screenshot.isEmpty()) QVERIFY(window.grab().save(screenshot));
+        if (!screenshot.isEmpty()) {
+            QVERIFY(window.grab().save(screenshot));
+        }
         x->setValue(3.5);
         QTRY_VERIFY_WITH_TIMEOUT(apply->isEnabled(), 2000);
         cancel->click();
@@ -1237,7 +1299,8 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(float(backend.State().value("runtime_x").toDouble()), 0.f, 2000);
         QTRY_VERIFY_WITH_TIMEOUT(!enabled->isChecked(), 2000);
         QCOMPARE(float(backend.State().value("runtime_zoom").toDouble()), 1.f);
-        QVERIFY(store.Read(disk, error)); QCOMPARE(disk.values.size(), size_t(15));
+        QVERIFY(store.Read(disk, error));
+        QCOMPARE(disk.values.size(), size_t(15));
         QVERIFY(!disk.values.count("model_region"));
         QCOMPARE(disk.values.at("model_x"), std::string("0"));
         QCOMPARE(disk.values.at("model_y"), std::string("0"));
@@ -1249,8 +1312,8 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(!x->isEnabled(), 3000);
         QVERIFY(!apply->isEnabled() && !reset->isEnabled());
         QVERIFY(window.findChild<QLabel*>("transformStatusLabel")->text().contains(QStringLiteral("模型窗口")));
-        for (uint32_t time : {200u, 300u}) {
-            QVERIFY(backend.Call("test.press_release", {{"time", int(time)}}).value("ok").toBool());
+        for (uint32_t time : { 200u, 300u }) {
+            QVERIFY(backend.Call("test.press_release", { { "time", int(time) } }).value("ok").toBool());
         }
         QTRY_VERIFY_WITH_TIMEOUT(x->isEnabled(), 3000);
         QVERIFY(enabled->isChecked());

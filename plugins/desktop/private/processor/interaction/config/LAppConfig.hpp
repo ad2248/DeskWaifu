@@ -1,20 +1,18 @@
 #pragma once
 
-#include <string>
-#include <experimental/optional>
-#include <vector>
-#include "contracts/ModelRegion.hpp"
 #include "contracts/ConfigStore.hpp"
+#include "contracts/ModelRegion.hpp"
+#include <experimental/optional>
+#include <string>
+#include <vector>
 
 // 桌面插件的持久化配置及其来源路径；不持有运行中的窗口或模型。
 // 启动单例供装配阶段读取，交互域可持有副本；修改须由调用方串行化。
-struct LAppConfig
-{
+struct LAppConfig {
     static std::string GetDefaultPluginDir();
 
     // 此处只放持久化字段，运行时管理状态保存在外部。
-    struct Values
-    {
+    struct Values {
         std::vector<std::string> additionalModelDirs;
         std::string defaultModel;
         std::string modelOutput;

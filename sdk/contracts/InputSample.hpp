@@ -6,8 +6,7 @@
 // GUI 线程的有界连续采样槽；离散事件形成顺序屏障。
 // 生产者和消费者共享可变槽，消费前可覆盖坐标，消费后须新建槽；
 // shared_ptr 仅管理生命周期，不提供跨线程读写同步。
-struct InputSample
-{
+struct InputSample {
     double x = 0, y = 0;
     bool cursor = false, consumed = false;
 };

@@ -1,32 +1,41 @@
 #include "plugin/GuiPluginApi.hpp"
 #include "plugin/GuiPluginContext.hpp"
 #include "plugin/PluginApi.hpp"
-#include <QFile>
 #include <QCoreApplication>
+#include <QFile>
 #include <stdexcept>
 
 namespace {
 void Log(const QString& text)
 {
     QFile file(qEnvironmentVariable("DESKWAIFU_GUI_PLUGIN_TEST_LOG"));
-    if (file.open(QIODevice::WriteOnly | QIODevice::Append)) file.write((text + '\n').toUtf8());
+    if (file.open(QIODevice::WriteOnly | QIODevice::Append)) {
+        file.write((text + '\n').toUtf8());
+    }
 }
-struct UnloadProbe { ~UnloadProbe() { Log("unload"); } } probe;
-class Page : public QWidget
-{
+struct UnloadProbe {
+    ~UnloadProbe() { Log("unload"); }
+} probe;
+class Page : public QWidget {
 public:
-    explicit Page(QString name) : _name(std::move(name)) { setObjectName(QStringLiteral("fixturePage")); }
+    explicit Page(QString name)
+        : _name(std::move(name))
+    {
+        setObjectName(QStringLiteral("fixturePage"));
+    }
     ~Page() override { Log(_name + ":page-destroy"); }
+
 private:
     QString _name;
 };
-class Fixture : public IGuiPlugin
-{
+class Fixture : public IGuiPlugin {
 public:
     ~Fixture() override
     {
         Log(_context->Name() + ":destroy");
-        if (_context->IsValid() || _context->Services()->isConnected()) Log("bad-destroy-active");
+        if (_context->IsValid() || _context->Services()->isConnected()) {
+            Log("bad-destroy-active");
+        }
     }
     bool Initialize(GuiPluginContext& context, QString* error) override
     {
@@ -34,31 +43,37 @@ public:
         const auto name = context.Name();
         Log(name + ":initialize");
         auto* services = context.Services();
-        QObject::connect(services, &GuiHostServices::responseReceived, &context,
-            [name](const QString&, const QJsonObject&) { Log(name + ":response"); });
-        QObject::connect(services, &GuiHostServices::responseReceived, &context,
-            [name](const QString&, const QJsonObject&) { Log(name + ":queued-response"); }, Qt::QueuedConnection);
-        QObject::connect(services, &GuiHostServices::activationChanged, &context,
-            [name](bool) { Log(name + ":activation"); });
+        QObject::connect(services, &GuiHostServices::responseReceived, &context, [name](const QString&, const QJsonObject&) { Log(name + ":response"); });
+        QObject::connect(
+            services, &GuiHostServices::responseReceived, &context, [name](const QString&, const QJsonObject&) { Log(name + ":queued-response"); }, Qt::QueuedConnection);
+        QObject::connect(services, &GuiHostServices::activationChanged, &context, [name](bool) { Log(name + ":activation"); });
         _page = new Page(name);
-        QObject::connect(services, &GuiHostServices::responseReceived, _page,
-            [name](const QString&, const QJsonObject&) { Log(name + ":queued-page-response"); }, Qt::QueuedConnection);
+        QObject::connect(
+            services, &GuiHostServices::responseReceived, _page, [name](const QString&, const QJsonObject&) { Log(name + ":queued-page-response"); }, Qt::QueuedConnection);
         auto* queuedChild = new QObject(_page);
-        QObject::connect(services, &GuiHostServices::responseReceived, queuedChild,
-            [name](const QString&, const QJsonObject&) { Log(name + ":queued-child-response"); }, Qt::QueuedConnection);
+        QObject::connect(
+            services, &GuiHostServices::responseReceived, queuedChild, [name](const QString&, const QJsonObject&) { Log(name + ":queued-child-response"); }, Qt::QueuedConnection);
         const QString id = "first";
-        if (!context.RegisterTab({id, "First", 10}, _page, error)) { delete _page; _page = nullptr; return false; }
+        if (!context.RegisterTab({ id, "First", 10 }, _page, error)) {
+            delete _page;
+            _page = nullptr;
+            return false;
+        }
 #ifdef FIXTURE_validation
         auto* rejected = new QWidget;
-        if (context.RegisterTab({id, "Duplicate"}, rejected) || rejected->parent()) throw std::runtime_error("duplicate accepted");
+        if (context.RegisterTab({ id, "Duplicate" }, rejected) || rejected->parent()) {
+            throw std::runtime_error("duplicate accepted");
+        }
         delete rejected;
-        if (context.RegisterTab({"reuse", "Reuse"}, _page) ||
-            context.RegisterTab({"", "Empty"}, _page) || context.RegisterTab({"null", "Null"}, nullptr) ||
-            context.RegisterTab({"bad/id", "Bad namespace"}, _page))
+        if (context.RegisterTab({ "reuse", "Reuse" }, _page) || context.RegisterTab({ "", "Empty" }, _page) || context.RegisterTab({ "null", "Null" }, nullptr)
+            || context.RegisterTab({ "bad/id", "Bad namespace" }, _page)) {
             throw std::runtime_error("invalid page accepted");
+        }
         QWidget parent;
         QWidget child(&parent);
-        if (context.RegisterTab({"parent", "Parented"}, &child)) throw std::runtime_error("parented accepted");
+        if (context.RegisterTab({ "parent", "Parented" }, &child)) {
+            throw std::runtime_error("parented accepted");
+        }
 #endif
         auto* second = new Page(name);
         const QString secondId =
@@ -67,14 +82,17 @@ public:
 #else
             "second";
 #endif
-        if (!context.RegisterTab({secondId, "Second", 0}, second, error)) { delete second; return false; }
+        if (!context.RegisterTab({ secondId, "Second", 0 }, second, error)) {
+            delete second;
+            return false;
+        }
 #ifdef FIXTURE_init_fail
         *error = "fixture Initialize failed";
         return false;
 #elif defined(FIXTURE_init_throw)
         throw std::runtime_error("fixture Initialize threw");
 #else
-        services->sendCommand("initialize", {{"plugin", name}});
+        services->sendCommand("initialize", { { "plugin", name } });
         services->cancelQueuedCommand("initialize");
         return true;
 #endif
@@ -82,7 +100,10 @@ public:
     bool Start(QString* error) override
     {
         Log(_context->Name() + ":start");
-        if (_page->parent()) { *error = "published before Start"; return false; }
+        if (_page->parent()) {
+            *error = "published before Start";
+            return false;
+        }
 #ifdef FIXTURE_start_fail
         *error = "fixture Start failed";
         return false;
@@ -103,11 +124,14 @@ public:
     {
         Log(_context->Name() + ":stop");
         QCoreApplication::processEvents(); // Exercise reentrant teardown after invalidation.
-        if (_context->IsValid() || _context->Services()->isConnected()) Log("bad-stop-active");
+        if (_context->IsValid() || _context->Services()->isConnected()) {
+            Log("bad-stop-active");
+        }
         _context->Services()->sendCommand("bad-after-stop");
         _context->Services()->cancelQueuedCommand("cleanup");
         _context->Services()->setStatusMessage("bad-after-stop");
     }
+
 private:
     GuiPluginContext* _context = nullptr;
     QWidget* _page = nullptr;
@@ -139,10 +163,13 @@ DESKWAIFU_EXPORT_GUI_PLUGIN(Fixture)
 #endif
 
 #if defined(FIXTURE_dual) || defined(FIXTURE_backend_only)
-class Backend : public IProcessorPlugin
-{
+class Backend : public IProcessorPlugin {
 public:
-    bool Initialize(PluginContext&, QString*) override { Log("backend:initialize"); return true; }
+    bool Initialize(PluginContext&, QString*) override
+    {
+        Log("backend:initialize");
+        return true;
+    }
     void Stop() noexcept override { Log("backend:stop"); }
 };
 DESKWAIFU_EXPORT_PLUGIN(Backend)

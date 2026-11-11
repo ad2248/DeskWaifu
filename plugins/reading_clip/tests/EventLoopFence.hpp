@@ -8,19 +8,27 @@
 // 在循环所属线程调用，仅保证栅栏已被消费，不保证异步后台任务全部完成。
 inline bool AwaitProcessorEvents(ProcessorEventLoop& loop)
 {
-    class Fence final : public Processor
-    {
+    class Fence final : public Processor {
     public:
         using Processor::Processor;
         bool done = false;
         bool HandleEvent(const ProcessorEvent& event) override
         {
-            if (event.receiver != this || event.type != "test.fence") return false;
-            done = true; return true;
+            if (event.receiver != this || event.type != "test.fence") {
+                return false;
+            }
+            done = true;
+            return true;
         }
     } fence(loop);
-    if (!loop.Post({"test.fence", &fence, &fence})) return false;
-    QElapsedTimer timer; timer.start();
-    while (!fence.done && timer.elapsed() < 5000) { QCoreApplication::processEvents(); QThread::msleep(1); }
+    if (!loop.Post({ "test.fence", &fence, &fence })) {
+        return false;
+    }
+    QElapsedTimer timer;
+    timer.start();
+    while (!fence.done && timer.elapsed() < 5000) {
+        QCoreApplication::processEvents();
+        QThread::msleep(1);
+    }
     return fence.done;
 }

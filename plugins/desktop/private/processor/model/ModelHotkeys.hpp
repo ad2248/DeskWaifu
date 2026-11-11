@@ -1,19 +1,26 @@
 #pragma once
 
+#include "contracts/ModelBinding.hpp"
 #include <string>
 #include <vector>
-#include "contracts/ModelBinding.hpp"
 
-namespace Live2D { namespace Cubism { namespace Framework { class CubismModel; } } }
+namespace Live2D {
+namespace Cubism {
+    namespace Framework {
+        class CubismModel;
+    }
+}
+}
 
 // 与渲染器独立的模型配置和持久表情状态。
-class ModelHotkeys
-{
+class ModelHotkeys {
 public:
     // 单个表情参数及其叠加、乘算或覆盖混合方式。
-    struct Parameter { std::string id, blend; float value; };
-    struct Expression
-    {
+    struct Parameter {
+        std::string id, blend;
+        float value;
+    };
+    struct Expression {
         std::string file;
         std::vector<Parameter> parameters;
         bool active = false;

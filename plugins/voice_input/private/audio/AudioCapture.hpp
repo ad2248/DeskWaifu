@@ -8,8 +8,7 @@
 #include <QTimer>
 #include <memory>
 
-class AudioCapture : public QObject
-{
+class AudioCapture : public QObject {
     Q_OBJECT
 public:
     explicit AudioCapture(QObject* parent = nullptr);
@@ -20,6 +19,7 @@ public:
     static QJsonArray ListDevices();
 signals:
     void Failed(quint64 sessionId, const QString& code, const QString& message);
+
 private:
     friend class AudioTest; // Offline pull-device tests, without enumerating or opening hardware.
     static QJsonObject DeviceInfo(const QByteArray& id, const QString& name, bool isDefault);

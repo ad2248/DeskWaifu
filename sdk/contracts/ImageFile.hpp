@@ -6,11 +6,11 @@
 #include <QTemporaryDir>
 
 // 只要排队事件或服务仍持有引用，私有临时 PNG 就保持有效。
-class ImageFile
-{
+class ImageFile {
 public:
     // 返回临时目录中的目标 PNG 路径，不创建图片；目录创建失败时路径可能无效。
     QString Path() const { return _directory.filePath("image.png"); }
+
 private:
     QTemporaryDir _directory;
 };

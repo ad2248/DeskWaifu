@@ -3,8 +3,7 @@
 #include <QStringList>
 
 // 后端宿主启动配置；插件根目录与插件配置根目录相互独立。
-struct HostConfig
-{
+struct HostConfig {
     QString pluginDirectory;
     QString configDirectory;
     // 从 --config 或默认配置文件加载目录，并应用 DESKWAIFU_PLUGIN_DIR 覆盖。

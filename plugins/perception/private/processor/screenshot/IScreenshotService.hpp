@@ -6,20 +6,22 @@
 #include <memory>
 
 // 经用户授权的单次截图；接口不涉及 OCR、存储或桌面坐标。
-class IScreenshotService : public QObject
-{
+class IScreenshotService : public QObject {
     Q_OBJECT
 public:
     enum class Error { Cancelled, Unavailable, BackendFailure, InvalidResponse, ImageReadFailed, TimedOut };
     Q_ENUM(Error)
 
-    explicit IScreenshotService(QObject* parent = nullptr) : QObject(parent) {}
+    explicit IScreenshotService(QObject* parent = nullptr)
+        : QObject(parent)
+    {
+    }
     ~IScreenshotService() override = default;
 
     // 返回不透明请求 ID；忙碌时返回空字符串。服务存活期间，已接受的请求
     // 会异步发出且仅发出一次完成信号。
     // parentWindow 为可选的平台窗口标识，留空表示无父窗口。
-    virtual QString Capture(const QString& parentWindow = {}) = 0;
+    virtual QString Capture(const QString& parentWindow = { }) = 0;
     // 取消当前匹配请求，成功返回 true 并以 Failed 通知；无匹配请求返回 false。
     virtual bool Cancel(const QString& requestId) = 0;
     // 存在授权请求或尚未结束的后台解码时返回 true。

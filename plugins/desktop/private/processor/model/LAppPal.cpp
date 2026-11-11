@@ -6,17 +6,17 @@
  */
 
 #include "LAppPal.hpp"
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdarg.h>
-#include <sys/stat.h>
-#include <iostream>
-#include <fstream>
-#include <GL/glew.h>
-#include <Model/CubismMoc.hpp>
+#include "EmbeddedShaders.hpp"
 #include "LAppDefine.hpp"
 #include "ResourcePath.hpp"
-#include "EmbeddedShaders.hpp"
+#include <GL/glew.h>
+#include <Model/CubismMoc.hpp>
+#include <fstream>
+#include <iostream>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/stat.h>
 #include <time.h>
 
 using std::endl;
@@ -27,10 +27,7 @@ using namespace LAppDefine;
 double LAppPal::s_currentFrame = 0.0;
 std::string LAppPal::s_resourceBasePath;
 
-void LAppPal::SetResourceBasePath(const std::string& base)
-{
-    s_resourceBasePath = base;
-}
+void LAppPal::SetResourceBasePath(const std::string& base) { s_resourceBasePath = base; }
 double LAppPal::s_lastFrame = 0.0;
 double LAppPal::s_deltaTime = 0.0;
 
@@ -45,37 +42,30 @@ csmByte* LAppPal::LoadFileAsBytes(const string filePath, csmSizeInt* outSize)
 {
     // 优先查找内嵌着色器。
     const EmbeddedShaders::ShaderData* embedded = EmbeddedShaders::Find(filePath);
-    if (embedded)
-    {
+    if (embedded) {
         char* buf = new char[embedded->size];
         memcpy(buf, embedded->data, embedded->size);
         *outSize = static_cast<csmSizeInt>(embedded->size);
         return reinterpret_cast<csmByte*>(buf);
     }
 
-    //filePath;//
+    // filePath;//
     string pathString = ResolveResourcePath(s_resourceBasePath, filePath);
     const char* path = pathString.c_str();
 
     int size = 0;
     struct stat statBuf;
-    if (stat(path, &statBuf) == 0)
-    {
+    if (stat(path, &statBuf) == 0) {
         size = statBuf.st_size;
 
-        if (size == 0)
-        {
-            if (DebugLogEnable)
-            {
+        if (size == 0) {
+            if (DebugLogEnable) {
                 PrintLogLn("Stat succeeded but file size is zero. path:%s", path);
             }
             return NULL;
         }
-    }
-    else
-    {
-        if (DebugLogEnable)
-        {
+    } else {
+        if (DebugLogEnable) {
             PrintLogLn("Stat failed. errno:%d path:%s", errno, path);
         }
         return NULL;
@@ -83,10 +73,8 @@ csmByte* LAppPal::LoadFileAsBytes(const string filePath, csmSizeInt* outSize)
 
     std::fstream file;
     file.open(path, std::ios::in | std::ios::binary);
-    if (!file.is_open())
-    {
-        if (DebugLogEnable)
-        {
+    if (!file.is_open()) {
+        if (DebugLogEnable) {
             PrintLogLn("File open failed. path:%s", path);
         }
         return NULL;
@@ -100,15 +88,9 @@ csmByte* LAppPal::LoadFileAsBytes(const string filePath, csmSizeInt* outSize)
     return reinterpret_cast<csmByte*>(buf);
 }
 
-void LAppPal::ReleaseBytes(csmByte* byteData)
-{
-    delete[] byteData;
-}
+void LAppPal::ReleaseBytes(csmByte* byteData) { delete[] byteData; }
 
-csmFloat32  LAppPal::GetDeltaTime()
-{
-    return static_cast<csmFloat32>(s_deltaTime);
-}
+csmFloat32 LAppPal::GetDeltaTime() { return static_cast<csmFloat32>(s_deltaTime); }
 
 void LAppPal::UpdateTime()
 {
@@ -137,12 +119,6 @@ void LAppPal::PrintLogLn(const csmChar* format, ...)
     va_end(args);
 }
 
-void LAppPal::PrintMessage(const csmChar* message)
-{
-    PrintLog("%s", message);
-}
+void LAppPal::PrintMessage(const csmChar* message) { PrintLog("%s", message); }
 
-void LAppPal::PrintMessageLn(const csmChar* message)
-{
-    PrintLogLn("%s", message);
-}
+void LAppPal::PrintMessageLn(const csmChar* message) { PrintLogLn("%s", message); }

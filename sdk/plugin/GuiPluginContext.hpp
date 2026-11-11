@@ -12,8 +12,7 @@ class QTabWidget;
 class GuiPluginManager;
 
 // 插件页面的显示信息；宿主先按 order 升序、再按全局 ID 排序。
-struct GuiTabSpec
-{
+struct GuiTabSpec {
     QString id; // Plugin-local ID; the global ID is Name() + '/' + id.
     QString title;
     int order = 0;
@@ -22,8 +21,7 @@ struct GuiTabSpec
 // 仅在 GUI 主线程使用，存活至插件析构结束。
 // 注册成功的页面由上下文拥有，Stop 后、插件析构前销毁；
 // 注册失败时所有权仍归调用者。失效时撤销服务和受管理接收者的排队回调。
-class GuiPluginContext final : public QObject
-{
+class GuiPluginContext final : public QObject {
 public:
     ~GuiPluginContext() override;
     const QString& Name() const { return _name; }
@@ -42,7 +40,11 @@ private:
     void Activate();
     void Invalidate();
     void DestroyPages();
-    struct Tab { QString id, title; int order; QPointer<QWidget> page; };
+    struct Tab {
+        QString id, title;
+        int order;
+        QPointer<QWidget> page;
+    };
     QString _name;
     std::unique_ptr<GuiHostServices> _services;
     QTabWidget& _tabs;

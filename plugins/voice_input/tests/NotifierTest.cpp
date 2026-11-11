@@ -3,25 +3,27 @@
 #include <QDBusVirtualObject>
 #include <QtTest>
 
-class Notifications final : public QDBusVirtualObject
-{
+class Notifications final : public QDBusVirtualObject {
 public:
     QList<QDBusMessage> calls;
     uint nextId = 40;
     bool delayReply = false;
-    QString introspect(const QString&) const override { return {}; }
+    QString introspect(const QString&) const override { return { }; }
     bool handleMessage(const QDBusMessage& message, const QDBusConnection& connection) override
     {
-        if (message.member() != "Notify") return false;
+        if (message.member() != "Notify") {
+            return false;
+        }
         message.setDelayedReply(true);
         calls.append(message);
-        if (!delayReply) connection.send(message.createReply({QVariant::fromValue(nextId++)}));
+        if (!delayReply) {
+            connection.send(message.createReply({ QVariant::fromValue(nextId++) }));
+        }
         return true;
     }
 };
 
-class NotifierTest : public QObject
-{
+class NotifierTest : public QObject {
     Q_OBJECT
 private slots:
     void freshBoundarySurvivesCoalescedCancellationAndRestart()
@@ -33,12 +35,12 @@ private slots:
         QVERIFY(bus.registerVirtualObject("/org/freedesktop/Notifications", &service));
         {
             VoiceInputNotifier notifier;
-            notifier.ShowState({{"phase", "recording"}, {"session_id", "1"}});
+            notifier.ShowState({ { "phase", "recording" }, { "session_id", "1" } });
             QTRY_COMPARE(service.calls.size(), 1);
-            notifier.ShowState({{"phase", "idle"}, {"last_outcome", "cancelled"}, {"session_id", "1"}});
-            notifier.ShowState({{"phase", "recording"}, {"session_id", "2"}});
+            notifier.ShowState({ { "phase", "idle" }, { "last_outcome", "cancelled" }, { "session_id", "1" } });
+            notifier.ShowState({ { "phase", "recording" }, { "session_id", "2" } });
             service.delayReply = false;
-            QVERIFY(bus.send(service.calls[0].createReply({QVariant::fromValue(service.nextId++)})));
+            QVERIFY(bus.send(service.calls[0].createReply({ QVariant::fromValue(service.nextId++) })));
             QTRY_COMPARE(service.calls.size(), 2);
             QCOMPARE(service.calls[1].arguments()[1].toUInt(), uint(0));
         }
@@ -56,8 +58,7 @@ private slots:
             VoiceInputNotifier notifier;
             const auto send = [&](const QString& phase, const QString& outcome = QString()) {
                 const int expected = service.calls.size() + 1;
-                notifier.ShowState({{"phase", phase}, {"last_outcome", outcome},
-                    {"text", "private transcript must never be sent"}});
+                notifier.ShowState({ { "phase", phase }, { "last_outcome", outcome }, { "text", "private transcript must never be sent" } });
                 QTRY_COMPARE(service.calls.size(), expected);
                 // Let the asynchronous reply release the notifier's pending call.
                 QCoreApplication::processEvents();
@@ -71,7 +72,7 @@ private slots:
             send("idle", "cancelled");
             send("copying");
             send("idle", "copied"); // Explicit copy retry must also pop up.
-            const QList<uint> expected{0, 40, 41, 42, 0, 0, 0, 46, 0};
+            const QList<uint> expected { 0, 40, 41, 42, 0, 0, 0, 46, 0 };
             QCOMPARE(service.calls.size(), expected.size());
             for (int i = 0; i < expected.size(); ++i) {
                 const auto& call = service.calls[i];

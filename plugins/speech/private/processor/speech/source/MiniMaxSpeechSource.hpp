@@ -11,12 +11,10 @@ class QWebSocket;
 
 // 通过 MiniMax WebSocket 协议获取单任务 PCM 流，不负责本地播放。
 // 在所属 Qt 事件循环线程串行使用；持有网络连接与超时计时器。
-class MiniMaxSpeechSource : public QObject
-{
+class MiniMaxSpeechSource : public QObject {
     Q_OBJECT
 public:
-    explicit MiniMaxSpeechSource(QString apiKey, QObject* parent = nullptr,
-        QUrl endpoint = QUrl(QStringLiteral("wss://api.minimax.cn/ws/v1/t2a_v2_bidi")));
+    explicit MiniMaxSpeechSource(QString apiKey, QObject* parent = nullptr, QUrl endpoint = QUrl(QStringLiteral("wss://api.minimax.cn/ws/v1/t2a_v2_bidi")));
     ~MiniMaxSpeechSource() override;
     // 更新后续连接使用的凭据，不重启当前任务。
     void SetApiKey(QString apiKey);

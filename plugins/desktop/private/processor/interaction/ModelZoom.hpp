@@ -4,16 +4,18 @@
 
 // 返回围绕逻辑坐标锚点缩放后的变换，将缩放限制为 [0.1, 10]。
 // 当前缩放为正时调整平移以保持锚点下的模型点不动；否则只更新缩放。
-inline ModelTransform ZoomModelAroundPoint(
-    ModelTransform current, float anchorX, float anchorY, float requestedScale)
+inline ModelTransform ZoomModelAroundPoint(ModelTransform current, float anchorX, float anchorY, float requestedScale)
 {
     ModelTransform result = current;
     result.scale = requestedScale;
-    if (result.scale < 0.1f) result.scale = 0.1f;
-    if (result.scale > 10.0f) result.scale = 10.0f;
+    if (result.scale < 0.1f) {
+        result.scale = 0.1f;
+    }
+    if (result.scale > 10.0f) {
+        result.scale = 10.0f;
+    }
 
-    if (current.scale <= 0.0f || result.scale == current.scale)
-    {
+    if (current.scale <= 0.0f || result.scale == current.scale) {
         return result;
     }
 

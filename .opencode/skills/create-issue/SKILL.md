@@ -6,15 +6,9 @@ user-invokable: true
 
 # Create Issue
 
-```bash
-tea issues create          # interactive
-tea issues create --title "Fix bug" --description "Details" \
-  --labels "bug,frontend" --assignees "sh" --milestone "v1.0" --deadline "2025-03-01"
-```
+Use the available `gt` or `tea` CLI to create a Gitea/Forgejo issue. Consult the installed CLI's help rather than assuming command syntax.
 
-## Tips
-
-- All flags are optional; omit any to skip or get prompted interactively
-- `--labels` accepts comma-separated label names
-- `--assignees` accepts comma-separated usernames
-- `--deadline` accepts date strings like `2025-03-01`
+1. Confirm the target host, repository and account; ask if ambiguous.
+2. Collect the title and description, plus any requested labels, assignees, milestone and deadline. Do not invent optional metadata.
+3. Create the issue using `gt` or `tea`, explicitly targeting the known host, repository and necessary account.
+4. Verify the created issue and requested metadata, then return its URL. If creation reports a partial failure, check whether the issue already exists before retrying to avoid duplicates.

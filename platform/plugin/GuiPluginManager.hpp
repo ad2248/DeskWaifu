@@ -8,8 +8,7 @@
 // 宿主服务和标签容器必须比管理器存活更久；生命周期操作仅限 GUI 主线程。
 // 动态库保持映射，Stop 只销毁插件实例及其页面，不卸载库。
 // The host services and tab widget must outlive the manager. Main-thread only.
-class GuiPluginManager final
-{
+class GuiPluginManager final {
 public:
     GuiPluginManager(QString root, GuiHostServices& services, QTabWidget& tabs);
     // 析构时调用 Stop，须保持 GUI 应用及借用对象有效。

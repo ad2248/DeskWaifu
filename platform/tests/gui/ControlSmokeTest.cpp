@@ -12,8 +12,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-class ControlSmokeTest : public QObject
-{
+class ControlSmokeTest : public QObject {
     Q_OBJECT
 private slots:
     void probesWithoutSystemPlugin_data()
@@ -21,10 +20,10 @@ private slots:
         QTest::addColumn<bool>("reply");
         QTest::addColumn<QJsonObject>("response");
         QTest::addColumn<int>("exitCode");
-        QTest::newRow("successful-roundtrip") << true << QJsonObject{{"ok", true}} << 0;
-        QTest::newRow("backend-rejected") << true << QJsonObject{{"ok", false}} << 1;
-        QTest::newRow("invalid-success-type") << true << QJsonObject{{"ok", "true"}} << 1;
-        QTest::newRow("connected-but-silent") << false << QJsonObject{} << -1;
+        QTest::newRow("successful-roundtrip") << true << QJsonObject { { "ok", true } } << 0;
+        QTest::newRow("backend-rejected") << true << QJsonObject { { "ok", false } } << 1;
+        QTest::newRow("invalid-success-type") << true << QJsonObject { { "ok", "true" } } << 1;
+        QTest::newRow("connected-but-silent") << false << QJsonObject { } << -1;
     }
 
     void probesWithoutSystemPlugin()
@@ -51,7 +50,7 @@ private slots:
         environment.insert(QStringLiteral("QT_QPA_PLATFORM"), QStringLiteral("offscreen"));
         environment.insert(QStringLiteral("DESKWAIFU_CONTROL_PLUGIN_DIR"), plugins);
         child.setProcessEnvironment(environment);
-        child.start(QStringLiteral(CONTROL_BINARY), {QStringLiteral("--smoke-test")});
+        child.start(QStringLiteral(CONTROL_BINARY), { QStringLiteral("--smoke-test") });
         const auto stopChild = qScopeGuard([&] {
             if (child.state() != QProcess::NotRunning) {
                 child.kill();

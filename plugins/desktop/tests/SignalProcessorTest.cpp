@@ -2,40 +2,60 @@
 #include <QCoreApplication>
 #include <iostream>
 
-#define CHECK(c) do { if (!(c)) { std::cerr << __LINE__ << ": " << #c << '\n'; return 1; } } while (false)
-namespace { volatile sig_atomic_t restored = 0; void Previous(int) { restored = 1; } }
+#define CHECK(c)                                                                                                                                                                   \
+    do {                                                                                                                                                                           \
+        if (!(c)) {                                                                                                                                                                \
+            std::cerr << __LINE__ << ": " << #c << '\n';                                                                                                                           \
+            return 1;                                                                                                                                                              \
+        }                                                                                                                                                                          \
+    } while (false)
+namespace {
+volatile sig_atomic_t restored = 0;
+void Previous(int) { restored = 1; }
+}
 
 int main(int argc, char** argv)
 {
     QCoreApplication app(argc, argv);
     ProcessorEventLoop loop;
-    struct sigaction previous{}, old{};
-    previous.sa_handler = Previous; sigemptyset(&previous.sa_mask);
+    struct sigaction previous { }, old { };
+    previous.sa_handler = Previous;
+    sigemptyset(&previous.sa_mask);
     CHECK(sigaction(SIGUSR1, &previous, &old) == 0);
-    class Receiver final : public Processor
-    {
+    class Receiver final : public Processor {
     public:
         using Processor::Processor;
         int toggles = 0, focuses = 0;
         bool HandleEvent(const ProcessorEvent& event) override
         {
-            if (event.type == "signal.toggle") { ++toggles; return true; }
-            if (event.type == "signal.focus") { ++focuses; return true; }
+            if (event.type == "signal.toggle") {
+                ++toggles;
+                return true;
+            }
+            if (event.type == "signal.focus") {
+                ++focuses;
+                return true;
+            }
             return false;
         }
     } receiver(loop);
-    auto& toggles = receiver.toggles; auto& focuses = receiver.focuses;
+    auto& toggles = receiver.toggles;
+    auto& focuses = receiver.focuses;
     {
         SignalProcessor processor(loop);
         CHECK(processor.Available());
         CHECK(raise(SIGUSR1) == 0 && raise(SIGUSR2) == 0);
         CHECK(toggles == 0 && focuses == 0);
-        for (int i = 0; i < 8; ++i) QCoreApplication::processEvents();
+        for (int i = 0; i < 8; ++i) {
+            QCoreApplication::processEvents();
+        }
         CHECK(toggles == 1 && focuses == 1 && !restored);
-        CHECK(!processor.HandleEvent({"unrelated"}));
+        CHECK(!processor.HandleEvent({ "unrelated" }));
         CHECK(raise(SIGUSR1) == 0); // 析构会清除尚未派发的工作。
     }
-    for (int i = 0; i < 4; ++i) QCoreApplication::processEvents();
+    for (int i = 0; i < 4; ++i) {
+        QCoreApplication::processEvents();
+    }
     CHECK(toggles == 1 && focuses == 1);
     CHECK(raise(SIGUSR1) == 0 && restored);
     CHECK(sigaction(SIGUSR1, &old, nullptr) == 0);

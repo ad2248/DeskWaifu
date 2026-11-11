@@ -8,8 +8,7 @@
 // 生命周期操作须在事件循环所属线程进行；动态库始终保持映射，不随实例销毁卸载。
 // Loop-thread-only. Failed plugins are rolled back individually; healthy ones
 // remain available. Start returns false with diagnostics on partial failure.
-class PluginManager final
-{
+class PluginManager final {
 public:
     PluginManager(ProcessorEventLoop& loop, QString pluginRoot, QString configRoot);
     // 在事件循环所属线程调用 Stop，清理仍保留的实例。
@@ -28,8 +27,7 @@ public:
     static QStringList Discover(const QString& root); // Exact <root>/<name>/<name>.so, no recursion.
 
 private:
-    struct Instance
-    {
+    struct Instance {
         QString name;
         const PluginApi* api = nullptr;
         IProcessorPlugin* plugin = nullptr;

@@ -8,18 +8,18 @@
 
 // 租约借用资源表；组装入口必须先销毁全部模型，再销毁纹理存储。
 // 没有活动借用者时不保留纹理。
-template<typename Id>
-class TextureResidency
-{
+template <typename Id> class TextureResidency {
 public:
     using Destroy = std::function<void(Id)>;
-    explicit TextureResidency(Destroy destroy) : _destroy(std::move(destroy)) {}
+    explicit TextureResidency(Destroy destroy)
+        : _destroy(std::move(destroy))
+    {
+    }
     TextureResidency(const TextureResidency&) = delete;
     TextureResidency& operator=(const TextureResidency&) = delete;
 
     // 可移动的引用计数租约，析构或 Reset 时释放引用；不得晚于资源表析构。
-    class Lease
-    {
+    class Lease {
     public:
         Lease() = default;
         Lease(const Lease&) = delete;
@@ -44,29 +44,41 @@ public:
         const std::string& Key() const { return _key; }
         void Reset()
         {
-            if (_owner) { _owner->Release(_key); _owner = nullptr; }
+            if (_owner) {
+                _owner->Release(_key);
+                _owner = nullptr;
+            }
         }
+
     private:
         friend class TextureResidency;
         Lease(TextureResidency* owner, std::string key, Id id, std::size_t bytes)
-            : _owner(owner), _key(std::move(key)), _id(id), _bytes(bytes) {}
+            : _owner(owner)
+            , _key(std::move(key))
+            , _id(id)
+            , _bytes(bytes)
+        {
+        }
         TextureResidency* _owner = nullptr;
         std::string _key;
-        Id _id{};
+        Id _id { };
         std::size_t _bytes = 0;
     };
 
     // 按键共享资源；首次获取调用 create，空键或创建失败返回空租约。
     // 本表不加锁；获取和释放必须由调用方串行化，并满足 destroy 的上下文要求。
-    template<typename Create>
-    Lease Acquire(const std::string& key, Create create)
+    template <typename Create> Lease Acquire(const std::string& key, Create create)
     {
-        if (key.empty()) return {};
+        if (key.empty()) {
+            return { };
+        }
         auto found = _entries.find(key);
         if (found == _entries.end()) {
             auto resource = create(key); // 返回 pair<Id, bytes>，ID 为零表示失败。
-            if (!resource.first) return {};
-            found = _entries.emplace(key, Entry{resource.first, resource.second, 0}).first;
+            if (!resource.first) {
+                return { };
+            }
+            found = _entries.emplace(key, Entry { resource.first, resource.second, 0 }).first;
             _bytes += resource.second;
         }
         ++found->second.refs;
@@ -77,11 +89,17 @@ public:
     std::size_t ResidentCount() const { return _entries.size(); }
 
 private:
-    struct Entry { Id id; std::size_t bytes; std::size_t refs; };
+    struct Entry {
+        Id id;
+        std::size_t bytes;
+        std::size_t refs;
+    };
     void Release(const std::string& key)
     {
         auto found = _entries.find(key);
-        if (found == _entries.end() || --found->second.refs != 0) return;
+        if (found == _entries.end() || --found->second.refs != 0) {
+            return;
+        }
         _bytes -= found->second.bytes;
         _destroy(found->second.id);
         _entries.erase(found);

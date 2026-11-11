@@ -6,8 +6,7 @@
 // capabilities itself: exactly one plugin endpoint provides speech.speak/v1.
 // 将能力请求 ID 与语音事件关联；借用的端点须覆盖此桥接器的生命周期。
 // 所有入口在总线线程调用，以保持请求接受与取消的顺序。
-class SpeechEndpoint final : public Processor
-{
+class SpeechEndpoint final : public Processor {
 public:
     SpeechEndpoint(ProcessorEventLoop& loop, EventEndpoint& endpoint, const QString& apiKey);
     // 注入的 player 为借用对象，须比此桥接器存活更久。

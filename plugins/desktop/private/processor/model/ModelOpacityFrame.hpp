@@ -5,8 +5,7 @@
 
 // 模型的外层帧，与 Cubism 内部遮罩和渲染目标独立。
 // 在应用仅影响显示的透明度之前，从此帧采样输入区域。
-class ModelOpacityFrame
-{
+class ModelOpacityFrame {
 public:
     ~ModelOpacityFrame() { _buffer.DestroyRenderTarget(); }
     ModelOpacityFrame() = default;
@@ -17,18 +16,23 @@ public:
     // 成功后须调用 Present 配对结束绘制，析构也须保持该上下文有效。
     bool Begin(int width, int height)
     {
-        if (width <= 0 || height <= 0) return false;
-        const bool resize = !_buffer.IsValid() || _buffer.GetBufferWidth() != unsigned(width)
-            || _buffer.GetBufferHeight() != unsigned(height);
+        if (width <= 0 || height <= 0) {
+            return false;
+        }
+        const bool resize = !_buffer.IsValid() || _buffer.GetBufferWidth() != unsigned(width) || _buffer.GetBufferHeight() != unsigned(height);
         if (resize) {
             GLint texture;
             glGetIntegerv(GL_TEXTURE_BINDING_2D, &texture);
             // 上次呈现可能仍绑定着旧纹理；调整尺寸会删除它，
             // 因此不能将该旧标识重新绑定为新纹理。
-            if (GLuint(texture) == _buffer.GetColorBuffer()) texture = 0;
+            if (GLuint(texture) == _buffer.GetColorBuffer()) {
+                texture = 0;
+            }
             const bool created = _buffer.CreateRenderTarget(width, height);
             glBindTexture(GL_TEXTURE_2D, texture);
-            if (!created) return false;
+            if (!created) {
+                return false;
+            }
         }
         _buffer.BeginDraw();
         if (resize && glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
@@ -42,8 +46,7 @@ public:
     }
 
     // 恢复先前绘制目标，同步将颜色纹理及显示透明度交给合成回调。
-    template<typename Composite>
-    void Present(float opacity, Composite composite)
+    template <typename Composite> void Present(float opacity, Composite composite)
     {
         _buffer.EndDraw();
         composite(_buffer.GetColorBuffer(), opacity);

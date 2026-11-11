@@ -5,10 +5,15 @@
 #include <iostream>
 #include <memory>
 
-#define CHECK(c) do { if (!(c)) { std::cerr << __LINE__ << ": " << #c << '\n'; return 1; } } while (false)
+#define CHECK(c)                                                                                                                                                                   \
+    do {                                                                                                                                                                           \
+        if (!(c)) {                                                                                                                                                                \
+            std::cerr << __LINE__ << ": " << #c << '\n';                                                                                                                           \
+            return 1;                                                                                                                                                              \
+        }                                                                                                                                                                          \
+    } while (false)
 
-class TestTransport final : public IGuiTransport
-{
+class TestTransport final : public IGuiTransport {
 public:
     bool isConnected() const override { return connected; }
     void connectToServer() override
@@ -17,7 +22,10 @@ public:
         emit connectionChanged(true, "test transport connected");
     }
     void sendCommand(const QString& command, const QJsonObject& parameters) override
-    { lastCommand = command; lastParameters = parameters; }
+    {
+        lastCommand = command;
+        lastParameters = parameters;
+    }
     void cancelQueuedCommand(const QString& command) override { cancelled = command; }
     bool connected = false;
     QString lastCommand, cancelled;
@@ -34,8 +42,7 @@ int main(int argc, char** argv)
     auto* label = window.findChild<QLabel*>("connectionStatusLabel");
     CHECK(label && label->text().contains(QStringLiteral("传输服务不可用")));
     int responses = 0;
-    QObject::connect(&services, &GuiHostServices::responseReceived, &window,
-        [&](const QString&, const QJsonObject&) { ++responses; });
+    QObject::connect(&services, &GuiHostServices::responseReceived, &window, [&](const QString&, const QJsonObject&) { ++responses; });
 
     TestTransport transport, other;
     auto owner = std::make_unique<QObject>();
@@ -43,12 +50,12 @@ int main(int argc, char** argv)
     CHECK(!services.registerTransport(&other, owner.get()));
     services.connectToServer();
     CHECK(services.isConnected() && label->text() == "test transport connected");
-    services.sendCommand("set_credentials", {{"password", "super-secret"}});
+    services.sendCommand("set_credentials", { { "password", "super-secret" } });
     CHECK(transport.lastCommand == "set_credentials");
     CHECK(transport.lastParameters.value("password").toString() == "super-secret");
     services.cancelQueuedCommand("set_credentials");
     CHECK(transport.cancelled == "set_credentials");
-    emit transport.responseReceived("set_credentials", {{"ok", true}});
+    emit transport.responseReceived("set_credentials", { { "ok", true } });
     CHECK(responses == 1);
     emit transport.protocolError("invalid transport response");
     emit transport.commandOutcomeUnknown("set_credentials");
@@ -58,9 +65,9 @@ int main(int argc, char** argv)
     CHECK(services.isConnected());
     owner.reset();
     CHECK(!services.isConnected());
-    emit transport.responseReceived("late", {{"ok", true}});
+    emit transport.responseReceived("late", { { "ok", true } });
     CHECK(responses == 1);
-    services.sendCommand("missing", {{"password", "super-secret"}});
+    services.sendCommand("missing", { { "password", "super-secret" } });
     CHECK(responses == 2);
 
     QObject nextOwner;

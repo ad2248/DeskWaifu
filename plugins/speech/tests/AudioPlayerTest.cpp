@@ -1,13 +1,12 @@
 #include "processor/speech/audio/AudioPlayer.hpp"
-#include "processor/speech/source/MiniMaxSpeechSource.hpp"
 #include "processor/speech/SpeechPlayer.hpp"
+#include "processor/speech/source/MiniMaxSpeechSource.hpp"
+#include <QAudioDevice>
 #include <QFile>
 #include <QMediaDevices>
-#include <QAudioDevice>
 #include <QtTest>
 
-class AudioPlayerTest : public QObject
-{
+class AudioPlayerTest : public QObject {
     Q_OBJECT
     QAudioFormat Format()
     {
@@ -22,14 +21,16 @@ private slots:
     {
         AudioPlayer audio;
         QSignalSpy errors(&audio, &AudioPlayer::Failed);
-        audio.Start(1, {});
+        audio.Start(1, { });
         QCOMPARE(errors.size(), 1);
         QCOMPARE(qvariant_cast<SpeechError>(errors[0][1]).code, SpeechErrorCode::AudioDevice);
     }
 
     void waitsForEndOfInputAndDrains()
     {
-        if (!qEnvironmentVariableIsSet("DESKWAIFU_AUDIO_TEST")) QSKIP("Opt-in audio device test");
+        if (!qEnvironmentVariableIsSet("DESKWAIFU_AUDIO_TEST")) {
+            QSKIP("Opt-in audio device test");
+        }
         AudioPlayer audio;
         QSignalSpy errors(&audio, &AudioPlayer::Failed);
         QSignalSpy done(&audio, &AudioPlayer::Drained);
@@ -47,7 +48,9 @@ private slots:
 
     void stopAndReplacementDiscardBufferedAudio()
     {
-        if (!qEnvironmentVariableIsSet("DESKWAIFU_AUDIO_TEST")) QSKIP("Opt-in audio device test");
+        if (!qEnvironmentVariableIsSet("DESKWAIFU_AUDIO_TEST")) {
+            QSKIP("Opt-in audio device test");
+        }
         AudioPlayer audio;
         QSignalSpy errors(&audio, &AudioPlayer::Failed);
         QSignalSpy done(&audio, &AudioPlayer::Drained);
@@ -69,7 +72,9 @@ private slots:
 
     void rejectsPartialFramesAndOverflow()
     {
-        if (!qEnvironmentVariableIsSet("DESKWAIFU_AUDIO_TEST")) QSKIP("Opt-in audio device test");
+        if (!qEnvironmentVariableIsSet("DESKWAIFU_AUDIO_TEST")) {
+            QSKIP("Opt-in audio device test");
+        }
         AudioPlayer audio;
         QSignalSpy errors(&audio, &AudioPlayer::Failed);
         audio.Start(4, Format());
@@ -86,22 +91,28 @@ private slots:
     void liveSpeechPipeline()
     {
         const auto path = qgetenv("DESKWAIFU_TTS_LIVE_KEY_FILE");
-        if (path.isEmpty() || !qEnvironmentVariableIsSet("DESKWAIFU_AUDIO_TEST"))
+        if (path.isEmpty() || !qEnvironmentVariableIsSet("DESKWAIFU_AUDIO_TEST")) {
             QSKIP("Opt-in live API and audible playback test; requires both test environment variables");
+        }
         QFile file(QString::fromUtf8(path));
         QVERIFY(file.open(QIODevice::ReadOnly));
         QString key;
-        for (const auto& line : file.readAll().split('\n'))
-            if (line.startsWith("API_KEY=")) key = QString::fromUtf8(line.mid(8).trimmed());
+        for (const auto& line : file.readAll().split('\n')) {
+            if (line.startsWith("API_KEY=")) {
+                key = QString::fromUtf8(line.mid(8).trimmed());
+            }
+        }
         QVERIFY(!key.isEmpty());
         MiniMaxSpeechSource source(key);
         AudioPlayer audio;
         SpeechPlayer player(source, audio);
         QSignalSpy errors(&player, &SpeechPlayer::ErrorOccurred);
         QSignalSpy done(&player, &SpeechPlayer::Finished);
-        player.Speak({QStringLiteral("姐姐，你好喵"), {}});
+        player.Speak({ QStringLiteral("姐姐，你好喵"), { } });
         QTRY_COMPARE_WITH_TIMEOUT(done.size(), 1, 60000);
-        if (!errors.isEmpty()) qWarning() << qvariant_cast<SpeechError>(errors[0][1]).message;
+        if (!errors.isEmpty()) {
+            qWarning() << qvariant_cast<SpeechError>(errors[0][1]).message;
+        }
         QCOMPARE(errors.size(), 0);
         QCOMPARE(qvariant_cast<SpeechPlayer::FinishReason>(done[0][1]), SpeechPlayer::FinishReason::Completed);
     }

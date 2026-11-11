@@ -9,48 +9,46 @@
 
 #include <GL/glew.h>
 
-
 #include "LAppSprite_Common.hpp"
 
 /**
-* @brief 实现精灵绘制的类。
-*
-* 管理纹理 ID 和矩形区域。
-*
-*/
+ * @brief 实现精灵绘制的类。
+ *
+ * 管理纹理 ID 和矩形区域。
+ *
+ */
 // 保存纹理 ID 和着色器属性位置；构造和绘制需要对应的当前 GL 上下文。
 // 调用方须保持所用着色器程序有效，绘制前负责绑定程序和必要的 GL 状态。
-class LAppSprite : public LAppSprite_Common
-{
+class LAppSprite : public LAppSprite_Common {
 public:
     /**
-    * @brief 构造函数。
-    *
-    * @param[in]       x X 坐标。
-    * @param[in]       y Y 坐标。
-    * @param[in]       width 宽度。
-    * @param[in]       height 高度。
-    * @param[in]       textureId 纹理 ID。
-    * @param[in]       programId 着色器程序 ID。
-    */
+     * @brief 构造函数。
+     *
+     * @param[in]       x X 坐标。
+     * @param[in]       y Y 坐标。
+     * @param[in]       width 宽度。
+     * @param[in]       height 高度。
+     * @param[in]       textureId 纹理 ID。
+     * @param[in]       programId 着色器程序 ID。
+     */
     LAppSprite(float x, float y, float width, float height, GLuint textureId, GLuint programId);
 
     /**
-    * @brief 析构函数。
-    */
+     * @brief 析构函数。
+     */
     ~LAppSprite();
 
     /**
-    * @brief 执行绘制。
-    *
-    */
+     * @brief 执行绘制。
+     *
+     */
     // 目标尺寸由调用方提供，与窗口独立。
     void Render(int maxWidth, int maxHeight) const;
 
     /**
-    * @brief 使用指定纹理绘制。
-    *
-    */
+     * @brief 使用指定纹理绘制。
+     *
+     */
     void RenderImmidiate(GLuint textureId, const GLfloat uvVertex[8], int maxWidth, int maxHeight) const;
 
     // 判断左上原点的像素坐标是否位于精灵矩形内。
@@ -78,11 +76,11 @@ public:
     void ResetRect(float x, float y, float width, float height);
 
 private:
-    Rect _rect;          ///< 矩形
-    int _positionLocation;  ///< 位置属性。
-    int _uvLocation;        ///< UV 属性。
-    int _textureLocation;   ///< 纹理属性。
-    int _colorLocation;     ///< 颜色属性。
+    Rect _rect; ///< 矩形
+    int _positionLocation; ///< 位置属性。
+    int _uvLocation; ///< UV 属性。
+    int _textureLocation; ///< 纹理属性。
+    int _colorLocation; ///< 颜色属性。
 
-    float _spriteColor[4];  ///< 显示颜色。
+    float _spriteColor[4]; ///< 显示颜色。
 };

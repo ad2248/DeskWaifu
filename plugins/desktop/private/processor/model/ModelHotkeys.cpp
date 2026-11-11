@@ -1,48 +1,44 @@
 #include "ModelHotkeys.hpp"
 
+#include <Id/CubismIdManager.hpp>
+#include <Model/CubismModel.hpp>
+#include <Utils/CubismJson.hpp>
 #include <algorithm>
-#include <cmath>
 #include <cctype>
+#include <cmath>
 #include <fstream>
 #include <iterator>
 #include <memory>
 #include <set>
-#include <Utils/CubismJson.hpp>
-#include <Id/CubismIdManager.hpp>
-#include <Model/CubismModel.hpp>
 
 using namespace Live2D::Cubism::Framework;
-namespace
-{
+namespace {
 using Json = std::unique_ptr<Utils::CubismJson, decltype(&Utils::CubismJson::Delete)>;
 Json ReadJson(const std::string& path)
 {
     std::ifstream stream(path, std::ios::binary);
-    std::string data((std::istreambuf_iterator<char>(stream)), {});
+    std::string data((std::istreambuf_iterator<char>(stream)), { });
     // Cubism 的数值解析器只接受数值后接逗号或换行。
     // 规范化无关紧要的空白和分隔符，使紧凑 JSON 也能正常解析。
     std::string normalized;
     bool quoted = false, escaped = false;
-    for (char c : data)
-    {
-        if (!quoted && (c == '}' || c == ']')) normalized += '\n';
+    for (char c : data) {
+        if (!quoted && (c == '}' || c == ']')) {
+            normalized += '\n';
+        }
         normalized += !quoted && std::isspace(static_cast<unsigned char>(c)) ? '\n' : c;
-        if (escaped) escaped = false;
-        else if (quoted && c == '\\') escaped = true;
-        else if (c == '"') quoted = !quoted;
+        if (escaped) {
+            escaped = false;
+        } else if (quoted && c == '\\') {
+            escaped = true;
+        } else if (c == '"') {
+            quoted = !quoted;
+        }
     }
-    return Json(normalized.empty() ? nullptr : Utils::CubismJson::Create(
-        reinterpret_cast<const csmByte*>(normalized.data()), normalized.size()), Utils::CubismJson::Delete);
+    return Json(normalized.empty() ? nullptr : Utils::CubismJson::Create(reinterpret_cast<const csmByte*>(normalized.data()), normalized.size()), Utils::CubismJson::Delete);
 }
-std::string Text(Utils::Value& value)
-{
-    return value.IsString() ? value.GetRawString() : "";
-}
-bool RelativePath(const std::string& path)
-{
-    return !path.empty() && path.front() != '/' && path.find("..") == std::string::npos
-        && path.find('\\') == std::string::npos;
-}
+std::string Text(Utils::Value& value) { return value.IsString() ? value.GetRawString() : ""; }
+bool RelativePath(const std::string& path) { return !path.empty() && path.front() != '/' && path.find("..") == std::string::npos && path.find('\\') == std::string::npos; }
 float Nonnegative(Utils::Value& value, float fallback)
 {
     const float number = value.ToFloat(fallback);
@@ -50,10 +46,7 @@ float Nonnegative(Utils::Value& value, float fallback)
 }
 }
 
-std::vector<std::string> ModelHotkeys::ExpressionDirectories()
-{
-    return {"", "Expressions/", "exp/"};
-}
+std::vector<std::string> ModelHotkeys::ExpressionDirectories() { return { "", "Expressions/", "exp/" }; }
 
 void ModelHotkeys::Load(const std::string& directory, const std::string& modelFile)
 {
@@ -62,74 +55,92 @@ void ModelHotkeys::Load(const std::string& directory, const std::string& modelFi
     _error.clear();
     Reset();
     const std::string suffix = ".model3.json";
-    if (modelFile.size() < suffix.size() || modelFile.compare(modelFile.size() - suffix.size(), suffix.size(), suffix) != 0) return;
+    if (modelFile.size() < suffix.size() || modelFile.compare(modelFile.size() - suffix.size(), suffix.size(), suffix) != 0) {
+        return;
+    }
     const std::string path = directory + modelFile.substr(0, modelFile.size() - suffix.size()) + ".vtube.json";
-    if (!std::ifstream(path).good()) return;
+    if (!std::ifstream(path).good()) {
+        return;
+    }
     auto json = ReadJson(path);
-    if (!json || !json->GetRoot()["Hotkeys"].IsArray())
-    {
+    if (!json || !json->GetRoot()["Hotkeys"].IsArray()) {
         _error = "Invalid VTube Studio hotkey configuration";
         return;
     }
     auto& hotkeys = json->GetRoot()["Hotkeys"];
     std::set<std::string> ids;
-    for (int i = 0; i < hotkeys.GetSize(); ++i)
-    {
+    for (int i = 0; i < hotkeys.GetSize(); ++i) {
         auto& source = hotkeys[i];
         Binding binding;
         binding.id = Text(source["HotkeyID"]);
         binding.file = Text(source["File"]);
         binding.name = Text(source["Name"]);
-        if (binding.name.empty()) binding.name = binding.file;
+        if (binding.name.empty()) {
+            binding.name = binding.file;
+        }
         binding.action = Text(source["Action"]);
         binding.enabled = source["IsActive"].ToBoolean(true);
         binding.fade = Nonnegative(source["FadeSecondsAmount"], 0.5f);
-        if (source["DeactivateAfterSeconds"].ToBoolean())
+        if (source["DeactivateAfterSeconds"].ToBoolean()) {
             binding.duration = Nonnegative(source["DeactivateAfterSecondsAmount"], 10);
-        for (const char* key : {"Trigger1", "Trigger2", "Trigger3"})
-        {
-            const auto text = Text(source["Triggers"][key]);
-            if (!text.empty()) binding.keys.push_back(text);
         }
-        if (binding.id.empty() || !ids.insert(binding.id).second)
+        for (const char* key : { "Trigger1", "Trigger2", "Trigger3" }) {
+            const auto text = Text(source["Triggers"][key]);
+            if (!text.empty()) {
+                binding.keys.push_back(text);
+            }
+        }
+        if (binding.id.empty() || !ids.insert(binding.id).second) {
             binding.reason = "Missing or duplicate hotkey ID";
-        else if (binding.action != "ToggleExpression")
+        } else if (binding.action != "ToggleExpression") {
             binding.reason = "Unsupported action";
-        else if (source["DeactivateAfterKeyUp"].ToBoolean())
+        } else if (source["DeactivateAfterKeyUp"].ToBoolean()) {
             binding.reason = "Release-to-deactivate is not supported";
-        else
-        {
+        } else {
             std::vector<std::string> candidates;
             const auto folder = Text(source["Folder"]);
-            if (!folder.empty() && RelativePath(folder)) candidates.push_back(folder + "/" + binding.file);
-            for (const auto& prefix : ExpressionDirectories()) candidates.push_back(prefix + binding.file);
-            for (const auto& candidate : candidates)
-            {
-                if (!RelativePath(candidate)) continue;
+            if (!folder.empty() && RelativePath(folder)) {
+                candidates.push_back(folder + "/" + binding.file);
+            }
+            for (const auto& prefix : ExpressionDirectories()) {
+                candidates.push_back(prefix + binding.file);
+            }
+            for (const auto& candidate : candidates) {
+                if (!RelativePath(candidate)) {
+                    continue;
+                }
                 auto expressionJson = ReadJson(directory + candidate);
-                if (!expressionJson || !expressionJson->GetRoot()["Parameters"].IsArray()) continue;
+                if (!expressionJson || !expressionJson->GetRoot()["Parameters"].IsArray()) {
+                    continue;
+                }
                 int index = 0;
-                while (index < static_cast<int>(_expressions.size()) && _expressions[index].file != candidate) ++index;
-                if (index == static_cast<int>(_expressions.size()))
-                {
+                while (index < static_cast<int>(_expressions.size()) && _expressions[index].file != candidate) {
+                    ++index;
+                }
+                if (index == static_cast<int>(_expressions.size())) {
                     Expression expression;
                     expression.file = candidate;
                     auto& parameters = expressionJson->GetRoot()["Parameters"];
-                    for (int p = 0; p < parameters.GetSize(); ++p)
-                    {
+                    for (int p = 0; p < parameters.GetSize(); ++p) {
                         auto& parameter = parameters[p];
                         auto blend = Text(parameter["Blend"]);
-                        if (blend.empty()) blend = "Add";
-                        if (!Text(parameter["Id"]).empty() && parameter["Value"].IsFloat()
-                            && (blend == "Add" || blend == "Multiply" || blend == "Overwrite"))
-                            expression.parameters.push_back({Text(parameter["Id"]), blend, parameter["Value"].ToFloat()});
+                        if (blend.empty()) {
+                            blend = "Add";
+                        }
+                        if (!Text(parameter["Id"]).empty() && parameter["Value"].IsFloat() && (blend == "Add" || blend == "Multiply" || blend == "Overwrite")) {
+                            expression.parameters.push_back({ Text(parameter["Id"]), blend, parameter["Value"].ToFloat() });
+                        }
                     }
                     _expressions.push_back(expression);
                 }
-                if (!_expressions[index].parameters.empty()) binding.expression = index;
+                if (!_expressions[index].parameters.empty()) {
+                    binding.expression = index;
+                }
                 break;
             }
-            if (binding.expression < 0) binding.reason = "Expression file missing or invalid";
+            if (binding.expression < 0) {
+                binding.reason = "Expression file missing or invalid";
+            }
         }
         _bindings.push_back(binding);
     }
@@ -137,9 +148,11 @@ void ModelHotkeys::Load(const std::string& directory, const std::string& modelFi
 
 bool ModelHotkeys::IsActive(const std::string& id) const
 {
-    for (const auto& binding : _bindings)
-        if (binding.id == id)
+    for (const auto& binding : _bindings) {
+        if (binding.id == id) {
             return binding.expression >= 0 && _expressions[binding.expression].active;
+        }
+    }
     return false;
 }
 
@@ -147,8 +160,7 @@ void ModelHotkeys::Reset()
 {
     static unsigned long generation = 0;
     _token = "model-" + std::to_string(++generation);
-    for (auto& expression : _expressions)
-    {
+    for (auto& expression : _expressions) {
         expression.active = false;
         expression.weight = 0;
         expression.remaining = -1;
@@ -157,11 +169,11 @@ void ModelHotkeys::Reset()
 
 bool ModelHotkeys::Trigger(const std::string& id, std::string& error)
 {
-    for (const auto& binding : _bindings)
-    {
-        if (binding.id != id) continue;
-        if (!binding.enabled || !binding.reason.empty())
-        {
+    for (const auto& binding : _bindings) {
+        if (binding.id != id) {
+            continue;
+        }
+        if (!binding.enabled || !binding.reason.empty()) {
             error = binding.enabled ? binding.reason : "Hotkey disabled";
             return false;
         }
@@ -177,34 +189,34 @@ bool ModelHotkeys::Trigger(const std::string& id, std::string& error)
 
 void ModelHotkeys::Update(float seconds)
 {
-    for (auto& expression : _expressions)
-    {
-        if (expression.active && expression.remaining >= 0)
-        {
+    for (auto& expression : _expressions) {
+        if (expression.active && expression.remaining >= 0) {
             expression.remaining -= seconds;
-            if (expression.remaining <= 0) expression.active = false;
+            if (expression.remaining <= 0) {
+                expression.active = false;
+            }
         }
         const float step = expression.fade > 0 ? seconds / expression.fade : 1;
-        expression.weight = expression.active ? std::min(1.0f, expression.weight + step)
-            : std::max(0.0f, expression.weight - step);
+        expression.weight = expression.active ? std::min(1.0f, expression.weight + step) : std::max(0.0f, expression.weight - step);
     }
 }
 
 void ModelHotkeys::Apply(CubismModel* model) const
 {
     // 调用方在每帧执行此阶段前，恢复已保存的基础参数。
-    for (const auto& expression : _expressions)
-    {
-        if (expression.weight <= 0) continue;
-        for (const auto& parameter : expression.parameters)
-        {
+    for (const auto& expression : _expressions) {
+        if (expression.weight <= 0) {
+            continue;
+        }
+        for (const auto& parameter : expression.parameters) {
             const auto id = CubismFramework::GetIdManager()->GetId(parameter.id.c_str());
-            if (parameter.blend == "Multiply")
+            if (parameter.blend == "Multiply") {
                 model->MultiplyParameterValue(id, parameter.value, expression.weight);
-            else if (parameter.blend == "Overwrite")
+            } else if (parameter.blend == "Overwrite") {
                 model->SetParameterValue(id, parameter.value, expression.weight);
-            else
+            } else {
                 model->AddParameterValue(id, parameter.value, expression.weight);
+            }
         }
     }
 }

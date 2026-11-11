@@ -10,8 +10,7 @@ class InputListener;
 class SignalProcessor;
 
 // 组装与生命周期入口；不暴露处理器，不拥有领域状态，不转发业务。
-class LAppDelegate
-{
+class LAppDelegate {
 public:
     // 延迟创建进程级实例；返回借用指针，由 ReleaseInstance() 销毁。
     static LAppDelegate* GetInstance();
@@ -26,6 +25,7 @@ public:
     bool Release();
     // 阻塞运行呈现循环，结束后释放资源并销毁单例；返回运行与清理是否均成功。
     bool Run();
+
 private:
     friend struct ProcessorTestAccess;
     LAppDelegate() = default;

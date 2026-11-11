@@ -15,33 +15,38 @@
 #include <stdexcept>
 #include <unistd.h>
 
-class RespawnerFixture final : public QObject
-{
+class RespawnerFixture final : public QObject {
     Q_OBJECT
 public:
     RespawnerFixture(GuiHostServices& services, const QString& directory)
     {
         const auto root = _installation.path();
-        if (!_installation.isValid() || !QDir().mkpath(root + "/system_fixture") ||
-            !QFile::copy(QStringLiteral(SYSTEM_RESPAWNER_FIXTURE), root + "/system_fixture/system_fixture.so"))
+        if (!_installation.isValid() || !QDir().mkpath(root + "/system_fixture")
+            || !QFile::copy(QStringLiteral(SYSTEM_RESPAWNER_FIXTURE), root + "/system_fixture/system_fixture.so")) {
             throw std::runtime_error("install system respawner fixture");
+        }
         _plugins.reset(new GuiPluginManager(root, services, _tabs));
         QString error;
-        if (!_plugins->Start(&error)) throw std::runtime_error(error.toStdString());
+        if (!_plugins->Start(&error)) {
+            throw std::runtime_error(error.toStdString());
+        }
         _page = _tabs.findChild<QWidget*>("respawnerFixture");
-        if (!_page || !QMetaObject::invokeMethod(_page, "configure", Qt::DirectConnection, Q_ARG(QString, directory)))
+        if (!_page || !QMetaObject::invokeMethod(_page, "configure", Qt::DirectConnection, Q_ARG(QString, directory))) {
             throw std::runtime_error("configure public respawner fixture");
-        connect(_page, SIGNAL(finished(bool,QString)), this, SIGNAL(finished(bool,QString)));
+        }
+        connect(_page, SIGNAL(finished(bool, QString)), this, SIGNAL(finished(bool, QString)));
     }
     bool isRunning() const { return _page->property("running").toBool(); }
-    void start(const QString& proc = QStringLiteral("/proc"), const QString& locks = {}, int timeout = 10000)
+    void start(const QString& proc = QStringLiteral("/proc"), const QString& locks = { }, int timeout = 10000)
     {
-        if (!QMetaObject::invokeMethod(_page, "start", Qt::DirectConnection, Q_ARG(QString, proc), Q_ARG(QString, locks), Q_ARG(int, timeout)))
+        if (!QMetaObject::invokeMethod(_page, "start", Qt::DirectConnection, Q_ARG(QString, proc), Q_ARG(QString, locks), Q_ARG(int, timeout))) {
             throw std::runtime_error("start public respawner fixture");
+        }
     }
     void stop() { QMetaObject::invokeMethod(_page, "stop", Qt::DirectConnection); }
 signals:
     void finished(bool success, const QString& message);
+
 private:
     QTemporaryDir _installation;
     QTabWidget _tabs;
@@ -49,23 +54,20 @@ private:
     QWidget* _page = nullptr;
 };
 
-class DeskWaifuRespawnerTest : public QObject
-{
+class DeskWaifuRespawnerTest : public QObject {
     Q_OBJECT
 private:
-    QTemporaryDir directory{QDir::tempPath() + "/dw-respawn-XXXXXX"};
+    QTemporaryDir directory { QDir::tempPath() + "/dw-respawn-XXXXXX" };
     QByteArray oldRuntime, oldPath;
     QString app() const { return directory.path() + "/app"; }
     QString proc() const { return directory.path() + "/proc"; }
-    void installBackend()
-    {
-        QVERIFY(QFile::copy(QStringLiteral(SPAWN_BACKEND_FIXTURE), app() + "/deskwaifu"));
-    }
+    void installBackend() { QVERIFY(QFile::copy(QStringLiteral(SPAWN_BACKEND_FIXTURE), app() + "/deskwaifu")); }
     static QLocalSocket* connectClient(QLocalServer& server, LoadedGuiTransport& client)
     {
         client.connectToServer();
-        if (!QTest::qWaitFor([&] { return server.hasPendingConnections() && client.isConnected(); }, 2000))
+        if (!QTest::qWaitFor([&] { return server.hasPendingConnections() && client.isConnected(); }, 2000)) {
             return nullptr;
+        }
         return server.nextPendingConnection();
     }
 
@@ -118,11 +120,12 @@ private slots:
         QFETCH(bool, acknowledged);
         installBackend();
         QProcess oldBackend;
-        oldBackend.start(QStringLiteral(SPAWN_BACKEND_FIXTURE), QStringList{});
+        oldBackend.start(QStringLiteral(SPAWN_BACKEND_FIXTURE), QStringList { });
         QVERIFY(oldBackend.waitForStarted());
         const auto stopOld = qScopeGuard([&] {
             if (oldBackend.state() != QProcess::NotRunning) {
-                oldBackend.kill(); oldBackend.waitForFinished();
+                oldBackend.kill();
+                oldBackend.waitForFinished();
             }
         });
         QVERIFY(QFile::link(QStringLiteral("/proc/%1").arg(oldBackend.processId()), proc() + "/123"));
@@ -138,11 +141,13 @@ private slots:
         QTRY_VERIFY(socket->canReadLine());
         QCOMPARE(QJsonDocument::fromJson(socket->readLine()).object().value("command").toString(), "quit");
         QSignalSpy cancelled(&client, &GuiHostServices::commandCancelled);
-        if (acknowledged) socket->write("{\"ok\":true}\n");
-        else {
+        if (acknowledged) {
+            socket->write("{\"ok\":true}\n");
+        } else {
             // 旧后端退出，既不确认 quit，也不处理其排队命令。
-            for (const auto& command : {"toggle_hidden", "next_model", "do_motion", "set_output"})
+            for (const auto& command : { "toggle_hidden", "next_model", "do_motion", "set_output" }) {
                 client.sendCommand(QString::fromLatin1(command));
+            }
         }
         socket->disconnectFromServer();
         QTRY_COMPARE(cancelled.size(), acknowledged ? 0 : 4);
@@ -156,7 +161,9 @@ private slots:
         const QString message = finished[0][1].toString();
         const qint64 newPid = message.section("PID ", 1).section(QChar(0xff09), 0, 0).toLongLong();
         const auto stopNew = qScopeGuard([&] {
-            if (newPid > 0) kill(newPid, SIGKILL);
+            if (newPid > 0) {
+                kill(newPid, SIGKILL);
+            }
         });
         QVERIFY2(finished[0][0].toBool(), qPrintable(message));
         QVERIFY(newPid > 0);

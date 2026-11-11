@@ -1,34 +1,39 @@
-#include <GL/glew.h>
-#include <EGL/egl.h>
-#include "processor/model/LAppModel.hpp"
 #include "LAppAllocator_Common.hpp"
-#include "processor/model/LAppPal.hpp"
-#include "processor/interaction/ExternalControlState.hpp"
-#include "processor/interaction/CursorLook.hpp"
 #include "TestTemporaryDirectory.hpp"
+#include "processor/interaction/CursorLook.hpp"
+#include "processor/interaction/ExternalControlState.hpp"
+#include "processor/model/LAppModel.hpp"
+#include "processor/model/LAppPal.hpp"
+#include <EGL/egl.h>
+#include <GL/glew.h>
 #include <Id/CubismIdManager.hpp>
+#include <chrono>
 #include <cmath>
+#include <fstream>
 #include <iostream>
 #include <thread>
-#include <chrono>
-#include <fstream>
 #include <unistd.h>
 
-#define CHECK(condition) do { if (!(condition)) { \
-    std::cerr << "Line " << __LINE__ << ": " << #condition << '\n'; return 1; \
-} } while (false)
+#define CHECK(condition)                                                                                                                                                           \
+    do {                                                                                                                                                                           \
+        if (!(condition)) {                                                                                                                                                        \
+            std::cerr << "Line " << __LINE__ << ": " << #condition << '\n';                                                                                                        \
+            return 1;                                                                                                                                                              \
+        }                                                                                                                                                                          \
+    } while (false)
 
 int main()
 {
     const auto display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
-    if (display == EGL_NO_DISPLAY || !eglInitialize(display, nullptr, nullptr)) return 77;
-    const EGLint attributes[] = {EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
-        EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT, EGL_NONE};
+    if (display == EGL_NO_DISPLAY || !eglInitialize(display, nullptr, nullptr)) {
+        return 77;
+    }
+    const EGLint attributes[] = { EGL_SURFACE_TYPE, EGL_PBUFFER_BIT, EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT, EGL_NONE };
     EGLConfig config;
     EGLint count = 0;
     CHECK(eglChooseConfig(display, attributes, &config, 1, &count) && count == 1);
     CHECK(eglBindAPI(EGL_OPENGL_API));
-    const EGLint size[] = {EGL_WIDTH, 16, EGL_HEIGHT, 16, EGL_NONE};
+    const EGLint size[] = { EGL_WIDTH, 16, EGL_HEIGHT, 16, EGL_NONE };
     const auto surface = eglCreatePbufferSurface(display, config, size);
     const auto context = eglCreateContext(display, config, EGL_NO_CONTEXT, nullptr);
     CHECK(surface != EGL_NO_SURFACE && context != EGL_NO_CONTEXT);
@@ -37,7 +42,7 @@ int main()
     CHECK(glewInit() == GLEW_OK);
 
     LAppAllocator_Common allocator;
-    Csm::CubismFramework::Option option{};
+    Csm::CubismFramework::Option option { };
     option.LoadFileFunction = LAppPal::LoadFileAsBytes;
     option.ReleaseBytesFunction = LAppPal::ReleaseBytes;
     CHECK(Csm::CubismFramework::StartUp(&allocator, &option));
@@ -51,8 +56,7 @@ int main()
         const auto setting = directory + "/gaze.model3.json";
         {
             std::ofstream file(setting);
-            file << "{\"Version\":3,\"FileReferences\":{\"Moc\":\""
-                 << SDK_RESOURCES "/Haru/Haru.moc3\"},\"Groups\":["
+            file << "{\"Version\":3,\"FileReferences\":{\"Moc\":\"" << SDK_RESOURCES "/Haru/Haru.moc3\"},\"Groups\":["
                  << "{\"Target\":\"Parameter\",\"Name\":\"LipSync\",\"Ids\":[\"ParamMouthOpenY\"]}]}";
             CHECK(file.good());
         }
@@ -71,7 +75,7 @@ int main()
             CursorLook cursor;
             cursor.LocalPosition(100 + mouseX * 100, 100 - mouseY * 100);
             for (int i = 0; i < 90; ++i) {
-                const auto look = cursor.LookAt(0, 0, 200, 200, .5f, .5f, {1, 0, 0}, radius);
+                const auto look = cursor.LookAt(0, 0, 200, 200, .5f, .5f, { 1, 0, 0 }, radius);
                 model.SetDragging(look.first, look.second);
                 std::this_thread::sleep_for(std::chrono::milliseconds(16));
                 LAppPal::UpdateTime();
@@ -79,7 +83,7 @@ int main()
             }
         };
         LAppPal::UpdateTime();
-        frames(-0.8f, -0.6f, {});
+        frames(-0.8f, -0.6f, { });
         CHECK(model.GetModel()->GetParameterValue(eyeX) < -0.4f);
         CHECK(model.GetModel()->GetParameterValue(eyeY) < -0.3f);
 
@@ -89,28 +93,28 @@ int main()
         model.GetModel()->SetParameterValue(eyeX, 0);
         model.GetModel()->SetParameterValue(eyeY, 0);
         model.GetModel()->SaveParameters();
-        frames(-.8f, -.6f, {false, .9f, false, .8f, .6f});
+        frames(-.8f, -.6f, { false, .9f, false, .8f, .6f });
         CHECK(model.GetModel()->GetParameterValue(eyeX) < -.4f);
         CHECK(std::abs(model.GetModel()->GetParameterValue(mouth) - .25f) < .001f);
-        frames(.8f, .6f, {true, .65f, false, -.8f, -.6f});
+        frames(.8f, .6f, { true, .65f, false, -.8f, -.6f });
         CHECK(model.GetModel()->GetParameterValue(eyeX) > .4f);
         CHECK(std::abs(model.GetModel()->GetParameterValue(mouth) - .65f) < .001f);
-        frames(.8f, .6f, {false, .9f, true, -.8f, -.6f});
+        frames(.8f, .6f, { false, .9f, true, -.8f, -.6f });
         CHECK(model.GetModel()->GetParameterValue(eyeX) < -.4f);
         CHECK(model.GetModel()->GetParameterValue(eyeY) < -.3f);
         CHECK(std::abs(model.GetModel()->GetParameterValue(mouth) - .25f) < .001f);
-        frames(-.8f, -.6f, {true, 0, true, 0, 0});
+        frames(-.8f, -.6f, { true, 0, true, 0, 0 });
         CHECK(std::abs(model.GetModel()->GetParameterValue(eyeX)) < .01f);
         CHECK(std::abs(model.GetModel()->GetParameterValue(eyeY)) < .01f);
         CHECK(std::abs(model.GetModel()->GetParameterValue(mouth)) < .001f);
-        frames(0.8f, 0.6f, {});
+        frames(0.8f, 0.6f, { });
         CHECK(model.GetModel()->GetParameterValue(eyeX) > 0.4f);
         CHECK(model.GetModel()->GetParameterValue(eyeY) > 0.3f);
 
-        frames(8.f, 6.f, {}, .25f);
+        frames(8.f, 6.f, { }, .25f);
         CHECK(std::abs(model.GetModel()->GetParameterValue(eyeX) - .2f) < .01f);
         CHECK(std::abs(model.GetModel()->GetParameterValue(eyeY) - .15f) < .01f);
-        frames(8.f, 6.f, {}, 0);
+        frames(8.f, 6.f, { }, 0);
         CHECK(std::abs(model.GetModel()->GetParameterValue(eyeX)) < .01f);
         CHECK(std::abs(model.GetModel()->GetParameterValue(eyeY)) < .01f);
 

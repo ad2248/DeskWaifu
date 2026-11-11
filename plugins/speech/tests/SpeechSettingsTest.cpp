@@ -22,12 +22,11 @@ bool WriteFile(const QString& path, const QByteArray& document)
 QByteArray ReadFile(const QString& path)
 {
     QFile file(path);
-    return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray{};
+    return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray { };
 }
 }
 
-class SpeechSettingsTest : public QObject
-{
+class SpeechSettingsTest : public QObject {
     Q_OBJECT
 private slots:
     void persistsSecretPrivatelyAndOtherSettingsPreserveIt()
@@ -39,7 +38,7 @@ private slots:
         QVERIFY(chmod(QFile::encodeName(path).constData(), 0644) == 0);
         SpeechSettings settings(directory.path());
         QString error = "stale error";
-        QVERIFY(settings.Set(QJsonObject{{"api_key", "test-quoted\"key"}}, error));
+        QVERIFY(settings.Set(QJsonObject { { "api_key", "test-quoted\"key" } }, error));
         QVERIFY(error.isEmpty());
         QVERIFY(settings.Configured());
         QCOMPARE(settings.ApiKey(), QString("test-quoted\"key"));
@@ -58,7 +57,7 @@ private slots:
         QVERIFY(loaded.Refresh(error));
         QCOMPARE(loaded.ApiKey(), settings.ApiKey());
         QVERIFY(chmod(QFile::encodeName(path).constData(), 0644) == 0);
-        QVERIFY(settings.Set(QJsonObject{{"api_key", ""}}, error));
+        QVERIFY(settings.Set(QJsonObject { { "api_key", "" } }, error));
         QVERIFY(!settings.Configured());
         QVERIFY(loaded.Refresh(error));
         QVERIFY(loaded.ApiKey().isEmpty());
@@ -78,22 +77,24 @@ private slots:
         QVERIFY(settings.Refresh(error));
         QVERIFY(error.isEmpty() && !settings.Configured());
         QVERIFY(!QFileInfo::exists(path));
-        for (const auto& original : {QString(), QString("keep-runtime-key")}) {
-            if (!original.isEmpty()) QVERIFY(settings.Set(QJsonObject{{"api_key", original}}, error));
+        for (const auto& original : { QString(), QString("keep-runtime-key") }) {
+            if (!original.isEmpty()) {
+                QVERIFY(settings.Set(QJsonObject { { "api_key", original } }, error));
+            }
             const auto document = ReadFile(path);
-            for (const auto* text : {R"({"api_key":42})", R"({"api_key":null})", R"({"api_key":true})",
-                R"({"api_key":[]})", R"({"api_key":{}})", R"({"api_key":"line\nbreak"})",
-                R"({"api_key":"line\rbreak"})", R"({"api_key":"nul\u0000byte"})",
-                R"({"api_key":"tab\tkey"})", R"({"api_key":"del\u007fkey"})", "{}", "[]",
-                R"({"api_key":"first","api_key":"second"})", R"({"api_key":"first","\u0061pi_key":"second"})",
-                R"({"api_key":"valid","extension":{"duplicate":1,"duplicate":2}})",
-                R"({"api_key":"valid"} trailing)", "{ // comments are not IPC JSON\n\"api_key\":\"key\"}"}) {
+            for (const auto* text : { R"({"api_key":42})", R"({"api_key":null})", R"({"api_key":true})", R"({"api_key":[]})", R"({"api_key":{}})", R"({"api_key":"line\nbreak"})",
+                     R"({"api_key":"line\rbreak"})", R"({"api_key":"nul\u0000byte"})", R"({"api_key":"tab\tkey"})", R"({"api_key":"del\u007fkey"})", "{}", "[]",
+                     R"({"api_key":"first","api_key":"second"})", R"({"api_key":"first","\u0061pi_key":"second"})",
+                     R"({"api_key":"valid","extension":{"duplicate":1,"duplicate":2}})", R"({"api_key":"valid"} trailing)",
+                     "{ // comments are not IPC JSON\n\"api_key\":\"key\"}" }) {
                 QVERIFY(!settings.Set(std::string(text), error));
                 QVERIFY(!error.isEmpty());
                 QCOMPARE(settings.ApiKey(), original);
                 QCOMPARE(settings.Configured(), !original.isEmpty());
                 QCOMPARE(ReadFile(path), document);
-                if (original.isEmpty()) QVERIFY(!QFileInfo::exists(path));
+                if (original.isEmpty()) {
+                    QVERIFY(!QFileInfo::exists(path));
+                }
             }
         }
     }
@@ -107,15 +108,15 @@ private slots:
         SpeechSettings settings(pluginDirectory);
         QString error;
         const QString boundary(4096, 'x');
-        QVERIFY(settings.Set(QJsonObject{{"api_key", boundary}}, error));
+        QVERIFY(settings.Set(QJsonObject { { "api_key", boundary } }, error));
         QVERIFY(QFileInfo::exists(path));
         const auto document = ReadFile(path);
-        QVERIFY(!settings.Set(QJsonObject{{"api_key", boundary + 'x'}}, error));
+        QVERIFY(!settings.Set(QJsonObject { { "api_key", boundary + 'x' } }, error));
         QCOMPARE(settings.ApiKey(), boundary);
         QCOMPARE(ReadFile(path), document);
         const QString unicode(2048, QChar(0xe9));
-        QVERIFY(settings.Set(QJsonObject{{"api_key", unicode}}, error));
-        QVERIFY(!settings.Set(QJsonObject{{"api_key", unicode + 'x'}}, error));
+        QVERIFY(settings.Set(QJsonObject { { "api_key", unicode } }, error));
+        QVERIFY(!settings.Set(QJsonObject { { "api_key", unicode + 'x' } }, error));
         QCOMPARE(settings.ApiKey(), unicode);
         SpeechSettings loaded(pluginDirectory);
         QVERIFY(loaded.Refresh(error));
@@ -132,15 +133,15 @@ private slots:
         const auto path = directory.path() + "/config.json";
         SpeechSettings settings(directory.path());
         QString error;
-        QVERIFY(settings.Set(QJsonObject{{"api_key", "keep-runtime-key"}}, error));
-        for (const auto* text : {"broken config", R"({"api_key":42})", R"({"api_key":"bad\nkey"})",
-            R"({"api_key":"first","api_key":"second"})", R"({"extension":{"same":1,"same":2}})"}) {
+        QVERIFY(settings.Set(QJsonObject { { "api_key", "keep-runtime-key" } }, error));
+        for (const auto* text :
+            { "broken config", R"({"api_key":42})", R"({"api_key":"bad\nkey"})", R"({"api_key":"first","api_key":"second"})", R"({"extension":{"same":1,"same":2}})" }) {
             QVERIFY(WriteFile(path, text));
             QVERIFY(chmod(QFile::encodeName(path).constData(), 0644) == 0);
             QVERIFY(!settings.Refresh(error));
             QVERIFY(!error.isEmpty());
             QCOMPARE(settings.ApiKey(), QString("keep-runtime-key"));
-            QVERIFY(!settings.Set(QJsonObject{{"api_key", "not-saved"}}, error));
+            QVERIFY(!settings.Set(QJsonObject { { "api_key", "not-saved" } }, error));
             QVERIFY(!error.isEmpty());
             QCOMPARE(settings.ApiKey(), QString("keep-runtime-key"));
             QCOMPARE(ReadFile(path), QByteArray(text));
@@ -151,7 +152,7 @@ private slots:
         QVERIFY(QFile::remove(path));
         QVERIFY(QDir().mkdir(path));
         QVERIFY(!settings.Refresh(error));
-        QVERIFY(!settings.Set(QJsonObject{{"api_key", "not-saved"}}, error));
+        QVERIFY(!settings.Set(QJsonObject { { "api_key", "not-saved" } }, error));
         QCOMPARE(settings.ApiKey(), QString("keep-runtime-key"));
         QVERIFY(QFileInfo(path).isDir());
     }
@@ -161,13 +162,16 @@ private slots:
         QTemporaryDir directory;
         QVERIFY(directory.isValid());
         const auto path = directory.path() + "/config.json";
-        const auto restore = qScopeGuard([] { failTemporary = false; concurrentPath.clear(); });
+        const auto restore = qScopeGuard([] {
+            failTemporary = false;
+            concurrentPath.clear();
+        });
         SpeechSettings settings(directory.path());
         QString error;
-        QVERIFY(settings.Set(QJsonObject{{"api_key", "keep-runtime-key"}}, error));
+        QVERIFY(settings.Set(QJsonObject { { "api_key", "keep-runtime-key" } }, error));
         const auto document = ReadFile(path);
         failTemporary = true;
-        QVERIFY(!settings.Set(QJsonObject{{"api_key", "not-saved"}}, error));
+        QVERIFY(!settings.Set(QJsonObject { { "api_key", "not-saved" } }, error));
         QVERIFY(!error.isEmpty());
         QCOMPARE(settings.ApiKey(), QString("keep-runtime-key"));
         QCOMPARE(ReadFile(path), document);
@@ -175,13 +179,13 @@ private slots:
         concurrentDocument = R"({"api_key":"external-key","extension":true})";
         concurrentWriteSucceeded = false;
         concurrentPath = path;
-        QVERIFY(!settings.Set(QJsonObject{{"api_key", "not-saved"}}, error));
+        QVERIFY(!settings.Set(QJsonObject { { "api_key", "not-saved" } }, error));
         QVERIFY(concurrentWriteSucceeded);
         QVERIFY(error.contains("changed"));
         QCOMPARE(settings.ApiKey(), QString("keep-runtime-key"));
         QCOMPARE(ReadFile(path), concurrentDocument);
-        QVERIFY(QDir(directory.path()).entryList({".deskwaifu-config-*"}, QDir::Files | QDir::Hidden).isEmpty());
-        QVERIFY(settings.Set(QJsonObject{{"api_key", "retry-key"}}, error));
+        QVERIFY(QDir(directory.path()).entryList({ ".deskwaifu-config-*" }, QDir::Files | QDir::Hidden).isEmpty());
+        QVERIFY(settings.Set(QJsonObject { { "api_key", "retry-key" } }, error));
         QVERIFY(error.isEmpty());
         QCOMPARE(settings.ApiKey(), QString("retry-key"));
         ConfigStore::Snapshot disk;
@@ -194,7 +198,10 @@ private slots:
 extern "C" int __real_mkstemp(char*);
 extern "C" int __wrap_mkstemp(char* pattern)
 {
-    if (failTemporary) { errno = EIO; return -1; }
+    if (failTemporary) {
+        errno = EIO;
+        return -1;
+    }
     if (!concurrentPath.isEmpty()) {
         concurrentWriteSucceeded = WriteFile(concurrentPath, concurrentDocument);
         concurrentPath.clear();

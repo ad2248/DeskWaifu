@@ -7,8 +7,7 @@
 #include <QUuid>
 #include <cstdio>
 
-namespace
-{
+namespace {
 QFile logFile;
 QMutex logMutex;
 
@@ -16,8 +15,7 @@ void HandleMessage(QtMsgType type, const QMessageLogContext& context, const QStr
 {
     const QString formatted = qFormatLogMessage(type, context, message);
     QMutexLocker locker(&logMutex);
-    if (logFile.isOpen())
-    {
+    if (logFile.isOpen()) {
         QTextStream stream(&logFile);
         stream << formatted << '\n';
         stream.flush();
@@ -31,10 +29,8 @@ void HandleMessage(QtMsgType type, const QMessageLogContext& context, const QStr
 QString InitializeQtLogging(const QString& fileName)
 {
     const QByteArray configured = qgetenv("DESKWAIFU_LOG_DIR");
-    const QString directory = configured.isEmpty()
-        ? QDir::temp().filePath(QStringLiteral("log/waifudesk_%1").arg(
-            QUuid::createUuid().toString(QUuid::WithoutBraces)))
-        : QFile::decodeName(configured);
+    const QString directory
+        = configured.isEmpty() ? QDir::temp().filePath(QStringLiteral("log/waifudesk_%1").arg(QUuid::createUuid().toString(QUuid::WithoutBraces))) : QFile::decodeName(configured);
 
     QDir().mkpath(directory);
     const QString path = QDir(directory).filePath(fileName);
@@ -44,7 +40,9 @@ QString InitializeQtLogging(const QString& fileName)
         logFile.setFileName(path);
         logFile.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text);
     }
-    if (configured.isEmpty()) qputenv("DESKWAIFU_LOG_DIR", QFile::encodeName(directory));
+    if (configured.isEmpty()) {
+        qputenv("DESKWAIFU_LOG_DIR", QFile::encodeName(directory));
+    }
     qInstallMessageHandler(HandleMessage);
     return path;
 }

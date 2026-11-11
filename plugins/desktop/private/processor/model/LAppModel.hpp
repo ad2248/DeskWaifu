@@ -7,18 +7,18 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
 #include <CubismFramework.hpp>
 #include <ICubismModelSetting.hpp>
-#include <Type/csmRectF.hpp>
 #include <Rendering/OpenGL/CubismRenderTarget_OpenGLES2.hpp>
+#include <Type/csmRectF.hpp>
+#include <string>
+#include <vector>
 
-#include "LAppWavFileHandler_Common.hpp"
 #include "LAppModel_Common.hpp"
-#include "processor/model/ModelHotkeys.hpp"
-#include "contracts/ModelFrameInput.hpp"
 #include "LAppTextureManager.hpp"
+#include "LAppWavFileHandler_Common.hpp"
+#include "contracts/ModelFrameInput.hpp"
+#include "processor/model/ModelHotkeys.hpp"
 
 /**
  * @brief 用户实际使用的模型实现类。<br>
@@ -27,8 +27,7 @@
  */
 // 模型拥有 SDK 组件和纹理租约；纹理管理器须比模型存活更久。
 // 加载、更新、绘制及析构均在模型渲染线程及其有效 GL 上下文中执行。
-class LAppModel : public LAppModel_Common
-{
+class LAppModel : public LAppModel_Common {
 public:
     /**
      * @brief 循环切换动作组，以切换到下一套皮肤。
@@ -40,7 +39,11 @@ public:
      * @brief 构造函数。
      */
     LAppModel(class LAppTextureManager& textures, int width, int height, float emotionTimeout);
-    void SetViewport(int width, int height) { _viewportWidth = width; _viewportHeight = height; }
+    void SetViewport(int width, int height)
+    {
+        _viewportWidth = width;
+        _viewportHeight = height;
+    }
 
     /**
      * @brief 析构函数。
@@ -84,7 +87,8 @@ public:
      * @param[in]   onBeganMotionHandler 动作播放开始时的回调；为 NULL 时不调用。
      * @return 已开始动作的标识，用作 IsFinished() 的参数判断动作是否结束；无法开始时返回 -1。
      */
-    Csm::CubismMotionQueueEntryHandle StartMotion(const Csm::csmChar* group, Csm::csmInt32 no, Csm::csmInt32 priority, Csm::ACubismMotion::FinishedMotionCallback onFinishedMotionHandler = NULL, Csm::ACubismMotion::BeganMotionCallback onBeganMotionHandler = NULL);
+    Csm::CubismMotionQueueEntryHandle StartMotion(const Csm::csmChar* group, Csm::csmInt32 no, Csm::csmInt32 priority,
+        Csm::ACubismMotion::FinishedMotionCallback onFinishedMotionHandler = NULL, Csm::ACubismMotion::BeganMotionCallback onBeganMotionHandler = NULL);
 
     /**
      * @brief 开始播放随机选中的动作。
@@ -95,7 +99,8 @@ public:
      * @param[in]   onBeganMotionHandler 动作播放开始时的回调；为 NULL 时不调用。
      * @return 已开始动作的标识，用作 IsFinished() 的参数判断动作是否结束；无法开始时返回 -1。
      */
-    Csm::CubismMotionQueueEntryHandle StartRandomMotion(const Csm::csmChar* group, Csm::csmInt32 priority, Csm::ACubismMotion::FinishedMotionCallback onFinishedMotionHandler = NULL, Csm::ACubismMotion::BeganMotionCallback onBeganMotionHandler = NULL);
+    Csm::CubismMotionQueueEntryHandle StartRandomMotion(const Csm::csmChar* group, Csm::csmInt32 priority,
+        Csm::ACubismMotion::FinishedMotionCallback onFinishedMotionHandler = NULL, Csm::ACubismMotion::BeganMotionCallback onBeganMotionHandler = NULL);
 
     /**
      * @brief 设置参数指定的表情动作。
@@ -111,9 +116,9 @@ public:
     void SetRandomExpression();
 
     /**
-    * @brief 接收事件触发通知。
-    *
-    */
+     * @brief 接收事件触发通知。
+     *
+     */
     virtual void MotionEventFired(const Live2D::Cubism::Framework::csmString& eventValue);
 
     /**
@@ -204,17 +209,17 @@ private:
     void ReleaseMotionGroup(const Csm::csmChar* group) const;
 
     /**
-    * @brief 释放全部动作数据。
-    *
-    * 释放全部动作数据。
-    */
+     * @brief 释放全部动作数据。
+     *
+     * 释放全部动作数据。
+     */
     void ReleaseMotions();
 
     /**
-    * @brief 释放全部表情数据。
-    *
-    * 释放全部表情数据。
-    */
+     * @brief 释放全部表情数据。
+     *
+     * 释放全部表情数据。
+     */
     void ReleaseExpressions();
 
     Csm::ICubismModelSetting* _modelSetting; ///< 模型配置信息。
@@ -222,17 +227,17 @@ private:
     Csm::csmFloat32 _userTimeSeconds; ///< 累计帧间隔时间，单位为秒。
     Csm::csmVector<Csm::CubismIdHandle> _eyeBlinkIds; ///< 模型眨眼功能使用的参数 ID。
     Csm::csmVector<Csm::CubismIdHandle> _lipSyncIds; ///< 模型唇形同步功能使用的参数 ID。
-    Csm::csmMap<Csm::csmString, Csm::ACubismMotion*>   _motions; ///< 已加载的动作列表。
-    Csm::csmMap<Csm::csmString, Csm::ACubismMotion*>   _expressions; ///< 已加载的表情列表。
+    Csm::csmMap<Csm::csmString, Csm::ACubismMotion*> _motions; ///< 已加载的动作列表。
+    Csm::csmMap<Csm::csmString, Csm::ACubismMotion*> _expressions; ///< 已加载的表情列表。
     Csm::csmVector<Csm::csmRectF> _hitArea;
     Csm::csmVector<Csm::csmRectF> _userArea;
     const Csm::CubismId* _idParamAngleX; ///< 参数 ID：ParamAngleX。
     const Csm::CubismId* _idParamAngleY; ///< 参数 ID：ParamAngleY。
     const Csm::CubismId* _idParamAngleZ; ///< 参数 ID：ParamAngleZ。
     const Csm::CubismId* _idParamBodyAngleX; ///< 参数 ID：ParamBodyAngleX。
-    
+
     const Csm::CubismId* _idParamBodyAngleY; ///< 参数 ID：ParamBodyAngleY。
-    
+
     const Csm::CubismId* _idParamBodyAngleZ; ///< 参数 ID：ParamBodyAngleZ。
     const Csm::CubismId* _idParamEyeBallX; ///< 参数 ID：ParamEyeBallX。
     const Csm::CubismId* _idParamEyeBallY; ///< 参数 ID：ParamEyeBallY。
@@ -252,5 +257,5 @@ private:
 
     LAppWavFileHandler_Common _wavFileHandler; ///< WAV 文件处理器。
 
-    Csm::Rendering::CubismRenderTarget_OpenGLES2 _renderBuffer;   ///< 默认帧缓冲以外的绘制目标。
+    Csm::Rendering::CubismRenderTarget_OpenGLES2 _renderBuffer; ///< 默认帧缓冲以外的绘制目标。
 };

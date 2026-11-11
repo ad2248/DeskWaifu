@@ -6,24 +6,31 @@ namespace {
 void Log(const char* text)
 {
     QFile file(qEnvironmentVariable("DESKWAIFU_PLUGIN_TEST_LOG"));
-    if (file.open(QIODevice::WriteOnly | QIODevice::Append)) { file.write(text); file.write("\n"); }
+    if (file.open(QIODevice::WriteOnly | QIODevice::Append)) {
+        file.write(text);
+        file.write("\n");
+    }
 }
 
-struct ModuleLifetime { ~ModuleLifetime() { Log("unload"); } } moduleLifetime;
-struct ModuleEvent : ProcessorEvent
-{
-    ModuleEvent() : ProcessorEvent("fixture-from-plugin") {}
+struct ModuleLifetime {
+    ~ModuleLifetime() { Log("unload"); }
+} moduleLifetime;
+struct ModuleEvent : ProcessorEvent {
+    ModuleEvent()
+        : ProcessorEvent("fixture-from-plugin")
+    {
+    }
     ~ModuleEvent() override { Log("payload-destroy"); }
 };
 
-class FixturePlugin : public IProcessorPlugin
-{
+class FixturePlugin : public IProcessorPlugin {
 public:
     ~FixturePlugin() override
     {
         Log("destroy");
-        if (_context && qEnvironmentVariableIsSet("DESKWAIFU_FIXTURE_DESTROY_ERROR"))
+        if (_context && qEnvironmentVariableIsSet("DESKWAIFU_FIXTURE_DESTROY_ERROR")) {
             _context->ReportFailure("intentional destruction failure");
+        }
     }
     bool Initialize(PluginContext& context, QString* error) override
     {
@@ -35,14 +42,22 @@ public:
                 _endpoint->Respond(message.requestId, message.payload);
             }
         });
-        if (!_endpoint) return false;
+        if (!_endpoint) {
+            return false;
+        }
 #ifndef FIXTURE_consumer
         _endpoint->Provide("fixture.compute");
 #endif
-        if (_endpoint->Notify("during-initialize", std::make_shared<ProcessorEvent>())) return false;
-        if (!context.WriteConfig("settings.json", {{"plugin", context.Name()}}, error)) return false;
+        if (_endpoint->Notify("during-initialize", std::make_shared<ProcessorEvent>())) {
+            return false;
+        }
+        if (!context.WriteConfig("settings.json", { { "plugin", context.Name() } }, error)) {
+            return false;
+        }
 #ifdef FIXTURE_init_fail
-        if (error) *error = "intentional initialization failure";
+        if (error) {
+            *error = "intentional initialization failure";
+        }
         return false;
 #else
         return true;
@@ -53,12 +68,14 @@ public:
         Log("start");
         _endpoint->Notify("fixture.started", std::make_shared<ModuleEvent>());
 #ifdef FIXTURE_start_fail
-        if (error) *error = "intentional start failure";
+        if (error) {
+            *error = "intentional start failure";
+        }
         return false;
 #endif
 #ifdef FIXTURE_consumer
-        const auto id = _endpoint->Request("fixture.compute", std::make_shared<ProcessorEvent>(),
-            [](const RequestResult& result) { Log(result.status == RequestStatus::Replied ? "replied" : "failed"); });
+        const auto id = _endpoint->Request(
+            "fixture.compute", std::make_shared<ProcessorEvent>(), [](const RequestResult& result) { Log(result.status == RequestStatus::Replied ? "replied" : "failed"); });
         return id != 0;
 #else
         Q_UNUSED(error);
@@ -68,11 +85,15 @@ public:
     void Stop() noexcept override
     {
         Log("stop");
-        if (qEnvironmentVariableIsSet("DESKWAIFU_FIXTURE_STOP_ERROR"))
+        if (qEnvironmentVariableIsSet("DESKWAIFU_FIXTURE_STOP_ERROR")) {
             _context->ReportFailure("intentional shutdown failure");
+        }
         // Context remains usable through Stop, but messaging is disabled.
-        if (_endpoint && _endpoint->Notify("during-stop", std::make_shared<ProcessorEvent>())) Log("bad-stop-active");
+        if (_endpoint && _endpoint->Notify("during-stop", std::make_shared<ProcessorEvent>())) {
+            Log("bad-stop-active");
+        }
     }
+
 private:
     PluginContext* _context = nullptr;
     EventEndpoint* _endpoint = nullptr;

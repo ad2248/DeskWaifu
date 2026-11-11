@@ -5,8 +5,7 @@
 #include <samplerate.h>
 
 // Incremental native-format to 16 kHz mono PCM16 little-endian conversion.
-class PcmNormalizer
-{
+class PcmNormalizer {
 public:
     ~PcmNormalizer();
     PcmNormalizer() = default;
@@ -16,6 +15,7 @@ public:
     bool Append(const QByteArray& bytes, QString& error);
     bool Finish(QByteArray& pcm, QString& error);
     void Clear();
+
 private:
     bool Convert(const float* samples, long frames, bool final, QString& error);
     bool Store(const float* samples, long count, QString& error);

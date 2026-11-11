@@ -18,12 +18,12 @@ const QString setSettingsCommand = QStringLiteral("set_voice_input_settings");
 const QString statusCommand = QStringLiteral("get_voice_input_status");
 const QString devicesCommand = QStringLiteral("list_voice_input_devices");
 const QString resultCommand = QStringLiteral("get_voice_input_result");
-const QStringList mutations{setSettingsCommand, QStringLiteral("start_voice_input"),
-    QStringLiteral("toggle_voice_input"), QStringLiteral("stop_voice_input"),
-    QStringLiteral("cancel_voice_input"), QStringLiteral("retry_voice_input_copy")};
+const QStringList mutations { setSettingsCommand, QStringLiteral("start_voice_input"), QStringLiteral("toggle_voice_input"), QStringLiteral("stop_voice_input"),
+    QStringLiteral("cancel_voice_input"), QStringLiteral("retry_voice_input_copy") };
 }
 
-VoiceInputTab::VoiceInputTab(GuiHostServices& services) : _client(services)
+VoiceInputTab::VoiceInputTab(GuiHostServices& services)
+    : _client(services)
 {
     setObjectName(QStringLiteral("voiceInputTab"));
     setWidgetResizable(true);
@@ -101,19 +101,16 @@ VoiceInputTab::VoiceInputTab(GuiHostServices& services) : _client(services)
     connect(_save, &QPushButton::clicked, this, [this] { save(false); });
     connect(_clearKey, &QPushButton::clicked, this, [this] { save(true); });
     connect(_start, &QPushButton::clicked, this, [this] { mutate(QStringLiteral("start_voice_input")); });
-    connect(_stop, &QPushButton::clicked, this, [this] {
-        mutate(QStringLiteral("stop_voice_input"), {{QStringLiteral("session_id"), _sessionId}});
-    });
-    connect(_cancel, &QPushButton::clicked, this, [this] {
-        mutate(QStringLiteral("cancel_voice_input"), {{QStringLiteral("session_id"), _sessionId}});
-    });
-    connect(_retryCopy, &QPushButton::clicked, this, [this] {
-        mutate(QStringLiteral("retry_voice_input_copy"), {{QStringLiteral("session_id"), _resultSession}});
-    });
+    connect(_stop, &QPushButton::clicked, this, [this] { mutate(QStringLiteral("stop_voice_input"), { { QStringLiteral("session_id"), _sessionId } }); });
+    connect(_cancel, &QPushButton::clicked, this, [this] { mutate(QStringLiteral("cancel_voice_input"), { { QStringLiteral("session_id"), _sessionId } }); });
+    connect(_retryCopy, &QPushButton::clicked, this, [this] { mutate(QStringLiteral("retry_voice_input_copy"), { { QStringLiteral("session_id"), _resultSession } }); });
     connect(&_client, &GuiHostServices::connectionChanged, this, [this](bool connected, const QString&) {
-        if (!_started) return;
-        if (connected) refresh();
-        else {
+        if (!_started) {
+            return;
+        }
+        if (connected) {
+            refresh();
+        } else {
             _pollTimer.stop();
             cancelUnsent();
             _mutation.clear();
@@ -131,12 +128,16 @@ VoiceInputTab::VoiceInputTab(GuiHostServices& services) : _client(services)
         if (!active) {
             _pollTimer.stop();
             _statusKnown = false;
-        } else poll();
+        } else {
+            poll();
+        }
         updateControls();
     });
     connect(&_client, &GuiHostServices::responseReceived, this, &VoiceInputTab::handleResponse);
     connect(&_client, &GuiHostServices::commandOutcomeUnknown, this, [this](const QString& command) {
-        if (!_started || command != _mutation) return;
+        if (!_started || command != _mutation) {
+            return;
+        }
         _mutation.clear();
         _statusKnown = false;
         _apiKey->clear();
@@ -150,7 +151,9 @@ VoiceInputTab::~VoiceInputTab() { stop(); }
 
 void VoiceInputTab::start()
 {
-    if (_started) return;
+    if (_started) {
+        return;
+    }
     _started = true;
     refresh();
     updateControls();
@@ -158,14 +161,19 @@ void VoiceInputTab::start()
 
 void VoiceInputTab::cancelUnsent()
 {
-    for (const auto& command : mutations) _client.cancelQueuedCommand(command);
-    for (const auto& command : {settingsCommand, statusCommand, devicesCommand, resultCommand})
+    for (const auto& command : mutations) {
         _client.cancelQueuedCommand(command);
+    }
+    for (const auto& command : { settingsCommand, statusCommand, devicesCommand, resultCommand }) {
+        _client.cancelQueuedCommand(command);
+    }
 }
 
 void VoiceInputTab::stop()
 {
-    if (!_started) return;
+    if (!_started) {
+        return;
+    }
     _started = false;
     _pollTimer.stop();
     cancelUnsent();
@@ -195,14 +203,13 @@ void VoiceInputTab::hideEvent(QHideEvent* event)
     updateControls();
 }
 
-bool VoiceInputTab::canPoll() const
-{
-    return _started && _pollingVisible && _client.isActive() && _client.isConnected();
-}
+bool VoiceInputTab::canPoll() const { return _started && _pollingVisible && _client.isActive() && _client.isConnected(); }
 
 void VoiceInputTab::refresh()
 {
-    if (!_started || !_client.isConnected()) return;
+    if (!_started || !_client.isConnected()) {
+        return;
+    }
     if (!_settingsPending) {
         _settingsPending = true;
         _client.sendCommand(settingsCommand);
@@ -216,7 +223,9 @@ void VoiceInputTab::refresh()
 
 void VoiceInputTab::poll()
 {
-    if (!canPoll() || _statusPending) return;
+    if (!canPoll() || _statusPending) {
+        return;
+    }
     if (!_mutation.isEmpty() && _mutation != setSettingsCommand && _mutation != QStringLiteral("retry_voice_input_copy")) {
         _pollTimer.start();
         return;
@@ -239,13 +248,15 @@ void VoiceInputTab::updateControls()
 
 void VoiceInputTab::save(bool clearKey)
 {
-    if (!_started || !_client.isActive() || !_client.isConnected() || !_mutation.isEmpty()) return;
-    QJsonObject parameters{{QStringLiteral("endpoint"), _endpoint->text().trimmed()},
-        {QStringLiteral("model"), _model->text().trimmed()},
-        {QStringLiteral("device_id"), _device->currentData().toString()},
-        {QStringLiteral("max_recording_seconds"), _maxSeconds->value()}};
+    if (!_started || !_client.isActive() || !_client.isConnected() || !_mutation.isEmpty()) {
+        return;
+    }
+    QJsonObject parameters { { QStringLiteral("endpoint"), _endpoint->text().trimmed() }, { QStringLiteral("model"), _model->text().trimmed() },
+        { QStringLiteral("device_id"), _device->currentData().toString() }, { QStringLiteral("max_recording_seconds"), _maxSeconds->value() } };
     const auto key = _apiKey->text().trimmed();
-    if (clearKey || !key.isEmpty()) parameters.insert(QStringLiteral("api_key"), clearKey ? QString() : key);
+    if (clearKey || !key.isEmpty()) {
+        parameters.insert(QStringLiteral("api_key"), clearKey ? QString() : key);
+    }
     _apiKey->clear();
     _settingsStatus->setText(tr("正在保存…"));
     mutate(setSettingsCommand, parameters);
@@ -253,7 +264,9 @@ void VoiceInputTab::save(bool clearKey)
 
 void VoiceInputTab::mutate(const QString& command, const QJsonObject& parameters)
 {
-    if (!_started || !_client.isActive() || !_client.isConnected() || !_mutation.isEmpty()) return;
+    if (!_started || !_client.isActive() || !_client.isConnected() || !_mutation.isEmpty()) {
+        return;
+    }
     _mutation = command;
     if (command != setSettingsCommand && command != QStringLiteral("retry_voice_input_copy")) {
         _discardStatus = _statusPending;
@@ -265,14 +278,20 @@ void VoiceInputTab::mutate(const QString& command, const QJsonObject& parameters
 
 void VoiceInputTab::handleResponse(const QString& command, const QJsonObject& response)
 {
-    if (!_started || !_client.isConnected()) return;
+    if (!_started || !_client.isConnected()) {
+        return;
+    }
     const bool ok = response.value(QStringLiteral("ok")).toBool();
     if (command == settingsCommand || command == setSettingsCommand) {
         if (command == settingsCommand) {
-            if (_mutation == setSettingsCommand || !_settingsPending) return;
+            if (_mutation == setSettingsCommand || !_settingsPending) {
+                return;
+            }
             _settingsPending = false;
         } else {
-            if (_mutation != command) return;
+            if (_mutation != command) {
+                return;
+            }
             _mutation.clear();
             _settingsPending = false;
             _apiKey->clear();
@@ -290,10 +309,14 @@ void VoiceInputTab::handleResponse(const QString& command, const QJsonObject& re
             }
             _device->setCurrentIndex(index);
             _settingsStatus->setText(_configured ? tr("API Key 已保存；为安全起见不回显") : tr("未配置 API Key"));
-        } else _settingsStatus->setText(tr("语音输入设置失败，请检查配置或后端版本"));
+        } else {
+            _settingsStatus->setText(tr("语音输入设置失败，请检查配置或后端版本"));
+        }
         // Never display raw settings response/error payloads: they may contain credentials.
     } else if (command == devicesCommand) {
-        if (!_devicesPending) return;
+        if (!_devicesPending) {
+            return;
+        }
         _devicesPending = false;
         if (ok) {
             const auto selected = _device->currentData().toString();
@@ -302,9 +325,13 @@ void VoiceInputTab::handleResponse(const QString& command, const QJsonObject& re
             for (const auto& entry : response.value(QStringLiteral("devices")).toArray()) {
                 const auto device = entry.toObject();
                 const auto id = device.value(QStringLiteral("id")).toString();
-                if (id.isEmpty()) continue;
+                if (id.isEmpty()) {
+                    continue;
+                }
                 auto name = device.value(QStringLiteral("name")).toString();
-                if (device.value(QStringLiteral("is_default")).toBool()) name += tr("（默认）");
+                if (device.value(QStringLiteral("is_default")).toBool()) {
+                    name += tr("（默认）");
+                }
                 _device->addItem(name, id);
             }
             int index = _device->findData(selected);
@@ -315,7 +342,9 @@ void VoiceInputTab::handleResponse(const QString& command, const QJsonObject& re
             _device->setCurrentIndex(index);
         }
     } else if (command == statusCommand) {
-        if (!_statusPending) return;
+        if (!_statusPending) {
+            return;
+        }
         _statusPending = false;
         if (_discardStatus) {
             // A read sent before a recording mutation cannot confirm its outcome.
@@ -330,26 +359,34 @@ void VoiceInputTab::handleResponse(const QString& command, const QJsonObject& re
             _phase = response.value(QStringLiteral("phase")).toString();
             _sessionId = response.value(QStringLiteral("session_id")).toString();
             _status->setText(tr("状态：%1 / %2；时长：%3 秒；结果：%4")
-                .arg(_state, _phase).arg(response.value(QStringLiteral("elapsed_ms")).toDouble() / 1000.0, 0, 'f', 1)
-                .arg(response.value(QStringLiteral("last_outcome")).toString()));
+                    .arg(_state, _phase)
+                    .arg(response.value(QStringLiteral("elapsed_ms")).toDouble() / 1000.0, 0, 'f', 1)
+                    .arg(response.value(QStringLiteral("last_outcome")).toString()));
             const auto errorCode = response.value(QStringLiteral("error_code")).toString();
-            if (!errorCode.isEmpty()) _status->setText(_status->text() + tr("；错误：%1").arg(errorCode));
-            _copyStatus->setText(tr("剪贴板：%1").arg(response.value(QStringLiteral("copy_state")).toString()));
-            if (canPoll() && _state == QStringLiteral("idle") && !_sessionId.isEmpty() && _sessionId != QStringLiteral("0")
-                && _sessionId != _resultRequested && _resultPending.isEmpty()) {
-                _resultRequested = _resultPending = _sessionId;
-                _client.sendCommand(resultCommand, {{QStringLiteral("session_id"), _sessionId}});
+            if (!errorCode.isEmpty()) {
+                _status->setText(_status->text() + tr("；错误：%1").arg(errorCode));
             }
-        } else _status->setText(tr("状态查询失败"));
-        if (canPoll()) _pollTimer.start();
+            _copyStatus->setText(tr("剪贴板：%1").arg(response.value(QStringLiteral("copy_state")).toString()));
+            if (canPoll() && _state == QStringLiteral("idle") && !_sessionId.isEmpty() && _sessionId != QStringLiteral("0") && _sessionId != _resultRequested
+                && _resultPending.isEmpty()) {
+                _resultRequested = _resultPending = _sessionId;
+                _client.sendCommand(resultCommand, { { QStringLiteral("session_id"), _sessionId } });
+            }
+        } else {
+            _status->setText(tr("状态查询失败"));
+        }
+        if (canPoll()) {
+            _pollTimer.start();
+        }
     } else if (command == resultCommand) {
-        if (_resultPending.isEmpty()) return;
+        if (_resultPending.isEmpty()) {
+            return;
+        }
         // Only one result request is in flight. Even stale_session errors may carry
         // a different session ID, so always release it before checking the payload.
         const auto requestedSession = _resultPending;
         _resultPending.clear();
-        if (ok && requestedSession == _sessionId && _state == QStringLiteral("idle")
-            && response.value(QStringLiteral("session_id")).toString() == requestedSession) {
+        if (ok && requestedSession == _sessionId && _state == QStringLiteral("idle") && response.value(QStringLiteral("session_id")).toString() == requestedSession) {
             _resultSession = requestedSession;
             _result->setPlainText(response.value(QStringLiteral("text")).toString());
             _copyStatus->setText(tr("剪贴板：%1").arg(response.value(QStringLiteral("copy_state")).toString()));
@@ -360,12 +397,14 @@ void VoiceInputTab::handleResponse(const QString& command, const QJsonObject& re
         }
     } else if (command == _mutation) {
         _mutation.clear();
-        if (command == QStringLiteral("retry_voice_input_copy"))
+        if (command == QStringLiteral("retry_voice_input_copy")) {
             _copyStatus->setText(ok ? tr("剪贴板：%1").arg(response.value(QStringLiteral("copy_state")).toString())
-                : tr("复制失败：%1").arg(response.value(QStringLiteral("error_code")).toString()));
-        else {
+                                    : tr("复制失败：%1").arg(response.value(QStringLiteral("error_code")).toString()));
+        } else {
             _statusKnown = false;
-            if (!ok) _status->setText(tr("录音操作失败，请查询当前状态后重试"));
+            if (!ok) {
+                _status->setText(tr("录音操作失败，请查询当前状态后重试"));
+            }
             poll();
         }
     }

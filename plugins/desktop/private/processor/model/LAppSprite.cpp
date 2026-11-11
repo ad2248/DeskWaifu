@@ -18,7 +18,7 @@ LAppSprite::LAppSprite(float x, float y, float width, float height, GLuint textu
 
     // 获取各顶点属性变量的位置。
     _positionLocation = glGetAttribLocation(programId, "position");
-    _uvLocation      = glGetAttribLocation(programId, "uv");
+    _uvLocation = glGetAttribLocation(programId, "uv");
     _textureLocation = glGetUniformLocation(programId, "texture");
     _colorLocation = glGetUniformLocation(programId, "baseColor");
 
@@ -28,23 +28,23 @@ LAppSprite::LAppSprite(float x, float y, float width, float height, GLuint textu
     _spriteColor[3] = 1.0f;
 }
 
-LAppSprite::~LAppSprite()
-{
-}
+LAppSprite::~LAppSprite() { }
 
 void LAppSprite::Render(int maxWidth, int maxHeight) const
 {
-    if(maxWidth<=0 || maxHeight<=0)
-    {
+    if (maxWidth <= 0 || maxHeight <= 0) {
         return;
     }
 
-    const GLfloat uvVertex[] =
-    {
-        1.0f, 0.0f,
-        0.0f, 0.0f,
-        0.0f, 1.0f,
-        1.0f, 1.0f,
+    const GLfloat uvVertex[] = {
+        1.0f,
+        0.0f,
+        0.0f,
+        0.0f,
+        0.0f,
+        1.0f,
+        1.0f,
+        1.0f,
     };
 
     // 透過設定
@@ -58,13 +58,9 @@ void LAppSprite::Render(int maxWidth, int maxHeight) const
     glUniform1i(_textureLocation, 0);
 
     // 顶点数据。
-    float positionVertex[] =
-    {
-        (_rect.right - maxWidth * 0.5f) / (maxWidth * 0.5f), (_rect.up   - maxHeight * 0.5f) / (maxHeight * 0.5f),
-        (_rect.left  - maxWidth * 0.5f) / (maxWidth * 0.5f), (_rect.up   - maxHeight * 0.5f) / (maxHeight * 0.5f),
-        (_rect.left  - maxWidth * 0.5f) / (maxWidth * 0.5f), (_rect.down - maxHeight * 0.5f) / (maxHeight * 0.5f),
-        (_rect.right - maxWidth * 0.5f) / (maxWidth * 0.5f), (_rect.down - maxHeight * 0.5f) / (maxHeight * 0.5f)
-    };
+    float positionVertex[] = { (_rect.right - maxWidth * 0.5f) / (maxWidth * 0.5f), (_rect.up - maxHeight * 0.5f) / (maxHeight * 0.5f),
+        (_rect.left - maxWidth * 0.5f) / (maxWidth * 0.5f), (_rect.up - maxHeight * 0.5f) / (maxHeight * 0.5f), (_rect.left - maxWidth * 0.5f) / (maxWidth * 0.5f),
+        (_rect.down - maxHeight * 0.5f) / (maxHeight * 0.5f), (_rect.right - maxWidth * 0.5f) / (maxWidth * 0.5f), (_rect.down - maxHeight * 0.5f) / (maxHeight * 0.5f) };
 
     // 设置顶点属性。
     glVertexAttribPointer(_positionLocation, 2, GL_FLOAT, false, 0, positionVertex);
@@ -79,8 +75,7 @@ void LAppSprite::Render(int maxWidth, int maxHeight) const
 
 void LAppSprite::RenderImmidiate(GLuint textureId, const GLfloat uvVertex[8], int maxWidth, int maxHeight) const
 {
-    if(maxWidth<=0 || maxHeight<=0)
-    {
+    if (maxWidth <= 0 || maxHeight <= 0) {
         return;
     }
 
@@ -92,13 +87,9 @@ void LAppSprite::RenderImmidiate(GLuint textureId, const GLfloat uvVertex[8], in
     glUniform1i(_textureLocation, 0);
 
     // 顶点数据。
-    float positionVertex[] =
-    {
-        (_rect.right - maxWidth * 0.5f) / (maxWidth * 0.5f), (_rect.up - maxHeight * 0.5f) / (maxHeight * 0.5f),
-        (_rect.left - maxWidth * 0.5f) / (maxWidth * 0.5f), (_rect.up - maxHeight * 0.5f) / (maxHeight * 0.5f),
-        (_rect.left - maxWidth * 0.5f) / (maxWidth * 0.5f), (_rect.down - maxHeight * 0.5f) / (maxHeight * 0.5f),
-        (_rect.right - maxWidth * 0.5f) / (maxWidth * 0.5f), (_rect.down - maxHeight * 0.5f) / (maxHeight * 0.5f)
-    };
+    float positionVertex[] = { (_rect.right - maxWidth * 0.5f) / (maxWidth * 0.5f), (_rect.up - maxHeight * 0.5f) / (maxHeight * 0.5f),
+        (_rect.left - maxWidth * 0.5f) / (maxWidth * 0.5f), (_rect.up - maxHeight * 0.5f) / (maxHeight * 0.5f), (_rect.left - maxWidth * 0.5f) / (maxWidth * 0.5f),
+        (_rect.down - maxHeight * 0.5f) / (maxHeight * 0.5f), (_rect.right - maxWidth * 0.5f) / (maxWidth * 0.5f), (_rect.down - maxHeight * 0.5f) / (maxHeight * 0.5f) };
 
     // 设置顶点属性。
     glVertexAttribPointer(_positionLocation, 2, GL_FLOAT, false, 0, positionVertex);
@@ -113,8 +104,7 @@ void LAppSprite::RenderImmidiate(GLuint textureId, const GLfloat uvVertex[8], in
 
 bool LAppSprite::IsHit(float pointX, float pointY, int maxWidth, int maxHeight) const
 {
-    if(maxWidth<=0 || maxHeight<=0)
-    {
+    if (maxWidth <= 0 || maxHeight <= 0) {
         return false;
     }
     // 需要转换 Y 坐标。
