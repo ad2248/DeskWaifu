@@ -64,7 +64,7 @@
 - `deskwaifu-bin-0.1.0-1-x86_64.pkg.tar.zst`，1,375,653 字节。
 - `deskwaifu-ocr-bin-0.1.0-1-x86_64.pkg.tar.zst`，10,950,064 字节。
 - `release-metadata.json` 的 tag/pkgver 均为 `0.1.0`，commit 为原始完整 SHA。
-- `.PKGINFO` 证明 OCR 包精确依赖 `deskwaifu-bin=0.1.0-1`。
+- 当时检查过 OCR 包的 `.PKGINFO`；当前打包规则以发布模板为准，主包依赖仅声明包名。
 - `sha256sum -c SHA256SUMS` 全部通过，真实 uploader 的 `load_assets()` 也已验证
   这批真实产物；没有调用其发布函数。
 - 已逐项查看完整包清单：主包含应用、CLI、控制面板及默认插件；OCR 包含 helper、

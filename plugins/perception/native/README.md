@@ -52,11 +52,11 @@ cmake --build build-ocr --parallel 4
 DESTDIR="$PWD/stage-ocr" cmake --install build-ocr --component DeskWaifuOCR
 ```
 
-安装内容为 `usr/lib/deskwaifu/ocr/deskwaifu-ocr.so`、模块文档及模型许可证，不包含 ORT 运行库副本、ORT 许可证副本、可执行辅助程序或模型。模块通过系统动态链接器加载 ORT；模型仍使用配置中的绝对路径。Qt/OpenCV/yaml-cpp/ONNX Runtime 都是系统依赖，正式 OCR 包声明 `onnxruntime-cpu` 运行依赖；模块与主程序需匹配 Qt/C++ ABI 和私有接口版本，正式 OCR 包严格依赖同版本主包。不能据此声称跨发行版 ABI 兼容。
+安装内容为 `usr/lib/deskwaifu/ocr/deskwaifu-ocr.so`、模块文档及模型许可证，不包含 ORT 运行库副本、ORT 许可证副本、可执行辅助程序或模型。模块通过系统动态链接器加载 ORT；模型仍使用配置中的绝对路径。Qt/OpenCV/yaml-cpp/ONNX Runtime 都是系统依赖，正式 OCR 包声明 `onnxruntime-cpu` 运行依赖；模块与主程序需匹配 Qt/C++ ABI 和私有接口版本，正式 OCR 包的主包依赖仅声明包名。不能据此声称跨发行版 ABI 兼容。
 
 ## 配置与升级
 
-默认模块路径为 `/usr/lib/deskwaifu/ocr/deskwaifu-ocr.so`（可由安装前缀/libdir 改变）。开发时可用 `DESKWAIFU_OCR_MODULE=/绝对路径/deskwaifu-ocr.so` 指向暂存模块。旧 `DESKWAIFU_OCR_HELPER` 已不再读取，也不会回退到子进程。升级时同步更新主包及 OCR 包，已有模型目录配置无需迁移。
+默认模块路径为 `/usr/lib/deskwaifu/ocr/deskwaifu-ocr.so`（可由安装前缀/libdir 改变）。开发时可用 `DESKWAIFU_OCR_MODULE=/绝对路径/deskwaifu-ocr.so` 指向暂存模块。旧 `DESKWAIFU_OCR_HELPER` 已不再读取，也不会回退到子进程。升级时已有模型目录配置无需迁移。
 
 在主程序配置根目录下的 `plugin/perception/config.json` 设置两个绝对目录（默认根目录为 `~/.config/deskwaifu`）：
 
@@ -90,7 +90,7 @@ DESTDIR="$PWD/stage-ocr" cmake --install build-ocr --component DeskWaifuOCR
 
 错误码与处理：
 
-- `module_missing`：安装匹配版本的 OCR 功能包。
+- `module_missing`：安装 OCR 功能包。
 - `module_incompatible`：模块格式或接口版本不符，重新安装匹配包。
 - `module_load_failed`：检查 Qt/OpenCV/yaml-cpp/ORT 依赖及 ABI。
 - `invalid_config`：修正配置 JSON 和绝对目录。

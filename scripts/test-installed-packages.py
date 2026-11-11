@@ -79,7 +79,7 @@ class Root:
         for line in text.splitlines():
             if line.startswith("depend = "):
                 self.dependency(line.removeprefix("depend = "))
-        # pacman validates exact runtime/test package versions using the copied
+        # pacman validates runtime/test package dependencies using the copied
         # installed database. Hook/script execution is unnecessary in this root.
         config = self.root / "pacman-test.conf"
         config.write_text("[options]\nArchitecture = x86_64\nSigLevel = Never\nHookDir = /no-hooks\n")

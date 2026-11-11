@@ -40,7 +40,7 @@ git add packaging/aur
 git commit -m 'chore(aur): 更新子模块版本'
 ```
 
-GitHub 标签当前原样映射为 `pkgver`，上游产物使用 `pkgrel=1`。不支持的标签语法会被拒绝，而不是静默规范化。AUR 的 `pkgrel` 独立：仅修复配方时递增，并通过 `makepkg --printsrcinfo > .SRCINFO` 重新生成 `.SRCINFO`。OCR 必须依赖 AUR 主包实际的 `pkgver-pkgrel`，不是上游产物的发行编号。新上游版本将 AUR `pkgrel` 重置为 1；更新同一发行版时保留它。
+GitHub 标签当前原样映射为 `pkgver`，上游产物使用 `pkgrel=1`。不支持的标签语法会被拒绝，而不是静默规范化。AUR 的 `pkgrel` 独立：仅修复配方时递增，并通过 `makepkg --printsrcinfo > .SRCINFO` 重新生成 `.SRCINFO`。OCR 依赖仅声明主包名 `deskwaifu-bin`。新上游版本将 AUR `pkgrel` 重置为 1；更新同一发行版时保留它。
 
 下载使用 `upstream-` 文件名前缀，避免与 makepkg 输出包冲突。`noextract` 防止两个上游归档互相覆盖；每个包仅提取自己的 `usr/` 载荷。不安装上游包元数据，并禁用符号剥离和调试包拆分。OCR 许可证目录从上游组件名 `deskwaifu-ocr` 重命名为安装包名 `deskwaifu-ocr-bin`。
 
