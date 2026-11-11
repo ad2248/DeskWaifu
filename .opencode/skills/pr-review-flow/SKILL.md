@@ -9,31 +9,31 @@ user-invokable: true
 完成一个 PR 的完整评审工作流。输入：形如
 `https://<host>/<owner>/<repo>/pulls/<n>` 的 PR URL。
 
-优先使用 `tea` CLI 加本地 git；除非用户明确要求，否则不要合并。
+选择机器上可用的 `gt` 或 `tea`，先查看所安装版本的 `--help`，再配合
+本地 git 完成以下目标；不要假定不同工具或版本的命令语法一致。
+除非用户明确要求，否则不要合并。
 
 ## 1. 解析 URL
 
-从 URL 中提取仓库 slug `<owner>/<repo>` 与 PR 编号 `<n>`。每次调用 `tea`
-都显式传入 `--repo <owner>/<repo>`。
+从 URL 中提取主机、仓库 slug `<owner>/<repo>` 与 PR 编号 `<n>`。
+每次远程操作都明确选择目标主机和仓库，并确认使用的账号，避免依赖
+当前目录或默认配置误操作其他实例、仓库或账号。
 
 ## 2. 获取 PR 元信息
 
-```bash
-tea pulls <n> --repo <owner>/<repo>
-```
-
-记录 base 分支、head 分支、head SHA、状态、冲突情况，以及 PR 正文
-（摘要 + 声称的测试）。
+使用所选 CLI 获取 PR 元信息，记录 base 分支、head 分支、head SHA、
+状态、冲突情况，以及 PR 正文（摘要 + 声称的测试）。
 
 ## 3. 本地检出并阅读 diff
 
-```bash
-tea pulls checkout <n>
-```
+检出前记录原分支（若原本是 detached HEAD，则记录原 SHA），并确认工作区
+没有会被覆盖的未提交改动。根据所选 CLI 的帮助检出 PR 提交，不要假定
+工具会进入 detached HEAD，也不要假定复用的本地分支等于当前 PR head。
+使用 `git rev-parse HEAD` 确认本地 HEAD 等于已记录的 PR head SHA。
 
-这会停留在 PR 跟踪分支的 detached HEAD 上。对大 diff 而言 `tea pulls
-<n> --fields diff` 并不可靠——请改用 git 阅读 diff
-（把 `<base>` 替换为真实 base 分支）：
+使用所选 CLI 获取并阅读 PR diff；需要本地统计或补充对比时可用 git
+（把 `<base>` 替换为真实 base 分支，并确认 `origin` 指向目标仓库、
+`origin/<base>` 已更新）：
 
 ```bash
 git diff origin/<base>...HEAD --stat
@@ -44,14 +44,8 @@ diff 不清晰处要阅读周边代码；不要孤立地评审代码块。
 
 ## 4. 核验 CI 并按需本地测试
 
-先核验 base 分支保护规则和 PR 当前 head SHA 的 CI 状态：
-
-```bash
-tea api repos/<owner>/<repo>/branch_protections/<base> \
-  --repo <owner>/<repo>
-tea api repos/<owner>/<repo>/commits/<head-sha>/status \
-  --repo <owner>/<repo>
-```
+使用所选 CLI 查询 base 分支保护规则和 PR 当前 head SHA 的 CI 状态；
+必要时使用该 CLI 提供的 API 访问能力。
 
 只有状态属于 PR 当前 head SHA、所有必需检查均成功，且 CI 覆盖相关改动
 时，才可直接信任 CI 并省略本地完整测试。旧提交的成功状态无效；base
@@ -74,19 +68,15 @@ timeout（例如 `300000` ms），而不是让它中途被中止。
 阻塞性缺陷（崩溃、安全问题、行为破坏、缺少文档与测试更新的协议
 变更）时**批准**。
 
-测试失败、行为破坏或存在阻塞性缺陷时**驳回 / 请求修改**：
-
-```bash
-tea pulls reject <n> --repo <owner>/<repo> '<comment>'
-```
+测试失败、行为破坏或存在阻塞性缺陷时**驳回 / 请求修改**。
+使用所选 CLI 提交相应结论与评审正文，确保评审针对已核验的 head SHA。
 
 ## 6. 撰写评审评论
 
-评论是位置参数——没有 `--message` 旗标：
-
-```bash
-tea pulls approve <n> --repo <owner>/<repo> '<comment>'
-```
+按所选 CLI 的帮助传入评审正文并提交批准或请求修改的结论。
+提交评审前重新确认 PR head SHA 未变化；若变化，重新核验 diff 和 CI。
+若已有待提交评审，先检查其正文和行内评论，以及工具提交时是否会一并
+发布或替换这些内容，不要盲目跳过确认。
 
 以用户的语言撰写评论，结构如下：
 
@@ -100,11 +90,7 @@ tea pulls approve <n> --repo <owner>/<repo> '<comment>'
 
 每个发现单独建一个 issue，便于跟踪：
 
-```bash
-tea issues create --repo <owner>/<repo> \
-  --title '<component>: short problem statement' \
-  --description '<structured body>'
-```
+使用所选 CLI 在目标仓库创建 issue，填写标题和结构化正文。
 
 Issue 正文模板：
 
@@ -124,17 +110,18 @@ Issue 正文模板：
 <related code paths / reproduction>
 ```
 
-使用标签前先执行 `tea labels`——仓库可能没有定义任何标签。最终向
-用户汇报时提及新建 issue 的链接。
+使用标签前先通过所选 CLI 检查目标仓库是否定义了这些标签——仓库可能
+没有定义任何标签。最终向用户汇报时提及新建 issue 的链接。
 
 ## 8. 清理并汇报
 
-回到原分支（`git checkout <base>`），然后向用户汇报：
+回到检出前记录的原分支（`git checkout <original-branch>`；若原本为
+ detached HEAD，使用 `git checkout --detach <original-sha>`），然后向用户汇报：
 结论、测试结果、评审评论链接以及相关 issue 链接。
 
 ## 陷阱
 
-- `tea pulls approve`/`reject` 的评论是位置参数，不能通过旗标传入
-- `tea pulls checkout` 会停留在 detached HEAD；请对 `origin/<base>` 做 diff
+- 不要把 `gt` 与 `tea` 的命令或参数混用；以当前安装版本的 `--help`
+  为准
 - 不要使用旧 head SHA 的 CI 成功状态，也不要用本地成功覆盖必需 CI 失败
 - 评审过程中绝不提交、推送或合并，除非用户要求
