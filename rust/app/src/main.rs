@@ -23,6 +23,27 @@ struct Loaded {
     model: Model,
 }
 
+/// Display state the desktop UI would otherwise own: the model transform and
+/// window visibility. It stays in memory for the lifetime of the process.
+struct View {
+    zoom: f32,
+    x: f32,
+    y: f32,
+    hidden: bool,
+}
+
+impl Default for View {
+    fn default() -> Self {
+        // Same defaults as the C++ `ModelTransform` and `AppSnapshot`.
+        Self {
+            zoom: 1.0,
+            x: 0.0,
+            y: 0.0,
+            hidden: false,
+        }
+    }
+}
+
 struct OwnedSocket {
     path: PathBuf,
     dev: u64,
@@ -136,6 +157,24 @@ fn bool_field(args: &Value, key: &str) -> Result<bool, String> {
     }
 }
 
+/// Reads an optional float field the way the C++ `JsonGetFloat` does: a missing
+/// field keeps the caller's fallback, while a present non-number or non-finite
+/// value fails instead of silently converting.
+fn float_field(args: &Value, key: &str, fallback: f32) -> Result<f32, String> {
+    match args.get(key) {
+        None => Ok(fallback),
+        Some(value) => {
+            let value = value
+                .as_f64()
+                .ok_or_else(|| format!("{key} must be a finite number"))?;
+            if !value.is_finite() || !(value as f32).is_finite() {
+                return Err(format!("{key} must be a finite number"));
+            }
+            Ok(value as f32)
+        }
+    }
+}
+
 /// Whether the request names the connection-owned streaming source instead of
 /// the shared persistent one. The C++ handler rejects `stream_source` when the
 /// request has no connection; every request here arrives through `poll_with`,
@@ -148,12 +187,32 @@ fn source_of(args: &Value, connection: ConnectionId) -> Result<SourceId, String>
     })
 }
 
+/// Loads `index` and makes it current. A failed load returns before the state
+/// changes, so the previous model and its controls stay intact; a successful
+/// load reports the new identity, which clears external controls only when it
+/// really differs.
+fn select(
+    index: usize,
+    entries: &[Entry],
+    current: &mut Loaded,
+    controls: &mut Arbiter,
+) -> Result<Value, String> {
+    let replacement = load(index, entries)?;
+    *current = replacement;
+    controls.model_switch(ModelIdentity::new(
+        index as i32,
+        entries[index].descriptor.id.clone(),
+    ));
+    Ok(json!({"ok":true,"model":entries[index].descriptor.name}))
+}
+
 fn handle(
     request: &[u8],
     connection: ConnectionId,
     entries: &[Entry],
     current: &mut Loaded,
     controls: &mut Arbiter,
+    view: &mut View,
     quit: &mut bool,
 ) -> Vec<u8> {
     let result = (|| -> Result<Value, String> {
@@ -165,9 +224,18 @@ fn handle(
             .ok_or("request requires string command")?;
         let args = request.get("args").unwrap_or(&request);
         match command {
-            "get_status" => Ok(
-                json!({"ok":true,"renderer_available":false,"model_core_ready":true,"current_model":entries[current.entry].descriptor.name}),
-            ),
+            "get_status" => Ok(json!({
+                "ok": true,
+                "renderer_available": false,
+                "model_core_ready": true,
+                "model": entries[current.entry].descriptor.name,
+                "model_index": current.entry,
+                "model_count": entries.len(),
+                "hidden": view.hidden,
+                "zoom": view.zoom,
+                "x": view.x,
+                "y": view.y,
+            })),
             "get_available_models" => Ok(
                 json!({"ok":true,"models":entries.iter().map(|e| &e.descriptor.name).collect::<Vec<_>>()}),
             ),
@@ -194,15 +262,38 @@ fn handle(
                     }
                     i
                 };
-                let replacement = load(index, entries)?;
-                *current = replacement;
                 // Only a real identity change clears external controls; re-selecting
                 // the current model leaves every source untouched.
-                controls.model_switch(ModelIdentity::new(
-                    index as i32,
-                    entries[index].descriptor.id.clone(),
-                ));
-                Ok(json!({"ok":true,"model":entries[index].descriptor.name}))
+                select(index, entries, current, controls)
+            }
+            "next_model" | "prev_model" => {
+                let count = entries.len();
+                let index = if command == "next_model" {
+                    (current.entry + 1) % count
+                } else {
+                    (current.entry + count - 1) % count
+                };
+                select(index, entries, current, controls)
+            }
+            "get_model_position" => Ok(json!({"ok":true,"x":view.x,"y":view.y,"zoom":view.zoom})),
+            "set_model_position" => {
+                let x = float_field(args, "x", view.x)?;
+                let y = float_field(args, "y", view.y)?;
+                view.x = x;
+                view.y = y;
+                Ok(json!({"ok":true}))
+            }
+            "set_model_zoom" => {
+                let zoom = float_field(args, "value", -1.0)?;
+                if !(0.1..=10.0).contains(&zoom) {
+                    return Err("value must be 0.1..10.0".into());
+                }
+                view.zoom = zoom;
+                Ok(json!({"ok":true}))
+            }
+            "toggle_hidden" => {
+                view.hidden = !view.hidden;
+                Ok(json!({"ok":true,"hidden":view.hidden}))
             }
             "get_parameters" => {
                 let params = current
@@ -345,6 +436,7 @@ fn run() -> Result<(), String> {
         OwnedSocket::bind(&socket_path).map_err(|e| format!("cannot bind socket: {e}"))?;
     let mut current = initial;
     let mut controls = Arbiter::new(ModelIdentity::new(0, entries[0].descriptor.id.clone()));
+    let mut view = View::default();
     let mut quit = false;
     let mut next_update = Instant::now();
     while !quit {
@@ -366,6 +458,7 @@ fn run() -> Result<(), String> {
                         &entries,
                         &mut current,
                         &mut controls,
+                        &mut view,
                         &mut quit,
                     )
                 },

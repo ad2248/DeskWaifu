@@ -87,6 +87,12 @@ impl Runtime {
     }
 
     fn request(&self, request: Value) -> Value {
+        self.request_text(&request.to_string())
+    }
+
+    /// Sends request text verbatim, for values `serde_json` cannot build (such
+    /// as a literal that overflows `f64`).
+    fn request_text(&self, request: &str) -> Value {
         let mut stream = UnixStream::connect(&self.socket).unwrap();
         stream.set_read_timeout(Some(TIMEOUT)).unwrap();
         stream.set_write_timeout(Some(TIMEOUT)).unwrap();
@@ -604,5 +610,319 @@ fn optional_haru_invalid_control_requests_leave_state_unchanged() {
             "{request}"
         );
     }
+    runtime.quit();
+}
+
+/// Writes one mouth and one look value through the shared persistent source and
+/// asserts both arrived, so a later check can tell whether they survived.
+fn set_controls(runtime: &Runtime) {
+    assert_eq!(
+        runtime.request(json!({"command":"set_mouth_y","args":{"value":0.4}}))["ok"],
+        true
+    );
+    assert_eq!(
+        runtime.request(json!({"command":"set_look","args":{"x":0.1,"y":0.2}}))["ok"],
+        true
+    );
+    let status = runtime.request(json!({"command":"get_control_status"}));
+    assert_eq!(float(&status, "mouth"), 0.4);
+    assert_eq!(float(&status, "look_x"), 0.1);
+}
+
+#[test]
+fn optional_haru_next_and_prev_wrap_in_catalog_name_order() {
+    let Some(model) = fixture() else { return };
+    let dir = tempdir().unwrap();
+    // Written out of order; the catalog sorts by name, so Alpha..Gamma is the order.
+    for name in ["Gamma", "Alpha", "Beta"] {
+        add_model(dir.path(), name, &model);
+    }
+    let runtime = Runtime::start("--models-dir", dir.path());
+    assert_eq!(
+        runtime.request(json!({"command":"get_available_models"}))["models"],
+        json!(["Alpha", "Beta", "Gamma"])
+    );
+    let current = || runtime.request(json!({"command":"get_current_model"}))["model"].clone();
+    assert_eq!(current(), "Alpha");
+    for (command, expected, index) in [
+        ("next_model", "Beta", 1),
+        ("next_model", "Gamma", 2),
+        ("next_model", "Alpha", 0),
+        ("prev_model", "Gamma", 2),
+        ("prev_model", "Beta", 1),
+        ("prev_model", "Alpha", 0),
+    ] {
+        let response = runtime.request(json!({"command":command}));
+        assert_eq!(response, json!({"ok":true,"model":expected}), "{command}");
+        assert_eq!(current(), expected);
+        let status = runtime.request(json!({"command":"get_status"}));
+        assert_eq!(status["model"], expected);
+        assert_eq!(status["model_index"], index);
+        assert_eq!(status["model_count"], 3);
+    }
+    runtime.quit();
+}
+
+#[test]
+fn optional_haru_next_and_prev_reselect_the_only_model_and_keep_controls() {
+    let Some(model) = fixture() else { return };
+    let runtime = Runtime::start("--model", &model);
+    let name = runtime.request(json!({"command":"get_current_model"}))["model"].clone();
+    set_controls(&runtime);
+    for command in ["next_model", "prev_model"] {
+        let response = runtime.request(json!({"command":command}));
+        assert_eq!(response, json!({"ok":true,"model":name}), "{command}");
+        // Re-selecting the same identity must not clear external controls.
+        let status = runtime.request(json!({"command":"get_control_status"}));
+        assert_eq!(float(&status, "mouth"), 0.4);
+        assert_eq!(float(&status, "look_x"), 0.1);
+        assert_eq!(float(&status, "look_y"), 0.2);
+    }
+    runtime.quit();
+}
+
+#[test]
+fn optional_haru_next_and_prev_fail_on_broken_neighbor_and_keep_state() {
+    let Some(model) = fixture() else { return };
+    let dir = tempdir().unwrap();
+    add_model(dir.path(), "Alpha", &model);
+    add_model(dir.path(), "Beta", &model);
+    add_broken_model(dir.path(), "Broken", &model);
+    let runtime = Runtime::start("--models-dir", dir.path());
+    let current = || runtime.request(json!({"command":"get_current_model"}))["model"].clone();
+    assert_eq!(
+        runtime.request(json!({"command":"get_available_models"}))["models"],
+        json!(["Alpha", "Beta", "Broken"])
+    );
+    set_controls(&runtime);
+    // Alpha -> Beta succeeds.
+    assert_eq!(runtime.request(json!({"command":"next_model"}))["ok"], true);
+    assert_eq!(current(), "Beta");
+    set_controls(&runtime);
+    // Beta -> Broken fails and keeps both the model and its controls.
+    assert_eq!(
+        runtime.request(json!({"command":"next_model"}))["ok"],
+        false
+    );
+    assert_eq!(current(), "Beta");
+    let status = runtime.request(json!({"command":"get_control_status"}));
+    assert_eq!(float(&status, "mouth"), 0.4);
+    // The same holds when the broken model is the previous one.
+    assert_eq!(
+        runtime.request(json!({"command":"set_model","args":{"name":"Alpha"}}))["ok"],
+        true
+    );
+    set_controls(&runtime);
+    assert_eq!(
+        runtime.request(json!({"command":"prev_model"}))["ok"],
+        false
+    );
+    assert_eq!(current(), "Alpha");
+    let status = runtime.request(json!({"command":"get_control_status"}));
+    assert_eq!(float(&status, "mouth"), 0.4);
+    assert_eq!(float(&status, "look_x"), 0.1);
+    runtime.quit();
+}
+
+#[test]
+fn optional_haru_next_model_change_clears_controls_and_accepts_new_writes() {
+    let Some(model) = fixture() else { return };
+    let dir = tempdir().unwrap();
+    add_model(dir.path(), "Alpha", &model);
+    add_model(dir.path(), "Beta", &model);
+    let runtime = Runtime::start("--models-dir", dir.path());
+    set_controls(&runtime);
+    assert_eq!(runtime.request(json!({"command":"next_model"}))["ok"], true);
+    assert_eq!(
+        runtime.request(json!({"command":"get_control_status"})),
+        no_control()
+    );
+    // The arbiter accepts new writes for the newly loaded identity.
+    assert_eq!(
+        runtime.request(json!({"command":"set_mouth_y","args":{"value":0.7}}))["ok"],
+        true
+    );
+    let status = runtime.request(json!({"command":"get_control_status"}));
+    assert_eq!(status["has_mouth"], true);
+    assert_eq!(float(&status, "mouth"), 0.7);
+    runtime.quit();
+}
+
+#[test]
+fn optional_haru_status_and_model_position_report_defaults() {
+    let Some(model) = fixture() else { return };
+    let runtime = Runtime::start("--model", &model);
+    let name = runtime.request(json!({"command":"get_current_model"}))["model"].clone();
+    let status = runtime.request(json!({"command":"get_status"}));
+    let mut keys: Vec<_> = status
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    keys.sort_unstable();
+    assert_eq!(
+        keys,
+        [
+            "hidden",
+            "model",
+            "model_core_ready",
+            "model_count",
+            "model_index",
+            "ok",
+            "renderer_available",
+            "x",
+            "y",
+            "zoom",
+        ]
+    );
+    assert_eq!(status["ok"], true);
+    assert_eq!(status["renderer_available"], false);
+    assert_eq!(status["model_core_ready"], true);
+    assert_eq!(status["model"], name);
+    assert_eq!(status["model_index"], 0);
+    assert_eq!(status["model_count"], 1);
+    assert_eq!(status["hidden"], false);
+    assert_eq!(float(&status, "zoom"), 1.0);
+    assert_eq!(float(&status, "x"), 0.0);
+    assert_eq!(float(&status, "y"), 0.0);
+    let position = runtime.request(json!({"command":"get_model_position"}));
+    let mut keys: Vec<_> = position
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    keys.sort_unstable();
+    assert_eq!(keys, ["ok", "x", "y", "zoom"]);
+    assert_eq!(position["ok"], true);
+    assert_eq!(float(&position, "zoom"), 1.0);
+    assert_eq!(float(&position, "x"), 0.0);
+    assert_eq!(float(&position, "y"), 0.0);
+    let response = runtime.request(json!({"command":"not_a_command"}));
+    assert_eq!(response["ok"], false);
+    assert_eq!(response["error"], "unsupported command: not_a_command");
+    runtime.quit();
+}
+
+#[test]
+fn optional_haru_set_model_position_updates_partially_and_rejects_invalid() {
+    let Some(model) = fixture() else { return };
+    let runtime = Runtime::start("--model", &model);
+    assert_eq!(
+        runtime.request(json!({"command":"set_model_position","args":{"x":0.5}}))["ok"],
+        true
+    );
+    let position = runtime.request(json!({"command":"get_model_position"}));
+    assert_eq!(float(&position, "x"), 0.5);
+    assert_eq!(float(&position, "y"), 0.0);
+    assert_eq!(float(&position, "zoom"), 1.0);
+    assert_eq!(
+        runtime.request(json!({"command":"set_model_position","args":{"y":-0.25}}))["ok"],
+        true
+    );
+    let position = runtime.request(json!({"command":"get_model_position"}));
+    assert_eq!(float(&position, "x"), 0.5);
+    assert_eq!(float(&position, "y"), -0.25);
+    // An empty request keeps both stored values.
+    assert_eq!(
+        runtime.request(json!({"command":"set_model_position","args":{}}))["ok"],
+        true
+    );
+    assert_eq!(
+        runtime.request(json!({"command":"get_model_position"})),
+        position
+    );
+    let expected = runtime.request(json!({"command":"get_status"}));
+    for args in [
+        json!({"x":"0.5"}),
+        json!({"x":null}),
+        json!({"y":true}),
+        json!({"y":[1]}),
+        // Finite as f64 but infinite once narrowed to the f32 boundary.
+        json!({"x":1e39}),
+    ] {
+        let request = json!({"command":"set_model_position","args":args});
+        assert_eq!(runtime.request(request.clone())["ok"], false, "{request}");
+        assert_eq!(
+            runtime.request(json!({"command":"get_status"})),
+            expected,
+            "{request}"
+        );
+    }
+    // A literal that overflows f64 is rejected while parsing the request.
+    let response = runtime.request_text(r#"{"command":"set_model_position","args":{"x":1e400}}"#);
+    assert_eq!(response["ok"], false);
+    assert_eq!(runtime.request(json!({"command":"get_status"})), expected);
+    runtime.quit();
+}
+
+#[test]
+fn optional_haru_set_model_zoom_accepts_boundaries_and_rejects_outside() {
+    let Some(model) = fixture() else { return };
+    let runtime = Runtime::start("--model", &model);
+    for value in [10.0, 0.1] {
+        let response = runtime.request(json!({"command":"set_model_zoom","args":{"value":value}}));
+        assert_eq!(response, json!({"ok":true}), "{value}");
+        assert_eq!(
+            float(
+                &runtime.request(json!({"command":"get_model_position"})),
+                "zoom"
+            ),
+            value as f32
+        );
+        assert_eq!(
+            float(&runtime.request(json!({"command":"get_status"})), "zoom"),
+            value as f32
+        );
+    }
+    let expected = runtime.request(json!({"command":"get_model_position"}));
+    for (args, error) in [
+        (json!({"value":0.09}), "value must be 0.1..10.0"),
+        (json!({"value":10.01}), "value must be 0.1..10.0"),
+        (json!({"value":0}), "value must be 0.1..10.0"),
+        (json!({"value":-1}), "value must be 0.1..10.0"),
+        // Missing value keeps the C++ -1.0 fallback, which is out of range.
+        (json!({}), "value must be 0.1..10.0"),
+        // `JsonGetFloat` reports its own message for values that are not finite numbers.
+        (json!({"value":"1.5"}), "value must be a finite number"),
+        (json!({"value":null}), "value must be a finite number"),
+        (json!({"value":false}), "value must be a finite number"),
+        // Infinite once narrowed to f32.
+        (json!({"value":1e39}), "value must be a finite number"),
+    ] {
+        let request = json!({"command":"set_model_zoom","args":args});
+        let response = runtime.request(request.clone());
+        assert_eq!(response["ok"], false, "{request}");
+        assert_eq!(response["error"], error, "{request}");
+        assert_eq!(
+            runtime.request(json!({"command":"get_model_position"})),
+            expected,
+            "{request}"
+        );
+    }
+    runtime.quit();
+}
+
+#[test]
+fn optional_haru_toggle_hidden_flips_twice_back_to_visible() {
+    let Some(model) = fixture() else { return };
+    let runtime = Runtime::start("--model", &model);
+    assert_eq!(
+        runtime.request(json!({"command":"toggle_hidden"})),
+        json!({"ok":true,"hidden":true})
+    );
+    assert_eq!(
+        runtime.request(json!({"command":"get_status"}))["hidden"],
+        true
+    );
+    assert_eq!(
+        runtime.request(json!({"command":"toggle_hidden"})),
+        json!({"ok":true,"hidden":false})
+    );
+    assert_eq!(
+        runtime.request(json!({"command":"get_status"}))["hidden"],
+        false
+    );
     runtime.quit();
 }
