@@ -1346,6 +1346,13 @@ dependencies = [
 [[package]]
 name = "deskwaifu-model-domain"
 version = "0.1.0"
+dependencies = [
+ "tempfile",
+]
+
+[[package]]
+name = "deskwaifu-perception-domain"
+version = "0.1.0"
 
 [[package]]
 name = "deskwaifu-speech-domain"
