@@ -2,8 +2,10 @@ use deskwaifu_control_domain::{
     Arbiter, Channel, ChannelValue, ControlError, ModelIdentity, SourceId,
 };
 use deskwaifu_cubism_core::{Moc, Model};
+use deskwaifu_hotkey_domain::{FsReader, Hotkeys};
 use deskwaifu_ipc::{ConnectionId, IpcServer};
 use deskwaifu_model_domain::catalog::{scan_model_catalog, ModelDescriptor};
+use deskwaifu_model_domain::model3::Model3;
 use serde_json::{json, Value};
 use std::env;
 use std::fs;
@@ -14,6 +16,8 @@ use std::time::{Duration, Instant};
 
 struct Entry {
     descriptor: ModelDescriptor,
+    /// The parsed descriptor, so metadata commands never re-read or re-parse it.
+    model3: Model3,
     moc_path: PathBuf,
 }
 
@@ -21,6 +25,9 @@ struct Loaded {
     entry: usize,
     _moc: Moc,
     model: Model,
+    /// Hotkeys and persistent expression state for `entry`; an unloaded instance
+    /// (empty token) until the model becomes current.
+    hotkeys: Hotkeys,
 }
 
 /// Display state the desktop UI would otherwise own: the model transform and
@@ -81,14 +88,15 @@ impl Drop for OwnedSocket {
 }
 
 fn model_entry(descriptor: ModelDescriptor) -> Option<Entry> {
-    let value: Value = serde_json::from_slice(&fs::read(&descriptor.id).ok()?).ok()?;
-    let moc = value.get("FileReferences")?.get("Moc")?.as_str()?;
-    let moc_path = Path::new(&descriptor.directory).join(moc);
+    let json = fs::read_to_string(&descriptor.id).ok()?;
+    let model3 = Model3::parse(&json).ok()?;
+    let moc_path = Path::new(&descriptor.directory).join(model3.model_file_name());
     if !moc_path.is_file() {
         return None;
     }
     Some(Entry {
         descriptor,
+        model3,
         moc_path,
     })
 }
@@ -121,7 +129,21 @@ fn load(entry: usize, entries: &[Entry]) -> Result<Loaded, String> {
         entry,
         _moc: moc,
         model,
+        hotkeys: Hotkeys::new(),
     })
+}
+
+/// Reads the model's `.vtube.json` next to its `.model3.json`, as the C++
+/// `LAppModel::Load` does. Every call issues a fresh model token, even when the
+/// file is absent, so a reply carrying an earlier token is recognizably stale.
+fn load_hotkeys(entry: usize, entries: &[Entry]) -> Hotkeys {
+    let descriptor = &entries[entry].descriptor;
+    let mut hotkeys = Hotkeys::new();
+    hotkeys.load(
+        &FsReader::new(Path::new(&descriptor.directory)),
+        &descriptor.json_name,
+    );
+    hotkeys
 }
 
 fn error(message: impl ToString) -> Value {
@@ -191,19 +213,74 @@ fn source_of(args: &Value, connection: ConnectionId) -> Result<SourceId, String>
 /// changes, so the previous model and its controls stay intact; a successful
 /// load reports the new identity, which clears external controls only when it
 /// really differs.
+///
+/// A switch to a different model reloads its hotkeys, so the model token changes
+/// with the model. Re-selecting the current model is not a scene change; the C++
+/// `ChangeScene` returns early there, so the loaded hotkeys and their token and
+/// expression state are kept.
 fn select(
     index: usize,
     entries: &[Entry],
     current: &mut Loaded,
     controls: &mut Arbiter,
 ) -> Result<Value, String> {
-    let replacement = load(index, entries)?;
+    let mut replacement = load(index, entries)?;
+    // A real switch reloads the hotkeys, so the token changes with the model and
+    // no expression state carries over; re-selecting the current model keeps them.
+    replacement.hotkeys = if index == current.entry {
+        std::mem::take(&mut current.hotkeys)
+    } else {
+        load_hotkeys(index, entries)
+    };
     *current = replacement;
     controls.model_switch(ModelIdentity::new(
         index as i32,
         entries[index].descriptor.id.clone(),
     ));
     Ok(json!({"ok":true,"model":entries[index].descriptor.name}))
+}
+
+/// Mirrors the C++ `ModelRuntime::Metadata()` hotkey object. The C++ emits only
+/// `id`, `name`, `action`, `file`, `reason`, `enabled`, `active` and `keys`; it
+/// exposes neither fade nor timeout nor the resolved expression index.
+fn hotkeys_reply(hotkeys: &Hotkeys) -> Value {
+    let bindings = hotkeys
+        .bindings()
+        .iter()
+        .map(|binding| {
+            json!({
+                "id": binding.id,
+                "name": binding.name,
+                "action": binding.action,
+                "file": binding.file,
+                "reason": binding.reason,
+                "enabled": binding.enabled,
+                "active": binding.reason.is_empty() && hotkeys.is_active(&binding.id),
+                "keys": binding.keys,
+            })
+        })
+        .collect::<Vec<_>>();
+    json!({
+        "ok": true,
+        "model_token": hotkeys.token(),
+        "warning": hotkeys.error(),
+        "hotkeys": bindings,
+    })
+}
+
+/// The C++ `trigger_hotkey` requires a token that names the current load.
+///
+/// Divergence: before dispatching, the C++ `Execute` applies a generic check to
+/// every model operation and reports `Model changed; stale operation discarded`
+/// for a stale non-empty token, so `trigger_hotkey` reaches its own
+/// `Model changed; refresh hotkeys before triggering` only for an empty token.
+/// This runtime reports the trigger-specific text for both, which is what clients
+/// act on: refetch `get_hotkeys` and retry.
+fn current_token(args: &Value, current: &Loaded) -> Result<(), String> {
+    match args.get("model_token").and_then(Value::as_str) {
+        Some(token) if !token.is_empty() && token == current.hotkeys.token() => Ok(()),
+        _ => Err("Model changed; refresh hotkeys before triggering".into()),
+    }
 }
 
 fn handle(
@@ -241,6 +318,47 @@ fn handle(
             ),
             "get_current_model" => {
                 Ok(json!({"ok":true,"model":entries[current.entry].descriptor.name}))
+            }
+            // The C++ `get_motions` returns the model setting's motion list in
+            // declaration order, which `Model3::motion_list` reproduces.
+            "get_motions" => {
+                let motions = entries[current.entry]
+                    .model3
+                    .motion_list()
+                    .into_iter()
+                    .map(|motion| {
+                        json!({"group":motion.group,"index":motion.index,"file":motion.file})
+                    })
+                    .collect::<Vec<_>>();
+                Ok(json!({"ok":true,"motions":motions}))
+            }
+            // The C++ lists every loaded expression, including `.exp3.json` files
+            // it discovers by scanning the model directory. That scan is a
+            // renderer-side load step; this runtime reports only the
+            // `FileReferences.Expressions` names, the current boundary between
+            // the two implementations.
+            "get_expressions" => Ok(json!({
+                "ok": true,
+                "expressions": entries[current.entry].model3.expression_names(),
+            })),
+            "get_hotkeys" => Ok(hotkeys_reply(&current.hotkeys)),
+            "trigger_hotkey" => {
+                current_token(args, current)?;
+                // The C++ reads `id` with `JsonGetString`, which yields `""` for a
+                // missing or non-string field; `Trigger("")` then reports that the
+                // hotkey is not in the current model.
+                let id = args.get("id").and_then(Value::as_str).unwrap_or_default();
+                current.hotkeys.trigger(id).map_err(|e| e.to_string())?;
+                Ok(hotkeys_reply(&current.hotkeys))
+            }
+            // Applying an expression or motion goes through the Cubism animation
+            // bridge, which this runtime does not drive yet. Answering `ok` would
+            // claim a capability it lacks, so both commands fail explicitly.
+            "set_expression" => Err(
+                "renderer not available; expression changes require the rendering runtime".into(),
+            ),
+            "do_motion" => {
+                Err("renderer not available; motion playback requires the rendering runtime".into())
             }
             "set_model" => {
                 let selector = args
@@ -431,7 +549,8 @@ fn run() -> Result<(), String> {
     if entries.is_empty() {
         return Err("no valid model3.json with referenced Moc found".into());
     }
-    let initial = load(0, &entries)?;
+    let mut initial = load(0, &entries)?;
+    initial.hotkeys = load_hotkeys(0, &entries);
     let (mut server, _socket) =
         OwnedSocket::bind(&socket_path).map_err(|e| format!("cannot bind socket: {e}"))?;
     let mut current = initial;
@@ -442,6 +561,9 @@ fn run() -> Result<(), String> {
     while !quit {
         if Instant::now() >= next_update {
             current.model.update();
+            // Same 16 ms frame step the C++ runtime uses for both the model and
+            // its hotkeys, so expression fades and timeouts advance together.
+            current.hotkeys.update(0.016);
             next_update += Duration::from_millis(16);
         }
         let timeout = next_update

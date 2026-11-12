@@ -23,6 +23,13 @@ name = "deskwaifu-cubism-core"
 version = "0.1.0"
 
 [[package]]
+name = "deskwaifu-hotkey-domain"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "deskwaifu-ipc"
 version = "0.1.0"
 dependencies = [
@@ -43,6 +50,7 @@ version = "0.1.0"
 dependencies = [
  "deskwaifu-control-domain",
  "deskwaifu-cubism-core",
+ "deskwaifu-hotkey-domain",
  "deskwaifu-ipc",
  "deskwaifu-model-domain",
  "serde_json",

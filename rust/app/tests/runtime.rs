@@ -141,6 +141,42 @@ fn add_broken_model(root: &Path, name: &str, fixture: &Path) -> PathBuf {
     path
 }
 
+/// Writes a `.vtube.json` next to the model's `.model3.json`; `add_model` names
+/// that file `different.model3.json`, so the configuration is `different.vtube.json`.
+fn write_vtube_config(model_dir: &Path, hotkeys: Value) {
+    fs::write(
+        model_dir.join("different.vtube.json"),
+        serde_json::to_vec(&json!({ "Hotkeys": hotkeys })).unwrap(),
+    )
+    .unwrap();
+}
+
+/// Writes an expression file the hotkey resolver can load, under `Expressions/`
+/// so the binding exercises the `Expressions/` fallback directory.
+fn write_expression(model_dir: &Path, name: &str, parameter: &str) {
+    let directory = model_dir.join("Expressions");
+    fs::create_dir_all(&directory).unwrap();
+    fs::write(
+        directory.join(name),
+        serde_json::to_vec(&json!({
+            "Type": "Live2D Expression",
+            "Parameters": [{"Id": parameter, "Value": 1, "Blend": "Add"}],
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+}
+
+/// The `active` flag of the hotkey with `id` in a `get_hotkeys`/`trigger_hotkey` reply.
+fn hotkey_active(reply: &Value, id: &str) -> Option<bool> {
+    reply["hotkeys"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["id"] == id)
+        .and_then(|entry| entry["active"].as_bool())
+}
+
 /// A live connection, so streaming sources stay owned while the test writes.
 struct Client {
     reader: BufReader<UnixStream>,
@@ -924,5 +960,340 @@ fn optional_haru_toggle_hidden_flips_twice_back_to_visible() {
         runtime.request(json!({"command":"get_status"}))["hidden"],
         false
     );
+    runtime.quit();
+}
+
+#[test]
+fn optional_haru_get_motions_lists_declared_groups_in_order() {
+    let Some(model) = fixture() else { return };
+    let runtime = Runtime::start("--model", &model);
+    let response = runtime.request(json!({"command":"get_motions"}));
+    assert_eq!(response["ok"], true);
+    let motions = response["motions"].as_array().unwrap();
+    // Haru declares Idle (2 motions) then TapBody (4 motions).
+    assert_eq!(motions.len(), 6);
+    assert_eq!(
+        motions[0],
+        json!({"group":"Idle","index":0,"file":"motions/haru_g_idle.motion3.json"})
+    );
+    assert_eq!(
+        motions[1],
+        json!({"group":"Idle","index":1,"file":"motions/haru_g_m15.motion3.json"})
+    );
+    assert_eq!(motions[2]["group"], "TapBody");
+    assert_eq!(motions[2]["index"], 0);
+    assert_eq!(motions[2]["file"], "motions/haru_g_m26.motion3.json");
+    // Indices restart per group and groups stay in declaration order.
+    assert_eq!(motions[5]["group"], "TapBody");
+    assert_eq!(motions[5]["index"], 3);
+    assert_eq!(motions[5]["file"], "motions/haru_g_m09.motion3.json");
+    runtime.quit();
+}
+
+#[test]
+fn optional_haru_get_expressions_lists_declared_names_in_order() {
+    let Some(model) = fixture() else { return };
+    let runtime = Runtime::start("--model", &model);
+    assert_eq!(
+        runtime.request(json!({"command":"get_expressions"})),
+        json!({"ok":true,"expressions":["F01","F02","F03","F04","F05","F06","F07","F08"]})
+    );
+    runtime.quit();
+}
+
+#[test]
+fn optional_haru_get_hotkeys_without_configuration_is_ok_and_empty() {
+    let Some(model) = fixture() else { return };
+    let runtime = Runtime::start("--model", &model);
+    let response = runtime.request(json!({"command":"get_hotkeys"}));
+    assert_eq!(response["ok"], true);
+    assert_eq!(response["hotkeys"], json!([]));
+    assert_eq!(response["warning"], "");
+    // A fresh load still issues a token, so clients always have one to present.
+    assert!(!response["model_token"].as_str().unwrap().is_empty());
+    runtime.quit();
+}
+
+#[test]
+fn optional_haru_get_hotkeys_reports_reasons_and_triggerable_bindings() {
+    let Some(model) = fixture() else { return };
+    let dir = tempdir().unwrap();
+    let path = add_model(dir.path(), "Hotkeys", &model);
+    let model_dir = path.parent().unwrap();
+    write_expression(model_dir, "wave.exp3.json", "ParamAngleX");
+    write_vtube_config(
+        model_dir,
+        json!([
+            {
+                "HotkeyID": "wave",
+                "Action": "ToggleExpression",
+                "File": "wave.exp3.json",
+                "IsActive": true,
+                "Triggers": {"Trigger1": "Tab"},
+                "FadeSecondsAmount": 0.5,
+            },
+            // Same ID as the first binding, so both are flagged.
+            {"HotkeyID": "wave", "Action": "ToggleExpression", "File": "wave.exp3.json"},
+            {"HotkeyID": "move", "Action": "MoveModel", "File": "wave.exp3.json"},
+            {"HotkeyID": "gone", "Action": "ToggleExpression", "File": "missing.exp3.json"},
+        ]),
+    );
+    let runtime = Runtime::start("--models-dir", dir.path());
+    let response = runtime.request(json!({"command":"get_hotkeys"}));
+    assert_eq!(response["ok"], true);
+    assert_eq!(response["warning"], "");
+    let token = response["model_token"].as_str().unwrap().to_string();
+
+    let entries = response["hotkeys"].as_array().unwrap();
+    assert_eq!(entries.len(), 4);
+    // The valid binding resolves through the `Expressions/` fallback directory.
+    assert_eq!(
+        entries[0],
+        json!({
+            "id": "wave",
+            "name": "wave.exp3.json",
+            "action": "ToggleExpression",
+            "file": "wave.exp3.json",
+            "reason": "",
+            "enabled": true,
+            "active": false,
+            "keys": ["Tab"],
+        })
+    );
+    assert_eq!(entries[0]["reason"], "");
+    // A duplicate ID, an unsupported action and a missing file each carry the
+    // reason the C++ records, and none of them can be triggered.
+    let duplicate = &entries[1];
+    assert_eq!(duplicate["reason"], "Missing or duplicate hotkey ID");
+    assert_eq!(duplicate["active"], false);
+    for (entry, reason) in [
+        (&entries[2], "Unsupported action"),
+        (&entries[3], "Expression file missing or invalid"),
+    ] {
+        assert_eq!(entry["reason"], reason);
+        assert_eq!(entry["active"], false);
+    }
+    // The resolvable binding is triggerable despite the unusable entries.
+    let triggered = runtime
+        .request(json!({"command":"trigger_hotkey","args":{"id":"wave","model_token":token}}));
+    assert_eq!(triggered["ok"], true);
+    assert_eq!(hotkey_active(&triggered, "wave"), Some(true));
+    for (id, reason) in [
+        ("move", "Unsupported action"),
+        ("gone", "Expression file missing or invalid"),
+    ] {
+        let reply = runtime
+            .request(json!({"command":"trigger_hotkey","args":{"id":id,"model_token":token}}));
+        assert_eq!(reply["ok"], false, "{id}");
+        assert_eq!(reply["error"], reason, "{id}");
+    }
+    runtime.quit();
+}
+
+#[test]
+fn optional_haru_trigger_hotkey_toggles_tracks_staleness_and_survives_switches() {
+    let Some(model) = fixture() else { return };
+    let dir = tempdir().unwrap();
+    let first = add_model(dir.path(), "Alpha", &model);
+    let first_dir = first.parent().unwrap();
+    write_expression(first_dir, "wave.exp3.json", "ParamAngleX");
+    write_vtube_config(
+        first_dir,
+        json!([{
+            "HotkeyID": "wave",
+            "Action": "ToggleExpression",
+            "File": "wave.exp3.json",
+            "IsActive": true,
+        }]),
+    );
+    let second = add_model(dir.path(), "Beta", &model);
+    let second_dir = second.parent().unwrap();
+    write_expression(second_dir, "blush.exp3.json", "ParamAngleY");
+    write_vtube_config(
+        second_dir,
+        json!([{
+            "HotkeyID": "blush",
+            "Action": "ToggleExpression",
+            "File": "blush.exp3.json",
+            "IsActive": true,
+        }]),
+    );
+    let runtime = Runtime::start("--models-dir", dir.path());
+    let reply = runtime.request(json!({"command":"get_hotkeys"}));
+    let token = reply["model_token"].as_str().unwrap().to_string();
+    assert_eq!(hotkey_active(&reply, "wave"), Some(false));
+
+    let trigger = |id: &str, token: &str| {
+        runtime.request(json!({"command":"trigger_hotkey","args":{"id":id,"model_token":token}}))
+    };
+    // Two successful triggers toggle the expression on and back off; the reply is
+    // the same metadata object `get_hotkeys` returns.
+    let on = trigger("wave", &token);
+    assert_eq!(on["ok"], true);
+    assert_eq!(on["model_token"], token);
+    assert_eq!(hotkey_active(&on, "wave"), Some(true));
+    assert_eq!(
+        hotkey_active(&runtime.request(json!({"command":"get_hotkeys"})), "wave"),
+        Some(true)
+    );
+    let off = trigger("wave", &token);
+    assert_eq!(off["ok"], true);
+    assert_eq!(hotkey_active(&off, "wave"), Some(false));
+
+    // Unknown ids, stale tokens and missing tokens all fail without toggling.
+    let unknown = trigger("nope", &token);
+    assert_eq!(unknown["ok"], false);
+    assert_eq!(
+        unknown["error"],
+        "Hotkey not found (the model may have changed)"
+    );
+    // A missing `id` is not a hotkey of this model either; the C++ reads it as
+    // the empty string and `Trigger("")` reports the same not-found text.
+    for args in [
+        json!({"model_token":&token}),
+        json!({"id":7,"model_token":&token}),
+    ] {
+        let reply = runtime.request(json!({"command":"trigger_hotkey","args":args}));
+        assert_eq!(reply["ok"], false, "{args}");
+        assert_eq!(
+            reply["error"], "Hotkey not found (the model may have changed)",
+            "{args}"
+        );
+    }
+    for args in [
+        json!({"id":"wave","model_token":"stale"}),
+        json!({"id":"wave"}),
+        json!({"id":"wave","model_token":""}),
+    ] {
+        let reply = runtime.request(json!({"command":"trigger_hotkey","args":args}));
+        assert_eq!(reply["ok"], false, "{args}");
+        assert_eq!(
+            reply["error"],
+            "Model changed; refresh hotkeys before triggering"
+        );
+    }
+    assert_eq!(
+        hotkey_active(&runtime.request(json!({"command":"get_hotkeys"})), "wave"),
+        Some(false)
+    );
+
+    // A real switch reloads the other model's hotkeys and issues a new token; the
+    // expression active before the switch is not reported active afterwards.
+    assert_eq!(trigger("wave", &token)["ok"], true);
+    assert_eq!(
+        runtime.request(json!({"command":"set_model","args":{"name":"Beta"}}))["ok"],
+        true
+    );
+    let switched = runtime.request(json!({"command":"get_hotkeys"}));
+    let switched_token = switched["model_token"].as_str().unwrap().to_string();
+    assert_ne!(switched_token, token);
+    assert_eq!(
+        switched["hotkeys"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| entry["id"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["blush"]
+    );
+    assert_eq!(hotkey_active(&switched, "blush"), Some(false));
+    // The previous token is stale, and the freshly issued one works.
+    assert_eq!(
+        runtime
+            .request(json!({"command":"trigger_hotkey","args":{"id":"blush","model_token":token}}))
+            ["error"],
+        "Model changed; refresh hotkeys before triggering"
+    );
+    assert_eq!(
+        hotkey_active(&trigger("blush", &switched_token), "blush"),
+        Some(true)
+    );
+
+    // Switching back is a fresh load again: a new token and no remembered state.
+    assert_eq!(
+        runtime.request(json!({"command":"set_model","args":{"name":"Alpha"}}))["ok"],
+        true
+    );
+    let back = runtime.request(json!({"command":"get_hotkeys"}));
+    assert_ne!(back["model_token"], switched_token);
+    assert_eq!(hotkey_active(&back, "wave"), Some(false));
+    runtime.quit();
+}
+
+#[test]
+fn optional_haru_reselecting_the_current_model_keeps_the_hotkey_token() {
+    let Some(model) = fixture() else { return };
+    let runtime = Runtime::start("--model", &model);
+    let token = runtime.request(json!({"command":"get_hotkeys"}))["model_token"].clone();
+    // Re-selecting the current model is not a scene change in the C++, so the
+    // token and the loaded hotkeys stay as they are.
+    assert_eq!(runtime.request(json!({"command":"next_model"}))["ok"], true);
+    assert_eq!(
+        runtime.request(json!({"command":"get_hotkeys"}))["model_token"],
+        token
+    );
+    runtime.quit();
+}
+
+#[test]
+fn optional_haru_trigger_hotkey_deactivates_after_the_configured_delay() {
+    let Some(model) = fixture() else { return };
+    let dir = tempdir().unwrap();
+    let path = add_model(dir.path(), "Timed", &model);
+    let model_dir = path.parent().unwrap();
+    write_expression(model_dir, "timed.exp3.json", "ParamAngleX");
+    write_vtube_config(
+        model_dir,
+        json!([{
+            "HotkeyID": "timed",
+            "Action": "ToggleExpression",
+            "File": "timed.exp3.json",
+            "IsActive": true,
+            "DeactivateAfterSeconds": true,
+            "DeactivateAfterSecondsAmount": 0.2,
+            // Instant fade, so the weight is not what decides the active flag.
+            "FadeSecondsAmount": 0.0,
+        }]),
+    );
+    let runtime = Runtime::start("--models-dir", dir.path());
+    let token = runtime.request(json!({"command":"get_hotkeys"}))["model_token"].clone();
+    let triggered = runtime
+        .request(json!({"command":"trigger_hotkey","args":{"id":"timed","model_token":token}}));
+    assert_eq!(hotkey_active(&triggered, "timed"), Some(true));
+    // The 16 ms loop drives `Hotkeys::update`, so the timeout expires on its own.
+    // Poll with a bounded wait instead of sleeping a fixed time.
+    let deadline = Instant::now() + TIMEOUT;
+    loop {
+        let reply = runtime.request(json!({"command":"get_hotkeys"}));
+        if hotkey_active(&reply, "timed") == Some(false) {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "hotkey did not time out: {reply}"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    runtime.quit();
+}
+
+#[test]
+fn optional_haru_set_expression_and_do_motion_refuse_without_a_renderer() {
+    let Some(model) = fixture() else { return };
+    let runtime = Runtime::start("--model", &model);
+    for (command, args) in [
+        ("set_expression", json!({"id":"F01"})),
+        ("do_motion", json!({"group":"Idle","index":0})),
+    ] {
+        let reply = runtime.request(json!({"command":command,"args":args}));
+        assert_eq!(reply["ok"], false, "{command}");
+        assert!(
+            reply["error"]
+                .as_str()
+                .unwrap()
+                .contains("renderer not available"),
+            "{command}: {reply}"
+        );
+    }
     runtime.quit();
 }
