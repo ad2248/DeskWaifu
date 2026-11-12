@@ -183,6 +183,133 @@ fn drains_reply_after_client_half_closes() {
 }
 
 #[test]
+fn poll_with_keeps_identity_and_reports_disconnect_once() {
+    let dir = SocketDir::new();
+    let mut server = IpcServer::bind(dir.socket()).unwrap();
+    let mut client = ClientStream::connect(dir.socket()).unwrap();
+    client.write_all(b"one\ntwo\n").unwrap();
+    let mut ids = Vec::new();
+    let mut disconnected = Vec::new();
+    for _ in 0..4 {
+        server
+            .poll_with(
+                Some(Duration::ZERO),
+                |id, _| {
+                    ids.push(id);
+                    b"ok".to_vec()
+                },
+                |id| disconnected.push(id),
+            )
+            .unwrap();
+    }
+    assert_eq!(ids.len(), 2);
+    assert_eq!(ids[0], ids[1]);
+    drop(client);
+    for _ in 0..4 {
+        server
+            .poll_with(
+                Some(Duration::ZERO),
+                |_, _| b"ok".to_vec(),
+                |id| disconnected.push(id),
+            )
+            .unwrap();
+    }
+    assert_eq!(disconnected, [ids[0]]);
+}
+
+#[test]
+fn buffered_large_request_and_next_frame_progress_with_none_timeout() {
+    let dir = SocketDir::new();
+    let mut server = IpcServer::bind(dir.socket()).unwrap();
+    let mut client = ClientStream::connect(dir.socket()).unwrap();
+    let payload = vec![b'x'; MAX_REQUEST];
+    client
+        .write_all(&[payload, b"\nnext\n".to_vec()].concat())
+        .unwrap();
+    let mut sizes = Vec::new();
+    // Establish the accepted connection without risking a blocking first poll.
+    server
+        .poll_with(Some(Duration::ZERO), |_, _| b"ok".to_vec(), |_| {})
+        .unwrap();
+    for _ in 0..32 {
+        server
+            .poll_with(
+                Some(Duration::ZERO),
+                |_, line| {
+                    sizes.push(line.len());
+                    b"ok".to_vec()
+                },
+                |_| {},
+            )
+            .unwrap();
+        if sizes.len() == 1 {
+            break;
+        }
+    }
+    assert_eq!(sizes, [MAX_REQUEST]);
+    assert_eq!(
+        server
+            .poll_with(
+                None,
+                |_, line| {
+                    sizes.push(line.len());
+                    b"ok".to_vec()
+                },
+                |_| {}
+            )
+            .unwrap(),
+        1
+    );
+    assert_eq!(sizes, [MAX_REQUEST, 4]);
+}
+
+#[test]
+fn empty_lines_count_toward_dispatch_budget_and_remain_pending() {
+    let dir = SocketDir::new();
+    let mut server = IpcServer::bind(dir.socket()).unwrap();
+    let mut client = ClientStream::connect(dir.socket()).unwrap();
+    client.write_all(&[b'\n'; 20]).unwrap();
+    let mut count = 0;
+    server
+        .poll_with(Some(Duration::ZERO), |_, _| b"".to_vec(), |_| {})
+        .unwrap();
+    let mut dispatched = 0;
+    for _ in 0..16 {
+        dispatched += server
+            .poll_with(
+                Some(Duration::ZERO),
+                |_, line| {
+                    assert!(line.is_empty());
+                    count += 1;
+                    b"".to_vec()
+                },
+                |_| {},
+            )
+            .unwrap();
+        if count == 16 {
+            break;
+        }
+    }
+    assert_eq!(dispatched, 16);
+    assert_eq!(count, 16);
+    assert_eq!(
+        server
+            .poll_with(
+                None,
+                |_, line| {
+                    assert!(line.is_empty());
+                    count += 1;
+                    b"".to_vec()
+                },
+                |_| {}
+            )
+            .unwrap(),
+        1
+    );
+    assert_eq!(count, 17);
+}
+
+#[test]
 fn each_poll_dispatches_at_most_sixteen_requests() {
     let dir = SocketDir::new();
     let mut server = IpcServer::bind(dir.socket()).unwrap();
