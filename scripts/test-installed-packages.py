@@ -17,6 +17,9 @@ import uuid
 HERE = Path(__file__).resolve().parent
 OCR_MODEL_TEST = HERE.parent / "plugins/perception/tests/test_ocr_native_models.py"
 PACKAGES = ("deskwaifu-bin", "deskwaifu-ocr-bin", "deskwaifu-tests", "deskwaifu-ocr-tests")
+# Dependencies only the optional OCR module may pull in. onnxruntime-cpu is
+# deliberately absent: the Rust model runtime links libonnxruntime itself.
+OCR_ONLY_DEPENDENCIES = {"opencv", "yaml-cpp"}
 
 
 def sections(text):
@@ -128,7 +131,10 @@ def main():
             print(f"=== Stage {index + 1}/4: {name} ===", flush=True)
             guest.install(args.packages.resolve() / f"{name}-{args.version}-1-x86_64.pkg.tar.zst")
             if index == 0:
-                assert not {"opencv", "yaml-cpp", "onnxruntime-cpu"} & guest.installed
+                # The model runtime links libonnxruntime/libasound, so those are
+                # ordinary main-package dependencies now. OpenCV/yaml-cpp stay
+                # exclusive to the optional OCR module.
+                assert not OCR_ONLY_DEPENDENCIES & guest.installed
                 assert not (root / "usr/lib/deskwaifu/ocr/deskwaifu-ocr.so").exists()
             if index < 2:
                 guest.run(["dbus-run-session", "--", "python3", "/smoke/package-smoke.py", "ocr" if index else "platform"])

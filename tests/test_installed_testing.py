@@ -137,6 +137,9 @@ class InstalledTestingTest(unittest.TestCase):
 
     def test_four_install_stages_are_fixed_and_release_never_runs_them(self):
         self.assertEqual(installation.PACKAGES, ("deskwaifu-bin", "deskwaifu-ocr-bin", "deskwaifu-tests", "deskwaifu-ocr-tests"))
+        # The model runtime links the system ONNX Runtime, so onnxruntime-cpu is
+        # a main-package dependency; only OpenCV/yaml-cpp remain OCR-exclusive.
+        self.assertEqual(installation.OCR_ONLY_DEPENDENCIES, {"opencv", "yaml-cpp"})
         workflow = (ROOT / ".gitea/workflows/release.yml").read_text()
         self.assertNotIn("test-installed-packages.py", workflow)
         self.assertNotIn("ctest", workflow)
