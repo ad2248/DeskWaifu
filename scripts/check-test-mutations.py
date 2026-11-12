@@ -246,6 +246,7 @@ def main():
         configure = ["cmake", "-S", str(source), "-B", str(build), "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release",
                      "-DBUILD_TESTING=ON", "-DDESKWAIFU_BUILD_CONTROL=ON", "-DDESKWAIFU_TEST_GATE=ON",
                      "-DDESKWAIFU_BUILD_OCR=OFF",
+                     "-DDESKWAIFU_BUILD_RUST_RUNTIME=OFF",
                      "-DSDK_ROOT_PATH=" + cache["SDK_ROOT_PATH"], "-DGLEW_PATH=" + cache["GLEW_PATH"]]
         # These mutations exercise application/plugin behavior, not the optional native OCR engine.
         if run(configure, logs / "configure.log"):
