@@ -1,5 +1,6 @@
 mod ocr;
 mod render;
+mod speech;
 
 use deskwaifu_control_domain::{
     Arbiter, Channel, ChannelValue, ControlError, ModelIdentity, SourceId,
@@ -43,6 +44,9 @@ struct Presentation {
     /// The OCR command surface. It owns its worker thread and is polled on the
     /// same tick as the model, never on the IPC accept path.
     ocr: ocr::Ocr,
+    /// The speech command surface. Synthesis and playback happen on its worker
+    /// thread; this side only sends requests and polls outcomes.
+    speech: speech::Speech,
 }
 
 /// Display state the desktop UI would otherwise own: the model transform and
@@ -329,9 +333,15 @@ fn handle(
     presentation: &mut Presentation,
     quit: &mut bool,
 ) -> Vec<u8> {
-    let Presentation { view, session, ocr } = presentation;
+    let Presentation {
+        view,
+        session,
+        ocr,
+        speech,
+    } = presentation;
     let result = (|| -> Result<Value, String> {
-        let request: Value = serde_json::from_slice(request).map_err(|e| e.to_string())?;
+        let raw = request;
+        let request: Value = serde_json::from_slice(raw).map_err(|e| e.to_string())?;
         let command = request
             .get("command")
             .and_then(Value::as_str)
@@ -637,6 +647,15 @@ fn handle(
                 ocr.result(args)
             }
             "cancel_ocr" => ocr.cancel(args),
+            // Speech. The C++ exposed `get_speech_settings`/`set_speech_settings`
+            // as capabilities; here they are ordinary commands, and `speak` is
+            // the JSON-command form of `speech.speak/v1` (`{text, replace}`).
+            // `get_speech_status` reports the playback state, which the C++ kept
+            // to itself, so a client can tell whether audio really played.
+            "get_speech_settings" => Ok(speech.settings()),
+            "set_speech_settings" => Ok(speech.configure(raw, args)),
+            "speak" => speech.speak(args),
+            "get_speech_status" => Ok(speech.status()),
             "quit" => {
                 *quit = true;
                 Ok(json!({"ok":true}))
@@ -648,7 +667,7 @@ fn handle(
         .unwrap_or_else(|_| b"{\"ok\":false,\"error\":\"serialization failed\"}".to_vec())
 }
 
-/// `(models_dir, single_model, socket, overlay, ocr)`.
+/// `(models_dir, single_model, socket, overlay, ocr, speech_endpoint)`.
 struct Arguments {
     root: Option<PathBuf>,
     single: Option<PathBuf>,
@@ -659,6 +678,9 @@ struct Arguments {
     /// Both OCR model directories, or neither. Without them OCR reports itself
     /// unavailable instead of failing the runtime.
     ocr: Option<ocr::Config>,
+    /// Speech endpoint override, a test/diagnostic seam only: the C++ fixes the
+    /// production endpoint in `MiniMaxSpeechSource`.
+    speech_endpoint: String,
 }
 
 fn arguments() -> Result<Arguments, String> {
@@ -668,6 +690,7 @@ fn arguments() -> Result<Arguments, String> {
     let mut overlay = false;
     let mut detection = None;
     let mut recognition = None;
+    let mut speech_endpoint = None;
     let mut args = env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -691,6 +714,7 @@ fn arguments() -> Result<Arguments, String> {
             "--ocr-recognition-dir" if recognition.is_none() => {
                 recognition = Some(PathBuf::from(value))
             }
+            "--speech-endpoint" if speech_endpoint.is_none() => speech_endpoint = Some(value),
             _ => return Err(format!("unknown or repeated argument: {arg}")),
         }
     }
@@ -718,6 +742,7 @@ fn arguments() -> Result<Arguments, String> {
         socket: socket.ok_or("--socket is required")?,
         overlay,
         ocr,
+        speech_endpoint: speech_endpoint.unwrap_or_else(|| speech::default_endpoint().to_owned()),
     })
 }
 
@@ -756,6 +781,7 @@ fn run() -> Result<(), String> {
         view: View::default(),
         session,
         ocr: ocr::Ocr::new(arguments.ocr),
+        speech: speech::Speech::new(arguments.speech_endpoint),
     };
     let mut current = initial;
     let mut controls = Arbiter::new(ModelIdentity::new(0, entries[0].descriptor.id.clone()));
@@ -770,6 +796,9 @@ fn run() -> Result<(), String> {
             // Worker replies land here, on the tick, so a finished inference
             // never needs the IPC loop to block on it.
             presentation.ocr.poll();
+            // Speech progress is drained on the same tick: synthesis and audio
+            // run on the speech worker thread, never on this one.
+            presentation.speech.poll();
             if let Some(session) = presentation.session.as_mut() {
                 session.frame(presentation.view.render_state());
             }

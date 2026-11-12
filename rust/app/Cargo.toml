@@ -12,6 +12,8 @@ path = "src/main.rs"
 
 [dependencies]
 cubism-render = { path = "../cubism-render" }
+deskwaifu-audio-output = { path = "../audio-output" }
+deskwaifu-config = { path = "../config" }
 deskwaifu-control-domain = { path = "../control-domain" }
 deskwaifu-cubism-core = { path = "../cubism-core" }
 deskwaifu-hotkey-domain = { path = "../hotkey-domain" }
@@ -19,11 +21,16 @@ deskwaifu-ipc = { path = "../ipc" }
 deskwaifu-model-domain = { path = "../model-domain" }
 deskwaifu-ocr-engine = { path = "../ocr-engine" }
 deskwaifu-overlay = { path = "../overlay" }
+deskwaifu-speech-domain = { path = "../speech-domain" }
 gl = "0.14"
 image = { version = "0.25", default-features = false, features = ["png"] }
 serde_json = "1"
+tokio = { version = "1", features = ["rt", "time"] }
 wayland-client = "0.31"
 
 [dev-dependencies]
+futures-util = "0.3"
 serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "time"] }
+tokio-tungstenite = "0.24"
 tempfile = "3"

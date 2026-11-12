@@ -153,6 +153,69 @@ running; its result is discarded on arrival, never becomes `text`, and the
 reported while its worker drained). `get_ocr_status` therefore never claims a
 cancel stopped work that is still executing.
 
+## Speech commands
+
+Speech is always available; it only fails when it really fails. The MiniMax
+credential is stored in `<configRoot>/plugin/speech/config.json`, the same
+private file the C++ `SpeechSettings` owns, where `configRoot` is
+`QStandardPaths::ConfigLocation` (`$XDG_CONFIG_HOME`, else `~/.config`).
+
+| command | reply |
+| --- | --- |
+| `get_speech_settings` | `{ok, configured, error}`; `error` is `""` on success |
+| `set_speech_settings` | `{ok, configured, error}`, accepting `api_key` as a string; `""` clears it |
+| `speak` | `{ok:true}` once the request is queued, else `ok:false` with the C++ text |
+| `get_speech_status` | `{ok, active, id, state, configured, last_error}` |
+
+`set_speech_settings` never returns the key, never echoes the request, and
+answers every rejection (missing or non-string `api_key`, a duplicated key, an
+over-long value, an ASCII control character, a storage failure) with the single
+sentence `Unable to read or update speech settings`, leaving the stored key
+untouched. A rejected write keeps `configured` describing the last key that was
+applied; `get_speech_settings` re-reads the file first.
+
+`speak` is the JSON-command form of the C++ `speech.speak/v1` capability
+(`{text, replace}`):
+
+- blank or whitespace text fails with `speech text is empty` and does not
+  disturb a playback in progress;
+- text of 10000 or more UTF-16 code units fails with `无效的语音文本或参数`
+  (`QString::size()` counts UTF-16 units, so 5000 astral characters also fail);
+- a second request while one is active fails with `speech service is busy`
+  unless `replace` is `true`, which cancels the current playback and starts the
+  newest;
+- with no key configured it fails with
+  `请先在控制面板中设置 MiniMax API Key` before any connection is opened.
+
+`get_speech_status` is an addition of this runtime: the C++ reported progress only
+through internal events. `state` is `idle`/`preparing`/`playing`/`draining`,
+`id` is the most recently accepted speech id (`0` before the first one), `active`
+says whether that speech is still in flight, and `last_error` is the last failure
+text or `null`. `state` reaches `idle` with `active:false` only after the audio
+output reports drained (SP-04), so a client that sees `draining` knows synthesis
+finished but the device has not.
+
+### Threading
+
+One worker thread owns the tokio runtime, the protocol client and the audio
+player. The IPC loop hands it at most one request through a single-slot mailbox
+(a replacing request overwrites an unpicked one, so no queue can grow) and drains
+its reports on the existing 16 ms tick. Nothing on the accept path blocks on the
+network or the device.
+
+### Cloud boundary
+
+With a key configured, `speak` opens a real `wss://api.minimax.cn/ws/v1/t2a_v2_bidi`
+connection and sends the text to MiniMax; without network or a valid key the
+failure is reported, never faked. `--speech-endpoint <url>` overrides the address
+and is a test/diagnostic seam only, since the C++ fixes the production endpoint.
+`DESKWAIFU_SPEECH_TEST_SINK=1` swaps the audio device for a silent in-process sink
+and `DESKWAIFU_SPEECH_TEST_SINK_DELAY_MS` slows it down.
+
+**Untested in CI:** the suite drives the loopback endpoint and the silent sink, so
+a real MiniMax synthesis and a real audio device are not covered by any automated
+test.
+
 ## Known gaps
 
 - **Pointer interaction and transform editing**: the input region decides which
@@ -167,6 +230,10 @@ cancel stopped work that is still executing.
 - **Window configuration**: size and anchors are fixed constants, not settings.
 - **Textures are not shared** between model instances, so a model switch
   re-uploads every texture (the C++ `TextureResidency` lease does not exist here).
+- **Speech is command-only**: there is no `interaction.double_click` greeting, no
+  per-request cancel command, and the `speech.speak/v1` capability is served as
+  the `speak` command rather than through the plugin capability bus. Voice,
+  model, speed, volume and pitch are the C++ defaults, not settings.
 - **OCR accuracy and real weights**: `tests/ocr.rs` proves the command surface
   and the inference wiring against constant-graph fixtures, not recognition
   quality. The engine crate's ignored `real_models` test covers real weights.
@@ -204,3 +271,12 @@ detector/recognizer pair, runs a real PNG end to end, and asserts the retained
 job's text and native result, the busy rejection, the cancel-then-late-result
 discard, unknown ids, receipt eviction and the load-failure path. Set
 `DESKWAIFU_SKIP_OCR_E2E=1` to skip that part explicitly.
+
+`tests/speech.rs` runs against a loopback MiniMax-protocol WebSocket server. It
+proves the settings replies are `{ok,configured,error}` in the C++ shape, that the
+key is never echoed while the file is `0600`, that empty clears and every
+malformed request leaves the stored key in place, that blank and over-long text
+are rejected without disturbing an active playback, that `replace` cancels and
+starts the newest while a busy request without it fails, that a service rejection
+surfaces as `语音服务拒绝请求（代码 1004）` and leaves the machine idle, and that
+`draining` is observable before `idle` — completion waits for the audio to drain.
