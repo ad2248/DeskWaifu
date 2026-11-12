@@ -1,3 +1,4 @@
+mod ocr;
 mod render;
 
 use deskwaifu_control_domain::{
@@ -39,6 +40,9 @@ struct Loaded {
 struct Presentation {
     view: View,
     session: Option<render::Session>,
+    /// The OCR command surface. It owns its worker thread and is polled on the
+    /// same tick as the model, never on the IPC accept path.
+    ocr: ocr::Ocr,
 }
 
 /// Display state the desktop UI would otherwise own: the model transform and
@@ -325,7 +329,7 @@ fn handle(
     presentation: &mut Presentation,
     quit: &mut bool,
 ) -> Vec<u8> {
-    let Presentation { view, session } = presentation;
+    let Presentation { view, session, ocr } = presentation;
     let result = (|| -> Result<Value, String> {
         let request: Value = serde_json::from_slice(request).map_err(|e| e.to_string())?;
         let command = request
@@ -620,6 +624,19 @@ fn handle(
                     "look_y": status.look_y,
                 }))
             }
+            // OCR. The four commands mirror `OcrClient`'s replies: status is the
+            // client's own object, recognize answers a job id rather than a
+            // result, and result/cancel only act on the one retained job.
+            "get_ocr_status" => {
+                ocr.poll();
+                Ok(ocr.status())
+            }
+            "ocr_recognize" => ocr.submit(args),
+            "get_ocr_result" => {
+                ocr.poll();
+                ocr.result(args)
+            }
+            "cancel_ocr" => ocr.cancel(args),
             "quit" => {
                 *quit = true;
                 Ok(json!({"ok":true}))
@@ -631,7 +648,7 @@ fn handle(
         .unwrap_or_else(|_| b"{\"ok\":false,\"error\":\"serialization failed\"}".to_vec())
 }
 
-/// `(models_dir, single_model, socket, overlay)`.
+/// `(models_dir, single_model, socket, overlay, ocr)`.
 struct Arguments {
     root: Option<PathBuf>,
     single: Option<PathBuf>,
@@ -639,6 +656,9 @@ struct Arguments {
     /// Opt-in rendering into a layer-shell window; absent means the unchanged
     /// headless runtime, which is what the existing tests and CI exercise.
     overlay: bool,
+    /// Both OCR model directories, or neither. Without them OCR reports itself
+    /// unavailable instead of failing the runtime.
+    ocr: Option<ocr::Config>,
 }
 
 fn arguments() -> Result<Arguments, String> {
@@ -646,6 +666,8 @@ fn arguments() -> Result<Arguments, String> {
     let mut model = None;
     let mut socket = None;
     let mut overlay = false;
+    let mut detection = None;
+    let mut recognition = None;
     let mut args = env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -665,17 +687,37 @@ fn arguments() -> Result<Arguments, String> {
             "--models-dir" if models.is_none() => models = Some(PathBuf::from(value)),
             "--model" if model.is_none() => model = Some(PathBuf::from(value)),
             "--socket" if socket.is_none() => socket = Some(PathBuf::from(value)),
+            "--ocr-detection-dir" if detection.is_none() => detection = Some(PathBuf::from(value)),
+            "--ocr-recognition-dir" if recognition.is_none() => {
+                recognition = Some(PathBuf::from(value))
+            }
             _ => return Err(format!("unknown or repeated argument: {arg}")),
         }
     }
     if models.is_some() == model.is_some() {
         return Err("provide exactly one of --models-dir or --model".into());
     }
+    // Half a configuration is a mistake worth reporting; the C++ client would
+    // silently fall back to the system default for the missing directory, which
+    // this runtime does not do.
+    let ocr = match (detection, recognition) {
+        (Some(detection), Some(recognition)) => Some(ocr::Config {
+            detection,
+            recognition,
+        }),
+        (None, None) => None,
+        _ => {
+            return Err(
+                "--ocr-detection-dir and --ocr-recognition-dir must be given together".into(),
+            )
+        }
+    };
     Ok(Arguments {
         root: models,
         single: model,
         socket: socket.ok_or("--socket is required")?,
         overlay,
+        ocr,
     })
 }
 
@@ -713,6 +755,7 @@ fn run() -> Result<(), String> {
     let mut presentation = Presentation {
         view: View::default(),
         session,
+        ocr: ocr::Ocr::new(arguments.ocr),
     };
     let mut current = initial;
     let mut controls = Arbiter::new(ModelIdentity::new(0, entries[0].descriptor.id.clone()));
@@ -724,6 +767,9 @@ fn run() -> Result<(), String> {
             // Same 16 ms frame step the C++ runtime uses for both the model and
             // its hotkeys, so expression fades and timeouts advance together.
             current.hotkeys.update(0.016);
+            // Worker replies land here, on the tick, so a finished inference
+            // never needs the IPC loop to block on it.
+            presentation.ocr.poll();
             if let Some(session) = presentation.session.as_mut() {
                 session.frame(presentation.view.render_state());
             }

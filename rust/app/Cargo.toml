@@ -17,6 +17,7 @@ deskwaifu-cubism-core = { path = "../cubism-core" }
 deskwaifu-hotkey-domain = { path = "../hotkey-domain" }
 deskwaifu-ipc = { path = "../ipc" }
 deskwaifu-model-domain = { path = "../model-domain" }
+deskwaifu-ocr-engine = { path = "../ocr-engine" }
 deskwaifu-overlay = { path = "../overlay" }
 gl = "0.14"
 image = { version = "0.25", default-features = false, features = ["png"] }
