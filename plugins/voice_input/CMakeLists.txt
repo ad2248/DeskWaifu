@@ -1,4 +1,4 @@
-find_package(Qt6 6.5 REQUIRED COMPONENTS Multimedia Network DBus)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Multimedia Network WebSockets DBus)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SAMPLERATE REQUIRED IMPORTED_TARGET samplerate)
 
@@ -14,7 +14,7 @@ set_target_properties(deskwaifu_voice_input PROPERTIES AUTOMOC ON)
 target_include_directories(deskwaifu_voice_input PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/private")
 target_link_libraries(deskwaifu_voice_input PUBLIC
-  deskwaifu_plugin_sdk Qt6::Multimedia Qt6::Network PkgConfig::SAMPLERATE)
+  deskwaifu_plugin_sdk Qt6::Multimedia Qt6::Network Qt6::WebSockets PkgConfig::SAMPLERATE)
 
 deskwaifu_add_plugin(voice_input VoiceInputPlugin.cpp)
 target_link_libraries(voice_input_plugin PRIVATE deskwaifu_voice_input Qt6::DBus)
@@ -47,7 +47,7 @@ if(BUILD_TESTING)
   set_target_properties(voice-input-notifier-test PROPERTIES AUTOMOC ON)
   deskwaifu_add_test(NAME voice-input-notifier COMMAND voice-input-notifier-test)
   set_tests_properties(voice-input-notifier PROPERTIES LABELS "contract;plugin")
-  foreach(component Audio Asr Settings State Controller)
+  foreach(component Audio Asr StreamingAsr Settings State Controller)
     string(TOLOWER "${component}" name)
     add_executable(voice-input-${name}-test tests/${component}Test.cpp)
     target_link_libraries(voice-input-${name}-test PRIVATE deskwaifu_voice_input Qt6::Test)

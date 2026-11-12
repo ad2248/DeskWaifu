@@ -6,6 +6,7 @@
 #include <QPointer>
 #include <QTimer>
 #include <QUrl>
+#include <QWebSocket>
 
 class NativeAsrClient : public QObject {
     Q_OBJECT
@@ -22,7 +23,16 @@ signals:
 
 private:
     friend class AsrTest; // Exercise real deadline timers without a two-minute offline test.
+    friend class StreamingAsrTest;
     void Fail(const QString& code, const QString& message);
+    void RecognizeStreaming(const QUrl& url, const QByteArray& pcm, const VoiceInputConfig& config);
+    void HandleStreamingMessage(const QString& message);
+    QPointer<QWebSocket> _socket;
+    QTimer _audioTimer;
+    QByteArray _pcm;
+    qsizetype _audioOffset = 0;
+    QString _taskId, _text;
+    bool _taskStarted = false, _finishSent = false;
     QNetworkAccessManager _network;
     QPointer<QNetworkReply> _reply;
     QTimer _deadline, _connectionDeadline;

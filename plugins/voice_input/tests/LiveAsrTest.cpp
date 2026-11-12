@@ -17,9 +17,15 @@ int main(int argc, char** argv)
     }
     VoiceInputConfig config;
     config.apiKey = qEnvironmentVariable("BAILIAN_API_KEY").trimmed();
-    config.endpoint = qEnvironmentVariable("BAILIAN_OPENAI_ENDPOINT").trimmed();
+    config.endpoint = qEnvironmentVariable("BAILIAN_ASR_ENDPOINT").trimmed();
+    // Exercise the requested WebSocket model, independent of saved/default settings.
+    config.model = QStringLiteral("qwen-audio-3.1-asr-flash-streaming");
     if (config.apiKey.isEmpty() || config.endpoint.isEmpty()) {
-        std::cerr << "Live ASR requires explicit BAILIAN_API_KEY and BAILIAN_OPENAI_ENDPOINT\n";
+        std::cerr << "Live ASR requires explicit BAILIAN_API_KEY and BAILIAN_ASR_ENDPOINT\n";
+        return 1;
+    }
+    if (!config.endpoint.startsWith(QStringLiteral("wss://"), Qt::CaseInsensitive)) {
+        std::cerr << "Live ASR requires a secure WebSocket endpoint\n";
         return 1;
     }
     QFile fixture(QString::fromLocal8Bit(argv[1]));

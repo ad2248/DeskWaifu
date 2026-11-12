@@ -59,6 +59,7 @@ private:
     {
         VoiceInputConfig c;
         c.apiKey = "offline-key";
+        c.model = "qwen-audio-3.0-asr-flash";
         c.endpoint = "https://llm-y3exskfcgxgxzn23.cn-beijing.maas.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation";
         return c;
     }
@@ -101,7 +102,7 @@ private slots:
     {
         QTest::addColumn<QString>("endpoint");
         QTest::addColumn<QByteArray>("response");
-        QTest::newRow("user-base-default-model") << VoiceInputConfig { }.endpoint << QByteArray(R"({"text":"native top","output":{"text":"ignored"}})");
+        QTest::newRow("user-base-default-model") << QString("https://example.invalid/compatible-mode/v1") << QByteArray(R"({"text":"native top","output":{"text":"ignored"}})");
         QTest::newRow("generic-base") << QString("https://example.invalid/v1") << QByteArray(R"({"output":{"text":"native fallback"}})");
         QTest::newRow("complete-chat-endpoint") << QString("https://example.invalid/compatible-mode/v1/chat/completions") << QByteArray(R"({"text":"native top"})");
     }
@@ -114,7 +115,7 @@ private slots:
         NativeAsrClient client(server.Url(), true);
         QSignalSpy success(&client, &NativeAsrClient::Recognized);
         QSignalSpy failed(&client, &NativeAsrClient::Failed);
-        VoiceInputConfig config;
+        auto config = Config();
         config.apiKey = "offline-key";
         config.endpoint = endpoint;
         const auto pcm = QByteArray::fromHex("0080ff7f");
@@ -149,7 +150,7 @@ private slots:
     {
         QTest::addColumn<QString>("endpoint");
         QTest::addColumn<QByteArray>("path");
-        QTest::newRow("default-compatible-base") << VoiceInputConfig { }.endpoint << QByteArray("/compatible-mode/v1/chat/completions");
+        QTest::newRow("default-compatible-base") << QString("https://example.invalid/compatible-mode/v1") << QByteArray("/compatible-mode/v1/chat/completions");
         QTest::newRow("generic-base") << QString("https://example.invalid/v1") << QByteArray("/v1/chat/completions");
         QTest::newRow("base-trailing-slash") << QString("https://example.invalid/v1/") << QByteArray("/v1/chat/completions");
         QTest::newRow("full-no-duplicate") << QString("https://example.invalid/compatible-mode/v1/chat/completions") << QByteArray("/compatible-mode/v1/chat/completions");
@@ -212,7 +213,7 @@ private slots:
         QSignalSpy failed(&client, &NativeAsrClient::Failed);
         QSignalSpy success(&client, &NativeAsrClient::Recognized);
         auto config = Config();
-        config.endpoint = VoiceInputConfig { }.endpoint;
+        config.endpoint = QString("https://example.invalid/compatible-mode/v1");
         config.model = "test-compatible";
         client.Recognize(52, QByteArray(2, '\0'), config);
         QTRY_COMPARE(failed.size(), 1);

@@ -3,6 +3,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QNetworkRequest>
+#include <QUuid>
 
 namespace {
 constexpr qsizetype MaxResponse = 1024 * 1024;
@@ -27,6 +28,17 @@ void NativeAsrClient::Cancel()
     _deadline.stop();
     _connectionDeadline.stop();
     _body.clear();
+    _audioTimer.stop();
+    _pcm.clear();
+    _text.clear();
+    if (_socket) {
+        auto* socket = _socket.data();
+        _socket = nullptr;
+        socket->disconnect(this);
+        _audioTimer.disconnect(socket);
+        socket->abort();
+        socket->deleteLater();
+    }
     if (_reply) {
         auto* reply = _reply.data();
         _reply = nullptr;
@@ -43,7 +55,7 @@ void NativeAsrClient::Fail(const QString& code, const QString& message)
 }
 void NativeAsrClient::Recognize(quint64 sessionId, const QByteArray& pcm, const VoiceInputConfig& config)
 {
-    if (_reply) {
+    if (_reply || _socket) {
         emit Failed(sessionId, "busy", "Speech recognition is busy");
         return;
     }
@@ -70,14 +82,17 @@ void NativeAsrClient::Recognize(quint64 sessionId, const QByteArray& pcm, const 
         url.setHost(_testEndpoint.host());
         url.setPort(_testEndpoint.port());
     }
-    const bool localHttp = _allowLocalHttp && !_testEndpoint.isEmpty() && url.scheme() == "http" && (url.host() == "127.0.0.1" || url.host() == "::1" || url.host() == "localhost");
+    const bool streaming = QUrl(config.endpoint).scheme() == "wss";
+    const bool localHttp = _allowLocalHttp && !_testEndpoint.isEmpty() && (url.scheme() == "http" || (streaming && url.scheme() == "ws"))
+        && (url.host() == "127.0.0.1" || url.host() == "::1" || url.host() == "localhost");
     bool validKey = !config.apiKey.isEmpty() && config.apiKey.size() <= 4096;
     for (const auto c : config.apiKey) {
         if (c.category() == QChar::Other_Control) {
             validKey = false;
         }
     }
-    if (!validKey || !url.isValid() || (url.scheme() != "https" && !localHttp) || url.host().isEmpty() || url.authority().contains('@') || url.hasFragment()) {
+    if (!validKey || !url.isValid() || (url.scheme() != "https" && url.scheme() != "wss" && !localHttp) || url.host().isEmpty() || url.authority().contains('@')
+        || url.hasFragment()) {
         Fail("not_configured", "Invalid speech recognition configuration");
         return;
     }
@@ -89,6 +104,10 @@ void NativeAsrClient::Recognize(quint64 sessionId, const QByteArray& pcm, const 
     const auto wav = WavEncoder::Encode(pcm, error);
     if (wav.isEmpty()) {
         Fail("invalid_audio", "Invalid audio data");
+        return;
+    }
+    if (streaming) {
+        RecognizeStreaming(url, wav.mid(44), config);
         return;
     }
     const QJsonObject audio { { "type", "input_audio" }, { "input_audio", QJsonObject { { "data", QString::fromLatin1("data:audio/wav;base64," + wav.toBase64()) } } } };
@@ -176,4 +195,101 @@ void NativeAsrClient::Recognize(quint64 sessionId, const QByteArray& pcm, const 
         Cancel();
         emit Recognized(id, text);
     });
+}
+
+void NativeAsrClient::RecognizeStreaming(const QUrl& url, const QByteArray& pcm, const VoiceInputConfig& config)
+{
+    _pcm = pcm;
+    _audioOffset = 0;
+    _text.clear();
+    _taskStarted = _finishSent = false;
+    _taskId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    auto* socket = new QWebSocket(QString(), QWebSocketProtocol::VersionLatest, this);
+    _socket = socket;
+    socket->setMaxAllowedIncomingFrameSize(MaxResponse);
+    socket->setMaxAllowedIncomingMessageSize(MaxResponse);
+    connect(socket, &QWebSocket::connected, this, [this, socket, config] {
+        const QJsonObject request { { "header", QJsonObject { { "action", "run-task" }, { "task_id", _taskId }, { "streaming", "duplex" } } },
+            { "payload",
+                QJsonObject { { "task_group", "audio" }, { "task", "asr" }, { "function", "recognition" }, { "model", config.model },
+                    { "parameters", QJsonObject { { "format", "pcm" }, { "sample_rate", 16000 } } }, { "input", QJsonObject { } } } } };
+        socket->sendTextMessage(QString::fromUtf8(QJsonDocument(request).toJson(QJsonDocument::Compact)));
+    });
+    connect(socket, &QWebSocket::textMessageReceived, this, &NativeAsrClient::HandleStreamingMessage);
+    connect(socket, &QWebSocket::binaryMessageReceived, this, [this] { Fail("asr_protocol", "Unexpected speech recognition binary response"); });
+    connect(socket, &QWebSocket::errorOccurred, this, [this] { Fail("asr_network", "Speech recognition WebSocket failure"); });
+    connect(socket, &QWebSocket::disconnected, this, [this] { Fail("asr_protocol", "Speech recognition connection closed before task completion"); });
+    _audioTimer.setInterval(100);
+    // A new socket owns the timer connection so cancellation cannot leave old send callbacks.
+    connect(&_audioTimer, &QTimer::timeout, socket, [this, socket] {
+        if (_audioOffset < _pcm.size()) {
+            socket->sendBinaryMessage(_pcm.mid(_audioOffset, 3200));
+            _audioOffset += 3200;
+        } else {
+            _audioTimer.stop();
+            _pcm.clear();
+            _finishSent = true;
+            const QJsonObject request { { "header", QJsonObject { { "action", "finish-task" }, { "task_id", _taskId }, { "streaming", "duplex" } } },
+                { "payload", QJsonObject { { "input", QJsonObject { } } } } };
+            socket->sendTextMessage(QString::fromUtf8(QJsonDocument(request).toJson(QJsonDocument::Compact)));
+        }
+    });
+    QNetworkRequest request(url);
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::ManualRedirectPolicy);
+    request.setRawHeader("Authorization", "Bearer " + config.apiKey.toUtf8());
+    _deadline.start(120000 + int(pcm.size() / 32));
+    _connectionDeadline.start(15000);
+    socket->open(request);
+}
+
+void NativeAsrClient::HandleStreamingMessage(const QString& message)
+{
+    QJsonParseError error;
+    const auto document = QJsonDocument::fromJson(message.toUtf8(), &error);
+    if (error.error != QJsonParseError::NoError || !document.isObject()) {
+        Fail("asr_protocol", "Invalid speech recognition event");
+        return;
+    }
+    const auto object = document.object();
+    const auto header = object.value("header").toObject();
+    if (header.value("task_id").toString() != _taskId) {
+        Fail("asr_protocol", "Mismatched speech recognition task");
+        return;
+    }
+    const auto event = header.value("event").toString();
+    if (event == "task-failed") {
+        // Do not echo server diagnostics, which may include credentials or audio content.
+        Fail("asr_task_failed", "Speech recognition task failed");
+    } else if (event == "task-started" && !_taskStarted) {
+        _taskStarted = true;
+        _connectionDeadline.stop();
+        _audioTimer.start();
+    } else if (event == "result-generated" && _taskStarted) {
+        const auto sentence = object.value("payload").toObject().value("output").toObject().value("sentence").toObject();
+        if (sentence.value("heartbeat").toBool()) {
+            return;
+        }
+        if (!sentence.value("text").isString() || !sentence.value("sentence_end").isBool()) {
+            Fail("asr_protocol", "Invalid speech recognition sentence");
+            return;
+        }
+        // Partial hypotheses replace one another; only finalized sentences belong in the clipboard.
+        if (sentence.value("sentence_end").toBool()) {
+            _text += sentence.value("text").toString();
+            if (_text.toUtf8().size() > MaxResponse) {
+                Fail("asr_response_too_large", "Speech recognition response exceeded limit");
+            }
+        }
+    } else if (event == "task-finished" && _finishSent) {
+        const auto text = _text;
+        const auto id = _sessionId;
+        if (text.trimmed().isEmpty()) {
+            Fail("no_speech", "No speech detected");
+            return;
+        }
+        Cancel();
+        emit Recognized(id, text);
+    } else {
+        Fail("asr_protocol", "Unexpected speech recognition event");
+    }
 }

@@ -56,7 +56,7 @@ configuration directories.
    QAudioSource, PCM normalization, controller, WAV encoding, NativeAsrClient,
    event bus and desktop ClipboardService. It changes only the ASR transport's
    host/scheme/port to a loopback HTTP server. Production endpoint validation
-   stays HTTPS-only, and the smoke checks that configuring HTTP is rejected.
+   accepts only HTTPS/WSS, and the smoke checks that configuring HTTP is rejected.
 5. `pw-play` plays the checked-in speech PCM plus a 250 ms tone marker into the
    virtual sink. No physical microphone or fake capture class is used. The local
    mock validates native API path, dummy authorization, model, native protocol
