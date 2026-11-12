@@ -1,6 +1,6 @@
 # Rust portal screenshot adapter
 
-Standalone, opt-in Linux/Tokio crate; not yet wired into the root Cargo workspace,
+Linux/Tokio crate included in the root Cargo workspace; not yet wired into the
 application, CMake, UI, OCR, or production capture path. Implements the interactive
 XDG Desktop Portal Screenshot protocol with an async zbus session-bus client.
 
