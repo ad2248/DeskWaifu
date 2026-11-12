@@ -216,6 +216,81 @@ and `DESKWAIFU_SPEECH_TEST_SINK_DELAY_MS` slows it down.
 a real MiniMax synthesis and a real audio device are not covered by any automated
 test.
 
+## Clipboard reading (剪贴板朗读)
+
+`reading_clip` runs the first-release clipboard reading-aloud pipeline: one
+clipboard image snapshot → OCR → speech. It ports
+`plugins/reading_clip/private/processor/reading_clip/ReadingClipProcessor.cpp`;
+the state machine, the state names and the error texts are that processor's.
+
+| command | reply |
+| --- | --- |
+| `reading_clip` | `{ok:true,queued:true}` at once; it only means the trigger was queued |
+| `get_reading_clip_status` | `{ok,state,error}` |
+
+`state` is one of the C++ names:
+
+```
+idle → reading_image → recognizing → speaking → idle
+```
+
+`cancelling` is externally visible too: the C++ `Status()` includes it in its
+state array, so a trigger while the pipeline is busy answers `queued` and the run
+enters `cancelling` before it returns to `idle` with `reading cancelled`.
+Repeated triggers while `cancelling` are accepted and start no new run.
+
+`error` is `""` when the last run succeeded or none has run. Every failure — an
+unreadable clipboard, an empty recognition, an OCR/speech failure, a missing
+capability or a step that ran past its 65 s budget — ends the run in `idle` with a
+non-empty `error` and never starts the next step. The recognized lines are joined
+with `\n` in the order OCR returned them. Completion requires the speech to
+actually finish (its own machine reaching `idle` with `active:false`), not merely
+that the speak request was accepted.
+
+### Clipboard access
+
+Wayland only. The clipboard image is read by running the system
+`wl-paste --no-newline --type image/png` (wl-clipboard is a packaged runtime
+dependency) on a worker thread with a 5 s timeout; its bytes are written to a
+temporary PNG that lives until the OCR job is terminal (IM-02). Before OCR the
+PNG header's dimensions are checked, so a side over 4096 is rejected without an
+inference pass.
+
+Rejections reuse the C++ texts where the meaning is the same:
+
+| condition | error |
+| --- | --- |
+| `wl-paste` not installed | `wl-paste is not available; install wl-clipboard to read clipboard images` |
+| no image on the clipboard, or empty output | `clipboard contains no image` |
+| side over 4096, undecodable PNG, unwritable temp file | `image is too large or PNG encoding failed` |
+| `wl-paste` did not answer in 5 s | `wl-paste did not answer within 5 s` |
+| empty / whitespace-only recognition | `no text recognized` |
+| run cancelled by a second trigger | `reading cancelled` |
+| step over its 65 s budget | `reading capability: timed out` |
+
+`DESKWAIFU_READING_TEST_IMAGE=<png path>` replaces the clipboard read with that
+file's bytes. It is a **test-only** seam, like the C++ clipboard injection point,
+and is documented here only so a test can run without a compositor.
+
+### Divergences from the C++
+
+- The C++ read a `QImage` from `QClipboard` and encoded it in the background;
+  this runtime has no Qt, so `wl-paste` supplies the PNG bytes directly.
+- The C++ cancelled a speech step through the `speech.speak/v1` cancel event.
+  The speech surface here has no per-request cancel command, so a cancel during
+  `speaking` stops the run from following that playback: the run ends with
+  `reading cancelled` and the already-started audio is not interrupted.
+- The C++ could switch a step to a dynamic capability endpoint at any time. Here
+  the steps are the `ocr` and `speech` modules, so a capability that is missing or
+  busy fails the step with that module's own text instead of the C++
+  `reading capability: ...` sentence.
+
+**Untested in CI:** the suite replaces the clipboard with
+`DESKWAIFU_READING_TEST_IMAGE`, so no test reads a real Wayland clipboard, and the
+speech peer is loopback, so nothing reaches MiniMax. The full pipeline test also
+needs `libonnxruntime.so` (it is skipped like `tests/ocr.rs` otherwise) and
+`CUBISM_TEST_MODEL`.
+
 ## Known gaps
 
 - **Pointer interaction and transform editing**: the input region decides which
@@ -280,3 +355,16 @@ are rejected without disturbing an active playback, that `replace` cancels and
 starts the newest while a busy request without it fails, that a service rejection
 surfaces as `语音服务拒绝请求（代码 1004）` and leaves the machine idle, and that
 `draining` is observable before `idle` — completion waits for the audio to drain.
+
+`tests/reading.rs` covers the clipboard reading pipeline. Always: the status
+starts `idle` with an empty error, `reading_clip` answers `queued`, an unconfigured
+OCR fails naming OCR without reaching speech, and a `PATH` without `wl-paste`
+reports a clear error instead of hanging. With `libonnxruntime.so` it also runs
+the full pipeline over the constant-graph fixtures and a loopback speech peer: the
+run passes through `reading_image`, `recognizing`, `speaking` and back to `idle`
+with no error, the text sent to the peer is the recognized line, the temporary
+PNG is gone afterwards, a blank detection fails with `no text recognized` and
+never connects, an image over 4096 per side is rejected before OCR, an
+unconfigured speech key ends the run at `speaking`, and cancellation during
+`recognizing` or `speaking` (including repeated triggers while `cancelling` and a
+late completion) cannot resume the cancelled run.

@@ -1,4 +1,5 @@
 mod ocr;
+mod reading;
 mod render;
 mod speech;
 
@@ -47,6 +48,9 @@ struct Presentation {
     /// The speech command surface. Synthesis and playback happen on its worker
     /// thread; this side only sends requests and polls outcomes.
     speech: speech::Speech,
+    /// The clipboard reading-aloud pipeline. It drives `ocr` and `speech` from
+    /// the same tick and owns the temporary clipboard image.
+    reading: reading::Reading,
 }
 
 /// Display state the desktop UI would otherwise own: the model transform and
@@ -338,6 +342,7 @@ fn handle(
         session,
         ocr,
         speech,
+        reading,
     } = presentation;
     let result = (|| -> Result<Value, String> {
         let raw = request;
@@ -656,6 +661,11 @@ fn handle(
             "set_speech_settings" => Ok(speech.configure(raw, args)),
             "speak" => speech.speak(args),
             "get_speech_status" => Ok(speech.status()),
+            // Clipboard reading. `reading_clip` only queues a trigger; the
+            // pipeline itself advances on the loop tick, and `reading_clip_status`
+            // is its snapshot. Both mirror the C++ `ReadingClipProcessor`.
+            "reading_clip" => Ok(reading.trigger()),
+            "get_reading_clip_status" => Ok(reading.status()),
             "quit" => {
                 *quit = true;
                 Ok(json!({"ok":true}))
@@ -782,6 +792,7 @@ fn run() -> Result<(), String> {
         session,
         ocr: ocr::Ocr::new(arguments.ocr),
         speech: speech::Speech::new(arguments.speech_endpoint),
+        reading: reading::Reading::new(),
     };
     let mut current = initial;
     let mut controls = Arbiter::new(ModelIdentity::new(0, entries[0].descriptor.id.clone()));
@@ -799,6 +810,12 @@ fn run() -> Result<(), String> {
             // Speech progress is drained on the same tick: synthesis and audio
             // run on the speech worker thread, never on this one.
             presentation.speech.poll();
+            // The reading pipeline runs after both surfaces drained, so a step
+            // that finished during this tick is applied now rather than 16 ms
+            // later. It never blocks: the clipboard read is its own thread.
+            presentation
+                .reading
+                .poll(&mut presentation.ocr, &mut presentation.speech);
             if let Some(session) = presentation.session.as_mut() {
                 session.frame(presentation.view.render_state());
             }
@@ -808,23 +825,29 @@ fn run() -> Result<(), String> {
             .saturating_duration_since(Instant::now())
             .min(Duration::from_millis(16));
         let mut disconnected = Vec::new();
-        server
-            .poll_with(
-                Some(timeout),
-                |connection, request| {
-                    handle(
-                        request,
-                        connection,
-                        &entries,
-                        &mut current,
-                        &mut controls,
-                        &mut presentation,
-                        &mut quit,
-                    )
-                },
-                |connection| disconnected.push(connection),
-            )
-            .map_err(|e| e.to_string())?;
+        let polled = server.poll_with(
+            Some(timeout),
+            |connection, request| {
+                handle(
+                    request,
+                    connection,
+                    &entries,
+                    &mut current,
+                    &mut controls,
+                    &mut presentation,
+                    &mut quit,
+                )
+            },
+            |connection| disconnected.push(connection),
+        );
+        // The clipboard worker spawns `wl-paste`, whose `SIGCHLD` interrupts the
+        // `poll` with EINTR. That is not a runtime failure: retry on the next
+        // iteration, which has already polled the workers.
+        match polled {
+            Ok(_) => {}
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+            Err(error) => return Err(error.to_string()),
+        }
         // `poll_with` reports every disconnect after dispatching this round's
         // requests, so releasing the sources here keeps that same order.
         for connection in disconnected {
