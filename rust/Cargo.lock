@@ -1328,6 +1328,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "deskwaifu-control-domain"
+version = "0.1.0"
+
+[[package]]
 name = "deskwaifu-ctl"
 version = "0.1.0"
 dependencies = [
