@@ -1,5 +1,6 @@
 use deskwaifu_cubism_core::{Moc, Model};
 use deskwaifu_ipc::IpcServer;
+use deskwaifu_model_domain::catalog::{scan_model_catalog, ModelDescriptor};
 use serde_json::{json, Value};
 use std::env;
 use std::fs;
@@ -9,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 struct Entry {
-    name: String,
+    descriptor: ModelDescriptor,
     moc_path: PathBuf,
 }
 
@@ -55,42 +56,37 @@ impl Drop for OwnedSocket {
     }
 }
 
-fn model_entry(path: &Path) -> Option<Entry> {
-    let value: Value = serde_json::from_slice(&fs::read(path).ok()?).ok()?;
+fn model_entry(descriptor: ModelDescriptor) -> Option<Entry> {
+    let value: Value = serde_json::from_slice(&fs::read(&descriptor.id).ok()?).ok()?;
     let moc = value.get("FileReferences")?.get("Moc")?.as_str()?;
-    let moc_path = path.parent()?.join(moc);
+    let moc_path = Path::new(&descriptor.directory).join(moc);
     if !moc_path.is_file() {
         return None;
     }
-    let name = value
-        .get("Name")
-        .and_then(Value::as_str)
-        .map(str::to_owned)
-        .or_else(|| path.file_stem()?.to_str().map(str::to_owned))?;
-    Some(Entry { name, moc_path })
+    Some(Entry {
+        descriptor,
+        moc_path,
+    })
 }
 
-fn discover(root: &Path) -> Vec<Entry> {
-    fn walk(dir: &Path, output: &mut Vec<Entry>) {
-        let Ok(items) = fs::read_dir(dir) else { return };
-        for item in items.flatten() {
-            let path = item.path();
-            if path.is_dir() {
-                walk(&path, output);
-            } else if path
-                .file_name()
-                .is_some_and(|n| n.to_string_lossy().ends_with(".model3.json"))
-            {
-                if let Some(entry) = model_entry(&path) {
-                    output.push(entry);
-                }
-            }
-        }
+fn single_descriptor(path: &Path) -> Option<ModelDescriptor> {
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let directory = fs::canonicalize(parent).ok()?;
+    let name = directory.file_name()?.to_string_lossy().into_owned();
+    let json_name = path.file_name()?.to_string_lossy().into_owned();
+    let mut directory = directory.to_string_lossy().into_owned();
+    if !directory.ends_with('/') {
+        directory.push('/');
     }
-    let mut entries = Vec::new();
-    walk(root, &mut entries);
-    entries.sort_by(|a, b| a.name.cmp(&b.name));
-    entries
+    Some(ModelDescriptor {
+        id: format!("{directory}{json_name}"),
+        name,
+        directory,
+        json_name,
+    })
 }
 
 fn load(entry: usize, entries: &[Entry]) -> Result<Loaded, String> {
@@ -118,12 +114,14 @@ fn handle(request: &[u8], entries: &[Entry], current: &mut Loaded, quit: &mut bo
         let args = request.get("args").unwrap_or(&request);
         match command {
             "get_status" => Ok(
-                json!({"ok":true,"renderer_available":false,"model_core_ready":true,"current_model":entries[current.entry].name}),
+                json!({"ok":true,"renderer_available":false,"model_core_ready":true,"current_model":entries[current.entry].descriptor.name}),
             ),
-            "get_available_models" => {
-                Ok(json!({"ok":true,"models":entries.iter().map(|e| &e.name).collect::<Vec<_>>()}))
+            "get_available_models" => Ok(
+                json!({"ok":true,"models":entries.iter().map(|e| &e.descriptor.name).collect::<Vec<_>>()}),
+            ),
+            "get_current_model" => {
+                Ok(json!({"ok":true,"model":entries[current.entry].descriptor.name}))
             }
-            "get_current_model" => Ok(json!({"ok":true,"model":entries[current.entry].name})),
             "set_model" => {
                 let selector = args
                     .get("name")
@@ -132,7 +130,7 @@ fn handle(request: &[u8], entries: &[Entry], current: &mut Loaded, quit: &mut bo
                 let index = if let Some(name) = selector.as_str() {
                     entries
                         .iter()
-                        .position(|e| e.name == name)
+                        .position(|e| e.descriptor.name == name)
                         .ok_or("unknown model name")?
                 } else {
                     let i = selector
@@ -146,10 +144,19 @@ fn handle(request: &[u8], entries: &[Entry], current: &mut Loaded, quit: &mut bo
                 };
                 let replacement = load(index, entries)?;
                 *current = replacement;
-                Ok(json!({"ok":true,"model":entries[index].name}))
+                Ok(json!({"ok":true,"model":entries[index].descriptor.name}))
             }
             "get_parameters" => {
-                let params = current.model.parameters().iter().enumerate().map(|(i,p)| json!({"index":i,"id":p.id,"type":p.parameter_type,"minimum":p.minimum,"maximum":p.maximum,"default":p.default,"value":current.model.parameter_value(i).unwrap_or(p.default)})).collect::<Vec<_>>();
+                let params = current
+                    .model
+                    .parameters()
+                    .iter()
+                    .enumerate()
+                    .map(|(i, p)| {
+                        let value = current.model.parameter_value(i).map_err(|e| e.to_string())?;
+                        Ok(json!({"index":i,"id":p.id,"type":p.parameter_type,"minimum":p.minimum,"maximum":p.maximum,"default":p.default,"value":value}))
+                    })
+                    .collect::<Result<Vec<_>, String>>()?;
                 Ok(json!({"ok":true,"parameters":params}))
             }
             "set_parameter" => {
@@ -206,13 +213,18 @@ fn arguments() -> Result<(Option<PathBuf>, Option<PathBuf>, PathBuf), String> {
 fn run() -> Result<(), String> {
     let (root, single, socket_path) = arguments()?;
     let entries = if let Some(path) = single {
-        vec![model_entry(&path).ok_or("invalid model3.json or missing referenced Moc")?]
+        vec![single_descriptor(&path)
+            .and_then(model_entry)
+            .ok_or("invalid model3.json or missing referenced Moc")?]
     } else {
         let path = root.unwrap();
         if !path.is_dir() {
             return Err("models directory does not exist".into());
         }
-        discover(&path)
+        scan_model_catalog(&[path])
+            .into_iter()
+            .filter_map(model_entry)
+            .collect()
     };
     if entries.is_empty() {
         return Err("no valid model3.json with referenced Moc found".into());
