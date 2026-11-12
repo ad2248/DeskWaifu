@@ -1282,6 +1282,16 @@ name = "deskwaifu-audio-domain"
 version = "0.1.0"
 
 [[package]]
+name = "deskwaifu-client"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "socket2",
+ "tempfile",
+]
+
+[[package]]
 name = "deskwaifu-config"
 version = "0.1.0"
 dependencies = [
@@ -1294,7 +1304,9 @@ dependencies = [
 name = "deskwaifu-control"
 version = "0.1.0"
 dependencies = [
+ "deskwaifu-client",
  "gpui",
+ "serde_json",
 ]
 
 [[package]]
