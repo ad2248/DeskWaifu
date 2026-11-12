@@ -1,6 +1,7 @@
 //! Pure model geometry, transforms, pointer-input regions, and model catalog discovery.
 
 pub mod catalog;
+pub mod model3;
 
 /// Surface-local rectangle with a top-left origin.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
