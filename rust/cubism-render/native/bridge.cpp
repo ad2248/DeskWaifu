@@ -3,11 +3,18 @@
 #include <EGL/egl.h>
 #include <CubismFramework.hpp>
 #include <ICubismAllocator.hpp>
+#include <Effect/CubismEyeBlink.hpp>
 #include <Model/CubismMoc.hpp>
 #include <Model/CubismModel.hpp>
 #include <Id/CubismId.hpp>
 #include <Math/CubismMatrix44.hpp>
+#include <Motion/CubismExpressionMotion.hpp>
+#include <Motion/CubismExpressionMotionManager.hpp>
+#include <Motion/CubismMotion.hpp>
+#include <Motion/CubismMotionManager.hpp>
+#include <Motion/CubismMotionQueueEntry.hpp>
 #include <Rendering/OpenGL/CubismRenderer_OpenGLES2.hpp>
+#include <Utils/CubismJson.hpp>
 #include <cstdlib>
 #include <cmath>
 #include <cstring>
@@ -18,6 +25,7 @@
 #include <mutex>
 #include <stdexcept>
 #include <thread>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace {
@@ -64,9 +72,56 @@ struct Renderer {
     CubismRenderer_OpenGLES2* renderer = nullptr;
     ~Renderer() { if (renderer) Rendering::CubismRenderer::Delete(renderer); }
 };
+// Motion and expression objects are shared: the external handle and every
+// playing queue entry hold a reference, so a manager keeps them alive until the
+// entry finishes, is stopped, or the manager is dropped. Destroying the external
+// handle only releases that handle; playback continues on the shared object.
+struct Motion {
+    ACubismMotion* motion = nullptr;
+    ~Motion() { if (motion) ACubismMotion::Delete(motion); }
+};
+struct Expression {
+    ACubismMotion* motion = nullptr;
+    ~Expression() { if (motion) ACubismMotion::Delete(motion); }
+};
+using MotionRef = std::shared_ptr<Motion>;
+using ExpressionRef = std::shared_ptr<Expression>;
+struct Entry {
+    CubismMotionQueueEntryHandle handle;
+    MotionRef motion;
+};
+struct ExpressionEntry {
+    CubismMotionQueueEntryHandle handle;
+    ExpressionRef expression;
+};
+struct MotionManager {
+    Model* model = nullptr;
+    CubismMotionManager* manager = nullptr;
+    std::unordered_map<uint64_t, Entry> entries;
+    uint64_t next_token = 1;
+    ~MotionManager() { if (manager) CSM_DELETE(manager); }
+};
+struct ExpressionManager {
+    Model* model = nullptr;
+    CubismExpressionMotionManager* manager = nullptr;
+    std::unordered_map<uint64_t, ExpressionEntry> entries;
+    uint64_t next_token = 1;
+    ~ExpressionManager() { if (manager) CSM_DELETE(manager); }
+};
+struct EyeBlink {
+    Model* model = nullptr;
+    CubismEyeBlink* eye = nullptr;
+    ~EyeBlink() { if (eye) CubismEyeBlink::Delete(eye); }
+};
 std::mutex mutex;
 std::unordered_set<Model*> models;
 std::unordered_set<Renderer*> renderers;
+// The registry owns the external handle's reference; lookups also prove liveness.
+std::unordered_map<Motion*, MotionRef> motions;
+std::unordered_map<Expression*, ExpressionRef> expressions;
+std::unordered_set<MotionManager*> motion_managers;
+std::unordered_set<ExpressionManager*> expression_managers;
+std::unordered_set<EyeBlink*> eye_blinks;
 CubismFramework::Option option{}; // Framework retains this pointer until CleanUp.
 bool active = false;
 EGLContext context = EGL_NO_CONTEXT;
@@ -90,8 +145,40 @@ Renderer* renderer(void* p) {
     auto* r = static_cast<Renderer*>(p);
     require(renderers.count(r), "invalid renderer handle"); return r;
 }
+MotionRef motion(void* p) {
+    const auto it = motions.find(static_cast<Motion*>(p));
+    require(it != motions.end(), "invalid motion handle"); return it->second;
+}
+ExpressionRef expression(void* p) {
+    const auto it = expressions.find(static_cast<Expression*>(p));
+    require(it != expressions.end(), "invalid expression handle"); return it->second;
+}
+MotionManager* motion_manager(void* p) {
+    auto* m = static_cast<MotionManager*>(p);
+    require(motion_managers.count(m), "invalid motion manager handle"); return m;
+}
+ExpressionManager* expression_manager(void* p) {
+    auto* m = static_cast<ExpressionManager*>(p);
+    require(expression_managers.count(m), "invalid expression manager handle"); return m;
+}
+EyeBlink* eye_blink(void* p) {
+    auto* e = static_cast<EyeBlink*>(p);
+    require(eye_blinks.count(e), "invalid eye blink handle"); return e;
+}
 void index(Model* m, int i) {
     require(i >= 0 && i < m->model->GetParameterCount(), "parameter index out of bounds");
+}
+void seconds(float value, const char* message) {
+    require(std::isfinite(value) && value >= 0.0f, message);
+}
+// Drop finished queue entries so their shared references are released. The SDK
+// deletes the queue entry itself; only our token map needs pruning.
+template<typename Manager>
+void prune(Manager* m) {
+    for (auto it = m->entries.begin(); it != m->entries.end();) {
+        if (m->manager->GetCubismMotionQueueEntry(it->second.handle)) ++it;
+        else it = m->entries.erase(it);
+    }
 }
 csmByte* load(const std::string path, csmSizeInt* size) noexcept {
     try {
@@ -110,6 +197,25 @@ csmByte* load(const std::string path, csmSizeInt* size) noexcept {
     } catch (...) { shader_failed = true; if (size) *size = 0; return nullptr; }
 }
 void release(csmByte* bytes) noexcept { delete[] bytes; }
+void validate_bytes(const uint8_t* bytes, size_t size, const char* message) {
+    require(bytes && size > 0 && size <= size_t(std::numeric_limits<csmSizeInt>::max()), message);
+}
+// The SDK parsers accept any well-formed JSON object, so an empty document would
+// silently produce a motion/expression that never touches a parameter. Reject it
+// here to keep "created" meaningful for callers.
+void validate_json(const uint8_t* bytes, size_t size, const char* key, const char* message) {
+    auto* json = Utils::CubismJson::Create(bytes, static_cast<csmSizeInt>(size));
+    require(json, "JSON document could not be parsed");
+    auto& root = json->GetRoot();
+    const bool is_object = root.IsMap() && !root.IsError();
+    // Prefer IsArray + GetVector: Map::GetSize() dereferences a lazily filled key
+    // list, and a missing key would hand back the base allocator's vector.
+    auto& items = is_object ? root[key] : root;
+    const bool has_items = items.IsArray() && items.GetVector()->GetSize() > 0;
+    Utils::CubismJson::Delete(json);
+    require(is_object, "JSON root must be an object");
+    require(has_items, message);
+}
 #define API_BEGIN try { std::lock_guard<std::mutex> lock(mutex);
 #define API_END return 0; } catch (const std::exception& e) { error = e.what(); return -1; } catch (...) { error = "unknown C++ exception"; return -1; }
 }
@@ -136,7 +242,10 @@ int cr_start(const char* directory) {
 }
 int cr_stop() {
     API_BEGIN
-    current(); require(models.empty() && renderers.empty(), "live dependent handles prevent stop");
+    current();
+    require(models.empty() && renderers.empty() && motions.empty() && expressions.empty() &&
+            motion_managers.empty() && expression_managers.empty() && eye_blinks.empty(),
+            "live dependent handles prevent stop");
     {
         DeleteLiveProgramsOnly guard;
         CubismFramework::Dispose(); CubismFramework::CleanUp();
@@ -147,7 +256,7 @@ int cr_stop() {
 int cr_model_create(const uint8_t* bytes, size_t size, void** out) {
     API_BEGIN
     current(); require(out, "null output"); *out = nullptr;
-    require(bytes && size > 0 && size <= size_t(std::numeric_limits<csmSizeInt>::max()), "invalid moc bytes");
+    validate_bytes(bytes, size, "invalid moc bytes");
     auto m = std::make_unique<Model>();
     m->moc = CubismMoc::Create(bytes, static_cast<csmSizeInt>(size), true);
     require(m->moc, "moc consistency/version validation failed");
@@ -159,11 +268,20 @@ int cr_model_destroy(void* p) {
     API_BEGIN
     current(); auto* m = model(p);
     for (auto* r : renderers) require(r->model != m, "renderer still owns model");
+    for (auto* g : motion_managers) require(g->model != m, "motion manager still owns model");
+    for (auto* g : expression_managers) require(g->model != m, "expression manager still owns model");
+    for (auto* e : eye_blinks) require(e->model != m, "eye blink still owns model");
     models.erase(m); delete m;
     API_END
 }
 int cr_model_update(void* p) {
     API_BEGIN current(); model(p)->model->Update(); API_END
+}
+int cr_model_load_parameters(void* p) {
+    API_BEGIN current(); model(p)->model->LoadParameters(); API_END
+}
+int cr_model_save_parameters(void* p) {
+    API_BEGIN current(); model(p)->model->SaveParameters(); API_END
 }
 int cr_model_canvas(void* p, float* w, float* h) {
     API_BEGIN current(); require(w && h, "null output"); auto* m = model(p)->model;
@@ -219,5 +337,204 @@ int cr_renderer_draw(void* p, const float* values) {
     CubismMatrix44 matrix; matrix.SetMatrix(const_cast<float*>(values));
     r->renderer->SetMvpMatrix(&matrix); shader_failed = false; r->renderer->DrawModel();
     require(!shader_failed, "external shader loading failed"); API_END
+}
+int cr_motion_create(const uint8_t* bytes, size_t size, void** out) {
+    API_BEGIN
+    current(); require(out, "null output"); *out = nullptr;
+    validate_bytes(bytes, size, "invalid motion3.json bytes");
+    validate_json(bytes, size, "Curves", "motion3.json contains no curves");
+    auto m = std::make_shared<Motion>();
+    m->motion = CubismMotion::Create(bytes, static_cast<csmSizeInt>(size), nullptr, nullptr, true);
+    require(m->motion, "motion3.json parse or consistency check failed");
+    motions.emplace(m.get(), m); *out = m.get();
+    API_END
+}
+int cr_motion_destroy(void* p) {
+    API_BEGIN
+    current(); motion(p);
+    // Playing entries keep their own reference, so releasing the handle here is
+    // safe and the motion object survives until every entry is pruned.
+    motions.erase(static_cast<Motion*>(p));
+    API_END
+}
+int cr_motion_set_fade_in(void* p, float seconds_value) {
+    API_BEGIN
+    current(); auto m = motion(p);
+    seconds(seconds_value, "fade in seconds must be finite and non-negative");
+    m->motion->SetFadeInTime(seconds_value);
+    API_END
+}
+int cr_motion_set_fade_out(void* p, float seconds_value) {
+    API_BEGIN
+    current(); auto m = motion(p);
+    seconds(seconds_value, "fade out seconds must be finite and non-negative");
+    m->motion->SetFadeOutTime(seconds_value);
+    API_END
+}
+int cr_motion_manager_create(void* p, void** out) {
+    API_BEGIN
+    current(); require(out, "null output"); *out = nullptr;
+    auto g = std::make_unique<MotionManager>();
+    g->model = model(p);
+    g->manager = CSM_NEW CubismMotionManager();
+    require(g->manager, "motion manager allocation failed");
+    motion_managers.insert(g.get()); *out = g.release();
+    API_END
+}
+int cr_motion_manager_destroy(void* p) {
+    API_BEGIN
+    current(); auto* g = motion_manager(p);
+    g->manager->StopAllMotions();
+    g->entries.clear();
+    motion_managers.erase(g); delete g;
+    API_END
+}
+int cr_motion_manager_start(void* p, void* motion_handle, int priority, uint64_t* out_entry) {
+    API_BEGIN
+    current(); auto* g = motion_manager(p); auto m = motion(motion_handle);
+    require(out_entry, "null motion entry output"); *out_entry = 0;
+    require(models.count(g->model), "motion manager model is no longer alive");
+    auto handle = g->manager->StartMotionPriority(m->motion, false, priority);
+    require(handle != InvalidMotionQueueEntryHandleValue, "motion could not be started");
+    *out_entry = g->next_token;
+    g->entries.emplace(g->next_token++, Entry{handle, std::move(m)});
+    API_END
+}
+int cr_motion_manager_update(void* p, float delta_seconds, int* out_updated) {
+    API_BEGIN
+    current(); auto* g = motion_manager(p); require(out_updated, "null update output");
+    seconds(delta_seconds, "delta seconds must be finite and non-negative");
+    *out_updated = g->manager->UpdateMotion(g->model->model, delta_seconds) ? 1 : 0;
+    prune(g);
+    API_END
+}
+int cr_motion_manager_stop(void* p) {
+    API_BEGIN
+    current(); auto* g = motion_manager(p);
+    g->manager->StopAllMotions(); prune(g);
+    API_END
+}
+int cr_motion_manager_is_finished(void* p, int* out_finished) {
+    API_BEGIN
+    current(); auto* g = motion_manager(p); require(out_finished, "null finished output");
+    prune(g);
+    *out_finished = g->manager->IsFinished() ? 1 : 0;
+    API_END
+}
+int cr_motion_manager_entry_is_finished(void* p, uint64_t entry, int* out_finished) {
+    API_BEGIN
+    current(); auto* g = motion_manager(p); require(out_finished, "null finished output");
+    require(entry != 0, "invalid motion entry token");
+    prune(g);
+    const auto it = g->entries.find(entry);
+    if (it == g->entries.end()) { *out_finished = 1; return 0; }
+    *out_finished = g->manager->IsFinished(it->second.handle) ? 1 : 0;
+    API_END
+}
+int cr_expression_create(const uint8_t* bytes, size_t size, void** out) {
+    API_BEGIN
+    current(); require(out, "null output"); *out = nullptr;
+    validate_bytes(bytes, size, "invalid exp3.json bytes");
+    validate_json(bytes, size, "Parameters", "exp3.json contains no parameters");
+    auto e = std::make_shared<Expression>();
+    e->motion = CubismExpressionMotion::Create(bytes, static_cast<csmSizeInt>(size));
+    require(e->motion, "exp3.json expression creation failed");
+    expressions.emplace(e.get(), e); *out = e.get();
+    API_END
+}
+int cr_expression_destroy(void* p) {
+    API_BEGIN
+    current(); expression(p);
+    // Active managers hold their own reference; see cr_motion_destroy.
+    expressions.erase(static_cast<Expression*>(p));
+    API_END
+}
+int cr_expression_manager_create(void* p, void** out) {
+    API_BEGIN
+    current(); require(out, "null output"); *out = nullptr;
+    auto g = std::make_unique<ExpressionManager>();
+    g->model = model(p);
+    g->manager = CSM_NEW CubismExpressionMotionManager();
+    require(g->manager, "expression manager allocation failed");
+    expression_managers.insert(g.get()); *out = g.release();
+    API_END
+}
+int cr_expression_manager_destroy(void* p) {
+    API_BEGIN
+    current(); auto* g = expression_manager(p);
+    g->manager->StopAllMotions();
+    g->entries.clear();
+    expression_managers.erase(g); delete g;
+    API_END
+}
+int cr_expression_manager_start(void* p, void* expression_handle) {
+    API_BEGIN
+    current(); auto* g = expression_manager(p); auto e = expression(expression_handle);
+    require(models.count(g->model), "expression manager model is no longer alive");
+    auto handle = g->manager->StartMotion(e->motion, false);
+    require(handle != InvalidMotionQueueEntryHandleValue, "expression could not be started");
+    g->entries.emplace(g->next_token++, ExpressionEntry{handle, std::move(e)});
+    API_END
+}
+int cr_expression_manager_update(void* p, float delta_seconds, int* out_updated) {
+    API_BEGIN
+    current(); auto* g = expression_manager(p); require(out_updated, "null update output");
+    seconds(delta_seconds, "delta seconds must be finite and non-negative");
+    *out_updated = g->manager->UpdateMotion(g->model->model, delta_seconds) ? 1 : 0;
+    prune(g);
+    API_END
+}
+int cr_eye_blink_create(void* p, const char* const* ids, int count, void** out) {
+    API_BEGIN
+    current(); require(out, "null output"); *out = nullptr;
+    auto* m = model(p);
+    require(ids && count > 0, "eye blink requires at least one parameter ID");
+    csmVector<CubismIdHandle> handles;
+    for (int i = 0; i < count; ++i) {
+        require(ids[i] && *ids[i], "eye blink parameter ID required");
+        CubismIdHandle found = nullptr;
+        for (int j = 0; j < m->model->GetParameterCount(); ++j) {
+            if (std::strcmp(m->model->GetParameterId(j)->GetString().GetRawString(), ids[i]) == 0) {
+                found = m->model->GetParameterId(j); break;
+            }
+        }
+        require(found, "eye blink parameter ID does not exist on model");
+        handles.PushBack(found);
+    }
+    auto e = std::make_unique<EyeBlink>();
+    e->model = m;
+    e->eye = CubismEyeBlink::Create(nullptr);
+    require(e->eye, "eye blink allocation failed");
+    e->eye->SetParameterIds(handles);
+    eye_blinks.insert(e.get()); *out = e.release();
+    API_END
+}
+int cr_eye_blink_destroy(void* p) {
+    API_BEGIN current(); auto* e = eye_blink(p); eye_blinks.erase(e); delete e; API_END
+}
+int cr_eye_blink_set_interval(void* p, float seconds_value) {
+    API_BEGIN
+    current(); auto* e = eye_blink(p);
+    seconds(seconds_value, "blink interval must be finite and non-negative");
+    e->eye->SetBlinkingInterval(seconds_value);
+    API_END
+}
+int cr_eye_blink_set_settings(void* p, float closing, float closed, float opening) {
+    API_BEGIN
+    current(); auto* e = eye_blink(p);
+    seconds(closing, "closing seconds must be finite and non-negative");
+    seconds(closed, "closed seconds must be finite and non-negative");
+    seconds(opening, "opening seconds must be finite and non-negative");
+    require(closing > 0.0f && closed > 0.0f && opening > 0.0f, "blink phase durations must be positive");
+    e->eye->SetBlinkingSettings(closing, closed, opening);
+    API_END
+}
+int cr_eye_blink_update(void* p, void* model_handle, float delta_seconds) {
+    API_BEGIN
+    current(); auto* e = eye_blink(p); auto* m = model(model_handle);
+    require(e->model == m, "eye blink belongs to a different model");
+    seconds(delta_seconds, "delta seconds must be finite and non-negative");
+    e->eye->UpdateParameters(m->model, delta_seconds);
+    API_END
 }
 }
