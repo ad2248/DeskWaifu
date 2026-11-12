@@ -86,7 +86,12 @@ impl Runtime {
             args.push("--speech-endpoint".as_ref());
             args.push(std::ffi::OsStr::new(endpoint));
         }
-        let mut env: Vec<(&str, &Path)> = vec![("XDG_CONFIG_HOME", &config)];
+        // CI has no audio device, so every playback test uses the silent sink by
+        // default; `extra` still overrides it when a test needs a delay.
+        let mut env: Vec<(&str, &Path)> = vec![
+            ("XDG_CONFIG_HOME", &config),
+            ("DESKWAIFU_SPEECH_TEST_SINK", Path::new("1")),
+        ];
         env.extend_from_slice(extra);
         let child = ChildGuard::spawn(&args, &env);
         let runtime = Self {
