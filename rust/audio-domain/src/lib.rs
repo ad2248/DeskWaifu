@@ -1,5 +1,7 @@
 //! Standalone PCM normalization and WAV encoding primitives.
 
+pub mod resampler;
+
 /// Supported native-endian input sample formats.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SampleFormat {
