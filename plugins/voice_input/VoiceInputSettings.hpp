@@ -5,8 +5,8 @@
 
 struct VoiceInputConfig {
     QString apiKey;
-    QString endpoint = QStringLiteral("https://llm-y3exskfcgxgxzn23.cn-beijing.maas.aliyuncs.com/compatible-mode/v1");
-    QString model = QStringLiteral("qwen-audio-3.0-asr-flash");
+    QString endpoint = QStringLiteral("wss://llm-y3exskfcgxgxzn23.cn-beijing.maas.aliyuncs.com/api-ws/v1/inference");
+    QString model = QStringLiteral("qwen-audio-3.1-asr-flash-streaming");
     QString deviceId;
     int maxRecordingSeconds = 60;
 };

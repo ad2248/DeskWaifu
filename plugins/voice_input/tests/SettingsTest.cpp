@@ -16,13 +16,13 @@ private slots:
         QVERIFY(settings.Refresh(error));
         QVERIFY(!settings.Configured());
         QCOMPARE(settings.Snapshot().maxRecordingSeconds, 60);
-        QCOMPARE(settings.Snapshot().endpoint, QString("https://llm-y3exskfcgxgxzn23.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"));
-        QCOMPARE(settings.Snapshot().model, QString("qwen-audio-3.0-asr-flash"));
+        QCOMPARE(settings.Snapshot().endpoint, QString("wss://llm-y3exskfcgxgxzn23.cn-beijing.maas.aliyuncs.com/api-ws/v1/inference"));
+        QCOMPARE(settings.Snapshot().model, QString("qwen-audio-3.1-asr-flash-streaming"));
         QVERIFY(settings.Set(R"({"api_key":"secret","device_id":"mic","extension":{"n":9007199254740993}})", error));
         const auto old = settings.Snapshot();
         QVERIFY(settings.Set(R"({"model":"custom","max_recording_seconds":300})", error));
         QCOMPARE(settings.Snapshot().apiKey, QString("secret"));
-        QCOMPARE(old.model, QString("qwen-audio-3.0-asr-flash"));
+        QCOMPARE(old.model, QString("qwen-audio-3.1-asr-flash-streaming"));
         QVERIFY(!settings.PublicView().contains("api_key"));
         QVERIFY(!QJsonDocument(settings.PublicView()).toJson().contains("secret"));
         struct stat info;
@@ -39,6 +39,20 @@ private slots:
         QVERIFY(reloaded.Refresh(error));
         QVERIFY(!reloaded.Configured());
         QCOMPARE(reloaded.Snapshot().maxRecordingSeconds, 300);
+    }
+    void secureWebSocketEndpointAndReset()
+    {
+        QTemporaryDir dir;
+        VoiceInputSettings settings(dir.path());
+        QString error;
+        QVERIFY(settings.Set("{\"endpoint\":\"wss://example.invalid/api-ws/v1/inference\"}", error));
+        QCOMPARE(settings.Snapshot().endpoint, QString("wss://example.invalid/api-ws/v1/inference"));
+        QVERIFY(!settings.Set("{\"endpoint\":\"ws://example.invalid/api-ws/v1/inference\"}", error));
+        QVERIFY(!settings.Set("{\"endpoint\":\"wss://secret@example.invalid/asr\"}", error));
+        QVERIFY(!settings.Set("{\"endpoint\":\"wss://example.invalid/asr#secret\"}", error));
+        QVERIFY(settings.Set(R"({"endpoint":"","model":""})", error));
+        QCOMPARE(settings.Snapshot().endpoint, VoiceInputConfig { }.endpoint);
+        QCOMPARE(settings.Snapshot().model, VoiceInputConfig { }.model);
     }
     void ipcCommandIsNotPersistedAndUnknownFieldsRemain()
     {

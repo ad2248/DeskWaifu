@@ -32,7 +32,7 @@ VoiceInputTab::VoiceInputTab(GuiHostServices& services)
     auto* form = new QFormLayout;
     _endpoint = new QLineEdit(content);
     _endpoint->setObjectName(QStringLiteral("voiceInputEndpoint"));
-    _endpoint->setPlaceholderText(QStringLiteral("https://…/compatible-mode/v1"));
+    _endpoint->setPlaceholderText(QStringLiteral("wss://…/api-ws/v1/inference"));
     _apiKey = new QLineEdit(content);
     _apiKey->setObjectName(QStringLiteral("voiceInputApiKey"));
     _apiKey->setEchoMode(QLineEdit::Password);
@@ -52,7 +52,7 @@ VoiceInputTab::VoiceInputTab(GuiHostServices& services)
     form->addRow(tr("录音设备"), _device);
     form->addRow(tr("最长录音时长"), _maxSeconds);
     layout->addLayout(form);
-    auto* endpointHint = new QLabel(tr("兼容模式可填写 /v1 基础地址；qwen-audio-3.0-asr-flash 使用同一服务的原生 ASR 路径。音频将上传至所配置的服务。"), content);
+    auto* endpointHint = new QLabel(tr("百炼流式识别填写 wss://…/api-ws/v1/inference；仍支持 HTTPS 原生和兼容模式接口。音频将上传至所配置的服务。"), content);
     endpointHint->setWordWrap(true);
     layout->addWidget(endpointHint);
     auto* settingsButtons = new QHBoxLayout;

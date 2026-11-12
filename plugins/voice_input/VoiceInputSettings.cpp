@@ -42,7 +42,7 @@ bool VoiceInputSettings::Decode(const ConfigStore::Snapshot& snapshot, VoiceInpu
                     config.endpoint = VoiceInputConfig { }.endpoint;
                 } else {
                     const QUrl url(text, QUrl::StrictMode);
-                    if (!url.isValid() || url.scheme() != "https" || url.host().isEmpty() || url.hasFragment() || url.authority().contains('@')) {
+                    if (!url.isValid() || (url.scheme() != "https" && url.scheme() != "wss") || url.host().isEmpty() || url.hasFragment() || url.authority().contains('@')) {
                         return false;
                     }
                     config.endpoint = text;
