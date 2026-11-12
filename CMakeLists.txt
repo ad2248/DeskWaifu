@@ -3,13 +3,16 @@ project(deskwaifu LANGUAGES C CXX)
 include(GNUInstallDirs)
 include(CTest)
 
+option(DESKWAIFU_BUILD_RUST_RUNTIME "Build the Rust model runtime executable" ON)
+
+if(DESKWAIFU_BUILD_RUST_RUNTIME)
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" OR NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|AMD64)$")
   message(FATAL_ERROR "The Rust runtime build is supported only on Linux x86_64 (got ${CMAKE_SYSTEM_NAME}/${CMAKE_SYSTEM_PROCESSOR})")
 endif()
 set(CUBISM_SDK_ROOT "${PROJECT_SOURCE_DIR}/CubismSdkForNative-5-r.5" CACHE PATH "External Cubism SDK for Native source tree")
 find_program(CARGO_EXECUTABLE cargo)
 if(NOT CARGO_EXECUTABLE)
-  message(FATAL_ERROR "Cargo is required to build the Rust runtime (install Rust/Cargo and retry)")
+  message(FATAL_ERROR "Cargo is required to build the Rust runtime (install Rust/Cargo or set -DDESKWAIFU_BUILD_RUST_RUNTIME=OFF)")
 endif()
 
 file(GLOB_RECURSE DESKWAIFU_RUST_SOURCES CONFIGURE_DEPENDS
@@ -35,6 +38,7 @@ add_custom_command(OUTPUT "${DESKWAIFU_RUST_BINARY}"
   VERBATIM)
 add_custom_target(deskwaifu-rust ALL DEPENDS "${DESKWAIFU_RUST_BINARY}")
 install(PROGRAMS "${DESKWAIFU_RUST_BINARY}" DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT DeskWaifu)
+endif()
 if(BUILD_TESTING)
   include(cmake/TestEnvironment.cmake)
 endif()

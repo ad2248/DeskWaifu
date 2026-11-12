@@ -99,7 +99,8 @@ set_target_properties(onnxruntime::onnxruntime PROPERTIES
             arguments += [f"-DCMAKE_PREFIX_PATH={self.dependencies}"]
         if not standalone:
             arguments += ["-DBUILD_TESTING=OFF", "-DDESKWAIFU_BUILD_CONTROL=OFF",
-                          "-DDESKWAIFU_BUILD_GUI_PLUGIN_SDK=OFF"]
+                          "-DDESKWAIFU_BUILD_GUI_PLUGIN_SDK=OFF",
+                          "-DDESKWAIFU_BUILD_RUST_RUNTIME=OFF"]
             if not ocr:
                 arguments.append("-DDESKWAIFU_BUILD_OCR=OFF")
         return self.run_command(*arguments, success=success)
