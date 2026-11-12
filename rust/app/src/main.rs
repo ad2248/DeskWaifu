@@ -1,5 +1,8 @@
+use deskwaifu_control_domain::{
+    Arbiter, Channel, ChannelValue, ControlError, ModelIdentity, SourceId,
+};
 use deskwaifu_cubism_core::{Moc, Model};
-use deskwaifu_ipc::IpcServer;
+use deskwaifu_ipc::{ConnectionId, IpcServer};
 use deskwaifu_model_domain::catalog::{scan_model_catalog, ModelDescriptor};
 use serde_json::{json, Value};
 use std::env;
@@ -103,7 +106,56 @@ fn load(entry: usize, entries: &[Entry]) -> Result<Loaded, String> {
 fn error(message: impl ToString) -> Value {
     json!({"ok": false, "error": message.to_string()})
 }
-fn handle(request: &[u8], entries: &[Entry], current: &mut Loaded, quit: &mut bool) -> Vec<u8> {
+
+fn control_error(error: ControlError) -> String {
+    match error {
+        ControlError::MouthOutOfRange => "mouth must be finite and within 0..1".into(),
+        ControlError::LookNotFinite => "look coordinates must be finite".into(),
+    }
+}
+
+/// Reads an optional boolean field the way the C++ `JsonGetBool` does: a missing
+/// field is false, a present field of another type is an error, and the legacy
+/// `1`/`0` and `"true"`/`"false"`/`"1"`/`"0"` spellings stay accepted for
+/// `reset` and `stream_source`.
+fn bool_field(args: &Value, key: &str) -> Result<bool, String> {
+    match args.get(key) {
+        None => Ok(false),
+        Some(Value::Bool(value)) => Ok(*value),
+        Some(Value::Number(value)) => match value.as_i64() {
+            Some(1) => Ok(true),
+            Some(0) => Ok(false),
+            _ => Err(format!("{key} must be boolean")),
+        },
+        Some(Value::String(value)) => match value.as_str() {
+            "true" | "1" => Ok(true),
+            "false" | "0" => Ok(false),
+            _ => Err(format!("{key} must be boolean")),
+        },
+        Some(_) => Err(format!("{key} must be boolean")),
+    }
+}
+
+/// Whether the request names the connection-owned streaming source instead of
+/// the shared persistent one. The C++ handler rejects `stream_source` when the
+/// request has no connection; every request here arrives through `poll_with`,
+/// which always supplies a `ConnectionId`, so that failure cannot occur.
+fn source_of(args: &Value, connection: ConnectionId) -> Result<SourceId, String> {
+    Ok(if bool_field(args, "stream_source")? {
+        SourceId::Connection(connection)
+    } else {
+        SourceId::Persistent
+    })
+}
+
+fn handle(
+    request: &[u8],
+    connection: ConnectionId,
+    entries: &[Entry],
+    current: &mut Loaded,
+    controls: &mut Arbiter,
+    quit: &mut bool,
+) -> Vec<u8> {
     let result = (|| -> Result<Value, String> {
         let request: Value = serde_json::from_slice(request).map_err(|e| e.to_string())?;
         let command = request
@@ -144,6 +196,12 @@ fn handle(request: &[u8], entries: &[Entry], current: &mut Loaded, quit: &mut bo
                 };
                 let replacement = load(index, entries)?;
                 *current = replacement;
+                // Only a real identity change clears external controls; re-selecting
+                // the current model leaves every source untouched.
+                controls.model_switch(ModelIdentity::new(
+                    index as i32,
+                    entries[index].descriptor.id.clone(),
+                ));
                 Ok(json!({"ok":true,"model":entries[index].descriptor.name}))
             }
             "get_parameters" => {
@@ -176,6 +234,59 @@ fn handle(request: &[u8], entries: &[Entry], current: &mut Loaded, quit: &mut bo
                 Ok(
                     json!({"ok":true,"index":index,"value":current.model.parameter_value(index).map_err(|e| e.to_string())?}),
                 )
+            }
+            "set_mouth_y" => {
+                let source = source_of(args, connection)?;
+                if bool_field(args, "reset")? {
+                    controls.reset(source, Channel::Mouth);
+                    return Ok(json!({"ok":true}));
+                }
+                // A missing value means 0.0, like the reference handler's
+                // `JsonGetFloat(request, "value", 0.0f)`; a present non-number or
+                // non-finite value fails without touching the state.
+                let value = args.get("value").map_or(Ok(0.0), |value| {
+                    value.as_f64().ok_or("value must be a finite number")
+                })?;
+                if !value.is_finite() {
+                    return Err("value must be a finite number".into());
+                }
+                let value = value.clamp(0.0, 1.0) as f32;
+                controls
+                    .update(source, ChannelValue::Mouth(value))
+                    .map_err(control_error)?;
+                Ok(json!({"ok":true}))
+            }
+            "set_look" => {
+                let source = source_of(args, connection)?;
+                if bool_field(args, "reset")? {
+                    controls.reset(source, Channel::Look);
+                    return Ok(json!({"ok":true}));
+                }
+                let x = args.get("x").map_or(Ok(0.0), |value| {
+                    value.as_f64().ok_or("x must be a finite number")
+                })? as f32;
+                let y = args.get("y").map_or(Ok(0.0), |value| {
+                    value.as_f64().ok_or("y must be a finite number")
+                })? as f32;
+                controls
+                    .update(source, ChannelValue::Look(x, y))
+                    .map_err(control_error)?;
+                Ok(json!({"ok":true}))
+            }
+            "release_source" => {
+                controls.release(source_of(args, connection)?);
+                Ok(json!({"ok":true}))
+            }
+            "get_control_status" => {
+                let status = controls.status();
+                Ok(json!({
+                    "ok": true,
+                    "has_mouth": status.has_mouth,
+                    "mouth": status.mouth,
+                    "has_look": status.has_look,
+                    "look_x": status.look_x,
+                    "look_y": status.look_y,
+                }))
             }
             "quit" => {
                 *quit = true;
@@ -233,6 +344,7 @@ fn run() -> Result<(), String> {
     let (mut server, _socket) =
         OwnedSocket::bind(&socket_path).map_err(|e| format!("cannot bind socket: {e}"))?;
     let mut current = initial;
+    let mut controls = Arbiter::new(ModelIdentity::new(0, entries[0].descriptor.id.clone()));
     let mut quit = false;
     let mut next_update = Instant::now();
     while !quit {
@@ -243,11 +355,28 @@ fn run() -> Result<(), String> {
         let timeout = next_update
             .saturating_duration_since(Instant::now())
             .min(Duration::from_millis(16));
+        let mut disconnected = Vec::new();
         server
-            .poll_once(Some(timeout), |request| {
-                handle(request, &entries, &mut current, &mut quit)
-            })
+            .poll_with(
+                Some(timeout),
+                |connection, request| {
+                    handle(
+                        request,
+                        connection,
+                        &entries,
+                        &mut current,
+                        &mut controls,
+                        &mut quit,
+                    )
+                },
+                |connection| disconnected.push(connection),
+            )
             .map_err(|e| e.to_string())?;
+        // `poll_with` reports every disconnect after dispatching this round's
+        // requests, so releasing the sources here keeps that same order.
+        for connection in disconnected {
+            controls.disconnect(connection);
+        }
     }
     Ok(())
 }

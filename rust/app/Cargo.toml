@@ -11,6 +11,7 @@ name = "deskwaifu-rust"
 path = "src/main.rs"
 
 [dependencies]
+deskwaifu-control-domain = { path = "../control-domain" }
 deskwaifu-cubism-core = { path = "../cubism-core" }
 deskwaifu-ipc = { path = "../ipc" }
 deskwaifu-model-domain = { path = "../model-domain" }

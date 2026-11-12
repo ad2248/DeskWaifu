@@ -15,6 +15,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 
 [[package]]
+name = "deskwaifu-control-domain"
+version = "0.1.0"
+
+[[package]]
 name = "deskwaifu-cubism-core"
 version = "0.1.0"
 
@@ -33,6 +37,7 @@ version = "0.1.0"
 name = "deskwaifu-runtime"
 version = "0.1.0"
 dependencies = [
+ "deskwaifu-control-domain",
  "deskwaifu-cubism-core",
  "deskwaifu-ipc",
  "deskwaifu-model-domain",

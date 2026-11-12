@@ -125,6 +125,68 @@ fn add_model(root: &Path, name: &str, fixture: &Path) -> PathBuf {
     path
 }
 
+/// Adds a catalog entry whose referenced Moc cannot be loaded, so selecting it fails.
+fn add_broken_model(root: &Path, name: &str, fixture: &Path) -> PathBuf {
+    let path = add_model(root, name, fixture);
+    let mut descriptor: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    fs::write(path.parent().unwrap().join("bad.moc3"), b"invalid moc").unwrap();
+    descriptor["FileReferences"]["Moc"] = json!("bad.moc3");
+    fs::write(&path, serde_json::to_vec(&descriptor).unwrap()).unwrap();
+    path
+}
+
+/// A live connection, so streaming sources stay owned while the test writes.
+struct Client {
+    reader: BufReader<UnixStream>,
+}
+
+impl Client {
+    fn connect(runtime: &Runtime) -> Self {
+        let stream = UnixStream::connect(&runtime.socket).unwrap();
+        stream.set_read_timeout(Some(TIMEOUT)).unwrap();
+        stream.set_write_timeout(Some(TIMEOUT)).unwrap();
+        Self {
+            reader: BufReader::new(stream),
+        }
+    }
+
+    fn request(&mut self, request: Value) -> Value {
+        writeln!(self.reader.get_mut(), "{request}").unwrap();
+        let mut response = String::new();
+        self.reader.read_line(&mut response).unwrap();
+        assert!(
+            !response.is_empty(),
+            "connection closed without replying to {request}"
+        );
+        serde_json::from_str(&response).unwrap()
+    }
+}
+
+/// Polls control status until `settled` holds, e.g. after a disconnect is processed.
+fn wait_for_control(runtime: &Runtime, mut settled: impl FnMut(&Value) -> bool) -> Value {
+    let deadline = Instant::now() + TIMEOUT;
+    loop {
+        let status = runtime.request(json!({"command":"get_control_status"}));
+        if settled(&status) {
+            return status;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "control status stuck at {status}"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+fn no_control() -> Value {
+    json!({"ok":true,"has_mouth":false,"mouth":0.0,"has_look":false,"look_x":0.0,"look_y":0.0})
+}
+
+/// Control values are `f32` in the arbiter, so compare them at that precision.
+fn float(status: &Value, key: &str) -> f32 {
+    status[key].as_f64().unwrap() as f32
+}
+
 #[test]
 fn rejects_invalid_arguments_and_model_file() {
     let dir = tempdir().unwrap();
@@ -200,11 +262,7 @@ fn optional_haru_set_model_loads_selection_and_preserves_previous_on_failure() {
     let dir = tempdir().unwrap();
     add_model(dir.path(), "Alpha", &model);
     add_model(dir.path(), "Beta", &model);
-    let broken = add_model(dir.path(), "Broken", &model);
-    let mut descriptor: Value = serde_json::from_slice(&fs::read(&broken).unwrap()).unwrap();
-    fs::write(broken.parent().unwrap().join("bad.moc3"), b"invalid moc").unwrap();
-    descriptor["FileReferences"]["Moc"] = json!("bad.moc3");
-    fs::write(broken, serde_json::to_vec(&descriptor).unwrap()).unwrap();
+    add_broken_model(dir.path(), "Broken", &model);
     let runtime = Runtime::start("--models-dir", dir.path());
     assert_eq!(
         runtime.request(json!({"command":"get_available_models"}))["models"],
@@ -280,5 +338,271 @@ fn optional_haru_catalog_ignores_nested_models_and_symlink_loops() {
         runtime.request(json!({"command":"get_available_models"}))["models"],
         json!(["Haru"])
     );
+    runtime.quit();
+}
+
+#[test]
+fn optional_haru_control_roundtrip_clamps_and_resets_one_channel() {
+    let Some(model) = fixture() else { return };
+    let runtime = Runtime::start("--model", &model);
+    assert_eq!(
+        runtime.request(json!({"command":"get_control_status"})),
+        no_control()
+    );
+    // Every request below arrives on a fresh connection, so these writes use the
+    // shared persistent source and survive the writer's connection closing.
+    assert_eq!(
+        runtime.request(json!({"command":"set_mouth_y","args":{"value":0.4}}))["ok"],
+        true
+    );
+    assert_eq!(
+        runtime.request(json!({"command":"set_look","args":{"x":-0.5,"y":0.25}}))["ok"],
+        true
+    );
+    let status = runtime.request(json!({"command":"get_control_status"}));
+    assert_eq!(status["has_mouth"], true);
+    assert_eq!(float(&status, "mouth"), 0.4);
+    assert_eq!(status["has_look"], true);
+    assert_eq!(float(&status, "look_x"), -0.5);
+    assert_eq!(float(&status, "look_y"), 0.25);
+
+    // Out-of-range mouth values are clamped instead of rejected.
+    for (value, expected) in [(1.5, 1.0), (-0.25, 0.0)] {
+        assert_eq!(
+            runtime.request(json!({"command":"set_mouth_y","args":{"value":value}}))["ok"],
+            true
+        );
+        let status = runtime.request(json!({"command":"get_control_status"}));
+        assert_eq!(float(&status, "mouth"), expected);
+    }
+
+    // Missing look coordinates default to 0.0.
+    assert_eq!(
+        runtime.request(json!({"command":"set_look","args":{}}))["ok"],
+        true
+    );
+    let status = runtime.request(json!({"command":"get_control_status"}));
+    assert_eq!(float(&status, "look_x"), 0.0);
+    assert_eq!(float(&status, "look_y"), 0.0);
+
+    // A reset clears only the channel it names. The legacy C++ boolean spellings
+    // (`1`, `"true"`, `"1"`) stay accepted.
+    assert_eq!(
+        runtime.request(json!({"command":"set_mouth_y","args":{"value":0.6}}))["ok"],
+        true
+    );
+    assert_eq!(
+        runtime.request(json!({"command":"set_look","args":{"x":0.1,"y":0.2}}))["ok"],
+        true
+    );
+    assert_eq!(
+        runtime.request(json!({"command":"set_mouth_y","args":{"reset":"1"}}))["ok"],
+        true
+    );
+    let status = runtime.request(json!({"command":"get_control_status"}));
+    assert_eq!(status["has_mouth"], false);
+    assert_eq!(status["has_look"], true);
+    assert_eq!(float(&status, "look_x"), 0.1);
+    assert_eq!(
+        runtime.request(json!({"command":"set_look","args":{"reset":1}}))["ok"],
+        true
+    );
+    assert_eq!(
+        runtime.request(json!({"command":"get_control_status"})),
+        no_control()
+    );
+
+    // release_source clears both channels of the calling source.
+    assert_eq!(
+        runtime.request(json!({"command":"set_mouth_y","args":{"value":0.6}}))["ok"],
+        true
+    );
+    assert_eq!(
+        runtime.request(json!({"command":"set_look","args":{"x":0.1,"y":0.2}}))["ok"],
+        true
+    );
+    assert_eq!(
+        runtime.request(json!({"command":"release_source"}))["ok"],
+        true
+    );
+    assert_eq!(
+        runtime.request(json!({"command":"get_control_status"})),
+        no_control()
+    );
+    runtime.quit();
+}
+
+#[test]
+fn optional_haru_stream_outranks_persistent_until_it_disconnects() {
+    let Some(model) = fixture() else { return };
+    let runtime = Runtime::start("--model", &model);
+    assert_eq!(
+        runtime.request(json!({"command":"set_mouth_y","args":{"value":0.3}}))["ok"],
+        true
+    );
+    let mut stream = Client::connect(&runtime);
+    assert_eq!(
+        stream.request(json!({"command":"set_mouth_y","args":{"value":0.8,"stream_source":true}}))
+            ["ok"],
+        true
+    );
+    let status = runtime.request(json!({"command":"get_control_status"}));
+    assert_eq!(float(&status, "mouth"), 0.8);
+    drop(stream);
+    // Once the owning connection is gone the persistent value is effective again.
+    let status = wait_for_control(&runtime, |status| float(status, "mouth") == 0.3);
+    assert_eq!(status["has_mouth"], true);
+    runtime.quit();
+}
+
+#[test]
+fn optional_haru_streaming_connections_do_not_leak_into_each_other() {
+    let Some(model) = fixture() else { return };
+    let runtime = Runtime::start("--model", &model);
+    assert_eq!(
+        runtime.request(json!({"command":"set_mouth_y","args":{"value":0.3}}))["ok"],
+        true
+    );
+    assert_eq!(
+        runtime.request(json!({"command":"set_look","args":{"x":0.1,"y":0.2}}))["ok"],
+        true
+    );
+    let mut a = Client::connect(&runtime);
+    let mut b = Client::connect(&runtime);
+    assert_eq!(
+        a.request(json!({"command":"set_mouth_y","args":{"value":0.8,"stream_source":true}}))["ok"],
+        true
+    );
+    assert_eq!(
+        a.request(json!({"command":"set_look","args":{"x":0.5,"y":0.5,"stream_source":true}}))
+            ["ok"],
+        true
+    );
+    assert_eq!(
+        b.request(json!({"command":"set_look","args":{"x":-0.4,"y":-0.5,"stream_source":true}}))
+            ["ok"],
+        true
+    );
+    // The latest stream write wins within the same class, regardless of owner.
+    let status = runtime.request(json!({"command":"get_control_status"}));
+    assert_eq!(float(&status, "mouth"), 0.8);
+    assert_eq!(float(&status, "look_x"), -0.4);
+
+    // B releasing its own source does not touch A's mouth, nor the persistent look.
+    assert_eq!(
+        b.request(json!({"command":"release_source","args":{"stream_source":true}}))["ok"],
+        true
+    );
+    let status = runtime.request(json!({"command":"get_control_status"}));
+    assert_eq!(float(&status, "mouth"), 0.8);
+    assert_eq!(float(&status, "look_x"), 0.5);
+    assert_eq!(
+        b.request(json!({"command":"set_look","args":{"x":-0.1,"y":-0.2,"stream_source":true}}))
+            ["ok"],
+        true
+    );
+
+    // Disconnecting A releases only A's sources; B is unaffected.
+    drop(a);
+    let status = wait_for_control(&runtime, |status| float(status, "mouth") == 0.3);
+    assert_eq!(status["has_mouth"], true);
+    assert_eq!(float(&status, "look_x"), -0.1);
+    assert_eq!(float(&status, "look_y"), -0.2);
+
+    drop(b);
+    let status = wait_for_control(&runtime, |status| float(status, "look_x") == 0.1);
+    assert_eq!(float(&status, "mouth"), 0.3);
+    runtime.quit();
+}
+
+#[test]
+fn optional_haru_real_model_switch_clears_controls_and_reselection_keeps_them() {
+    let Some(model) = fixture() else { return };
+    let dir = tempdir().unwrap();
+    add_model(dir.path(), "Alpha", &model);
+    add_model(dir.path(), "Beta", &model);
+    add_broken_model(dir.path(), "Broken", &model);
+    let runtime = Runtime::start("--models-dir", dir.path());
+    let set_controls = || {
+        assert_eq!(
+            runtime.request(json!({"command":"set_mouth_y","args":{"value":0.4}}))["ok"],
+            true
+        );
+        assert_eq!(
+            runtime.request(json!({"command":"set_look","args":{"x":0.1,"y":0.2}}))["ok"],
+            true
+        );
+    };
+    let has_controls = |status: &Value| {
+        status["has_mouth"] == true
+            && float(status, "mouth") == 0.4
+            && status["has_look"] == true
+            && float(status, "look_x") == 0.1
+    };
+    set_controls();
+    // Selecting the current model keeps every external source.
+    assert_eq!(
+        runtime.request(json!({"command":"set_model","args":{"name":"Alpha"}}))["ok"],
+        true
+    );
+    let status = runtime.request(json!({"command":"get_control_status"}));
+    assert!(has_controls(&status), "{status}");
+    // A failed load keeps them as well.
+    assert_eq!(
+        runtime.request(json!({"command":"set_model","args":{"name":"Broken"}}))["ok"],
+        false
+    );
+    let status = runtime.request(json!({"command":"get_control_status"}));
+    assert!(has_controls(&status), "{status}");
+    // A successful switch to a different model clears them.
+    assert_eq!(
+        runtime.request(json!({"command":"set_model","args":{"name":"Beta"}}))["ok"],
+        true
+    );
+    assert_eq!(
+        runtime.request(json!({"command":"get_control_status"})),
+        no_control()
+    );
+    set_controls();
+    assert_eq!(
+        runtime.request(json!({"command":"set_model","args":{"index":1}}))["ok"],
+        true
+    );
+    let status = runtime.request(json!({"command":"get_control_status"}));
+    assert!(has_controls(&status), "{status}");
+    runtime.quit();
+}
+
+#[test]
+fn optional_haru_invalid_control_requests_leave_state_unchanged() {
+    let Some(model) = fixture() else { return };
+    let runtime = Runtime::start("--model", &model);
+    assert_eq!(
+        runtime.request(json!({"command":"set_mouth_y","args":{"value":0.4}}))["ok"],
+        true
+    );
+    assert_eq!(
+        runtime.request(json!({"command":"set_look","args":{"x":0.1,"y":0.2}}))["ok"],
+        true
+    );
+    let expected = runtime.request(json!({"command":"get_control_status"}));
+    for request in [
+        json!({"command":"set_mouth_y","args":{"value":"0.5"}}),
+        json!({"command":"set_mouth_y","args":{"value":null}}),
+        json!({"command":"set_mouth_y","args":{"value":0.5,"stream_source":"invalid"}}),
+        json!({"command":"set_mouth_y","args":{"reset":"yes"}}),
+        json!({"command":"set_look","args":{"x":"bad"}}),
+        json!({"command":"set_look","args":{"y":true}}),
+        json!({"command":"set_look","args":{"x":null,"y":0.0}}),
+        json!({"command":"release_source","args":{"stream_source":"invalid"}}),
+        json!({"command":"release_source","args":{"stream_source":2}}),
+    ] {
+        assert_eq!(runtime.request(request.clone())["ok"], false, "{request}");
+        assert_eq!(
+            runtime.request(json!({"command":"get_control_status"})),
+            expected,
+            "{request}"
+        );
+    }
     runtime.quit();
 }
