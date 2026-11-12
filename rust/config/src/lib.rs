@@ -4,6 +4,8 @@
 //! writers can overwrite one another. Callers must not treat it as the complete
 //! ConfigStore semantics described by the application contract.
 
+pub mod settings;
+
 use serde::de::{MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use serde_json::{Map, Number, Value};
