@@ -207,6 +207,15 @@ impl Runtime {
     /// `parameter` asks the reply to also report the rendered model's value for
     /// that parameter ID.
     fn settled_frame(&self, parameter: Option<&str>) -> Value {
+        self.settled_frame_where(parameter, |reply| {
+            reply["visible_pixels"].as_u64().unwrap_or(0) > 0
+        })
+    }
+
+    /// Polls `debug_frame` until `ready` accepts the reply, so a test can wait
+    /// for a state that is deliberately not "a visible model" (for example a
+    /// hidden frame's empty input region).
+    fn settled_frame_where(&self, parameter: Option<&str>, ready: impl Fn(&Value) -> bool) -> Value {
         let request = match parameter {
             Some(id) => json!({"command":"debug_frame","args":{"id":id}}),
             None => json!({"command":"debug_frame"}),
@@ -217,14 +226,14 @@ impl Runtime {
             let reply = self.request(request.clone());
             if reply["ok"] == true
                 && reply["frames_drawn"].as_u64().unwrap_or(0) > 0
-                && reply["visible_pixels"].as_u64().unwrap_or(0) > 0
+                && ready(&reply)
             {
                 return reply;
             }
             last = reply;
             std::thread::sleep(Duration::from_millis(50));
         }
-        panic!("no visible frame within {TIMEOUT:?}; last reply: {last}");
+        panic!("no matching frame within {TIMEOUT:?}; last reply: {last}");
     }
 
     fn stderr(&mut self) -> String {
@@ -253,6 +262,47 @@ impl Drop for Runtime {
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
+}
+
+/// Every rectangle of a `debug_frame`/`get_status` reply must be a positive
+/// area inside the surface, and no two may overlap: they are unioned into a
+/// `wl_region`, and an accidental overlap would mean the clipped runs were
+/// re-clipped or duplicated.
+fn assert_region_inside_surface(reply: &Value) {
+    let width = count(reply, "width") as i32;
+    let height = count(reply, "height") as i32;
+    let rects = region_rects(reply);
+    assert_eq!(rects.len() as u64, count(reply, "input_regions"), "{reply}");
+    for &(x, y, w, h) in &rects {
+        assert!(
+            w > 0 && h > 0 && x >= 0 && y >= 0 && x + w <= width && y + h <= height,
+            "rect {x},{y} {w}x{h} is outside the {width}x{height} surface: {reply}"
+        );
+    }
+    for (index, a) in rects.iter().enumerate() {
+        for b in &rects[index + 1..] {
+            let overlap = a.0.max(b.0) < (a.0 + a.2).min(b.0 + b.2)
+                && a.1.max(b.1) < (a.1 + a.3).min(b.1 + b.3);
+            assert!(!overlap, "{a:?} overlaps {b:?}: {reply}");
+        }
+    }
+}
+
+/// The `input_region` rectangle list of a reply, as `(x, y, width, height)`.
+fn region_rects(reply: &Value) -> Vec<(i32, i32, i32, i32)> {
+    reply["input_region"]
+        .as_array()
+        .unwrap_or_else(|| panic!("input_region in {reply}"))
+        .iter()
+        .map(|rect| {
+            (
+                rect["x"].as_i64().unwrap() as i32,
+                rect["y"].as_i64().unwrap() as i32,
+                rect["width"].as_i64().unwrap() as i32,
+                rect["height"].as_i64().unwrap() as i32,
+            )
+        })
+        .collect()
 }
 
 /// One model directory holding a copy of the fixture, so a model switch is real.
@@ -318,6 +368,33 @@ fn overlay_draws_a_real_model_and_reacts_to_parameters_and_model_switches() {
     assert_eq!(status["height"], 480);
     eprintln!("live: drawn={drawn} visible={visible} transparent={transparent}");
 
+    // The drawn model must produce a shaped input region, not a fully
+    // click-through surface. Its rectangles come from the same readback the
+    // pixel counts describe.
+    let frame = runtime.settled_frame(None);
+    let regions = count(&frame, "input_regions");
+    assert!(
+        regions > 0,
+        "a drawn model must receive input somewhere: {frame}"
+    );
+    assert_eq!(frame["input_region_applied"], true, "{frame}");
+    let region_pixels = count(&frame, "input_region_pixels");
+    assert!(
+        region_pixels > 0 && region_pixels <= 640 * 480,
+        "the region covers {region_pixels} pixels of the surface: {frame}"
+    );
+    // Each covered 10x10 block is opaque only because its sampled centre pixel
+    // is visible, so the region can never cover more than 100x the visible count.
+    let frame_visible = count(&frame, "visible_pixels");
+    assert!(
+        region_pixels <= frame_visible * 100,
+        "the region covers {region_pixels} pixels for only {frame_visible} visible ones: {frame}"
+    );
+    assert_region_inside_surface(&frame);
+    eprintln!(
+        "live: input_regions={regions} input_region_pixels={region_pixels} visible={visible}"
+    );
+
     // 2. A parameter reaches the drawn frame.
     let parameters = runtime.request(json!({"command":"get_parameters"}));
     let angle = parameters["parameters"]
@@ -373,6 +450,93 @@ fn overlay_draws_a_real_model_and_reacts_to_parameters_and_model_switches() {
         "live: after switch model={} visible={}",
         status["model"],
         count(&status, "visible_pixels")
+    );
+    runtime.quit();
+}
+
+/// The degenerate ends of the alpha → region mapping, on a real compositor:
+/// a drawn model yields a nonempty region inside the surface, a fully
+/// transparent frame (the existing `toggle_hidden` command, which the draw path
+/// honours by clearing without drawing) yields an empty one, and showing the
+/// model again restores it.
+#[test]
+fn overlay_input_region_follows_the_rendered_alpha() {
+    if !live_test_enabled("overlay_input_region_follows_the_rendered_alpha") {
+        return;
+    }
+    let _compositor_lock = lock_compositor();
+    let compositor = Compositor::spawn();
+    let fixture = fixture();
+    let runtime = Runtime::start(&compositor, &["--model".as_ref(), fixture.as_os_str()]);
+
+    // 1. A real Haru frame: the region is nonempty and lies inside the surface.
+    let drawn = runtime.settled_frame(None);
+    let regions = count(&drawn, "input_regions");
+    assert!(regions > 0, "the drawn model must be clickable: {drawn}");
+    assert_eq!(drawn["input_region_applied"], true, "{drawn}");
+    assert_region_inside_surface(&drawn);
+    let visible = count(&drawn, "visible_pixels");
+    let region_pixels = count(&drawn, "input_region_pixels");
+    // The model is fitted at 90% of the surface, so a *shaped* region cannot
+    // reach the surface corners: proving they are excluded proves the region is
+    // derived from the alpha instead of being "the whole surface".
+    let rects = region_rects(&drawn);
+    for corner in [(0, 0), (639, 0), (0, 479), (639, 479)] {
+        assert!(
+            !rects.iter().any(|&(x, y, w, h)| {
+                corner.0 >= x && corner.0 < x + w && corner.1 >= y && corner.1 < y + h
+            }),
+            "corner {corner:?} must stay click-through: {drawn}"
+        );
+    }
+    assert!(
+        region_pixels < 640 * 480,
+        "a fitted model must not cover the whole surface: {drawn}"
+    );
+    eprintln!("live: drawn input_regions={regions} input_region_pixels={region_pixels} visible={visible}");
+
+    // 2. Hide the model: the draw path clears to alpha 0, so the region must
+    //    become empty and the status must say so.
+    let hidden = runtime.request(json!({"command":"toggle_hidden"}));
+    assert_eq!(hidden["ok"], true, "{hidden}");
+    assert_eq!(hidden["hidden"], true, "{hidden}");
+    let blank = runtime.settled_frame_where(None, |reply| {
+        reply["visible_pixels"].as_u64() == Some(0)
+    });
+    assert_eq!(count(&blank, "input_regions"), 0, "{blank}");
+    assert_eq!(count(&blank, "input_region_pixels"), 0, "{blank}");
+    assert_eq!(blank["input_region_applied"], true, "{blank}");
+    assert_eq!(
+        blank["input_region"].as_array().map(Vec::len),
+        Some(0),
+        "{blank}"
+    );
+    let status = runtime.request(json!({"command":"get_status"}));
+    assert_eq!(status["hidden"], true, "{status}");
+    assert_eq!(count(&status, "input_regions"), 0, "{status}");
+    assert_eq!(status["input_region_applied"], true, "{status}");
+    eprintln!(
+        "live: hidden input_regions={} visible={}",
+        count(&status, "input_regions"),
+        count(&status, "visible_pixels")
+    );
+
+    // 3. Show it again: the region comes back, so the empty region really
+    //    tracked the frame and was not a one-way failure.
+    let shown = runtime.request(json!({"command":"toggle_hidden"}));
+    assert_eq!(shown["ok"], true, "{shown}");
+    assert_eq!(shown["hidden"], false, "{shown}");
+    let restored = runtime.settled_frame(None);
+    let restored_regions = count(&restored, "input_regions");
+    assert!(
+        restored_regions > 0,
+        "showing the model must restore its input region: {restored}"
+    );
+    assert_eq!(restored["input_region_applied"], true, "{restored}");
+    assert_region_inside_surface(&restored);
+    eprintln!(
+        "live: restored input_regions={restored_regions} input_region_pixels={}",
+        count(&restored, "input_region_pixels")
     );
     runtime.quit();
 }

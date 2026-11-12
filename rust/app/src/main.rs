@@ -360,6 +360,11 @@ fn handle(
                     reply["pixel_checksum"] = json!(stats.pixel_checksum);
                     reply["width"] = json!(stats.width);
                     reply["height"] = json!(stats.height);
+                    // The input region the frame's alpha produced, so
+                    // click-through is observable from a client.
+                    reply["input_regions"] = json!(stats.input_regions);
+                    reply["input_region_pixels"] = json!(stats.input_region_pixels);
+                    reply["input_region_applied"] = json!(stats.input_region_applied);
                 }
                 // Only overlay mode adds rendering keys: the headless reply keeps
                 // exactly the shape clients already see. An overlay start or frame
@@ -382,6 +387,21 @@ fn handle(
                 let mut reply = session
                     .stats(view.render_state())?
                     .to_json(session.available());
+                // The exact region, so a test can prove its rectangles lie inside
+                // the surface instead of trusting a count.
+                reply["input_region"] = session
+                    .region()
+                    .iter()
+                    .map(|rect| {
+                        json!({
+                            "x": rect.x,
+                            "y": rect.y,
+                            "width": rect.width,
+                            "height": rect.height,
+                        })
+                    })
+                    .collect::<Vec<_>>()
+                    .into();
                 if let Some(id) = args.get("id").and_then(Value::as_str) {
                     let value = session.parameter(id)?;
                     reply["parameter"] = json!(id);

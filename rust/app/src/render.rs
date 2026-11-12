@@ -9,13 +9,16 @@
 //! drop order: renderer and textures go before the model, the model before the
 //! Framework, and the overlay (which owns EGL) last.
 //!
-//! Scope: this module draws one model into one surface. Motion policy is the
-//! single declared `Idle` group, if the model declares one; expressions, physics,
-//! pose, look-at and the C++ transform editor are not implemented here.
+//! Scope: this module draws one model into one surface and derives that
+//! surface's input region from the drawn alpha, so only the model itself is
+//! clickable. Motion policy is the single declared `Idle` group, if the model
+//! declares one; expressions, physics, pose, look-at, pointer interaction and the
+//! C++ transform editor are not implemented here.
 
 use crate::Entry;
 use cubism_render::{EyeBlink, Framework, Model as RenderModel, Motion, MotionManager, Renderer};
-use deskwaifu_overlay::{Overlay, OverlayConfig};
+use deskwaifu_model_domain::{extract_input_regions, Region};
+use deskwaifu_overlay::{Overlay, OverlayConfig, Rect};
 use serde_json::{json, Value};
 use std::ffi::c_void;
 use std::fs;
@@ -28,7 +31,7 @@ pub const WIDTH: u32 = 640;
 pub const HEIGHT: u32 = 480;
 
 /// Alpha at or below this value counts as a transparent pixel, matching
-/// `deskwaifu_model_domain::extract_input_regions`.
+/// `deskwaifu_model_domain::extract_input_regions` and the C++ window.
 const VISIBLE_ALPHA: u8 = 10;
 /// Margin of the canvas fit: the longer canvas side covers 90% of the surface.
 const FIT: f32 = 1.8;
@@ -53,6 +56,15 @@ pub struct Stats {
     pub pixel_checksum: u64,
     pub width: u32,
     pub height: u32,
+    /// Rectangles in the input region derived from this frame's alpha.
+    pub input_regions: u32,
+    /// Total covered area of those rectangles, clipped to the surface.
+    pub input_region_pixels: u32,
+    /// Whether `Overlay::set_input_region` accepted the region for this frame.
+    /// A rejected region also fails the frame as a renderer error; the stats are
+    /// still recorded, with this `false`, so the status cannot claim a region
+    /// that never reached the compositor.
+    pub input_region_applied: bool,
 }
 
 impl Stats {
@@ -66,8 +78,38 @@ impl Stats {
             "pixel_checksum": self.pixel_checksum,
             "width": self.width,
             "height": self.height,
+            "input_regions": self.input_regions,
+            "input_region_pixels": self.input_region_pixels,
+            "input_region_applied": self.input_region_applied,
         })
     }
+}
+
+/// Maps one bottom-up RGBA8 readback of the drawn surface to the surface-local
+/// rectangles installed as the Wayland input region.
+///
+/// This is the C++ window's path in Rust terms: `ExtractModelInputRegion`
+/// samples 10x10 blocks at their centre and treats alpha above [`VISIBLE_ALPHA`]
+/// as opaque (`deskwaifu_model_domain::extract_input_regions`). The result
+/// already carries top-left origin, is clipped to the surface and has no
+/// overlapping rectangles, so it is mapped to [`Rect`] without re-clipping:
+/// `Overlay::set_input_region` only unions the rectangles into a `wl_region`.
+///
+/// The C++ then passes the regions through `ModelFrameInputRegions` with
+/// `_settings.ScreenEditing()`, which substitutes the full surface only while a
+/// transform edit is in progress. This runtime has no transform editor (see the
+/// module docs), so that mode never applies and is not exposed.
+///
+/// The C++ derives the region from the model's own framebuffer before any
+/// display opacity is applied, so hover dimming never changes click-through;
+/// this runtime has no hover opacity, so the presented buffer is that buffer.
+pub fn input_rects(pixels: &[u8], width: i32, height: i32) -> Result<Vec<Rect>, String> {
+    let regions = extract_input_regions(pixels, width, height, Region::new(0, 0, width, height))
+        .map_err(|e| format!("cannot derive the input region: {e}"))?;
+    Ok(regions
+        .into_iter()
+        .map(|region| Rect::new(region.x, region.y, region.width, region.height))
+        .collect())
 }
 
 /// One model's GL objects and animation state, rebuilt on every model switch.
@@ -366,6 +408,12 @@ pub struct Session {
     stats: Option<Stats>,
     error: Option<String>,
     last_frame: Instant,
+    /// Reused `glReadPixels` destination, like the C++ `_inputPixels`; the first
+    /// frame sizes it for the surface and every later frame reuses it.
+    pixels: Vec<u8>,
+    /// The rectangles last accepted by `Overlay::set_input_region`, so the
+    /// diagnostics reply can show the exact region rather than only its size.
+    region: Vec<Rect>,
 }
 
 impl Session {
@@ -404,11 +452,9 @@ impl Session {
             .map_err(|e| format!("cannot start the Cubism Framework: {e}"))?;
         let size = overlay.size();
         let scene = Scene::load(&framework, entry, size)?;
-        // Honest first step: the whole surface is click-through. The C++ window
-        // derives a shaped region from the rendered alpha
-        // (`deskwaifu_model_domain::extract_input_regions` over a readback, then
-        // `frame_input_regions`), which needs the alpha analysis and screen-edit
-        // mode this runtime has no command for yet.
+        // Click-through from the first frame: an empty region, exactly the C++
+        // `SetInputRegion({ })` start. The first real frame replaces it with the
+        // region derived from that frame's alpha.
         overlay
             .set_input_region(&[])
             .map_err(|e| format!("cannot clear the input region: {e}"))?;
@@ -421,6 +467,8 @@ impl Session {
             stats: None,
             error: None,
             last_frame: Instant::now(),
+            pixels: Vec::new(),
+            region: Vec::new(),
         })
     }
 
@@ -459,14 +507,13 @@ impl Session {
         scene.set_parameter(id, value)
     }
 
-    /// The next 16 ms frame: update, draw, present, then read back only on the
-    /// first frame so pixel counts exist without a per-frame download.
+    /// The next 16 ms frame: update, draw, read back, derive the input region
+    /// from that readback, apply it, then present.
     pub fn frame(&mut self, view: ViewState) {
         if self.scene.is_none() {
             return;
         }
-        let readback = self.frames_drawn == 0;
-        if let Err(error) = self.draw(view, readback) {
+        if let Err(error) = self.draw(view) {
             self.fail(error);
         }
     }
@@ -476,7 +523,7 @@ impl Session {
         if self.scene.is_none() {
             return Err(self.unavailable());
         }
-        self.draw(view, true)?;
+        self.draw(view)?;
         self.stats.ok_or("frame produced no stats".to_string())
     }
 
@@ -489,6 +536,12 @@ impl Session {
     /// The last observed counts, and whether a frame was really drawn.
     pub fn status(&self) -> (bool, Option<Stats>) {
         (self.available(), self.stats)
+    }
+
+    /// The exact input-region rectangles the compositor currently has, in
+    /// surface-local top-left coordinates.
+    pub fn region(&self) -> &[Rect] {
+        &self.region
     }
 
     pub fn error(&self) -> Option<&str> {
@@ -519,7 +572,21 @@ impl Session {
             .map_err(|e| format!("cannot make the overlay context current: {e}"))
     }
 
-    fn draw(&mut self, view: ViewState, readback: bool) -> Result<(), String> {
+    /// One frame, in the C++ order: draw the model, read the drawn buffer back,
+    /// derive the input region from that buffer's alpha, apply it, then swap.
+    ///
+    /// The readback happens **before** `swap_buffers` because the window surface
+    /// is a double-buffered EGL surface: after a swap the back buffer the frame
+    /// was drawn into is no longer defined, so the alpha analysis must read the
+    /// buffer that was just drawn. This is also where the C++ reads: `Present()`
+    /// derives the region from the render framebuffer, then blits and swaps.
+    ///
+    /// Every frame recomputes the region. That is what the C++ does: the render
+    /// thread calls `ReadModelInputRegion` on every 16 ms frame and the
+    /// interaction thread calls `SetInputRegion` on every presented frame, with
+    /// no change detection between them. Since the region follows the animated
+    /// model, a cache could only ever skip work on frames that did not move.
+    fn draw(&mut self, view: ViewState) -> Result<(), String> {
         self.make_current()?;
         let (width, height) = (self.size.0 as i32, self.size.1 as i32);
         let now = Instant::now();
@@ -545,9 +612,8 @@ impl Session {
                 .draw(&mvp)
                 .map_err(|e| format!("model draw failed: {e}"))?;
         }
-        if readback {
-            self.stats = Some(self.readback(width, height)?);
-        }
+        let stats = self.readback(width, height)?;
+        self.stats = Some(stats);
         self.overlay
             .swap_buffers()
             .map_err(|e| format!("cannot present the frame: {e}"))?;
@@ -556,8 +622,15 @@ impl Session {
             .map_err(|e| format!("cannot dispatch Wayland events: {e}"))
     }
 
+    /// Reads the drawn buffer, derives the input region from its alpha and
+    /// installs it. The returned [`Stats`] describes both the pixels and the
+    /// region: `input_region_applied` is `false` when `set_input_region` rejected
+    /// it, and that failure is returned as a renderer error too.
     fn readback(&mut self, width: i32, height: i32) -> Result<Stats, String> {
-        let mut pixels = vec![0u8; (width * height * 4) as usize];
+        let required = (width * height * 4) as usize;
+        if self.pixels.len() != required {
+            self.pixels = vec![0; required];
+        }
         unsafe {
             gl::ReadPixels(
                 0,
@@ -566,7 +639,7 @@ impl Session {
                 height,
                 gl::RGBA,
                 gl::UNSIGNED_BYTE,
-                pixels.as_mut_ptr().cast(),
+                self.pixels.as_mut_ptr().cast(),
             );
         }
         let error = unsafe { gl::GetError() };
@@ -576,7 +649,7 @@ impl Session {
         let mut visible_pixels = 0;
         let mut transparent_pixels = 0;
         let mut pixel_checksum = 0xcbf2_9ce4_8422_2325u64;
-        for pixel in pixels.as_chunks::<4>().0 {
+        for pixel in self.pixels.as_chunks::<4>().0 {
             if pixel[3] > VISIBLE_ALPHA {
                 visible_pixels += 1;
             } else if pixel[3] == 0 {
@@ -587,13 +660,34 @@ impl Session {
                 pixel_checksum = pixel_checksum.wrapping_mul(0x100_0000_01b3);
             }
         }
-        Ok(Stats {
+        let rects = input_rects(&self.pixels, width, height)?;
+        let input_regions = rects.len() as u32;
+        let input_region_pixels = rects
+            .iter()
+            .map(|rect| (rect.width as u64) * (rect.height as u64))
+            .sum::<u64>();
+        let stats = Stats {
             frames_drawn: self.frames_drawn,
             visible_pixels,
             transparent_pixels,
             pixel_checksum,
             width: width as u32,
             height: height as u32,
+            input_regions,
+            input_region_pixels: u32::try_from(input_region_pixels).unwrap_or(u32::MAX),
+            input_region_applied: false,
+        };
+        if let Err(error) = self.overlay.set_input_region(&rects) {
+            // Keep the counts, but say the region never reached the compositor.
+            self.stats = Some(stats);
+            return Err(format!(
+                "cannot apply the input region of {input_regions} rectangles: {error}"
+            ));
+        }
+        self.region = rects;
+        Ok(Stats {
+            input_region_applied: true,
+            ..stats
         })
     }
 }
@@ -605,5 +699,154 @@ impl Drop for Session {
         let _ = self.make_current();
         // Drop in the documented order rather than relying on field order alone.
         self.scene = None;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A bottom-up RGBA8 buffer where every pixel is fully transparent.
+    fn blank(width: i32, height: i32) -> Vec<u8> {
+        vec![0; (width * height * 4) as usize]
+    }
+
+    fn set_alpha(pixels: &mut [u8], width: i32, x: i32, y: i32, alpha: u8) {
+        pixels[((y * width + x) * 4 + 3) as usize] = alpha;
+    }
+
+    fn covered(rects: &[Rect], width: i32, height: i32) -> usize {
+        assert!(
+            rects.iter().all(|rect| {
+                rect.width > 0
+                    && rect.height > 0
+                    && rect.x >= 0
+                    && rect.y >= 0
+                    && rect.x + rect.width <= width
+                    && rect.y + rect.height <= height
+            }),
+            "every rect must be a positive area inside the surface: {rects:?}"
+        );
+        rects
+            .iter()
+            .map(|rect| (rect.width * rect.height) as usize)
+            .sum()
+    }
+
+    #[test]
+    fn transparent_frame_has_no_input_region() {
+        let pixels = blank(640, 480);
+        assert!(input_rects(&pixels, 640, 480).unwrap().is_empty());
+    }
+
+    #[test]
+    fn opaque_frame_covers_the_whole_surface() {
+        let (width, height) = (640, 480);
+        let pixels = vec![255; (width * height * 4) as usize];
+        let rects = input_rects(&pixels, width, height).unwrap();
+        // 480 rows in 10-pixel blocks: 48 full-height runs, one per band.
+        assert_eq!(rects.len(), 48);
+        assert_eq!(covered(&rects, width, height), (width * height) as usize);
+    }
+
+    #[test]
+    fn one_opaque_block_becomes_one_rect() {
+        // The sampler reads the block centre: buffer rows 0..9 (the bottom of the
+        // screen), columns 10..19.
+        let (width, height) = (27, 27);
+        let mut pixels = blank(width, height);
+        set_alpha(&mut pixels, width, 15, 5, 255);
+        assert_eq!(
+            input_rects(&pixels, width, height).unwrap(),
+            [Rect::new(10, 17, 10, 10)]
+        );
+    }
+
+    #[test]
+    fn only_the_block_centre_pixel_is_sampled() {
+        // Same centre convention as the C++ `(y + h/2) * width + x + w/2`: an
+        // opaque pixel that is not the centre of any block contributes nothing.
+        let (width, height) = (27, 27);
+        let mut pixels = blank(width, height);
+        set_alpha(&mut pixels, width, 11, 1, 255);
+        assert!(input_rects(&pixels, width, height).unwrap().is_empty());
+    }
+
+    #[test]
+    fn threshold_alpha_10_is_transparent_and_11_is_opaque() {
+        let (width, height) = (27, 27);
+        // Alpha 10 is the last transparent value, 11 the first opaque one; both
+        // values are read at the centre of their own block.
+        let mut pixels = blank(width, height);
+        set_alpha(&mut pixels, width, 5, 5, VISIBLE_ALPHA);
+        assert!(input_rects(&pixels, width, height).unwrap().is_empty());
+        set_alpha(&mut pixels, width, 5, 5, VISIBLE_ALPHA + 1);
+        assert_eq!(
+            input_rects(&pixels, width, height).unwrap(),
+            [Rect::new(0, 17, 10, 10)]
+        );
+    }
+
+    #[test]
+    fn opaque_rows_at_the_top_of_the_buffer_become_the_top_of_the_surface() {
+        // glReadPixels returns bottom-up: buffer row 0 is the bottom of the
+        // screen. An opaque band in the buffer's highest rows must therefore land
+        // at the top of the top-left-origin surface (y = 0), not at its bottom.
+        let (width, height) = (27, 27);
+        let mut pixels = blank(width, height);
+        for y in 20..27 {
+            for x in 0..10 {
+                set_alpha(&mut pixels, width, x, y, 255);
+            }
+        }
+        assert_eq!(
+            input_rects(&pixels, width, height).unwrap(),
+            [Rect::new(0, 0, 10, 7)]
+        );
+        // The mirrored band (buffer rows 0..9, the bottom of the screen) is the
+        // surface's lowest band.
+        let mut pixels = blank(width, height);
+        for y in 0..10 {
+            for x in 0..10 {
+                set_alpha(&mut pixels, width, x, y, 255);
+            }
+        }
+        assert_eq!(
+            input_rects(&pixels, width, height).unwrap(),
+            [Rect::new(0, 17, 10, 10)]
+        );
+    }
+
+    #[test]
+    fn opaque_runs_are_split_by_transparent_blocks_and_never_overlap() {
+        let (width, height) = (27, 17);
+        let mut pixels = blank(width, height);
+        // Block centres are x=5, 15 and 23; leaving the middle block transparent
+        // splits the opaque band into two runs.
+        for x in [5, 23] {
+            for y in 0..10 {
+                set_alpha(&mut pixels, width, x, y, 255);
+            }
+        }
+        let rects = input_rects(&pixels, width, height).unwrap();
+        assert_eq!(
+            rects,
+            [Rect::new(0, 7, 10, 10), Rect::new(20, 7, 7, 10)]
+        );
+        // The helper already guarantees this, but the mapping to `Rect` must not
+        // reintroduce overlap by clipping differently.
+        for (index, rect) in rects.iter().enumerate() {
+            for other in &rects[index + 1..] {
+                let overlap = rect.x.max(other.x) < (rect.x + rect.width).min(other.x + other.width)
+                    && rect.y.max(other.y) < (rect.y + rect.height).min(other.y + other.height);
+                assert!(!overlap, "{rect:?} overlaps {other:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_short_buffer_is_an_error_not_an_empty_region() {
+        assert!(input_rects(&[], 640, 480).is_err());
+        assert!(input_rects(&blank(0, 480), 0, 480).unwrap().is_empty());
     }
 }
