@@ -1340,6 +1340,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "deskwaifu-hotkey-domain"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "deskwaifu-ipc"
 version = "0.1.0"
 dependencies = [
@@ -1351,6 +1358,8 @@ dependencies = [
 name = "deskwaifu-model-domain"
 version = "0.1.0"
 dependencies = [
+ "serde",
+ "serde_json",
  "tempfile",
 ]
 
