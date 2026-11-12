@@ -1278,6 +1278,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "deskwaifu-config"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "deskwaifu-control"
 version = "0.1.0"
 dependencies = [

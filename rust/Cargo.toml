@@ -1,5 +1,5 @@
 [workspace]
-members = ["control", "ctl", "ipc"]
+members = ["control", "ctl", "ipc", "config"]
 resolver = "2"
 
 [patch.crates-io]
