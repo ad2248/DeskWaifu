@@ -16,10 +16,12 @@ RUN { printf 'Server = %s/$repo/os/$arch\n' "${PACMAN_MIRROR}"; \
     && sed -i 's/^#ParallelDownloads.*/ParallelDownloads = 5/' /etc/pacman.conf \
     && pacman -Syu --noconfirm \
         ccache \
+        cargo \
         cmake \
         curl \
         git \
         glu \
+        rust \
         libglvnd \
         layer-shell-qt \
         kwin \

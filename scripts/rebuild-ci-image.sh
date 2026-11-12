@@ -34,6 +34,8 @@ podman build --target ci \
 echo "Checking the CI image"
 podman run --rm "$IMAGE" bash -ceu '
     cmake --version
+    cargo --version
+    rustc --version
     ninja --version
     makepkg --version
     ccache --version

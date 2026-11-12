@@ -40,6 +40,12 @@ class AurPackagingTest(unittest.TestCase):
         for path in (recipe / "README.md", root / "README.md"):
             self.assertIn(f"git clone {url}.git", path.read_text())
 
+    def test_rust_runtime_build_dependencies_and_sdk_root(self):
+        pkgbuild = (Path(__file__).resolve().parents[1] / "packaging/arch/deskwaifu-git/PKGBUILD").read_text()
+        self.assertIn("'rust'", pkgbuild)
+        self.assertIn("'cargo'", pkgbuild)
+        self.assertIn('-DCUBISM_SDK_ROOT="$srcdir/$_sdk"', pkgbuild)
+
     def test_readme_is_installed_under_package_documentation_directory(self):
         pkgbuild = (Path(__file__).resolve().parents[1] / "packaging/arch/deskwaifu-git/PKGBUILD").read_text()
         readme_install = re.search(r'^\s*install -Dm644 .*README\.md" "([^"]+)"', pkgbuild, re.M)
