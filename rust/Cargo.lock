@@ -1336,10 +1336,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "deskwaifu-cubism-core"
-version = "0.1.0"
-
-[[package]]
 name = "deskwaifu-ipc"
 version = "0.1.0"
 dependencies = [
@@ -1350,15 +1346,6 @@ dependencies = [
 [[package]]
 name = "deskwaifu-model-domain"
 version = "0.1.0"
-
-[[package]]
-name = "deskwaifu-runtime"
-version = "0.1.0"
-dependencies = [
- "deskwaifu-cubism-core",
- "deskwaifu-ipc",
- "serde_json",
-]
 
 [[package]]
 name = "deskwaifu-speech-domain"
