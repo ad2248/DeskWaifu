@@ -1,0 +1,19 @@
+[package]
+name = "deskwaifu-runtime"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[[bin]]
+name = "deskwaifu-rust"
+path = "src/main.rs"
+
+[dependencies]
+deskwaifu-cubism-core = { path = "../cubism-core" }
+deskwaifu-ipc = { path = "../ipc" }
+serde_json = "1"
+
+[dev-dependencies]
+serde_json = "1"
