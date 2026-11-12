@@ -155,13 +155,16 @@ jobs:
       - name: Test Rust runtime and migrated domains
         env:
           CUBISM_SDK_ROOT: ${{ github.workspace }}/CubismSdkForNative-5-r.5
+          GLEW_ROOT: ${{ github.workspace }}/thirdParty/glew
           CUBISM_TEST_MOC: ${{ github.workspace }}/CubismSdkForNative-5-r.5/Samples/Resources/Haru/Haru.moc3
           CUBISM_TEST_MODEL: ${{ github.workspace }}/CubismSdkForNative-5-r.5/Samples/Resources/Haru/Haru.model3.json
           CARGO_TARGET_DIR: ${{ github.workspace }}/build-ci/cargo-target
+          LIBGL_ALWAYS_SOFTWARE: "1"
         run: |
           cargo test --locked --manifest-path rust/Cargo.toml --workspace
           cargo test --locked --manifest-path rust/cubism-core/Cargo.toml
           cargo test --locked --manifest-path rust/app/Cargo.toml
+          cargo test --locked --manifest-path rust/cubism-render/Cargo.toml
 
       - name: Configure
         run: |
