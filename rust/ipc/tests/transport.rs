@@ -74,14 +74,15 @@ fn accepts_exact_request_limit_and_closes_over_limit_connection() {
         .write_all(&[vec![b'a'; MAX_REQUEST], b"\n".to_vec()].concat())
         .unwrap();
     let mut seen = Vec::new();
-    let mut handler = |line: &[u8]| {
-        seen.push(line.len());
-        b"{}".to_vec()
-    };
-    for _ in 0..32 {
-        poll(&mut server, &mut handler);
+    {
+        let mut handler = |line: &[u8]| {
+            seen.push(line.len());
+            b"{}".to_vec()
+        };
+        for _ in 0..32 {
+            poll(&mut server, &mut handler);
+        }
     }
-    drop(handler);
     assert_eq!(seen, [MAX_REQUEST]);
     let mut response = [0; 3];
     exact.read_exact(&mut response).unwrap();
@@ -90,14 +91,15 @@ fn accepts_exact_request_limit_and_closes_over_limit_connection() {
     let mut over = ClientStream::connect(dir.socket()).unwrap();
     over.write_all(&[vec![b'b'; MAX_REQUEST + 1], b"\n".to_vec()].concat())
         .unwrap();
-    let mut over_handler = |line: &[u8]| {
-        seen.push(line.len());
-        b"{}".to_vec()
-    };
-    for _ in 0..32 {
-        poll(&mut server, &mut over_handler);
+    {
+        let mut over_handler = |line: &[u8]| {
+            seen.push(line.len());
+            b"{}".to_vec()
+        };
+        for _ in 0..32 {
+            poll(&mut server, &mut over_handler);
+        }
     }
-    drop(over_handler);
     assert_eq!(seen, [MAX_REQUEST]);
     let mut byte = [0; 1];
     assert_eq!(over.read(&mut byte).unwrap(), 0);
@@ -139,23 +141,23 @@ fn slow_reader_does_not_block_a_fast_connection() {
     let mut slow = ClientStream::connect(dir.socket()).unwrap();
     slow.write_all(b"slow\nqueued\n").unwrap();
     let mut seen = Vec::new();
-    let mut handler = |line: &[u8]| {
-        seen.push(line.to_vec());
-        if line == b"slow" {
-            vec![b's'; MAX_RESPONSE]
-        } else {
-            b"fast".to_vec()
-        }
-    };
-    poll(&mut server, &mut handler); // Accept slow connection.
-    poll(&mut server, &mut handler); // Dispatch and partially write slow response.
-
     let mut fast = ClientStream::connect(dir.socket()).unwrap();
     fast.write_all(b"fast\n").unwrap();
-    for _ in 0..5 {
-        poll(&mut server, &mut handler);
+    {
+        let mut handler = |line: &[u8]| {
+            seen.push(line.to_vec());
+            if line == b"slow" {
+                vec![b's'; MAX_RESPONSE]
+            } else {
+                b"fast".to_vec()
+            }
+        };
+        poll(&mut server, &mut handler); // Accept pending connections.
+        poll(&mut server, &mut handler); // Dispatch and partially write slow response.
+        for _ in 0..5 {
+            poll(&mut server, &mut handler);
+        }
     }
-    drop(handler);
     assert_eq!(seen, [b"slow".to_vec(), b"fast".to_vec()]);
     let mut response = [0; 5];
     fast.set_read_timeout(Some(Duration::from_millis(100)))
