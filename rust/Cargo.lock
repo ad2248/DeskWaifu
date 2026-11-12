@@ -1278,6 +1278,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "deskwaifu-audio-domain"
+version = "0.1.0"
+
+[[package]]
 name = "deskwaifu-config"
 version = "0.1.0"
 dependencies = [
