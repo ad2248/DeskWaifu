@@ -5,6 +5,7 @@
 //! ConfigStore semantics described by the application contract.
 
 pub mod settings;
+pub mod store;
 
 use serde::de::{MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
