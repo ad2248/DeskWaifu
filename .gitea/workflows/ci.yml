@@ -152,6 +152,17 @@ jobs:
           ln -s "$deps_dir/CubismSdkForNative-5-r.5" CubismSdkForNative-5-r.5
           ln -s "$deps_dir/glew" thirdParty/glew
 
+      - name: Test Rust runtime and migrated domains
+        env:
+          CUBISM_SDK_ROOT: ${{ github.workspace }}/CubismSdkForNative-5-r.5
+          CUBISM_TEST_MOC: ${{ github.workspace }}/CubismSdkForNative-5-r.5/Samples/Resources/Haru/Haru.moc3
+          CUBISM_TEST_MODEL: ${{ github.workspace }}/CubismSdkForNative-5-r.5/Samples/Resources/Haru/Haru.model3.json
+          CARGO_TARGET_DIR: ${{ github.workspace }}/build-ci/cargo-target
+        run: |
+          cargo test --locked --manifest-path rust/Cargo.toml --workspace
+          cargo test --locked --manifest-path rust/cubism-core/Cargo.toml
+          cargo test --locked --manifest-path rust/app/Cargo.toml
+
       - name: Configure
         run: |
           cmake -S . -B build-ci -G Ninja \

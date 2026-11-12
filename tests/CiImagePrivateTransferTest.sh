@@ -45,6 +45,11 @@ grep -q 'pkgconf --modversion .*Qt6Network Qt6DBus samplerate' "$CI_TRANSFER_LOG
 for dependency in wl-clipboard libsamplerate pipewire pipewire-pulse wireplumber; do
     grep -Eq "^[[:space:]]+$dependency[[:space:]]+\\\\$" "$SOURCE_DIR/Containerfile"
 done
+grep -q 'cargo --version' "$SOURCE_DIR/scripts/rebuild-ci-image.sh"
+grep -q 'rustc --version' "$SOURCE_DIR/scripts/rebuild-ci-image.sh"
+for dependency in cargo rust; do
+    grep -Eq "^[[:space:]]+$dependency[[:space:]]+\\\\$" "$SOURCE_DIR/Containerfile"
+done
 grep -q "deskwaifu-arch:docker://sha256:$(printf '%064d' 1)" "$TEST_DIR/result"
 if grep -Eq 'podman (push|login)|docker pull|git.kals.top/kals/deskwaifu-ci' "$CI_TRANSFER_LOG"; then
     echo 'CI image must not be published to a public registry namespace' >&2

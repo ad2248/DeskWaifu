@@ -103,6 +103,14 @@ class PackagingTest(unittest.TestCase):
         self.assertIn('SOURCE_DATE_EPOCH=$(git show -s --format=%ct "$RELEASE_COMMIT")', script)
         self.assertIn('PACKAGER="DeskWaifu reproducible build"', (ROOT / "Containerfile").read_text())
 
+    def test_rust_runtime_build_has_sdk_and_toolchain_dependencies(self):
+        pkgbuild = (ROOT / "packaging/release/PKGBUILD.in").read_text()
+        self.assertIn("'rust' 'cargo'", pkgbuild)
+        self.assertIn('-DCUBISM_SDK_ROOT="$srcdir/private-deps/CubismSdkForNative-5-r.5"', pkgbuild)
+        installer = (ROOT / "install.sh").read_text()
+        self.assertIn('check_command cargo', installer)
+        self.assertIn("cmake cargo rust", installer)
+
     def test_release_build_uses_persistent_cache_only_when_mounted_and_not_clean(self):
         script = (ROOT / "scripts/release-build.sh").read_text()
         self.assertIn('if [[ "${DESKWAIFU_CLEAN_BUILD:-false}" != "true" && -d /cache && -x /usr/bin/ccache ]]', script)

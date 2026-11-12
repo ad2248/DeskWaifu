@@ -53,6 +53,7 @@ https://github.com/user-attachments/assets/95dfdedc-4957-4bb7-b79f-f3addd97a6db
 | **Live2D Cubism SDK for Native** | Download from [live2d.com/sdk](https://www.live2d.com/en/sdk/about/) (proprietary, not bundled) |
 | **C++ compiler** | GCC or Clang with C++17 support for Qt 6 |
 | **CMake** | >= 3.25 |
+| **Rust / Cargo** | Required to build the bundled Rust runtime executable (Linux x86_64) |
 | **pkg-config** | For finding Wayland/EGL libraries |
 | **Wayland development libraries** | Required by Qt Wayland; Qt owns protocol dispatch |
 | **libsystemd development library** | `sd-bus` for the transient KWin cursor bridge |
@@ -65,17 +66,17 @@ https://github.com/user-attachments/assets/95dfdedc-4957-4bb7-b79f-f3addd97a6db
 
 **Arch Linux:**
 ```bash
-sudo pacman -S --needed base-devel cmake pkgconf wayland wayland-protocols libglvnd egl-wayland qt6-base qt6-wayland qt6-scxml qt6-websockets qt6-multimedia layer-shell-qt systemd-libs curl unzip
+sudo pacman -S --needed base-devel cmake rust cargo pkgconf wayland wayland-protocols libglvnd egl-wayland qt6-base qt6-wayland qt6-scxml qt6-websockets qt6-multimedia layer-shell-qt systemd-libs curl unzip
 ```
 
 **Ubuntu / Debian:**
 ```bash
-sudo apt install build-essential cmake pkg-config libwayland-dev wayland-protocols libegl-dev libgl-dev libglu1-mesa-dev libsystemd-dev qt6-base-dev libqt6opengl6-dev qt6-wayland qt6-wayland-dev qt6-scxml-dev qt6-websockets-dev qt6-multimedia-dev curl unzip
+sudo apt install build-essential cmake rustc cargo pkg-config libwayland-dev wayland-protocols libegl-dev libgl-dev libglu1-mesa-dev libsystemd-dev qt6-base-dev libqt6opengl6-dev qt6-wayland qt6-wayland-dev qt6-scxml-dev qt6-websockets-dev qt6-multimedia-dev curl unzip
 ```
 
 **Fedora:**
 ```bash
-sudo dnf install gcc-c++ cmake pkgconf-pkg-config wayland-devel wayland-protocols-devel mesa-libEGL-devel mesa-libGL-devel systemd-devel qt6-qtbase-devel qt6-qtwayland-devel qt6-qtscxml-devel qt6-qtwebsockets-devel qt6-qtmultimedia-devel layer-shell-qt-devel curl unzip
+sudo dnf install gcc-c++ cmake rust cargo pkgconf-pkg-config wayland-devel wayland-protocols-devel mesa-libEGL-devel mesa-libGL-devel systemd-devel qt6-qtbase-devel qt6-qtwayland-devel qt6-qtscxml-devel qt6-qtwebsockets-devel qt6-qtmultimedia-devel layer-shell-qt-devel curl unzip
 ```
 
 Install LayerShellQt **6.6+** development files as well. On distributions shipping

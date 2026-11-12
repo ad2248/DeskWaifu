@@ -59,6 +59,7 @@ check_pkg_config() {
 }
 
 check_command cmake        "cmake"
+check_command cargo        "Rust/Cargo"
 check_command make         "make / build-essential"
 check_command g++          "g++ / gcc / build-essential"
 check_command pkg-config   "pkg-config / pkgconf"
@@ -80,9 +81,9 @@ if [ "$ERRORS" -gt 0 ]; then
     echo ""
     error "$ERRORS missing dependency(ies). Please install them and re-run this script."
     echo ""
-    info  "Arch Linux:       sudo pacman -S --needed base-devel cmake pkgconf wayland wayland-protocols libglvnd egl-wayland qt6-base qt6-wayland qt6-scxml layer-shell-qt systemd-libs curl unzip"
-    info  "Ubuntu / Debian:  sudo apt install build-essential cmake pkg-config libwayland-dev wayland-protocols libegl-dev libgl-dev libglu1-mesa-dev libsystemd-dev qt6-base-dev libqt6opengl6-dev qt6-wayland qt6-wayland-dev qt6-scxml-dev curl unzip"
-    info  "Fedora:           sudo dnf install gcc-c++ cmake pkgconf-pkg-config wayland-devel wayland-protocols-devel mesa-libEGL-devel mesa-libGL-devel systemd-devel qt6-qtbase-devel qt6-qtwayland-devel qt6-qtscxml-devel layer-shell-qt-devel curl unzip"
+    info  "Arch Linux:       sudo pacman -S --needed base-devel cmake cargo rust pkgconf wayland wayland-protocols libglvnd egl-wayland qt6-base qt6-wayland qt6-scxml layer-shell-qt systemd-libs curl unzip"
+    info  "Ubuntu / Debian:  sudo apt install build-essential cmake cargo rustc pkg-config libwayland-dev wayland-protocols libegl-dev libgl-dev libglu1-mesa-dev libsystemd-dev qt6-base-dev libqt6opengl6-dev qt6-wayland qt6-wayland-dev qt6-scxml-dev curl unzip"
+    info  "Fedora:           sudo dnf install gcc-c++ cmake cargo rust pkgconf-pkg-config wayland-devel wayland-protocols-devel mesa-libEGL-devel mesa-libGL-devel systemd-devel qt6-qtbase-devel qt6-qtwayland-devel qt6-qtscxml-devel layer-shell-qt-devel curl unzip"
     info  "Also install LayerShellQt >= 6.6 development files; older distributions may require a newer package or a source build."
     exit 1
 fi
