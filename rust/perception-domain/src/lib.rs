@@ -1,5 +1,8 @@
 //! Pure validation policies for perception image dimensions and screenshot inputs.
 
+pub mod ctc;
+pub mod line_order;
+
 /// Maximum width or height accepted when creating a PNG from an image.
 pub const MAX_PNG_SIDE: i128 = 4096;
 /// Maximum screenshot file size in bytes (64 MiB).
