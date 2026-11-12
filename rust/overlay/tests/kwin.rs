@@ -19,7 +19,9 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
-use deskwaifu_overlay::{Anchors, KeyboardInteractivity, Layer, Overlay, OverlayConfig, Rect};
+use deskwaifu_overlay::{
+    Anchors, KeyboardInteractivity, Layer, Overlay, OverlayConfig, PointerEvent, Rect,
+};
 use wayland_client::globals::{registry_queue_init, GlobalListContents};
 use wayland_client::protocol::{
     wl_buffer, wl_compositor, wl_pointer, wl_region, wl_registry, wl_seat, wl_shm, wl_shm_pool,
@@ -53,6 +55,9 @@ const HEIGHT: u32 = 600;
 const BTN_LEFT: u32 = 0x110;
 const PRESSED: u32 = 1;
 const RELEASED: u32 = 0;
+/// The `org_kde_kwin_fake_input.axis` value used as one wheel notch, in the
+/// surface-local units of `wl_pointer.axis`.
+const SCROLL_UNITS: f64 = 10.0;
 
 static COMPOSITOR_LOCK: Mutex<()> = Mutex::new(());
 
@@ -633,6 +638,16 @@ impl FakeInput {
             .expect("motion completion barrier");
     }
 
+    /// One vertical wheel notch, in `wl_pointer.axis` surface-local units.
+    fn scroll(&mut self, x: i32, y: i32) {
+        self.move_absolute(x, y);
+        self.device.axis(0, SCROLL_UNITS);
+        self.connection.flush().expect("flush fake axis");
+        self.queue
+            .roundtrip(&mut self.state)
+            .expect("axis completion barrier");
+    }
+
     fn click(&mut self, x: i32, y: i32) {
         self.move_absolute(x, y);
         self.device.button(BTN_LEFT, PRESSED);
@@ -927,6 +942,319 @@ fn overlay_click_through_follows_the_input_region() {
         "cleared input region still delivered a press to the overlay: overlay={} below={}",
         overlay_pointer.count.presses, below.state.presses
     );
+}
+
+#[test]
+fn overlay_reports_pointer_events_and_respects_the_input_region() {
+    if !live_test_enabled() {
+        return;
+    }
+    let _guard = lock_compositor();
+    let compositor = Compositor::spawn();
+
+    let mut overlay = Overlay::connect(compositor.connect(), overlay_config(WIDTH, HEIGHT))
+        .expect("create the overlay surface");
+    overlay
+        .make_current()
+        .expect("make the EGL context current");
+    load_gl(&overlay);
+    unsafe {
+        gl::ClearColor(0.0, 0.0, 0.0, 0.0);
+        gl::Clear(gl::COLOR_BUFFER_BIT);
+    }
+    overlay.swap_buffers().expect("present the overlay frame");
+    overlay.roundtrip().expect("map the overlay surface");
+
+    let mut fake = FakeInput::new(compositor.connect());
+    // KWin only materialises its fake pointer device once it is used, and the
+    // seat advertises the capability only after that.
+    fake.move_absolute(1, 1);
+    let mut below = Below::new(compositor.connect());
+
+    let center = (WIDTH as i32 / 2, HEIGHT as i32 / 2);
+    let target = (center.0 + 40, center.1 + 30);
+    let shaped = Rect::new(center.0 - 100, center.1 - 100, 200, 200);
+    // The overlay is anchored Top|Left on the virtual output and requested at
+    // the output size, so surface-local coordinates equal the compositor-global
+    // ones `pointer_motion_absolute` takes.
+    assert!(
+        overlay.take_events().is_empty(),
+        "a freshly connected overlay reports no pointer events"
+    );
+
+    // Stage 1: an empty input region reports nothing and sends the click below.
+    let below_before = below.state.presses;
+    fake.click(center.0, center.1);
+    assert!(
+        wait_for_below_press(&mut below, &mut overlay, below_before),
+        "the empty input region did not send the click to the background surface"
+    );
+    let leaked = overlay.take_events();
+    assert!(
+        leaked.is_empty(),
+        "an empty input region must not report pointer events to the overlay: {leaked:?}"
+    );
+    // Baseline for stage 2: the one press stage 1 sent below has arrived.
+    let below_after_stage_one = below.state.presses;
+
+    // Stage 2: a shaped region around the centre reports the pointer.
+    overlay
+        .set_input_region(&[shaped])
+        .expect("set the shaped input region");
+    overlay.roundtrip().expect("apply the shaped input region");
+    // The pointer already sits at the centre, inside the new region, so the
+    // compositor may enter on the next motion without any other prompt.
+    let mut entered_events = overlay.take_events();
+    entered_events.extend(overlay_events_until(
+        &mut overlay,
+        &mut fake,
+        center,
+        |events| {
+            events
+                .iter()
+                .any(|event| matches!(event, PointerEvent::Entered { .. }))
+        },
+    ));
+    let entered = entered_events
+        .iter()
+        .position(|event| matches!(event, PointerEvent::Entered { .. }))
+        .unwrap_or_else(|| panic!("no PointerEntered arrived: {entered_events:?}"));
+    assert_eq!(
+        entered, 0,
+        "the enter must be the first event: {entered_events:?}"
+    );
+
+    // A real move to a second point inside the region must report Moved.
+    let mut move_events = overlay.take_events();
+    move_events.extend(overlay_events_until(
+        &mut overlay,
+        &mut fake,
+        target,
+        |events| {
+            events.iter().any(|event| {
+                matches!(
+                    *event,
+                    PointerEvent::Moved { x, y } if near(x, target.0) && near(y, target.1)
+                )
+            })
+        },
+    ));
+    let moved = move_events.iter().any(|event| {
+        matches!(
+            *event,
+            PointerEvent::Moved { x, y } if near(x, target.0) && near(y, target.1)
+        )
+    });
+    assert!(
+        moved,
+        "no PointerMoved at {target:?} arrived: {move_events:?}"
+    );
+
+    // A real left press and release at that point must report both.
+    let mut click_events = overlay.take_events();
+    fake.click(target.0, target.1);
+    click_events.extend(overlay_events_until(
+        &mut overlay,
+        &mut fake,
+        target,
+        |events| {
+            events.iter().any(|event| {
+                matches!(
+                    event,
+                    PointerEvent::Button {
+                        button: 0,
+                        pressed: true
+                    }
+                )
+            }) && events.iter().any(|event| {
+                matches!(
+                    event,
+                    PointerEvent::Button {
+                        button: 0,
+                        pressed: false
+                    }
+                )
+            })
+        },
+    ));
+    let pressed = click_events
+        .iter()
+        .position(|event| {
+            matches!(
+                event,
+                PointerEvent::Button {
+                    button: 0,
+                    pressed: true
+                }
+            )
+        })
+        .unwrap_or_else(|| panic!("no left press arrived: {click_events:?}"));
+    let released = click_events
+        .iter()
+        .position(|event| {
+            matches!(
+                event,
+                PointerEvent::Button {
+                    button: 0,
+                    pressed: false
+                }
+            )
+        })
+        .unwrap_or_else(|| panic!("no left release arrived: {click_events:?}"));
+    assert!(
+        pressed < released,
+        "the left press must precede the release: {click_events:?}"
+    );
+    // A vertical wheel notch at that point must report one scroll in the
+    // fixed-axis units KWin forwards, since the fake device sends no value120.
+    let mut scroll_events = overlay.take_events();
+    fake.scroll(target.0, target.1);
+    scroll_events.extend(overlay_events_until(
+        &mut overlay,
+        &mut fake,
+        target,
+        |events| {
+            events
+                .iter()
+                .any(|event| matches!(event, PointerEvent::Scroll { .. }))
+        },
+    ));
+    let scrolled = scroll_events
+        .iter()
+        .find_map(|event| match *event {
+            PointerEvent::Scroll { delta } => Some(delta),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("no PointerScroll arrived: {scroll_events:?}"));
+    assert!(
+        (scrolled - SCROLL_UNITS).abs() <= POINTER_TOLERANCE,
+        "the fixed axis must be reported in its own units: {scrolled} vs {SCROLL_UNITS}"
+    );
+    assert_eq!(
+        scroll_events
+            .iter()
+            .filter(|event| matches!(event, PointerEvent::Scroll { .. }))
+            .count(),
+        1,
+        "one wheel notch must not report two scroll events: {scroll_events:?}"
+    );
+
+    for event in entered_events
+        .iter()
+        .chain(&move_events)
+        .chain(&click_events)
+    {
+        match *event {
+            PointerEvent::Entered { x, y } | PointerEvent::Moved { x, y } => {
+                assert!(
+                    inside(x, y, shaped),
+                    "reported ({x}, {y}) outside the shaped input region {shaped:?}: {entered_events:?} {move_events:?} {click_events:?}"
+                );
+            }
+            _ => {}
+        }
+    }
+    // The press itself must not be swallowed by the background surface, so the
+    // background must not see a newer one.
+    below.pump();
+    assert_eq!(
+        below.state.presses, below_after_stage_one,
+        "the shaped input region leaked the press below: below={}",
+        below.state.presses
+    );
+
+    // Stage 3: clearing the region reports Left and sends the click below again.
+    overlay
+        .set_input_region(&[])
+        .expect("clear the input region");
+    overlay.roundtrip().expect("apply the empty input region");
+    let mut left = overlay.take_events();
+    left.extend(overlay_events_until(
+        &mut overlay,
+        &mut fake,
+        center,
+        |events| {
+            events
+                .iter()
+                .any(|event| matches!(event, PointerEvent::Left))
+        },
+    ));
+    assert!(
+        left.contains(&PointerEvent::Left),
+        "clearing the input region did not report PointerLeft: {left:?}"
+    );
+    let below_before = below.state.presses;
+    fake.click(center.0, center.1);
+    assert!(
+        wait_for_below_press(&mut below, &mut overlay, below_before),
+        "the cleared input region did not send the click to the background surface"
+    );
+    let leaked = overlay.take_events();
+    assert!(
+        leaked.is_empty(),
+        "a cleared input region must not report pointer events to the overlay: {leaked:?}"
+    );
+}
+
+/// Pixel tolerance for the live pointer assertions.
+///
+/// `org_kde_kwin_fake_input.pointer_motion_absolute` takes compositor-global
+/// logical positions and the overlay surface has no fractional scale or
+/// offset here, so the only error left is the compositor's own rounding.
+const POINTER_TOLERANCE: f64 = 1.0;
+
+fn near(reported: f64, injected: i32) -> bool {
+    (reported - f64::from(injected)).abs() <= POINTER_TOLERANCE
+}
+
+/// Whether `(x, y)` lies inside `rect`, with the same tolerance used for
+/// reported positions.
+fn inside(x: f64, y: f64, rect: Rect) -> bool {
+    let right = f64::from(rect.x + rect.width);
+    let bottom = f64::from(rect.y + rect.height);
+    x >= f64::from(rect.x) - POINTER_TOLERANCE
+        && x <= right + POINTER_TOLERANCE
+        && y >= f64::from(rect.y) - POINTER_TOLERANCE
+        && y <= bottom + POINTER_TOLERANCE
+}
+
+/// Drain the overlay's own queue until `predicate` holds over the events
+/// collected so far, re-sending `position` between rounds.
+fn overlay_events_until(
+    overlay: &mut Overlay,
+    fake: &mut FakeInput,
+    position: (i32, i32),
+    predicate: impl Fn(&[PointerEvent]) -> bool,
+) -> Vec<PointerEvent> {
+    let mut events = Vec::new();
+    let deadline = Instant::now() + TIMEOUT;
+    loop {
+        events.extend(overlay.take_events());
+        if predicate(&events) || Instant::now() >= deadline {
+            return events;
+        }
+        fake.move_absolute(position.0, position.1);
+        overlay
+            .roundtrip()
+            .expect("dispatch overlay pointer events");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+/// Pump the background surface and the overlay until it sees another press.
+fn wait_for_below_press(below: &mut Below, overlay: &mut Overlay, before: u32) -> bool {
+    let deadline = Instant::now() + TIMEOUT;
+    while Instant::now() < deadline {
+        if below.state.presses > before {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+        below.pump();
+        overlay
+            .roundtrip()
+            .expect("dispatch overlay pointer events");
+    }
+    below.state.presses > before
 }
 
 #[test]

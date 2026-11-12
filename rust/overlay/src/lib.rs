@@ -1,13 +1,15 @@
 //! A Wayland layer-shell overlay surface with an EGL window surface.
 //!
 //! This crate is deliberately small: it owns one `wl_surface` with the
-//! `zwlr_layer_surface_v1` role, its EGL context and window surface, and the
-//! input region that decides which pixels are clickable. It contains no
-//! animation, model, or coordinate-mapping logic; callers map their own
-//! rectangles into [`Rect`] and do all GL drawing themselves.
+//! `zwlr_layer_surface_v1` role, its EGL context and window surface, the input
+//! region that decides which pixels are clickable, and the `wl_pointer`
+//! reporting for that surface. It contains no animation, model, or
+//! coordinate-mapping logic; callers map their own rectangles into [`Rect`] and
+//! do all GL drawing themselves. Tap/double-click detection, hit testing and
+//! drag policy belong to the caller, as they do in the C++ window split.
 //!
 //! ```no_run
-//! use deskwaifu_overlay::{Error, Overlay, OverlayConfig, Rect};
+//! use deskwaifu_overlay::{Error, Overlay, OverlayConfig, PointerEvent, Rect};
 //! use wayland_client::Connection;
 //!
 //! # fn example() -> Result<(), Error> {
@@ -19,6 +21,11 @@
 //! // Draw with the caller's own GL bindings, then:
 //! overlay.swap_buffers()?;
 //! overlay.dispatch_pending()?;
+//! for event in overlay.take_events() {
+//!     if let PointerEvent::Button { button, pressed } = event {
+//!         println!("button {button} pressed={pressed}");
+//!     }
+//! }
 //! # Ok(())
 //! # }
 //! ```
@@ -26,9 +33,13 @@
 mod config;
 mod egl_state;
 mod error;
+mod pointer;
 
 pub use config::{resolve_configured_size, Anchors, KeyboardInteractivity, Layer, Rect};
 pub use error::Error;
+pub use pointer::PointerEvent;
+
+use pointer::PointerFrame;
 
 use std::ffi::c_void;
 use std::marker::PhantomData;
@@ -36,9 +47,9 @@ use std::marker::PhantomData;
 use khronos_egl as egl;
 use wayland_client::globals::{registry_queue_init, BindError, GlobalList, GlobalListContents};
 use wayland_client::protocol::{
-    wl_compositor, wl_output, wl_region, wl_registry, wl_shm, wl_surface,
+    wl_compositor, wl_output, wl_pointer, wl_region, wl_registry, wl_seat, wl_shm, wl_surface,
 };
-use wayland_client::{delegate_noop, Connection, Dispatch, EventQueue, Proxy, QueueHandle};
+use wayland_client::{delegate_noop, Connection, Dispatch, EventQueue, Proxy, QueueHandle, WEnum};
 use wayland_protocols_wlr::layer_shell::v1::client::{zwlr_layer_shell_v1, zwlr_layer_surface_v1};
 
 use crate::egl_state::Egl;
@@ -119,9 +130,10 @@ impl Overlay {
     /// [`Overlay::set_input_region`] to accept pointer input.
     ///
     /// Each `Overlay` owns its `Connection`; a second overlay needs a second
-    /// connection. Callers that need their own objects (for example a `wl_seat`
-    /// to observe pointer input on this surface) can create them on
-    /// [`Overlay::connection`] with a separate [`EventQueue`].
+    /// connection. The overlay binds one `wl_seat` for its pointer and reports
+    /// that pointer's events through [`Overlay::take_events`]; callers that need
+    /// other objects (for example a `wl_seat` of their own) can still create
+    /// them on [`Overlay::connection`] with a separate [`EventQueue`].
     pub fn connect(connection: Connection, config: OverlayConfig) -> Result<Overlay, Error> {
         if config.width == 0 || config.height == 0 {
             return Err(Error::InvalidSize);
@@ -136,6 +148,14 @@ impl Overlay {
             bind(&globals, &qh, "zwlr_layer_shell_v1", 1..=4)?;
 
         let mut state = State::new(requested_size, compositor, shm);
+        // A compositor without `wl_seat` simply has no pointer to report: the
+        // overlay still renders and still routes the input region. Version 8 is
+        // the first `wl_pointer` version with `axis_value120`, so it is the
+        // newest one this crate needs; older seats still work with the fixed
+        // `axis` value.
+        state.seat = globals
+            .bind::<wl_seat::WlSeat, State, ()>(&qh, 1..=8, ())
+            .ok();
         let output = match &config.output {
             Some(name) => Some(state.select_output(&globals, &qh, &mut queue, name)?),
             None => None,
@@ -266,6 +286,29 @@ impl Overlay {
         Ok(())
     }
 
+    /// Drain the pointer events collected since the last call.
+    ///
+    /// Events arrive here from [`Overlay::dispatch_pending`],
+    /// [`Overlay::dispatch`] and [`Overlay::roundtrip`], in compositor order, in
+    /// the same shape as the C++ `IDesktopWindowEvents` pointer callbacks:
+    /// [`PointerEvent::Entered`], [`PointerEvent::Left`],
+    /// [`PointerEvent::Moved`], [`PointerEvent::Button`] and
+    /// [`PointerEvent::Scroll`]. Positions are surface-local pixels from the
+    /// top-left corner, and `button` uses `0` left, `1` right, `2` middle.
+    ///
+    /// Nothing is synthesised: a frame's events are reported once, in order, and
+    /// the buffer starts empty again. Tap/double-click detection and hit testing
+    /// are the caller's job, matching the C++ `InteractionProcessor`.
+    ///
+    /// One deliberate difference from `QtDesktopWindow`: that window calls
+    /// `PointerMoved` again before every button event, because Qt delivers a
+    /// button with its own position. Here a position change is reported only by
+    /// the `wl_pointer.motion` (or `enter`) that carried it, so a caller that
+    /// needs the position of a click keeps the last `Moved`/`Entered` it saw.
+    pub fn take_events(&mut self) -> Vec<PointerEvent> {
+        std::mem::take(&mut self.state.events)
+    }
+
     /// Flush outgoing requests and dispatch already-received events.
     pub fn dispatch_pending(&mut self) -> Result<(), Error> {
         self.connection.flush()?;
@@ -317,6 +360,16 @@ impl Drop for Overlay {
         if let Some(output) = self.state.output.take() {
             if output.version() >= 3 {
                 output.release();
+            }
+        }
+        if let Some(pointer) = self.state.pointer.take() {
+            if pointer.version() >= 3 {
+                pointer.release();
+            }
+        }
+        if let Some(seat) = self.state.seat.take() {
+            if seat.version() >= 5 {
+                seat.release();
             }
         }
         let _ = self.connection.flush();
@@ -375,6 +428,14 @@ struct State {
     output: Option<wl_output::WlOutput>,
     region: Option<wl_region::WlRegion>,
     egl: Option<Egl>,
+    /// The seat, when the compositor advertises one.
+    seat: Option<wl_seat::WlSeat>,
+    /// The seat's pointer, created once the seat reports the capability.
+    pointer: Option<wl_pointer::WlPointer>,
+    /// Pointer events accumulated for the caller, drained by `take_events`.
+    events: Vec<PointerEvent>,
+    /// The `wl_pointer` frame being filled.
+    frame: PointerFrame,
     /// Output names by bind index, filled while selecting a named output.
     output_names: Vec<Option<String>>,
 }
@@ -396,6 +457,10 @@ impl State {
             output: None,
             region: None,
             egl: None,
+            seat: None,
+            pointer: None,
+            events: Vec::new(),
+            frame: PointerFrame::default(),
             output_names: Vec::new(),
         }
     }
@@ -475,6 +540,104 @@ delegate_noop!(State: ignore wl_shm::WlShm);
 delegate_noop!(State: ignore zwlr_layer_shell_v1::ZwlrLayerShellV1);
 delegate_noop!(State: ignore wl_region::WlRegion);
 delegate_noop!(State: ignore wl_surface::WlSurface);
+
+impl Dispatch<wl_seat::WlSeat, ()> for State {
+    fn event(
+        state: &mut Self,
+        seat: &wl_seat::WlSeat,
+        event: wl_seat::Event,
+        _: &(),
+        _: &Connection,
+        qh: &QueueHandle<Self>,
+    ) {
+        let wl_seat::Event::Capabilities { capabilities } = event else {
+            return;
+        };
+        // An unknown-but-reserved capability value still means "no pointer" here.
+        let pointer = matches!(capabilities, WEnum::Value(bits) if bits.contains(wl_seat::Capability::Pointer));
+        match (pointer, state.pointer.is_some()) {
+            (true, false) => {
+                state.pointer = Some(seat.get_pointer(qh, ()));
+            }
+            (false, true) => {
+                // The protocol requires destroying the pointer once the seat
+                // loses the capability; further events on it are invalid.
+                if let Some(pointer) = state.pointer.take() {
+                    if pointer.version() >= 3 {
+                        pointer.release();
+                    }
+                }
+                state.frame.flush(&mut state.events);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Deliver the accumulated frame at once for a `wl_pointer` older than version
+/// 5, which never sends the frame event.
+fn flush_without_frame(state: &mut State, pointer: &wl_pointer::WlPointer) {
+    if pointer.version() < 5 {
+        state.frame.flush(&mut state.events);
+    }
+}
+
+impl Dispatch<wl_pointer::WlPointer, ()> for State {
+    fn event(
+        state: &mut Self,
+        pointer: &wl_pointer::WlPointer,
+        event: wl_pointer::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        match event {
+            wl_pointer::Event::Enter {
+                surface_x,
+                surface_y,
+                ..
+            } => {
+                // `surface_x`/`surface_y` are the protocol's `wl_fixed_t`
+                // (/ 256) already converted to `f64` by wayland-scanner.
+                state.frame.entered(surface_x, surface_y);
+            }
+            wl_pointer::Event::Leave { .. } => state.frame.left(),
+            wl_pointer::Event::Motion {
+                surface_x,
+                surface_y,
+                ..
+            } => {
+                state.frame.moved(surface_x, surface_y);
+            }
+            wl_pointer::Event::Button {
+                button,
+                state: button_state,
+                ..
+            } => {
+                // The protocol defines only pressed and released; an unknown
+                // value is skipped rather than treated as either.
+                let pressed = match button_state {
+                    WEnum::Value(wl_pointer::ButtonState::Pressed) => Some(true),
+                    WEnum::Value(wl_pointer::ButtonState::Released) => Some(false),
+                    _ => None,
+                };
+                if let Some(pressed) = pressed {
+                    state.frame.button(button, pressed);
+                }
+            }
+            wl_pointer::Event::Axis { axis, value, .. } => state.frame.axis(axis, value),
+            wl_pointer::Event::AxisValue120 { axis, value120 } => {
+                state.frame.axis_value120(axis, value120);
+            }
+            wl_pointer::Event::Frame => {
+                state.frame.flush(&mut state.events);
+                return;
+            }
+            _ => return,
+        }
+        flush_without_frame(state, pointer);
+    }
+}
 
 impl Dispatch<wl_output::WlOutput, u32> for State {
     fn event(
