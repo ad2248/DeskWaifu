@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parent.parent
 PLUGINS = ("desktop", "perception", "ipc", "speech", "reading_clip", "system", "interaction", "model")
 MAIN_DEPENDS = {"glibc", "gcc-libs", "wayland", "libglvnd", "systemd-libs", "qt6-base>=6.5",
                 "qt6-wayland>=6.5", "qt6-scxml>=6.5", "qt6-websockets>=6.5", "qt6-multimedia>=6.5",
-                "layer-shell-qt>=6.6", "bash", "python", "psmisc"}
+                "layer-shell-qt>=6.6", "bash", "python", "psmisc", "onnxruntime-cpu", "alsa-lib"}
 SDK_LIBRARIES = {f"usr/lib/libdeskwaifu_{name}.so.{version}" for name in ("events", "plugin_sdk", "gui_plugin_sdk")
                  for version in ("2", "2.0")}
 PACKAGE_NAMES = ("deskwaifu-bin", "deskwaifu-ocr-bin", "deskwaifu-tests", "deskwaifu-ocr-tests")
@@ -83,7 +83,10 @@ def verify_content(name, info, files, version):
         required.update(SDK_LIBRARIES)
         if any(path.startswith("usr/lib/deskwaifu/ocr/") or path == "usr/libexec/deskwaifu-ocr" for path in files):
             raise ValueError("Main package must not contain OCR module/runtime")
-        if any(dep.startswith(("opencv", "onnxruntime", "deskwaifu-ocr")) for dep in info.get("depend", [])):
+        # The model runtime links libonnxruntime directly, so the main package now
+        # requires it. What must stay out of the main package is the optional OCR
+        # module/plugin dependency set: OpenCV and the OCR sub-package.
+        if any(dep.startswith(("opencv", "deskwaifu-ocr")) for dep in info.get("depend", [])):
             raise ValueError("Main package must not require the optional OCR runtime")
         if not MAIN_DEPENDS <= set(info.get("depend", [])):
             raise ValueError(f"Missing main runtime dependencies: {sorted(MAIN_DEPENDS - set(info.get('depend', [])))}")

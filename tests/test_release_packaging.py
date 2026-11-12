@@ -445,6 +445,17 @@ class PackagingTest(unittest.TestCase):
         main_info["depend"] = ["opencv"]
         with self.assertRaisesRegex(ValueError, "must not require"):
             packaging.verify_content("deskwaifu-bin", main_info, fixture_files(), "1.2.3")
+        # The model runtime links libonnxruntime and libasound directly, so they
+        # are ordinary main-package dependencies now. Only the OCR module's own
+        # dependencies (OpenCV, the OCR sub-package) must stay out.
+        for ocr_dependency in ("opencv", "deskwaifu-ocr-bin"):
+            with self.subTest(dependency=ocr_dependency), self.assertRaisesRegex(ValueError, "must not require"):
+                packaging.verify_content(
+                    "deskwaifu-bin",
+                    dict(main_info, depend=sorted(packaging.MAIN_DEPENDS | {ocr_dependency})),
+                    fixture_files(), "1.2.3")
+        packaging.verify_content(
+            "deskwaifu-bin", dict(main_info, depend=sorted(packaging.MAIN_DEPENDS)), fixture_files(), "1.2.3")
 
     def test_main_requires_direct_dependencies_and_all_sdk_runtime_libraries(self):
         info = {"pkgname": ["deskwaifu-bin"], "pkgver": ["1.2.3-1"], "arch": ["x86_64"],
@@ -492,6 +503,10 @@ class PackagingTest(unittest.TestCase):
                     self.assertIn("deskwaifu-bin", dependencies)
                 elif name == "deskwaifu-ocr-tests":
                     self.assertIn("deskwaifu-ocr-bin", dependencies)
+                if name == "deskwaifu-bin":
+                    # The runtime binary links libonnxruntime.so.1 and libasound.so.2.
+                    for dependency in ("onnxruntime-cpu", "alsa-lib"):
+                        self.assertIn(dependency, dependencies)
             self.assertIn("depends = yaml-cpp", srcinfo)
             self.assertIn("depends = onnxruntime-cpu", srcinfo)
             self.assertIn("makedepends = onnxruntime-cpu", srcinfo)

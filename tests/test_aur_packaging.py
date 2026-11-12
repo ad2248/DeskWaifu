@@ -51,6 +51,19 @@ class AurPackagingTest(unittest.TestCase):
         self.assertIn('${CMAKE_CURRENT_SOURCE_DIR}/rust/model-domain/src/*.rs', cmake)
         self.assertIn('${CMAKE_CURRENT_SOURCE_DIR}/rust/model-domain/Cargo.toml', cmake)
 
+    def test_rust_runtime_native_dependencies_are_declared(self):
+        # libonnxruntime.so.1 and libasound.so.2 come from the Rust runtime
+        # binary; PKGBUILD and .SRCINFO must agree or an installed package
+        # resolves neither at runtime.
+        recipe = Path(__file__).resolve().parents[1] / "packaging/arch/deskwaifu-git"
+        depends = re.search(r"^depends=\((.*)\)$", (recipe / "PKGBUILD").read_text(), re.M)
+        self.assertIsNotNone(depends)
+        declared = re.findall(r"'([^']+)'", depends.group(1))
+        srcinfo = (recipe / ".SRCINFO").read_text()
+        for dependency in ("onnxruntime-cpu", "alsa-lib"):
+            self.assertIn(dependency, declared)
+            self.assertIn(f"\tdepends = {dependency}\n", srcinfo)
+
     def test_readme_is_installed_under_package_documentation_directory(self):
         pkgbuild = (Path(__file__).resolve().parents[1] / "packaging/arch/deskwaifu-git/PKGBUILD").read_text()
         readme_install = re.search(r'^\s*install -Dm644 .*README\.md" "([^"]+)"', pkgbuild, re.M)
