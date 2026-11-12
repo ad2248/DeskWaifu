@@ -498,6 +498,17 @@ impl ControlPanel {
         );
     }
 
+    /// Clears only the look channel, returning the model to mouse following while
+    /// any mouth value stays as it is.
+    fn reset_look(&mut self, cx: &mut Context<Self>) {
+        self.submit_control(
+            cx,
+            "Resetting look to mouse following…".to_owned(),
+            panel::look_reset_request(),
+            "Connected — look reset",
+        );
+    }
+
     /// Local validation failures never reach the socket and never overwrite the
     /// last known server state.
     fn report(&mut self, error: String, cx: &mut Context<Self>) {
@@ -837,6 +848,13 @@ impl Render for ControlPanel {
                         "Apply look",
                         ready,
                         |panel, cx| panel.apply_look(cx),
+                    ))
+                    .child(action_button(
+                        cx,
+                        "look-reset",
+                        "Reset look",
+                        ready,
+                        |panel, cx| panel.reset_look(cx),
                     ))
                     .child(action_button(
                         cx,

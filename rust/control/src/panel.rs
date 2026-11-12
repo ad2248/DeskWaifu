@@ -72,6 +72,12 @@ pub fn look_request(x: f32, y: f32) -> Value {
     control_request("set_look", &[("x", x), ("y", y)])
 }
 
+/// `set_look` with `reset` clears the persistent look source, which returns the
+/// model to mouse following; it is not the same as releasing every channel.
+pub fn look_reset_request() -> Value {
+    json!({ "command": "set_look", "reset": true, "stream_source": false })
+}
+
 pub fn release_request() -> Value {
     json!({ "command": "release_source", "stream_source": false })
 }
@@ -447,6 +453,14 @@ mod tests {
         assert_eq!(
             release_request(),
             json!({ "command": "release_source", "stream_source": false })
+        );
+        assert_eq!(
+            look_reset_request(),
+            json!({
+                "command": "set_look",
+                "reset": true,
+                "stream_source": false
+            })
         );
     }
 
