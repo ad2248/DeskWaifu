@@ -165,6 +165,7 @@ jobs:
           cargo test --locked --manifest-path rust/cubism-core/Cargo.toml
           cargo test --locked --manifest-path rust/app/Cargo.toml
           cargo test --locked --manifest-path rust/cubism-render/Cargo.toml
+          cargo test --locked --manifest-path rust/ocr-engine/Cargo.toml
 
       - name: Configure
         run: |

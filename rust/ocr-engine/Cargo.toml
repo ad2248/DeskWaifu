@@ -1,0 +1,16 @@
+[workspace]
+
+[package]
+name = "deskwaifu-ocr-engine"
+version = "0.1.0"
+edition = "2021"
+publish = false
+build = "build.rs"
+
+[dependencies]
+deskwaifu-perception-domain = { path = "../perception-domain" }
+image = { version = "0.25", default-features = false, features = ["bmp", "jpeg", "png", "pnm"] }
+yaml-rust2 = "0.13"
+
+[dev-dependencies]
+tempfile = "3"
