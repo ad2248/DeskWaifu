@@ -51,6 +51,17 @@ class AurPackagingTest(unittest.TestCase):
         self.assertIn('${CMAKE_CURRENT_SOURCE_DIR}/rust/model-domain/src/*.rs', cmake)
         self.assertIn('${CMAKE_CURRENT_SOURCE_DIR}/rust/model-domain/Cargo.toml', cmake)
 
+    def test_rust_runtime_build_tracks_every_linked_crate(self):
+        # The runtime links these workspace crates; a source change that CMake
+        # does not depend on leaves a stale binary in the packaged build.
+        cmake = (Path(__file__).resolve().parents[1] / "CMakeLists.txt").read_text()
+        rust_app = (Path(__file__).resolve().parents[1] / "rust/app/Cargo.toml").read_text()
+        dependencies = re.findall(r'^(deskwaifu-[\w-]+) = \{ path = "\.\./([\w-]+)" \}', rust_app, re.M)
+        self.assertIn(("deskwaifu-ocr-engine", "ocr-engine"), dependencies)
+        for _, directory in dependencies:
+            with self.subTest(crate=directory):
+                self.assertIn(f"${{CMAKE_CURRENT_SOURCE_DIR}}/rust/{directory}/Cargo.toml", cmake)
+
     def test_rust_runtime_native_dependencies_are_declared(self):
         # libonnxruntime.so.1 and libasound.so.2 come from the Rust runtime
         # binary; PKGBUILD and .SRCINFO must agree or an installed package
