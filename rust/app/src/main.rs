@@ -1,3 +1,5 @@
+mod render;
+
 use deskwaifu_control_domain::{
     Arbiter, Channel, ChannelValue, ControlError, ModelIdentity, SourceId,
 };
@@ -6,6 +8,7 @@ use deskwaifu_hotkey_domain::{FsReader, Hotkeys};
 use deskwaifu_ipc::{ConnectionId, IpcServer};
 use deskwaifu_model_domain::catalog::{scan_model_catalog, ModelDescriptor};
 use deskwaifu_model_domain::model3::Model3;
+use render::ViewState;
 use serde_json::{json, Value};
 use std::env;
 use std::fs;
@@ -30,6 +33,14 @@ struct Loaded {
     hotkeys: Hotkeys,
 }
 
+/// Everything the request handler needs about presentation: the transform the IPC
+/// layer owns and the rendering session, which is `None` in headless mode.
+/// Grouped so `handle` takes one argument instead of growing one per feature.
+struct Presentation {
+    view: View,
+    session: Option<render::Session>,
+}
+
 /// Display state the desktop UI would otherwise own: the model transform and
 /// window visibility. It stays in memory for the lifetime of the process.
 struct View {
@@ -47,6 +58,18 @@ impl Default for View {
             x: 0.0,
             y: 0.0,
             hidden: false,
+        }
+    }
+}
+
+impl View {
+    /// The same transform, in the shape the rendering session consumes.
+    fn render_state(&self) -> render::ViewState {
+        render::ViewState {
+            zoom: self.zoom,
+            x: self.x,
+            y: self.y,
+            hidden: self.hidden,
         }
     }
 }
@@ -218,11 +241,18 @@ fn source_of(args: &Value, connection: ConnectionId) -> Result<SourceId, String>
 /// with the model. Re-selecting the current model is not a scene change; the C++
 /// `ChangeScene` returns early there, so the loaded hotkeys and their token and
 /// expression state are kept.
+///
+/// In overlay mode a real switch also rebuilds the rendered model, its textures
+/// and its renderer. A rendering failure answers the request with the error: the
+/// core model has already switched, so claiming success would hide a window that
+/// silently stopped drawing.
 fn select(
     index: usize,
     entries: &[Entry],
     current: &mut Loaded,
     controls: &mut Arbiter,
+    session: &mut Option<render::Session>,
+    view: ViewState,
 ) -> Result<Value, String> {
     let mut replacement = load(index, entries)?;
     // A real switch reloads the hotkeys, so the token changes with the model and
@@ -237,6 +267,9 @@ fn select(
         index as i32,
         entries[index].descriptor.id.clone(),
     ));
+    if let Some(session) = session.as_mut() {
+        session.reload(&entries[index], view)?;
+    }
     Ok(json!({"ok":true,"model":entries[index].descriptor.name}))
 }
 
@@ -289,9 +322,10 @@ fn handle(
     entries: &[Entry],
     current: &mut Loaded,
     controls: &mut Arbiter,
-    view: &mut View,
+    presentation: &mut Presentation,
     quit: &mut bool,
 ) -> Vec<u8> {
+    let Presentation { view, session } = presentation;
     let result = (|| -> Result<Value, String> {
         let request: Value = serde_json::from_slice(request).map_err(|e| e.to_string())?;
         let command = request
@@ -301,18 +335,60 @@ fn handle(
             .ok_or("request requires string command")?;
         let args = request.get("args").unwrap_or(&request);
         match command {
-            "get_status" => Ok(json!({
-                "ok": true,
-                "renderer_available": false,
-                "model_core_ready": true,
-                "model": entries[current.entry].descriptor.name,
-                "model_index": current.entry,
-                "model_count": entries.len(),
-                "hidden": view.hidden,
-                "zoom": view.zoom,
-                "x": view.x,
-                "y": view.y,
-            })),
+            // The counts come from the runtime's own readback, so a renderer is
+            // only reported when it really produced a frame with pixels in it.
+            "get_status" => {
+                let (available, stats) = session
+                    .as_ref()
+                    .map_or((false, None), render::Session::status);
+                let mut reply = json!({
+                    "ok": true,
+                    "renderer_available": available,
+                    "model_core_ready": true,
+                    "model": entries[current.entry].descriptor.name,
+                    "model_index": current.entry,
+                    "model_count": entries.len(),
+                    "hidden": view.hidden,
+                    "zoom": view.zoom,
+                    "x": view.x,
+                    "y": view.y,
+                });
+                if let Some(stats) = stats {
+                    reply["frames_drawn"] = json!(stats.frames_drawn);
+                    reply["visible_pixels"] = json!(stats.visible_pixels);
+                    reply["transparent_pixels"] = json!(stats.transparent_pixels);
+                    reply["pixel_checksum"] = json!(stats.pixel_checksum);
+                    reply["width"] = json!(stats.width);
+                    reply["height"] = json!(stats.height);
+                }
+                // Only overlay mode adds rendering keys: the headless reply keeps
+                // exactly the shape clients already see. An overlay start or frame
+                // failure reports its text, so the window is never quietly blank.
+                if let Some(session) = session.as_ref() {
+                    reply["renderer_error"] = match session.error() {
+                        Some(error) => json!(error),
+                        None => Value::Null,
+                    };
+                }
+                Ok(reply)
+            }
+            // A test/diagnostic seam: force one frame and a fresh readback so the
+            // counts describe the model as it is drawn right now. With `id`, the
+            // reply also reports the rendered model's current value for it.
+            "debug_frame" => {
+                let session = session
+                    .as_mut()
+                    .ok_or("renderer not available; start with --overlay")?;
+                let mut reply = session
+                    .stats(view.render_state())?
+                    .to_json(session.available());
+                if let Some(id) = args.get("id").and_then(Value::as_str) {
+                    let value = session.parameter(id)?;
+                    reply["parameter"] = json!(id);
+                    reply["parameter_value"] = json!(value);
+                }
+                Ok(reply)
+            }
             "get_available_models" => Ok(
                 json!({"ok":true,"models":entries.iter().map(|e| &e.descriptor.name).collect::<Vec<_>>()}),
             ),
@@ -354,12 +430,16 @@ fn handle(
             // Applying an expression or motion goes through the Cubism animation
             // bridge, which this runtime does not drive yet. Answering `ok` would
             // claim a capability it lacks, so both commands fail explicitly.
-            "set_expression" => Err(
-                "renderer not available; expression changes require the rendering runtime".into(),
-            ),
-            "do_motion" => {
-                Err("renderer not available; motion playback requires the rendering runtime".into())
-            }
+            "set_expression" => Err(if session.is_some() {
+                "expressions are not implemented by the Rust rendering runtime yet".into()
+            } else {
+                "renderer not available; expression changes require the rendering runtime".into()
+            }),
+            "do_motion" => Err(if session.is_some() {
+                "motion commands are not implemented by the Rust rendering runtime yet".into()
+            } else {
+                "renderer not available; motion playback requires the rendering runtime".into()
+            }),
             "set_model" => {
                 let selector = args
                     .get("name")
@@ -382,7 +462,14 @@ fn handle(
                 };
                 // Only a real identity change clears external controls; re-selecting
                 // the current model leaves every source untouched.
-                select(index, entries, current, controls)
+                select(
+                    index,
+                    entries,
+                    current,
+                    controls,
+                    session,
+                    view.render_state(),
+                )
             }
             "next_model" | "prev_model" => {
                 let count = entries.len();
@@ -391,7 +478,14 @@ fn handle(
                 } else {
                     (current.entry + count - 1) % count
                 };
-                select(index, entries, current, controls)
+                select(
+                    index,
+                    entries,
+                    current,
+                    controls,
+                    session,
+                    view.render_state(),
+                )
             }
             "get_model_position" => Ok(json!({"ok":true,"x":view.x,"y":view.y,"zoom":view.zoom})),
             "set_model_position" => {
@@ -436,10 +530,19 @@ fn handle(
                     args.get("value")
                         .and_then(Value::as_f64)
                         .ok_or("set_parameter requires numeric value")? as f32;
+                // The Core model owns validation, the reply and `get_parameters`;
+                // the out-of-range rejection therefore stays exactly as it was.
                 current
                     .model
                     .set_parameter_value(index, value)
                     .map_err(|e| e.to_string())?;
+                // The drawn frame reads the rendered model's own parameters, so the
+                // same value is pushed there by ID; the reply keeps the Core value.
+                if let Some(session) = session.as_mut() {
+                    if let Some(parameter) = current.model.parameters().get(index) {
+                        session.set_parameter(&parameter.id, value)?;
+                    }
+                }
                 Ok(
                     json!({"ok":true,"index":index,"value":current.model.parameter_value(index).map_err(|e| e.to_string())?}),
                 )
@@ -508,12 +611,33 @@ fn handle(
         .unwrap_or_else(|_| b"{\"ok\":false,\"error\":\"serialization failed\"}".to_vec())
 }
 
-fn arguments() -> Result<(Option<PathBuf>, Option<PathBuf>, PathBuf), String> {
+/// `(models_dir, single_model, socket, overlay)`.
+struct Arguments {
+    root: Option<PathBuf>,
+    single: Option<PathBuf>,
+    socket: PathBuf,
+    /// Opt-in rendering into a layer-shell window; absent means the unchanged
+    /// headless runtime, which is what the existing tests and CI exercise.
+    overlay: bool,
+}
+
+fn arguments() -> Result<Arguments, String> {
     let mut models = None;
     let mut model = None;
     let mut socket = None;
+    let mut overlay = false;
     let mut args = env::args().skip(1);
     while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--overlay" | "--render" => {
+                if overlay {
+                    return Err(format!("repeated argument: {arg}"));
+                }
+                overlay = true;
+                continue;
+            }
+            _ => {}
+        }
         let value = args
             .next()
             .ok_or_else(|| format!("missing value for {arg}"))?;
@@ -527,11 +651,17 @@ fn arguments() -> Result<(Option<PathBuf>, Option<PathBuf>, PathBuf), String> {
     if models.is_some() == model.is_some() {
         return Err("provide exactly one of --models-dir or --model".into());
     }
-    Ok((models, model, socket.ok_or("--socket is required")?))
+    Ok(Arguments {
+        root: models,
+        single: model,
+        socket: socket.ok_or("--socket is required")?,
+        overlay,
+    })
 }
 
 fn run() -> Result<(), String> {
-    let (root, single, socket_path) = arguments()?;
+    let arguments = arguments()?;
+    let (root, single, socket_path) = (arguments.root, arguments.single, arguments.socket);
     let entries = if let Some(path) = single {
         vec![single_descriptor(&path)
             .and_then(model_entry)
@@ -553,9 +683,19 @@ fn run() -> Result<(), String> {
     initial.hotkeys = load_hotkeys(0, &entries);
     let (mut server, _socket) =
         OwnedSocket::bind(&socket_path).map_err(|e| format!("cannot bind socket: {e}"))?;
+    // Nothing is drawn until the compositor, the Framework and the first model
+    // load all succeed; a failure here is a runtime failure with text.
+    let session = if arguments.overlay {
+        Some(render::Session::start(&entries[0]).map_err(|e| format!("overlay mode failed: {e}"))?)
+    } else {
+        None
+    };
+    let mut presentation = Presentation {
+        view: View::default(),
+        session,
+    };
     let mut current = initial;
     let mut controls = Arbiter::new(ModelIdentity::new(0, entries[0].descriptor.id.clone()));
-    let mut view = View::default();
     let mut quit = false;
     let mut next_update = Instant::now();
     while !quit {
@@ -564,6 +704,9 @@ fn run() -> Result<(), String> {
             // Same 16 ms frame step the C++ runtime uses for both the model and
             // its hotkeys, so expression fades and timeouts advance together.
             current.hotkeys.update(0.016);
+            if let Some(session) = presentation.session.as_mut() {
+                session.frame(presentation.view.render_state());
+            }
             next_update += Duration::from_millis(16);
         }
         let timeout = next_update
@@ -580,7 +723,7 @@ fn run() -> Result<(), String> {
                         &entries,
                         &mut current,
                         &mut controls,
-                        &mut view,
+                        &mut presentation,
                         &mut quit,
                     )
                 },

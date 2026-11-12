@@ -10,6 +10,7 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" OR NOT CMAKE_SYSTEM_PROCESSOR MATCHES 
   message(FATAL_ERROR "The Rust runtime build is supported only on Linux x86_64 (got ${CMAKE_SYSTEM_NAME}/${CMAKE_SYSTEM_PROCESSOR})")
 endif()
 set(CUBISM_SDK_ROOT "${PROJECT_SOURCE_DIR}/CubismSdkForNative-5-r.5" CACHE PATH "External Cubism SDK for Native source tree")
+set(GLEW_PATH "${PROJECT_SOURCE_DIR}/thirdParty/glew" CACHE PATH "GLEW source directory")
 find_program(CARGO_EXECUTABLE cargo)
 if(NOT CARGO_EXECUTABLE)
   message(FATAL_ERROR "Cargo is required to build the Rust runtime (install Rust/Cargo or set -DDESKWAIFU_BUILD_RUST_RUNTIME=OFF)")
@@ -22,6 +23,16 @@ file(GLOB_RECURSE DESKWAIFU_RUST_SOURCES CONFIGURE_DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/rust/Cargo.lock"
   "${CMAKE_CURRENT_SOURCE_DIR}/rust/cubism-core/*.rs"
   "${CMAKE_CURRENT_SOURCE_DIR}/rust/cubism-core/Cargo.toml"
+  "${CMAKE_CURRENT_SOURCE_DIR}/rust/cubism-render/src/*.rs"
+  "${CMAKE_CURRENT_SOURCE_DIR}/rust/cubism-render/native/*"
+  "${CMAKE_CURRENT_SOURCE_DIR}/rust/cubism-render/build.rs"
+  "${CMAKE_CURRENT_SOURCE_DIR}/rust/cubism-render/Cargo.toml"
+  "${CMAKE_CURRENT_SOURCE_DIR}/rust/overlay/src/*.rs"
+  "${CMAKE_CURRENT_SOURCE_DIR}/rust/overlay/Cargo.toml"
+  "${CMAKE_CURRENT_SOURCE_DIR}/rust/hotkey-domain/src/*.rs"
+  "${CMAKE_CURRENT_SOURCE_DIR}/rust/hotkey-domain/Cargo.toml"
+  "${CMAKE_CURRENT_SOURCE_DIR}/rust/control-domain/src/*.rs"
+  "${CMAKE_CURRENT_SOURCE_DIR}/rust/control-domain/Cargo.toml"
   "${CMAKE_CURRENT_SOURCE_DIR}/rust/ipc/*.rs"
   "${CMAKE_CURRENT_SOURCE_DIR}/rust/ipc/Cargo.toml"
   "${CMAKE_CURRENT_SOURCE_DIR}/rust/model-domain/src/*.rs"
@@ -31,6 +42,7 @@ set(DESKWAIFU_RUST_BINARY "${DESKWAIFU_RUST_TARGET_DIR}/release/deskwaifu-rust")
 add_custom_command(OUTPUT "${DESKWAIFU_RUST_BINARY}"
   COMMAND ${CMAKE_COMMAND} -E env
     "CUBISM_SDK_ROOT=${CUBISM_SDK_ROOT}"
+    "GLEW_ROOT=${GLEW_PATH}"
     "CARGO_TARGET_DIR=${DESKWAIFU_RUST_TARGET_DIR}"
     "${CARGO_EXECUTABLE}" build --locked --release --manifest-path "${CMAKE_CURRENT_SOURCE_DIR}/rust/app/Cargo.toml"
   DEPENDS ${DESKWAIFU_RUST_SOURCES}

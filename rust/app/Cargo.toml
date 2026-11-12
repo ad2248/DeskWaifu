@@ -11,12 +11,17 @@ name = "deskwaifu-rust"
 path = "src/main.rs"
 
 [dependencies]
+cubism-render = { path = "../cubism-render" }
 deskwaifu-control-domain = { path = "../control-domain" }
 deskwaifu-cubism-core = { path = "../cubism-core" }
 deskwaifu-hotkey-domain = { path = "../hotkey-domain" }
 deskwaifu-ipc = { path = "../ipc" }
 deskwaifu-model-domain = { path = "../model-domain" }
+deskwaifu-overlay = { path = "../overlay" }
+gl = "0.14"
+image = { version = "0.25", default-features = false, features = ["png"] }
 serde_json = "1"
+wayland-client = "0.31"
 
 [dev-dependencies]
 serde_json = "1"
