@@ -22,13 +22,16 @@ struct ChildGuard(Child);
 
 impl ChildGuard {
     fn spawn(args: &[&std::ffi::OsStr]) -> Self {
-        Self(
-            Command::new(env!("CARGO_BIN_EXE_deskwaifu-rust"))
-                .args(args)
-                .stderr(Stdio::piped())
-                .spawn()
-                .unwrap(),
-        )
+        Self::spawn_env(args, &[])
+    }
+
+    fn spawn_env(args: &[&std::ffi::OsStr], env: &[(&str, &std::ffi::OsStr)]) -> Self {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_deskwaifu-rust"));
+        command.args(args).stderr(Stdio::piped());
+        for (key, value) in env {
+            command.env(key, value);
+        }
+        Self(command.spawn().unwrap())
     }
 
     fn wait(&mut self) -> ExitStatus {
@@ -64,6 +67,8 @@ impl Drop for ChildGuard {
 struct Runtime {
     child: ChildGuard,
     socket: PathBuf,
+    /// The isolated `XDG_CONFIG_HOME`; the perception file lives below it.
+    config: PathBuf,
     _dir: TempDir,
 }
 
@@ -73,8 +78,26 @@ impl Runtime {
     }
 
     fn start_with(option: &str, model: &Path, extra: &[&std::ffi::OsStr]) -> Self {
+        Self::start_config(option, model, extra, None)
+    }
+
+    /// Starts with an isolated `XDG_CONFIG_HOME`. `config` is the text written to
+    /// `<configRoot>/deskwaifu/plugin/perception/config.json`; `None` leaves the
+    /// file absent.
+    fn start_config(
+        option: &str,
+        model: &Path,
+        extra: &[&std::ffi::OsStr],
+        config: Option<&str>,
+    ) -> Self {
         let dir = tempdir().unwrap();
         let socket = dir.path().join("runtime.sock");
+        let root = dir.path().join("config");
+        if let Some(text) = config {
+            let path = Self::perception_file(&root);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, text).unwrap();
+        }
         let mut args = vec![
             option.as_ref(),
             model.as_os_str(),
@@ -82,10 +105,12 @@ impl Runtime {
             socket.as_os_str(),
         ];
         args.extend_from_slice(extra);
-        let child = ChildGuard::spawn(&args);
+        let env = [("XDG_CONFIG_HOME", root.as_os_str())];
+        let child = ChildGuard::spawn_env(&args, &env);
         let mut runtime = Self {
             child,
             socket,
+            config: root,
             _dir: dir,
         };
         let deadline = Instant::now() + TIMEOUT;
@@ -99,6 +124,12 @@ impl Runtime {
             assert!(Instant::now() < deadline, "runtime did not bind in time");
             std::thread::sleep(Duration::from_millis(10));
         }
+    }
+
+    /// `<configRoot>/deskwaifu/plugin/perception/config.json`, the file the C++
+    /// `OcrProcessor` reads through its plugin context.
+    fn perception_file(root: &Path) -> PathBuf {
+        root.join("deskwaifu/plugin/perception/config.json")
     }
 
     fn request(&self, request: Value) -> Value {
@@ -333,35 +364,37 @@ fn wait_for_job(runtime: &Runtime, id: &str) -> Value {
 }
 
 // ---------------------------------------------------------------------------
-// No configured models.
+// Configuration files (IM-05).
 // ---------------------------------------------------------------------------
 
+/// The C++ `OcrClient::ConfigureModels` defaults.
+const DEFAULT_DETECTION: &str = "/usr/share/deskwaifu/ocr/models/PP-OCRv6_small_det";
+const DEFAULT_RECOGNITION: &str = "/usr/share/deskwaifu/ocr/models/PP-OCRv6_small_rec";
+
 #[test]
-fn without_model_directories_ocr_reports_unavailable_and_rejects_recognition() {
+fn an_absent_configuration_file_uses_the_system_default_directories() {
     let Some(model) = model() else { return };
     let runtime = Runtime::start("--model", &model);
     let status = runtime.request(json!({"command":"get_ocr_status"}));
     assert_eq!(status["ok"], true, "{status}");
-    assert_eq!(status["available"], false);
-    assert_eq!(status["availability_state"], "unavailable");
-    assert_eq!(status["loaded"], false);
+    assert_eq!(status["detection_model_dir"], DEFAULT_DETECTION);
+    assert_eq!(status["recognition_model_dir"], DEFAULT_RECOGNITION);
     assert_eq!(status["state"], "idle");
-    assert_eq!(status["error_code"], "not_configured");
-    assert!(!status["error"].as_str().unwrap().is_empty());
+    // Whether the defaults are installed decides availability; nothing here may
+    // turn an absent configuration file into a startup failure.
+    if Path::new(DEFAULT_DETECTION).is_dir() && Path::new(DEFAULT_RECOGNITION).is_dir() {
+        assert_eq!(status["availability_state"], "unchecked");
+        assert_eq!(status["error_code"], "");
+    } else {
+        assert_eq!(status["availability_state"], "unavailable");
+        let message = status["error"].as_str().unwrap();
+        assert!(
+            message.contains(DEFAULT_DETECTION) || message.contains(DEFAULT_RECOGNITION),
+            "{message}"
+        );
+    }
 
-    let dir = tempdir().unwrap();
-    let image = dir.path().join("image.png");
-    write_png(&image);
-    // A real, valid image still fails: there is no engine to run it.
-    let reply = runtime
-        .request(json!({"command":"ocr_recognize","args":{"image":image.to_str().unwrap()}}));
-    assert_eq!(reply["ok"], false, "{reply}");
-    assert!(reply["error"]
-        .as_str()
-        .unwrap()
-        .contains("--ocr-detection-dir"));
-
-    // An unknown id stays an error and the status stays unavailable.
+    // An unknown id stays an error and the status stays unloaded.
     assert_eq!(
         runtime.request(json!({"command":"get_ocr_result","args":{"job_id":"nope"}}))["ok"],
         false
@@ -370,11 +403,185 @@ fn without_model_directories_ocr_reports_unavailable_and_rejects_recognition() {
         runtime.request(json!({"command":"cancel_ocr","args":{"job_id":"nope"}}))["ok"],
         false
     );
+    runtime.quit();
+}
+
+#[test]
+fn a_missing_model_directory_is_not_a_startup_failure() {
+    let Some(model) = model() else { return };
+    let dir = tempdir().unwrap();
+    let detection = dir.path().join("missing-det");
+    let recognition = dir.path().join("missing-rec");
+    let config = json!({
+        "ocr_detection_model_dir": detection,
+        "ocr_recognition_model_dir": recognition,
+    });
+    let runtime = Runtime::start_config("--model", &model, &[], Some(&config.to_string()));
+
+    // The process stayed up, reports the configured paths and disables OCR with
+    // the missing path in its error.
+    let status = runtime.request(json!({"command":"get_ocr_status"}));
+    assert_eq!(status["detection_model_dir"], detection.to_str().unwrap());
     assert_eq!(
-        runtime.request(json!({"command":"get_ocr_status"}))["availability_state"],
-        "unavailable"
+        status["recognition_model_dir"],
+        recognition.to_str().unwrap()
+    );
+    assert_eq!(status["availability_state"], "unavailable");
+    assert_eq!(status["available"], false);
+    assert_eq!(status["error_code"], "model_missing");
+    let message = status["error"].as_str().unwrap();
+    assert!(message.contains(detection.to_str().unwrap()), "{message}");
+
+    // Recognition is refused with that status text and never creates a job.
+    let image = dir.path().join("image.png");
+    write_png(&image);
+    let reply = runtime
+        .request(json!({"command":"ocr_recognize","args":{"image":image.to_str().unwrap()}}));
+    assert_eq!(reply["ok"], false, "{reply}");
+    assert_eq!(reply["error"], status["error"]);
+    assert_eq!(
+        runtime.request(json!({"command":"get_ocr_status"}))["state"],
+        "idle"
     );
     runtime.quit();
+}
+
+#[test]
+fn a_configuration_file_supplies_both_directories() {
+    let Some(model) = model() else { return };
+    if !runtime_available() {
+        return;
+    }
+    let dir = tempdir().unwrap();
+    let models = Models::new(dir.path());
+    let config = json!({
+        "ocr_detection_model_dir": models.detection,
+        "ocr_recognition_model_dir": models.recognition,
+    });
+    let runtime = Runtime::start_config("--model", &model, &[], Some(&config.to_string()));
+
+    let status = runtime.request(json!({"command":"get_ocr_status"}));
+    assert_eq!(
+        status["detection_model_dir"],
+        models.detection.to_str().unwrap()
+    );
+    assert_eq!(
+        status["recognition_model_dir"],
+        models.recognition.to_str().unwrap()
+    );
+    assert_eq!(status["availability_state"], "unchecked");
+
+    let image = dir.path().join("image.png");
+    write_png(&image);
+    let accepted = runtime
+        .request(json!({"command":"ocr_recognize","args":{"image":image.to_str().unwrap()}}));
+    assert_eq!(accepted["ok"], true, "{accepted}");
+    let done = wait_for_job(&runtime, accepted["job_id"].as_str().unwrap());
+    assert_eq!(done["state"], "completed", "{done}");
+    assert_eq!(done["text"], "中' ");
+
+    let status = wait_until(&runtime, |status| status["busy"] == false);
+    assert_eq!(status["availability_state"], "available");
+    assert_eq!(status["loaded"], true);
+    assert_eq!(status["error_code"], "");
+    runtime.quit();
+}
+
+#[test]
+fn explicit_model_directories_override_the_configuration_file() {
+    let Some(model) = model() else { return };
+    let dir = tempdir().unwrap();
+    let models = Models::new(dir.path());
+    // A configuration file that would fail validation if it were used: the
+    // explicit arguments must win before it is even read.
+    let config = json!({"ocr_detection_model_dir": ""});
+    let args = models.args();
+    let extra: Vec<&std::ffi::OsStr> = args.iter().map(|value| value.as_os_str()).collect();
+    let runtime = Runtime::start_config("--model", &model, &extra, Some(&config.to_string()));
+
+    let status = runtime.request(json!({"command":"get_ocr_status"}));
+    assert_eq!(
+        status["detection_model_dir"],
+        models.detection.to_str().unwrap()
+    );
+    assert_eq!(
+        status["recognition_model_dir"],
+        models.recognition.to_str().unwrap()
+    );
+    assert_eq!(status["availability_state"], "unchecked");
+    runtime.quit();
+}
+
+#[test]
+fn a_key_that_is_absent_keeps_only_the_system_default_for_that_directory() {
+    let Some(model) = model() else { return };
+    let dir = tempdir().unwrap();
+    let detection = dir.path().join("det");
+    let config = json!({"ocr_detection_model_dir": detection});
+    let runtime = Runtime::start_config("--model", &model, &[], Some(&config.to_string()));
+    let file = Runtime::perception_file(&runtime.config);
+    assert!(file.is_file(), "{}", file.display());
+    let status = runtime.request(json!({"command":"get_ocr_status"}));
+    assert_eq!(status["detection_model_dir"], detection.to_str().unwrap());
+    assert_eq!(status["recognition_model_dir"], DEFAULT_RECOGNITION);
+    runtime.quit();
+}
+
+#[test]
+fn an_invalid_configured_directory_fails_startup_naming_the_key() {
+    let cases = [
+        ("empty string", json!({"ocr_detection_model_dir": ""})),
+        ("non-string", json!({"ocr_detection_model_dir": 42})),
+        ("null", json!({"ocr_detection_model_dir": null})),
+        (
+            "embedded NUL",
+            json!({"ocr_detection_model_dir": "/tmp/model\u{0}dir"}),
+        ),
+        (
+            "relative path",
+            json!({"ocr_detection_model_dir": "models/det"}),
+        ),
+        (
+            "home shorthand",
+            json!({"ocr_detection_model_dir": "~/models/det"}),
+        ),
+        (
+            "recognition key",
+            json!({"ocr_recognition_model_dir": "models/rec"}),
+        ),
+    ];
+    for (name, config) in cases {
+        let dir = tempdir().unwrap();
+        let socket = dir.path().join("runtime.sock");
+        let root = dir.path().join("config");
+        let path = Runtime::perception_file(&root);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, config.to_string()).unwrap();
+        let mut child = ChildGuard::spawn_env(
+            &[
+                "--model".as_ref(),
+                Path::new("/nonexistent.model3.json").as_os_str(),
+                "--socket".as_ref(),
+                socket.as_os_str(),
+            ],
+            &[("XDG_CONFIG_HOME", root.as_os_str())],
+        );
+        assert!(!child.wait().success(), "{name} must fail startup");
+        let stderr = child.stderr();
+        let key = if config.get("ocr_recognition_model_dir").is_some() {
+            "ocr_recognition_model_dir"
+        } else {
+            "ocr_detection_model_dir"
+        };
+        assert!(
+            stderr.contains(key),
+            "{name}: the message must name {key}: {stderr}"
+        );
+        assert!(
+            stderr.contains("absolute directory"),
+            "{name}: the message must name the problem: {stderr}"
+        );
+    }
 }
 
 #[test]
@@ -391,6 +598,26 @@ fn a_single_model_directory_is_rejected_at_startup() {
     ]);
     assert!(!child.wait().success());
     assert!(child.stderr().contains("must be given together"));
+}
+
+#[test]
+fn a_relative_explicit_model_directory_is_rejected_at_startup() {
+    let dir = tempdir().unwrap();
+    let socket = dir.path().join("runtime.sock");
+    let mut child = ChildGuard::spawn(&[
+        "--model".as_ref(),
+        Path::new("/nonexistent.model3.json").as_os_str(),
+        "--socket".as_ref(),
+        socket.as_os_str(),
+        "--ocr-detection-dir".as_ref(),
+        Path::new("relative/det").as_os_str(),
+        "--ocr-recognition-dir".as_ref(),
+        Path::new("/absolute/rec").as_os_str(),
+    ]);
+    assert!(!child.wait().success());
+    let stderr = child.stderr();
+    assert!(stderr.contains("--ocr-detection-dir"), "{stderr}");
+    assert!(stderr.contains("absolute directory"), "{stderr}");
 }
 
 // ---------------------------------------------------------------------------

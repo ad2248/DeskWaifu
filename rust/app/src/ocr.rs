@@ -25,8 +25,12 @@
 //! The status keeps reporting `busy` until that late completion arrives, exactly
 //! like the C++ client did while its work thread drained.
 
+use deskwaifu_config::settings::ConfigDocument;
 use deskwaifu_ocr_engine::{Engine, Error, Recognition};
 use serde_json::{json, Value};
+use std::env;
+use std::fs;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
@@ -43,16 +47,113 @@ const UNKNOWN_JOB: &str = "unknown OCR job; only the most recent job is retained
 const NOTHING_CANCELLED: &str = "no matching pending OCR job";
 /// The C++ `Fail("OCR request cancelled", "cancelled")` text.
 const CANCELLED_ERROR: &str = "OCR request cancelled";
-/// Reported while neither model directory was given.
-const NOT_CONFIGURED: &str =
-    "OCR is not available; start with --ocr-detection-dir and --ocr-recognition-dir";
+/// Reported when a resolved model directory is not on disk. OCR stays disabled
+/// rather than failing startup; the text names the path and the setting that
+/// produced it.
+const MISSING_DIRECTORY: &str = "OCR is not available; model directory does not exist";
+/// The two system directories `OcrClient::ConfigureModels` starts from.
+const DEFAULT_DETECTION: &str = "/usr/share/deskwaifu/ocr/models/PP-OCRv6_small_det";
+const DEFAULT_RECOGNITION: &str = "/usr/share/deskwaifu/ocr/models/PP-OCRv6_small_rec";
+/// The keys the C++ validates, in its order.
+const DETECTION_KEY: &str = "ocr_detection_model_dir";
+const RECOGNITION_KEY: &str = "ocr_recognition_model_dir";
 
-/// The two model directories. Both are required, matching the C++ configuration
-/// keys `ocr_detection_model_dir` and `ocr_recognition_model_dir`.
+/// The two model directories, matching the C++ configuration keys
+/// `ocr_detection_model_dir` and `ocr_recognition_model_dir`.
 #[derive(Clone, Debug)]
 pub struct Config {
     pub detection: PathBuf,
     pub recognition: PathBuf,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            detection: PathBuf::from(DEFAULT_DETECTION),
+            recognition: PathBuf::from(DEFAULT_RECOGNITION),
+        }
+    }
+}
+
+/// `<configRoot>/plugin/perception/config.json`, the file the C++ `OcrProcessor`
+/// reads through its `PluginContext`. `configRoot` is the directory holding the
+/// main `deskwaifu/config.json`, i.e. `QStandardPaths::ConfigLocation` plus
+/// `deskwaifu`, so the whole path is
+/// `$XDG_CONFIG_HOME/deskwaifu/plugin/perception/config.json`, falling back to
+/// `$HOME/.config/deskwaifu/plugin/perception/config.json`.
+pub fn config_path() -> PathBuf {
+    let root = env::var_os("XDG_CONFIG_HOME")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))
+        .unwrap_or_else(|| PathBuf::from(".config"));
+    // The same `<configRoot>/plugin/<plugin>/config.json` layout the C++
+    // `PluginContext` gives every plugin, and that the speech key file uses.
+    root.join("deskwaifu")
+        .join("plugin")
+        .join("perception")
+        .join("config.json")
+}
+
+/// Resolve both model directories. Explicit arguments win outright; otherwise
+/// the perception plugin configuration supplies them, a missing key keeps the
+/// system default for that directory and a missing file leaves both defaults in
+/// place. A present value that is not a usable absolute directory is a hard
+/// failure, so no broken setting silently turns into a system path.
+pub fn config(explicit: Option<Config>) -> Result<Config, String> {
+    if let Some(config) = explicit {
+        validate(&config.detection, "--ocr-detection-dir")?;
+        validate(&config.recognition, "--ocr-recognition-dir")?;
+        return Ok(config);
+    }
+    let path = config_path();
+    let bytes = match fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(Config::default()),
+        Err(error) => {
+            return Err(format!(
+                "cannot read OCR configuration {}: {error}",
+                path.display()
+            ))
+        }
+    };
+    let text = String::from_utf8(bytes)
+        .map_err(|_| format!("invalid OCR configuration {}: not UTF-8", path.display()))?;
+    // The C++ `ReadJsonObject` parses with `QJsonDocument`, which rejects comments.
+    let document = ConfigDocument::parse(&text, false)
+        .map_err(|error| format!("invalid OCR configuration {}: {error}", path.display()))?;
+    Ok(Config {
+        detection: directory(&document, DETECTION_KEY, DEFAULT_DETECTION)?,
+        recognition: directory(&document, RECOGNITION_KEY, DEFAULT_RECOGNITION)?,
+    })
+}
+
+/// One configured directory. This is the C++ `ConfigureModels` validation: a
+/// present value must be a string without a NUL character and an absolute path.
+/// `~` and environment variables are not expanded, and nothing falls back.
+fn directory(document: &ConfigDocument, key: &str, fallback: &str) -> Result<PathBuf, String> {
+    let Some(raw) = document.values.get(key) else {
+        return Ok(PathBuf::from(fallback));
+    };
+    let value = serde_json::from_str::<String>(raw)
+        .map_err(|_| format!("OCR configuration requires an absolute directory: {key}"))?;
+    if value.contains('\0') {
+        return Err(format!(
+            "OCR configuration requires an absolute directory: {key}"
+        ));
+    }
+    validate(Path::new(&value), key)
+}
+
+/// The same shape check applied to the command-line arguments, which cannot
+/// carry a NUL byte but can still be empty or relative.
+fn validate(path: &Path, source: &str) -> Result<PathBuf, String> {
+    if path.as_os_str().is_empty() || !path.is_absolute() {
+        return Err(format!(
+            "OCR configuration requires an absolute directory: {source}"
+        ));
+    }
+    Ok(path.to_owned())
 }
 
 /// One unit of work for the worker thread.
@@ -92,11 +193,11 @@ impl Failure {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Availability {
-    /// Model directories were given but nothing was loaded yet (`unchecked`).
+    /// Directories are configured but nothing was loaded yet (`unchecked`).
     Unchecked,
     /// The engine loaded once; later failures are per-job, like the C++.
     Available,
-    /// No configuration, or the model load failed (`unavailable`).
+    /// The model load failed (`unavailable`).
     Unavailable,
 }
 
@@ -164,7 +265,7 @@ impl Drop for Worker {
 }
 
 pub struct Ocr {
-    config: Option<Config>,
+    config: Config,
     worker: Option<Worker>,
     job: Option<Job>,
     /// Id of the request the worker has not reported back on yet. It keeps
@@ -177,27 +278,40 @@ pub struct Ocr {
 }
 
 impl Ocr {
-    pub fn new(config: Option<Config>) -> Self {
-        let configured = config.is_some();
+    /// A resolved directory that is not on disk leaves OCR unavailable with the
+    /// offending paths in its error instead of failing startup: a missing model
+    /// directory is a deployment gap, and `get_ocr_status` is how a client learns
+    /// about it. Only configuration *shape* errors are fatal, and those are
+    /// rejected before this point.
+    pub fn new(config: Config) -> Self {
+        let missing = [
+            (&config.detection, DETECTION_KEY),
+            (&config.recognition, RECOGNITION_KEY),
+        ]
+        .into_iter()
+        .filter(|(path, _)| !path.is_dir())
+        .map(|(path, key)| format!("{} ({key})", path.display()))
+        .collect::<Vec<_>>();
+        let error = (!missing.is_empty()).then(|| Failure {
+            code: "model_missing",
+            message: format!(
+                "{MISSING_DIRECTORY}: {}; set an existing directory in the perception \
+                 configuration or pass --ocr-detection-dir and --ocr-recognition-dir",
+                missing.join(", ")
+            ),
+        });
         Self {
             config,
             worker: None,
             job: None,
             outstanding: None,
-            availability: if configured {
-                Availability::Unchecked
-            } else {
+            availability: if error.is_some() {
                 Availability::Unavailable
+            } else {
+                Availability::Unchecked
             },
             loaded: false,
-            error: if configured {
-                None
-            } else {
-                Some(Failure {
-                    code: "not_configured",
-                    message: NOT_CONFIGURED.to_string(),
-                })
-            },
+            error,
             jobs: 0,
         }
     }
@@ -206,21 +320,14 @@ impl Ocr {
     /// `running` only said "loaded or working". `retiring` is always false: this
     /// runtime never releases the engine to reclaim an idle worker.
     pub fn status(&self) -> Value {
-        let (detection, recognition) = match &self.config {
-            Some(config) => (
-                config.detection.display().to_string(),
-                config.recognition.display().to_string(),
-            ),
-            None => (String::new(), String::new()),
-        };
         json!({
             "ok": true,
             "available": self.availability == Availability::Available,
             "availability_state": self.availability.name(),
             "error_code": self.error.as_ref().map_or("", |failure| failure.code),
             "error": self.error.as_ref().map_or("", |failure| failure.message.as_str()),
-            "detection_model_dir": detection,
-            "recognition_model_dir": recognition,
+            "detection_model_dir": self.config.detection.display().to_string(),
+            "recognition_model_dir": self.config.recognition.display().to_string(),
             "state": self.job.as_ref().map_or(State::Idle, |job| job.state).name(),
             "job_id": self.job.as_ref().map_or("", |job| job.id.as_str()),
             "loaded": self.loaded,
@@ -243,7 +350,7 @@ impl Ocr {
             }
         }
         let image = image_path(args)?;
-        let config = self.config.clone().ok_or(NOT_CONFIGURED)?;
+        let config = self.config.clone();
 
         self.jobs += 1;
         let id = format!("{}-{}", std::process::id(), self.jobs);

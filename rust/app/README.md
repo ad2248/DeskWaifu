@@ -96,18 +96,45 @@ value for that parameter. It is the test seam for the live compositor test.
 
 ## OCR commands
 
-OCR is optional. Both model directories must be supplied together:
+OCR is optional, and its two model directories come from configuration, not from
+the command line.
 
 ```sh
-deskwaifu-rust --model /path/to/Haru.model3.json --socket /tmp/model.sock \
-  --ocr-detection-dir /usr/share/deskwaifu/ocr/models/PP-OCRv6_small_det \
-  --ocr-recognition-dir /usr/share/deskwaifu/ocr/models/PP-OCRv6_small_rec
+deskwaifu-rust --model /path/to/Haru.model3.json --socket /tmp/model.sock
 ```
 
-Without them `get_ocr_status` answers `ok:true` with
-`availability_state:"unavailable"`, `error_code:"not_configured"` and an error
-text naming the flags; `ocr_recognize` fails with that text. Supplying only one
-directory is a startup error rather than a silent fallback to a system default.
+`get_ocr_status` then reports the resolved `detection_model_dir` and
+`recognition_model_dir`. They are resolved in this order:
+
+1. `--ocr-detection-dir` / `--ocr-recognition-dir`, which must be given together
+   and must each be an absolute path;
+2. otherwise `<configRoot>/plugin/perception/config.json` — the file the C++
+   `OcrProcessor` reads — with the keys `ocr_detection_model_dir` and
+   `ocr_recognition_model_dir`. `configRoot` is the directory holding the main
+   `deskwaifu/config.json`, so the full path is
+   `$XDG_CONFIG_HOME/deskwaifu/plugin/perception/config.json`, falling back to
+   `$HOME/.config/deskwaifu/plugin/perception/config.json` when
+   `XDG_CONFIG_HOME` is unset or empty;
+3. a key that is absent, or a file that does not exist, keeps the documented
+   system default for that directory:
+   `/usr/share/deskwaifu/ocr/models/PP-OCRv6_small_det` and
+   `.../PP-OCRv6_small_rec`.
+
+A present value that is empty, not a JSON string, contains a NUL, is not
+absolute, or uses `~` or an environment variable is a **startup error** naming
+the key and the problem. `~` and environment variables are never expanded and
+nothing silently falls back to a system path. A configuration file that cannot
+be read, is not UTF-8, is not a JSON object or contains a duplicate key is also a
+startup error naming the file: this runtime fails loudly instead of the C++
+`OcrClient::ConfigureModels(config, configError)` path, which only marked OCR
+`invalid_config` and left the application running.
+
+A model directory that is simply not installed is **not** a startup error: the
+process starts and `get_ocr_status` answers `ok:true` with
+`availability_state:"unavailable"`, `error_code:"model_missing"` and an error
+naming the missing path; `ocr_recognize` fails with that text. A failed model
+load is not retried in the background either — a broken deployment stays
+reported rather than being polled.
 
 The four commands mirror `plugins/perception/private/processor/ocr`:
 
@@ -136,13 +163,15 @@ The engine is loaded lazily on the first accepted job, on the one worker thread
 this module owns; the two ONNX sessions are created, used and dropped only there,
 so `--model` startup and the IPC accept loop never wait on them. The loop sends
 at most one request and drains the worker's reply channel on its existing 16 ms
-tick (`ocr.poll()`), so a load or an inference never blocks a request. A failed
-load is reported through the job's `response.error` and stays in
-`get_ocr_status`, and the model is not retried. Only a load failure makes
-`get_ocr_status` report `unavailable`; a per-job inference failure (an
-undecodable image, say) fails that job and leaves OCR available, because the
-in-process engine is still usable. The C++ client disabled itself there because
-a failing helper subprocess was all it had.
+tick (`ocr.poll()`), so a load or an inference never blocks a request. A directory
+that is not on disk is detected at construction, so its job is refused before any
+work starts and `get_ocr_status` carries the reason from the first tick. A load
+failure that only surfaces during `Engine::load` is reported through the job's
+`response.error` and stays in `get_ocr_status`, and the model is not retried.
+Only such a load failure makes `get_ocr_status` report `unavailable`; a per-job
+inference failure (an undecodable image, say) fails that job and leaves OCR
+available, because the in-process engine is still usable. The C++ client disabled
+itself there because a failing helper subprocess was all it had.
 
 Cancellation is **host-side only**: `deskwaifu-ocr-engine` has no cancel hook and
 ONNX Runtime cannot be interrupted mid-`Run`. `cancel_ocr` marks the job failed
@@ -337,15 +366,20 @@ The alpha → rectangle mapping itself has pure unit tests in `src/render.rs`
 the threshold alpha values 10 and 11, bottom-up row order, and run splitting
 without overlap.
 
-`tests/ocr.rs` covers the OCR command surface. Always: that no directories means
-`unavailable` plus a clear `ocr_recognize` failure, that a lone
+`tests/ocr.rs` covers the OCR command surface. Always: that an absent
+`<configRoot>/plugin/perception/config.json` reports the two system defaults,
+that a key that is absent keeps only its own default, that explicit
+`--ocr-*-dir` flags override a (here deliberately invalid) configuration file,
+that an empty / non-string / NUL-carrying / relative value fails startup naming
+its key while a merely absent directory only makes OCR unavailable, that a lone
 `--ocr-detection-dir` is a startup error, and that every unusable `image` value is
 rejected without creating a job. When `libonnxruntime.so` is present (real CI has
 it, since the engine crate's suite runs there) it also builds a constant-graph
-detector/recognizer pair, runs a real PNG end to end, and asserts the retained
-job's text and native result, the busy rejection, the cancel-then-late-result
-discard, unknown ids, receipt eviction and the load-failure path. Set
-`DESKWAIFU_SKIP_OCR_E2E=1` to skip that part explicitly.
+detector/recognizer pair, runs a real PNG end to end from both the flags and the
+configuration file, and asserts the retained job's text and native result, the
+busy rejection, the cancel-then-late-result discard, unknown ids, receipt eviction
+and the load-failure path. Set `DESKWAIFU_SKIP_OCR_E2E=1` to skip that part
+explicitly.
 
 `tests/speech.rs` runs against a loopback MiniMax-protocol WebSocket server. It
 proves the settings replies are `{ok,configured,error}` in the C++ shape, that the

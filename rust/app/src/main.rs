@@ -685,9 +685,9 @@ struct Arguments {
     /// Opt-in rendering into a layer-shell window; absent means the unchanged
     /// headless runtime, which is what the existing tests and CI exercise.
     overlay: bool,
-    /// Both OCR model directories, or neither. Without them OCR reports itself
-    /// unavailable instead of failing the runtime.
-    ocr: Option<ocr::Config>,
+    /// The resolved OCR model directories: explicit arguments, else the
+    /// perception plugin configuration file, else the system defaults.
+    ocr: ocr::Config,
     /// Speech endpoint override, a test/diagnostic seam only: the C++ fixes the
     /// production endpoint in `MiniMaxSpeechSource`.
     speech_endpoint: String,
@@ -746,6 +746,7 @@ fn arguments() -> Result<Arguments, String> {
             )
         }
     };
+    let ocr = ocr::config(ocr)?;
     Ok(Arguments {
         root: models,
         single: model,
