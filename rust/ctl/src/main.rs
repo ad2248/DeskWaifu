@@ -7,7 +7,43 @@ use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::time::Duration;
 
-const HELP: &str = "Control DeskWaifu over its newline-delimited JSON Unix socket.\n\nUsage: deskwaifu-ctl <command> [--key value ...]\n\nExamples:\n  deskwaifu-ctl get_status\n  deskwaifu-ctl set_model --name \"MyModel\"\n  deskwaifu-ctl set_model --index 2\n  deskwaifu-ctl do_motion --group TapBody --index 0 --priority 2\n  deskwaifu-ctl set_mouth_y --value 0.8\n  deskwaifu-ctl set_look --x 0.5 --y -0.3\n  deskwaifu-ctl set_look --reset\n  deskwaifu-ctl toggle_voice_input\n  deskwaifu-ctl get_voice_input_status\n  deskwaifu-ctl set_voice_input_settings --max_recording_seconds 60\n\nThe socket is $XDG_RUNTIME_DIR/deskwaifu.sock (fallback: /tmp/deskwaifu.sock).\n--reset is shorthand for --reset true. --stream_source is for long-lived raw sockets, not this one-shot CLI.\n";
+const HELP: &str = r#"Control DeskWaifu over its newline-delimited JSON Unix socket.
+
+Usage: deskwaifu-ctl <command> [--key value ...]
+
+Examples:
+  deskwaifu-ctl get_status
+  deskwaifu-ctl set_model --name "MyModel"
+  deskwaifu-ctl set_model --index 2
+  deskwaifu-ctl do_motion --group TapBody --index 0 --priority 2
+  deskwaifu-ctl set_mouth_y --value 0.8
+  deskwaifu-ctl set_look --x 0.5 --y -0.3
+  deskwaifu-ctl set_look --reset
+  deskwaifu-ctl toggle_voice_input
+  deskwaifu-ctl get_voice_input_status
+  deskwaifu-ctl set_voice_input_settings --max_recording_seconds 60
+
+Commands:
+  get_status, get_available_models, get_current_model, set_model,
+  next_model, prev_model, get_expressions, set_expression, get_hotkeys,
+  trigger_hotkey, get_motions, do_motion, set_mouth_y, set_model_zoom,
+  set_model_position, get_model_position, toggle_hidden, switch_skin,
+  set_look, release_source, get_control_status, quit,
+  get_mouse_look, set_mouse_look, get_hover_opacity, set_hover_opacity,
+  get_transform_settings, begin_transform_edit, update_transform_edit,
+  apply_transform_edit, cancel_transform_edit, reset_transform_settings,
+  retry_transform_save, reload_transform_settings, get_transform_save_result,
+  relocate_crop, set_output,
+  get_ocr_status, ocr_recognize, get_ocr_result, cancel_ocr,
+  reading_clip, get_reading_clip_status,
+  start_voice_input, stop_voice_input, toggle_voice_input, cancel_voice_input,
+  get_voice_input_status, get_voice_input_result, retry_voice_input_copy, list_voice_input_devices,
+  get_voice_input_settings, set_voice_input_settings
+
+The socket is $XDG_RUNTIME_DIR/deskwaifu.sock (fallback: /tmp/deskwaifu.sock).
+--reset is shorthand for --reset true. --stream_source is for long-lived
+raw sockets, not this one-shot CLI.
+"#;
 const INTS: &[&str] = &[
     "index",
     "priority",
@@ -145,7 +181,8 @@ impl<'de> Deserialize<'de> for UniqueValue {
 
 fn run(args: &[String]) -> Result<i32, String> {
     if args.is_empty() {
-        return Err(HELP.to_owned());
+        print!("{HELP}");
+        return Ok(1);
     }
     if args == ["--help"] {
         print!("{HELP}");
@@ -235,6 +272,7 @@ mod tests {
             json!(4294967294u64)
         );
         assert!(parameter("value", "NaN").is_err());
+        assert!(parameter("value", "1e999").is_err());
         assert_eq!(parameter("enabled", "1").unwrap(), json!(true));
         assert_eq!(parameter("name", "001").unwrap(), json!("001"));
     }
@@ -257,6 +295,14 @@ mod tests {
     fn duplicate_response() {
         assert!(serde_json::from_str::<UniqueValue>(r#"{"ok":true,"ok":false}"#).is_err());
     }
+    #[test]
+    fn usage_and_help_cover_existing_commands() {
+        assert_eq!(run(&[]).unwrap(), 1);
+        assert!(HELP.contains("get_ocr_status"));
+        assert!(HELP.contains("get_voice_input_settings"));
+        assert_eq!(run(&["--help".into()]).unwrap(), 0);
+    }
+
     #[test]
     fn response_semantics() {
         for s in [r#"{"ok":true}"#, r#"{"ok":false}"#] {
