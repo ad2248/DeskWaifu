@@ -8,6 +8,8 @@ use tokio_tungstenite::{
     tungstenite::{protocol::WebSocketConfig, Message},
 };
 
+pub mod player;
+
 const MAX_MESSAGE: usize = 2 * 1024 * 1024;
 const MAX_IDLE: Duration = Duration::from_secs(30);
 
