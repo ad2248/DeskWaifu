@@ -1,7 +1,7 @@
 use deskwaifu_client::{default_socket_path, request};
 use gpui::{
     div, px, rgb, App, AppContext, Application, Context, InteractiveElement, IntoElement,
-    ParentElement, Render, StatefulInteractiveElement, Styled, Window, WindowOptions,
+    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window, WindowOptions,
 };
 use std::{path::PathBuf, time::Duration};
 
@@ -10,6 +10,8 @@ struct ControlPanel {
     loading: bool,
     state: String,
     response: String,
+    models: Vec<String>,
+    current_model: String,
 }
 
 impl ControlPanel {
@@ -19,6 +21,8 @@ impl ControlPanel {
             loading: false,
             state: "Not connected".into(),
             response: String::new(),
+            models: Vec::new(),
+            current_model: String::new(),
         };
         panel.refresh(cx);
         panel
@@ -29,36 +33,144 @@ impl ControlPanel {
             return;
         }
         self.loading = true;
-        self.state = "Querying get_status…".into();
+        self.state = "Querying get_status, models, and current model…".into();
         self.response.clear();
         let path = self.socket.clone();
-        // All synchronous socket I/O runs off the UI thread. No automatic retry.
+        // Keep every synchronous socket operation off the UI thread and serialize requests.
         let query = cx.background_executor().spawn(async move {
-            request(
+            let status = request(
                 &path,
                 &serde_json::json!({ "command": "get_status" }),
                 Duration::from_secs(5),
-            )
-            .map(|reply| {
-                (
-                    reply.ok,
-                    serde_json::to_string_pretty(&reply.value).expect("JSON value"),
-                )
-            })
+            )?;
+            let models = request(
+                &path,
+                &serde_json::json!({ "command": "get_available_models" }),
+                Duration::from_secs(5),
+            )?;
+            let current = request(
+                &path,
+                &serde_json::json!({ "command": "get_current_model" }),
+                Duration::from_secs(5),
+            )?;
+            Ok::<_, std::io::Error>((status, models, current))
         });
         cx.spawn(async move |panel, cx| {
             let result = query.await;
             let _ = panel.update(cx, |panel, cx| {
                 panel.loading = false;
                 match result {
-                    Ok((ok, response)) => {
-                        panel.state = if ok {
-                            "Connected — get_status succeeded"
+                    Ok((status, models, current)) => {
+                        panel.state = if status.ok && models.ok && current.ok {
+                            "Connected — status and model queries succeeded"
                         } else {
-                            "Connected — server rejected get_status"
+                            "Connected — server rejected one or more queries"
                         }
                         .into();
-                        panel.response = response;
+                        panel.response =
+                            serde_json::to_string_pretty(&status.value).expect("JSON value");
+                        if models.ok {
+                            panel.models = models
+                                .value
+                                .get("models")
+                                .and_then(|value| value.as_array())
+                                .map(|values| {
+                                    values
+                                        .iter()
+                                        .filter_map(|value| value.as_str().map(str::to_owned))
+                                        .collect()
+                                })
+                                .unwrap_or_default();
+                        }
+                        if current.ok {
+                            panel.current_model = current
+                                .value
+                                .get("model")
+                                .and_then(|value| value.as_str())
+                                .unwrap_or_default()
+                                .to_owned();
+                        }
+                        for (name, reply) in [
+                            ("get_available_models", models),
+                            ("get_current_model", current),
+                        ] {
+                            if !reply.ok {
+                                panel.response.push_str(&format!(
+                                    "\n\n{name} failed: {}",
+                                    serde_json::to_string_pretty(&reply.value).expect("JSON value")
+                                ));
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        panel.state = "Disconnected / IPC error".into();
+                        panel.response = error.to_string();
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+        cx.notify();
+    }
+
+    fn set_model(&mut self, name: String, cx: &mut Context<Self>) {
+        if self.loading {
+            return;
+        }
+        self.loading = true;
+        self.state = format!("Setting model to {name}…");
+        self.response.clear();
+        let path = self.socket.clone();
+        let query = cx.background_executor().spawn(async move {
+            let reply = request(
+                &path,
+                &serde_json::json!({ "command": "set_model", "name": name }),
+                Duration::from_secs(5),
+            )?;
+            let status = request(
+                &path,
+                &serde_json::json!({ "command": "get_status" }),
+                Duration::from_secs(5),
+            )?;
+            let current = request(
+                &path,
+                &serde_json::json!({ "command": "get_current_model" }),
+                Duration::from_secs(5),
+            )?;
+            Ok::<_, std::io::Error>((reply, status, current))
+        });
+        cx.spawn(async move |panel, cx| {
+            let result = query.await;
+            let _ = panel.update(cx, |panel, cx| {
+                panel.loading = false;
+                match result {
+                    Ok((reply, status, current)) => {
+                        panel.state = if reply.ok && status.ok && current.ok {
+                            "Connected — model updated"
+                        } else {
+                            "Connected — model change or refresh failed"
+                        }
+                        .into();
+                        panel.response = format!(
+                            "set_model:\n{}\n\nget_status:\n{}",
+                            serde_json::to_string_pretty(&reply.value).expect("JSON value"),
+                            serde_json::to_string_pretty(&status.value).expect("JSON value")
+                        );
+                        if status.ok {
+                            panel.response.push_str(&format!(
+                                "\n\nget_current_model:\n{}",
+                                serde_json::to_string_pretty(&current.value).expect("JSON value")
+                            ));
+                        }
+                        if current.ok {
+                            panel.current_model = current
+                                .value
+                                .get("model")
+                                .and_then(|value| value.as_str())
+                                .unwrap_or_default()
+                                .to_owned();
+                        }
                     }
                     Err(error) => {
                         panel.state = "Disconnected / IPC error".into();
@@ -75,7 +187,7 @@ impl ControlPanel {
 
 impl Render for ControlPanel {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        div()
+        let mut content = div()
             .size_full()
             .flex()
             .flex_col()
@@ -99,14 +211,42 @@ impl Render for ControlPanel {
                     })
                     .on_click(cx.listener(|panel, _, _, cx| panel.refresh(cx))),
             )
-            .child(
+            .child(div().text_size(px(18.0)).child("Available models"));
+
+        for model in self.models.clone() {
+            let selected = model == self.current_model;
+            let label = if selected {
+                format!("{model} (current)")
+            } else {
+                model.clone()
+            };
+            content = content.child(
                 div()
-                    .id("status-response")
-                    .flex_1()
-                    .min_h_0()
-                    .overflow_y_scroll()
-                    .child(self.response.clone()),
-            )
+                    .id(SharedString::from(format!("model-{model}")))
+                    .px_3()
+                    .py_2()
+                    .bg(rgb(if self.loading || selected {
+                        0x454545
+                    } else {
+                        0x315d85
+                    }))
+                    .child(label)
+                    .on_click(cx.listener(move |panel, _, _, cx| {
+                        if !selected {
+                            panel.set_model(model.clone(), cx);
+                        }
+                    })),
+            );
+        }
+
+        content.child(
+            div()
+                .id("status-response")
+                .flex_1()
+                .min_h_0()
+                .overflow_y_scroll()
+                .child(self.response.clone()),
+        )
     }
 }
 
