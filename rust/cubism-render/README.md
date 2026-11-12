@@ -53,6 +53,10 @@ pending. The bridge installs a temporary shim that only deletes programs that
 still exist, so shutdown leaves no stale GL error. Real driver failures are not
 swallowed: the test asserts `glGetError() == GL_NO_ERROR` after each Dispose.
 
+## 应用侧接线尚未完成
+
+当前 crate 是已验证的渲染基础件，而不是生产桌面渲染路径：运行时仍未使用它，窗口/layer-shell/输入区域和动画策略也尚未从 C++ 迁移。下一步需把此桥接入 Rust runtime 的 EGL 渲染线程，再替换现有 Qt 模型呈现路径。
+
 ## Licensing
 
 The Cubism SDK is governed by Live2D's own license and is supplied by the user.
