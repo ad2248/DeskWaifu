@@ -1,0 +1,6 @@
+[workspace]
+members = ["control", "ctl"]
+resolver = "2"
+
+[patch.crates-io]
+xattr = { path = "vendor/xattr" }
