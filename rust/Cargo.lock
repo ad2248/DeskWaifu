@@ -1355,6 +1355,19 @@ name = "deskwaifu-perception-domain"
 version = "0.1.0"
 
 [[package]]
+name = "deskwaifu-screenshot"
+version = "0.1.0"
+dependencies = [
+ "futures-util",
+ "libc",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "url",
+ "zbus",
+]
+
+[[package]]
 name = "deskwaifu-speech-domain"
 version = "0.1.0"
 dependencies = [
@@ -5537,8 +5550,10 @@ dependencies = [
  "libc",
  "mio",
  "pin-project-lite",
+ "signal-hook-registry",
  "socket2",
  "tokio-macros",
+ "tracing",
  "windows-sys 0.61.2",
 ]
 
@@ -7021,6 +7036,7 @@ dependencies = [
  "rustix 1.1.6",
  "serde",
  "serde_repr",
+ "tokio",
  "tracing",
  "uds_windows",
  "uuid",
