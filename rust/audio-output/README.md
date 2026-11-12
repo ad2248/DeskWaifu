@@ -89,9 +89,16 @@ server would otherwise be impossible.
 
 ## Dependency
 
-`cpal 0.18.1` with the `pipewire` feature. On Linux the crate opens the
-**PipeWire** host first and falls back to ALSA; the host is chosen through
-`cpal::host_from_id`, not `cpal::default_host`, because the latter can panic.
+`cpal 0.18.1` with its default host set (ALSA on Linux, including the
+`pipewire-alsa` PCM plugin that routes into PipeWire). The default host is tried
+first and any other available host only when it has no default output; the host
+is chosen through `cpal::host_from_id`, not `cpal::default_host`, because the
+latter can panic.
+
+cpal's `pipewire` feature is deliberately **not** enabled: it pulls
+`libspa-sys`, whose build script needs `libclang` for bindgen, which the packaged
+build image does not ship. Playing through ALSA's `pipewire-alsa` plugin reaches
+the same PipeWire graph without a build-time clang dependency.
 
 PulseAudio compatibility on this platform is provided by `pipewire-pulse` (plus
 `wireplumber` as the session manager), which publishes the PulseAudio protocol

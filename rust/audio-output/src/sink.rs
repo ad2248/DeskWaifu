@@ -1,10 +1,10 @@
 //! Device seam: the player talks to a [`Sink`] and tests inject their own.
 //!
 //! The real implementation ([`CpalFactory`]) opens the default output device
-//! through cpal, which uses the PipeWire host when available and falls back to
-//! ALSA. A sink pulls from the shared [`Queue`] inside its audio callback and
-//! reports progress through [`Progress`]; that type is the seam that lets the
-//! queue and drain logic be tested without hardware.
+//! through cpal's default host (ALSA on Linux, which reaches PipeWire through
+//! the `pipewire-alsa` plugin). A sink pulls from the shared [`Queue`] inside
+//! its audio callback and reports progress through [`Progress`]; that type is
+//! the seam that lets the queue and drain logic be tested without hardware.
 //!
 //! The callback never performs device I/O, allocation or logging: it locks the
 //! queue for one callback buffer at a time, converts in place and returns.
@@ -164,23 +164,15 @@ fn cpal_format(format: SampleFormat) -> cpal::SampleFormat {
     }
 }
 
-/// Default output device, preferring PipeWire over ALSA.
+/// Default output device.
 ///
 /// `cpal::default_host()` panics when no host can be constructed, so hosts are
-/// selected through the fallible `host_from_id`. A host without a default
-/// output only makes the next one try.
+/// selected through the fallible `host_from_id`. The default host is tried
+/// first; any other available host only runs when it has no default output.
 fn default_device() -> Option<(cpal::Device, cpal::SupportedStreamConfig)> {
+    let default = cpal::default_host().id();
     let hosts = cpal::available_hosts();
-    let ordered = hosts
-        .iter()
-        .copied()
-        .filter(|host| *host == cpal::HostId::PipeWire)
-        .chain(
-            hosts
-                .iter()
-                .copied()
-                .filter(|host| *host != cpal::HostId::PipeWire),
-        );
+    let ordered = std::iter::once(default).chain(hosts.into_iter().filter(|host| *host != default));
     for host_id in ordered {
         let Ok(host) = cpal::host_from_id(host_id) else {
             continue;

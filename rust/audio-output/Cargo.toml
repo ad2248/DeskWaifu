@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-# PipeWire host first, ALSA fallback; no pulseaudio feature because the
-# PulseAudio client protocol is served by pipewire-pulse on this platform.
-cpal = { version = "=0.18.1", features = ["pipewire"] }
+# ALSA default host; the pipewire-alsa plugin routes it into PipeWire. The cpal
+# `pipewire` feature is omitted because libspa-sys needs libclang for bindgen,
+# which the packaged build image does not ship.
+cpal = "=0.18.1"
