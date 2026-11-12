@@ -1284,6 +1284,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "deskwaifu-asr-domain"
+version = "0.1.0"
+dependencies = [
+ "futures-util",
+ "serde_json",
+ "tokio",
+ "tokio-tungstenite",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "deskwaifu-audio-domain"
 version = "0.1.0"
 
@@ -1324,6 +1336,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "deskwaifu-cubism-core"
+version = "0.1.0"
+
+[[package]]
 name = "deskwaifu-ipc"
 version = "0.1.0"
 dependencies = [
@@ -1334,6 +1350,15 @@ dependencies = [
 [[package]]
 name = "deskwaifu-model-domain"
 version = "0.1.0"
+
+[[package]]
+name = "deskwaifu-runtime"
+version = "0.1.0"
+dependencies = [
+ "deskwaifu-cubism-core",
+ "deskwaifu-ipc",
+ "serde_json",
+]
 
 [[package]]
 name = "deskwaifu-speech-domain"
@@ -6016,6 +6041,10 @@ name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
+
+[[package]]
+name = "voice-domain"
+version = "0.1.0"
 
 [[package]]
 name = "vswhom"
