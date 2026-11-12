@@ -46,6 +46,11 @@ class AurPackagingTest(unittest.TestCase):
         self.assertIn("'cargo'", pkgbuild)
         self.assertIn('-DCUBISM_SDK_ROOT="$srcdir/$_sdk"', pkgbuild)
 
+    def test_rust_runtime_build_tracks_catalog_sources(self):
+        cmake = (Path(__file__).resolve().parents[1] / "CMakeLists.txt").read_text()
+        self.assertIn('${CMAKE_CURRENT_SOURCE_DIR}/rust/model-domain/src/*.rs', cmake)
+        self.assertIn('${CMAKE_CURRENT_SOURCE_DIR}/rust/model-domain/Cargo.toml', cmake)
+
     def test_readme_is_installed_under_package_documentation_directory(self):
         pkgbuild = (Path(__file__).resolve().parents[1] / "packaging/arch/deskwaifu-git/PKGBUILD").read_text()
         readme_install = re.search(r'^\s*install -Dm644 .*README\.md" "([^"]+)"', pkgbuild, re.M)

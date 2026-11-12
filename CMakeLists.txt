@@ -20,7 +20,9 @@ file(GLOB_RECURSE DESKWAIFU_RUST_SOURCES CONFIGURE_DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/rust/cubism-core/*.rs"
   "${CMAKE_CURRENT_SOURCE_DIR}/rust/cubism-core/Cargo.toml"
   "${CMAKE_CURRENT_SOURCE_DIR}/rust/ipc/*.rs"
-  "${CMAKE_CURRENT_SOURCE_DIR}/rust/ipc/Cargo.toml")
+  "${CMAKE_CURRENT_SOURCE_DIR}/rust/ipc/Cargo.toml"
+  "${CMAKE_CURRENT_SOURCE_DIR}/rust/model-domain/src/*.rs"
+  "${CMAKE_CURRENT_SOURCE_DIR}/rust/model-domain/Cargo.toml")
 set(DESKWAIFU_RUST_TARGET_DIR "${CMAKE_BINARY_DIR}/cargo-target")
 set(DESKWAIFU_RUST_BINARY "${DESKWAIFU_RUST_TARGET_DIR}/release/deskwaifu-rust")
 add_custom_command(OUTPUT "${DESKWAIFU_RUST_BINARY}"
