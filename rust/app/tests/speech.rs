@@ -172,13 +172,15 @@ fn fixture() -> Option<PathBuf> {
 }
 
 /// What the peer does with the connection the runtime opens.
-#[derive(Clone, Copy)]
 enum Peer {
     /// Completes one synthesis of `frames` mono PCM16 frames at 24 kHz.
     Synthesize(usize),
     /// Accepts the handshake and then hangs, so the playback stays in
     /// `Preparing` until the runtime cancels it.
     Hold,
+    /// Starts the silent sink, then keeps synthesis open until the client
+    /// cancels it after a local audio failure. Reports that observed close.
+    AudioFailure(Sender<()>),
     /// Reports the MiniMax authentication rejection without a handshake message.
     Reject,
 }
@@ -244,6 +246,7 @@ async fn serve_peer(mut ws: WebSocketStream<tokio::net::TcpStream>, peer: Peer) 
         send(&mut ws, "connected_success", json!({})).await;
         assert_eq!(incoming(&mut ws).await["event"], "task_start");
     }
+    let mut closed = None;
     match peer {
         Peer::Synthesize(frames) => {
             send(&mut ws, "task_started", json!({})).await;
@@ -265,14 +268,30 @@ async fn serve_peer(mut ws: WebSocketStream<tokio::net::TcpStream>, peer: Peer) 
             .unwrap();
         }
         Peer::Hold => {}
+        Peer::AudioFailure(notify) => {
+            send(&mut ws, "task_started", json!({})).await;
+            // No task_finished, error, or server close: only the runtime's local
+            // audio failure can end this connection before its 30 s timeout.
+            closed = Some(notify);
+        }
     }
     // Hold the socket until the runtime drops it, so a cancelled playback's
     // socket really closes. A `Synthesize` peer ends on the runtime's own close.
-    while let Some(message) = ws.next().await {
-        match message {
-            Ok(Message::Close(_)) | Err(_) => break,
-            Ok(_) => continue,
+    let wait_for_close = async {
+        while let Some(message) = ws.next().await {
+            match message {
+                Ok(Message::Close(_)) | Err(_) => break,
+                Ok(_) => continue,
+            }
         }
+    };
+    if let Some(notify) = closed {
+        tokio::time::timeout(TIMEOUT, wait_for_close)
+            .await
+            .expect("local audio failure did not close the synthesis connection");
+        notify.send(()).unwrap();
+    } else {
+        wait_for_close.await;
     }
 }
 
@@ -534,6 +553,41 @@ fn a_service_rejection_is_reported_and_leaves_the_machine_idle() {
     assert_eq!(
         runtime.request(json!({"command":"get_speech_status"}))["configured"],
         true
+    );
+    runtime.quit();
+    server.join();
+}
+
+#[test]
+fn a_local_audio_failure_closes_the_unfinished_synthesis_connection() {
+    let Some(model) = fixture() else { return };
+    let mut server = Server::start();
+    let (closed, observed_close) = std::sync::mpsc::channel();
+    server.expect(Peer::AudioFailure(closed));
+    let runtime = Runtime::start(
+        &model,
+        Some(&server.endpoint),
+        &[("DESKWAIFU_SPEECH_TEST_SINK_FAIL", Path::new("1"))],
+    );
+    runtime.configure();
+    assert_eq!(
+        runtime.request(json!({"command":"speak","text":"hello"}))["ok"],
+        true
+    );
+    let failed = runtime.wait_status(|status| status["last_error"].is_string());
+    assert_eq!(failed["last_error"], "音频输出设备发生错误");
+    assert_eq!(failed["active"], false);
+    assert_eq!(failed["state"], "idle");
+    // Checking status alone misses the leak: the machine was already idle even
+    // when its source receiver kept the WebSocket task alive. Require the peer
+    // to observe closure before quit/replacement can cancel that task for us.
+    observed_close
+        .recv_timeout(TIMEOUT)
+        .expect("idle playback retained its unfinished synthesis connection");
+    assert_eq!(
+        runtime.request(json!({"command":"get_speech_status"})),
+        failed,
+        "the runtime remains alive with the same failed playback status"
     );
     runtime.quit();
     server.join();

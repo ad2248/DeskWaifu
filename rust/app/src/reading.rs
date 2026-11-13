@@ -133,10 +133,7 @@ enum Wait {
     Ocr(String),
     /// The speech playback this run started.
     Speak {
-        /// The most recently accepted speech id before this run asked for one.
-        before: u64,
-        /// The id the worker reported for this run's request, once observed.
-        ours: Option<u64>,
+        token: u64,
     },
 }
 
@@ -363,49 +360,28 @@ impl Reading {
             let Some(text) = self.text.take() else {
                 return self.fail(NO_TEXT);
             };
-            let before = speech.status()["id"].as_u64().unwrap_or(0);
-            if let Err(error) = speech.speak(&json!({"text": text})) {
-                return self.fail(&error);
+            match speech.speak_with_token(&json!({"text": text})) {
+                Ok(token) => self.wait = Wait::Speak { token },
+                Err(error) => return self.fail(&error),
             }
-            self.wait = Wait::Speak { before, ours: None };
             return;
         }
-        let Wait::Speak { before, ours } = self.wait else {
+        let Wait::Speak { token } = self.wait else {
             return self.fail(SPEECH_REPLACED);
         };
         let status = speech.status();
-        let id = status["id"].as_u64().unwrap_or(0);
         let active = status["active"].as_bool().unwrap_or(false);
         let error = status["last_error"]
             .as_str()
             .filter(|text| !text.is_empty());
+        if speech.current_request_token() != token {
+            return self.fail(SPEECH_REPLACED);
+        }
         if let Some(error) = error {
             return self.fail(error);
         }
-        if let Some(ours) = ours {
-            if !active && id == ours {
-                return self.complete();
-            }
-            // Another client replaced our playback (`speak` with `replace:true`,
-            // or a fresh `speak`). Our id can never come back, so waiting for it
-            // would stall this run until the step timeout; the C++ pipeline ended
-            // with the same reason when its speak request was cancelled.
-            if id != ours && id != before {
-                return self.fail(SPEECH_REPLACED);
-            }
-            return;
-        }
-        // The worker had not reported the new id yet. If it reported and the
-        // playback already finished within one tick, the id moved on without
-        // this run ever seeing an active speech.
-        if id != before && !active {
-            return self.complete();
-        }
-        if id != before {
-            self.wait = Wait::Speak {
-                before,
-                ours: Some(id),
-            };
+        if !active {
+            self.complete();
         }
     }
 
@@ -687,6 +663,38 @@ fn unique_suffix() -> Result<u64, String> {
 mod tests {
     use super::*;
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+    #[test]
+    fn replacement_before_accepted_ends_reading_without_following_the_new_speech() {
+        let root = tempfile::tempdir().unwrap();
+        let mut speech = crate::speech::tests::speech_without_worker(root.path());
+        let mut reading = Reading::new();
+        reading.text = Some("recognized clipboard text".into());
+        reading.enter(State::Speaking, Wait::None);
+        reading.speech_step(&mut speech);
+        let Wait::Speak { token } = reading.wait else {
+            panic!("reading must retain the submitted speech token");
+        };
+        // No worker exists to send Accepted: both ids remain zero throughout
+        // the replacement window that the old id-based tracking missed.
+        assert_eq!(speech.status()["id"], 0);
+        assert_eq!(speech.status()["active"], true);
+        speech
+            .speak(&json!({"text": "external replacement", "replace": true}))
+            .unwrap();
+        assert_ne!(speech.current_request_token(), token);
+        assert_eq!(speech.status()["id"], 0);
+        reading.speech_step(&mut speech);
+        assert_eq!(
+            reading.status(),
+            json!({
+                "ok": true, "state": "idle", "error": SPEECH_REPLACED,
+            })
+        );
+        // Fail immediately while the replacement is still pending, not after
+        // observing its completion and incorrectly reporting reading success.
+        assert_eq!(speech.status()["active"], true);
+    }
 
     #[test]
     fn a_precreated_predictable_directory_symlink_is_not_reused() {

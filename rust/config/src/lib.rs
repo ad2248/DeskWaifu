@@ -47,6 +47,12 @@ impl CredentialStore {
         read_object(&path).map(|_| ())
     }
 
+    /// Read one credential value without creating an absent file.
+    pub fn get(&self, name: &str) -> Result<Option<Value>, StoreError> {
+        let path = self.resolved()?;
+        Ok(read_object(&path)?.remove(name))
+    }
+
     /// Set or clear a credential. Empty values remove the named field.
     pub fn set(&self, name: &str, credential: &str) -> Result<(), StoreError> {
         validate_credential(credential)?;

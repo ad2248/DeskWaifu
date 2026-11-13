@@ -62,8 +62,6 @@ use deskwaifu_speech_domain::{
 };
 use serde_json::{json, Value};
 use std::env;
-use std::fs;
-use std::io::ErrorKind;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -156,20 +154,21 @@ impl Mailbox {
 /// One unit of work for the worker thread: a validated request and the
 /// credential to use for it.
 struct Command {
+    token: u64,
     text: String,
     key: String,
 }
 
 /// What the worker reports back to the IPC loop.
 enum Report {
-    /// The state machine allocated an id for an accepted request.
-    Accepted(u64),
-    /// The state machine entered a state.
-    StateChanged(State),
-    /// The active playback ended; exactly one per accepted id.
-    Finished,
-    /// The active playback failed; the text never contains the credential.
-    Error(String),
+    /// The state machine allocated an id for a request token.
+    Accepted { token: u64, id: u64 },
+    /// The state machine entered a state for a request token.
+    StateChanged { token: u64, state: State },
+    /// A request ended; exactly one per accepted token.
+    Finished { token: u64 },
+    /// A request failed; the text never contains the credential.
+    Error { token: u64, message: String },
 }
 
 /// The settings and speech state the IPC loop owns. Audio and network work lives
@@ -185,6 +184,8 @@ pub struct Speech {
     state: State,
     active: bool,
     last_error: Option<String>,
+    request_token: u64,
+    next_token: u64,
 }
 
 impl Speech {
@@ -208,6 +209,8 @@ impl Speech {
             state: State::Idle,
             active: false,
             last_error: None,
+            request_token: 0,
+            next_token: 1,
         }
     }
 
@@ -263,6 +266,10 @@ impl Speech {
     /// worker. Rejections use the C++ texts and never disturb the current
     /// playback.
     pub fn speak(&mut self, args: &Value) -> Result<Value, String> {
+        self.speak_with_token(args).map(|_| json!({"ok": true}))
+    }
+
+    pub(crate) fn speak_with_token(&mut self, args: &Value) -> Result<u64, String> {
         let text = args
             .get("text")
             .and_then(Value::as_str)
@@ -294,7 +301,10 @@ impl Speech {
         if self.active && !replace {
             return Err(BUSY.into());
         }
+        let token = self.next_token;
+        self.next_token = self.next_token.wrapping_add(1).max(1);
         let command = Command {
+            token,
             text: text.to_owned(),
             key: self.api_key.clone(),
         };
@@ -309,7 +319,8 @@ impl Speech {
         // one, which `get_speech_status` resolves within a tick.
         self.active = true;
         self.last_error = None;
-        Ok(json!({"ok": true}))
+        self.request_token = token;
+        Ok(token)
     }
 
     /// `get_speech_status`: the loop-side view, drained first so a client never
@@ -336,16 +347,36 @@ impl Speech {
         }
         for report in reports {
             match report {
-                Report::Accepted(id) => {
-                    self.id = id;
-                    self.active = true;
-                    self.last_error = None;
+                Report::Accepted { token, id } => {
+                    if token == self.request_token {
+                        self.id = id;
+                        self.active = true;
+                        self.last_error = None;
+                    }
                 }
-                Report::StateChanged(state) => self.state = state,
-                Report::Finished => self.active = false,
-                Report::Error(message) => self.last_error = Some(message),
+                Report::StateChanged { token, state } => {
+                    if token == self.request_token {
+                        self.state = state;
+                    }
+                }
+                Report::Finished { token } => {
+                    if token == self.request_token {
+                        self.active = false;
+                    }
+                }
+                Report::Error { token, message } => {
+                    if token == self.request_token {
+                        self.active = false;
+                        self.last_error = Some(message);
+                    }
+                }
             }
         }
+    }
+
+    pub(crate) fn current_request_token(&mut self) -> u64 {
+        self.poll();
+        self.request_token
     }
 
     /// Re-reads the private file. A failed read keeps the cached key, exactly
@@ -384,24 +415,17 @@ fn config_root() -> PathBuf {
 /// Reads `api_key` with the C++ `SpeechSettings::Decode` rules: a missing file or
 /// field is an empty key, while a value that is not a JSON string, is longer than
 /// 4096 bytes or contains an ASCII control character fails the whole read.
-/// `CredentialStore` exposes only `read`/`set`, so the value is parsed from
-/// [`CredentialStore::path`] with the crate's duplicate-key-rejecting parser.
+/// CredentialStore parses comments and duplicate keys consistently for both
+/// reads and updates; this layer adds the C++ speech setting's string validation.
 fn read_key(store: &CredentialStore) -> Result<String, ()> {
-    let bytes = match fs::read(store.path()) {
-        Ok(bytes) => bytes,
-        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(String::new()),
-        Err(_) => return Err(()),
-    };
-    let text = String::from_utf8(bytes).map_err(|_| ())?;
-    let document = ConfigDocument::parse(&text, false).map_err(|_| ())?;
-    let Some(raw) = document.values.get("api_key") else {
+    let Some(value) = store.get("api_key").map_err(|_| ())? else {
         return Ok(String::new());
     };
-    let key: String = serde_json::from_str(raw).map_err(|_| ())?;
+    let key = value.as_str().ok_or(())?;
     if key.len() > 4096 || key.bytes().any(|byte| byte.is_ascii_control()) {
         return Err(());
     }
-    Ok(key)
+    Ok(key.to_owned())
 }
 
 struct Worker {
@@ -478,6 +502,9 @@ struct SilentFactory;
 
 impl SinkFactory for SilentFactory {
     fn open(&mut self, source: SourceFormat, queue: Shared) -> Result<Box<dyn Sink>, AudioError> {
+        if env::var_os("DESKWAIFU_SPEECH_TEST_SINK_FAIL").is_some_and(|value| value == "1") {
+            return Err(AudioError::NO_DEVICE);
+        }
         let format = DeviceFormat {
             sample_rate: source.sample_rate,
             channels: 2,
@@ -554,6 +581,7 @@ fn serve(endpoint: &str, mailbox: &Mailbox, reports: &Sender<Report>) {
     let mut machine = Player::new();
     let mut audio = AudioPlayer::with_factory(device());
     let mut source: Option<Events> = None;
+    let mut active_token = 0u64;
     loop {
         // While anything is in flight, wake every `POLL` (the C++ pump cadence);
         // when truly idle, wait longer so the thread does not wake for nothing.
@@ -567,13 +595,21 @@ fn serve(endpoint: &str, mailbox: &Mailbox, reports: &Sender<Report>) {
         if mailbox.closed() && command.is_none() {
             break;
         }
-        if let Some(Command { text, key }) = command {
+        if let Some(Command { token, text, key }) = command {
             // A replacing request finishes the old id before allocating a new
             // one; the old audio stream is stopped and the old receiver dropped,
             // which cancels its socket task.
             let previous = machine.id();
             if let Some(id) = machine.speak(&text) {
-                settle(&mut machine, &mut audio, previous, reports);
+                settle(
+                    &mut machine,
+                    &mut audio,
+                    previous,
+                    active_token,
+                    token,
+                    reports,
+                );
+                active_token = token;
                 source = Some(runtime.block_on(synthesize(
                     endpoint.to_owned(),
                     key,
@@ -608,14 +644,28 @@ fn serve(endpoint: &str, mailbox: &Mailbox, reports: &Sender<Report>) {
                     Ok(Some(Err(error))) => {
                         let previous = machine.id();
                         fail(&mut machine, PlayerError::Source(error));
-                        settle(&mut machine, &mut audio, previous, reports);
+                        settle(
+                            &mut machine,
+                            &mut audio,
+                            previous,
+                            active_token,
+                            active_token,
+                            reports,
+                        );
                         ended = true;
                         break;
                     }
                 };
                 let previous = machine.id();
                 apply(&mut machine, &mut audio, event);
-                settle(&mut machine, &mut audio, previous, reports);
+                settle(
+                    &mut machine,
+                    &mut audio,
+                    previous,
+                    active_token,
+                    active_token,
+                    reports,
+                );
             }
         }
         if ended {
@@ -627,14 +677,28 @@ fn serve(endpoint: &str, mailbox: &Mailbox, reports: &Sender<Report>) {
             match event {
                 AudioEvent::PlaybackStarted(id) => machine.started(id),
                 AudioEvent::Drained(id) => machine.drained(id),
-                AudioEvent::Failed(id, error) => machine.failed(id, audio_error(error.code)),
+                AudioEvent::Failed(id, error) => {
+                    machine.failed(id, audio_error(error.code));
+                    source = None;
+                }
             }
-            settle(&mut machine, &mut audio, previous, reports);
+            settle(
+                &mut machine,
+                &mut audio,
+                previous,
+                active_token,
+                active_token,
+                reports,
+            );
         }
+        // Dropping the receiver only wakes the source task's `tx.closed()`.
+        // A current-thread runtime must still run that task to release its socket,
+        // including after an audio failure leaves this worker otherwise idle.
+        runtime.block_on(async { tokio::time::sleep(POLL).await });
     }
     // Never leave a stream running or an id current once the channel closes.
     machine.stop();
-    emit(&mut machine, reports);
+    emit(&mut machine, active_token, active_token, reports);
     let id = audio.id();
     audio.stop(id);
 }
@@ -691,9 +755,11 @@ fn settle(
     machine: &mut Player,
     audio: &mut AudioPlayer<Device>,
     previous: u64,
+    previous_token: u64,
+    token: u64,
     reports: &Sender<Report>,
 ) {
-    emit(machine, reports);
+    emit(machine, previous_token, token, reports);
     let current = machine.id();
     if previous != 0 && previous != current {
         audio.stop(previous);
@@ -702,13 +768,25 @@ fn settle(
 
 /// Turns the machine's outcomes into loop reports. `Finished` carries no id
 /// because the loop tracks exactly one active speech.
-fn emit(machine: &mut Player, reports: &Sender<Report>) {
+fn emit(machine: &mut Player, previous_token: u64, token: u64, reports: &Sender<Report>) {
     for outcome in machine.take_outcomes() {
         let report = match outcome {
-            Outcome::Accepted { id } => Report::Accepted(id),
-            Outcome::StateChanged(state) => Report::StateChanged(state),
-            Outcome::Finished { .. } => Report::Finished,
-            Outcome::Error { error, .. } => Report::Error(message(error)),
+            Outcome::Accepted { id } => Report::Accepted { token, id },
+            Outcome::StateChanged(state) => Report::StateChanged {
+                token: if state == State::Idle {
+                    previous_token
+                } else {
+                    token
+                },
+                state,
+            },
+            Outcome::Finished { .. } => Report::Finished {
+                token: previous_token,
+            },
+            Outcome::Error { error, .. } => Report::Error {
+                token,
+                message: message(error),
+            },
         };
         let _ = reports.send(report);
     }
@@ -742,8 +820,128 @@ pub fn default_endpoint() -> &'static str {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+    use std::fs;
+
+    /// A configured command surface with no network, audio, or worker thread.
+    pub(crate) fn speech_without_worker(root: &std::path::Path) -> Speech {
+        speech_with_reports(root).0
+    }
+
+    fn speech_with_reports(root: &std::path::Path) -> (Speech, Sender<Report>) {
+        let store = CredentialStore::new(root, "speech");
+        store.set("api_key", "test-key").unwrap();
+        let (outgoing, reports) = mpsc::channel();
+        let speech = Speech {
+            store,
+            endpoint: "ws://unused.invalid".into(),
+            api_key: "test-key".into(),
+            configured: true,
+            settings_error: false,
+            worker: Some(Worker {
+                mailbox: Arc::new(Mailbox::new()),
+                reports,
+                thread: None,
+            }),
+            id: 0,
+            state: State::Idle,
+            active: false,
+            last_error: None,
+            request_token: 0,
+            next_token: 1,
+        };
+        (speech, outgoing)
+    }
+
+    #[test]
+    fn stale_reports_cannot_release_or_overwrite_a_pending_replacement() {
+        let root = tempfile::tempdir().unwrap();
+        let (mut speech, reports) = speech_with_reports(root.path());
+        let a = speech.speak_with_token(&json!({"text": "A"})).unwrap();
+        let b = speech
+            .speak_with_token(&json!({"text": "B", "replace": true}))
+            .unwrap();
+        assert_ne!(a, b);
+        for report in [
+            Report::Accepted { token: a, id: 91 },
+            Report::StateChanged {
+                token: a,
+                state: State::Playing,
+            },
+            Report::Error {
+                token: a,
+                message: "stale failure".into(),
+            },
+            Report::Finished { token: a },
+        ] {
+            reports.send(report).unwrap();
+            assert_eq!(
+                speech.status(),
+                json!({
+                    "ok": true, "active": true, "id": 0, "state": "idle",
+                    "configured": true, "last_error": null,
+                })
+            );
+            assert_eq!(speech.current_request_token(), b);
+            assert_eq!(speech.speak(&json!({"text": "C"})), Err(BUSY.into()));
+            let slot = speech.worker.as_ref().unwrap().mailbox.lock();
+            let command = slot.as_ref().unwrap();
+            assert_eq!(command.token, b);
+            assert_eq!(command.text, "B");
+        }
+        // Reports for B must still apply; ignoring every report is not a fix.
+        reports.send(Report::Accepted { token: b, id: 92 }).unwrap();
+        reports
+            .send(Report::StateChanged {
+                token: b,
+                state: State::Preparing,
+            })
+            .unwrap();
+        assert_eq!(speech.status()["id"], 92);
+        assert_eq!(speech.status()["state"], "preparing");
+        reports.send(Report::Finished { token: b }).unwrap();
+        assert_eq!(speech.status()["active"], false);
+    }
+
+    #[test]
+    fn emit_preserves_token_ownership_across_replacement_and_failure() {
+        let (sender, reports) = mpsc::channel();
+        let mut machine = Player::new();
+        let a = 11;
+        let b = 22;
+        let first = machine.speak("A").unwrap();
+        emit(&mut machine, 0, a, &sender);
+        assert!(
+            matches!(reports.try_recv().unwrap(), Report::Accepted { token, id } if token == a && id == first)
+        );
+        assert!(
+            matches!(reports.try_recv().unwrap(), Report::StateChanged { token, state: State::Preparing } if token == a)
+        );
+        assert!(reports.try_recv().is_err());
+
+        let second = machine.speak("B").unwrap();
+        emit(&mut machine, a, b, &sender);
+        assert!(matches!(reports.try_recv().unwrap(), Report::Finished { token } if token == a));
+        assert!(
+            matches!(reports.try_recv().unwrap(), Report::Accepted { token, id } if token == b && id == second)
+        );
+        assert!(
+            matches!(reports.try_recv().unwrap(), Report::StateChanged { token, state: State::Preparing } if token == b)
+        );
+        assert!(reports.try_recv().is_err());
+
+        machine.failed(second, PlayerError::AudioDevice);
+        emit(&mut machine, b, b, &sender);
+        assert!(
+            matches!(reports.try_recv().unwrap(), Report::Error { token, message: text } if token == b && text == message(PlayerError::AudioDevice))
+        );
+        assert!(matches!(reports.try_recv().unwrap(), Report::Finished { token } if token == b));
+        assert!(
+            matches!(reports.try_recv().unwrap(), Report::StateChanged { token, state: State::Idle } if token == b)
+        );
+        assert!(reports.try_recv().is_err());
+    }
 
     #[test]
     fn state_names_match_the_client_vocabulary() {
@@ -751,6 +949,38 @@ mod tests {
         assert_eq!(state_name(State::Preparing), "preparing");
         assert_eq!(state_name(State::Playing), "playing");
         assert_eq!(state_name(State::Draining), "draining");
+    }
+
+    #[test]
+    fn credential_reader_accepts_cpp_json_comments() {
+        let root = tempfile::tempdir().unwrap();
+        let store = CredentialStore::new(root.path(), "speech");
+        fs::create_dir_all(store.path().parent().unwrap()).unwrap();
+        fs::write(
+            store.path(),
+            br#"{
+                // The legacy C++ parser accepts comments.
+                "api_key": "key//part" /* retained as a string */
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(read_key(&store).unwrap(), "key//part");
+    }
+
+    #[test]
+    fn credential_reader_still_rejects_duplicate_keys_with_comments() {
+        let root = tempfile::tempdir().unwrap();
+        let store = CredentialStore::new(root.path(), "speech");
+        fs::create_dir_all(store.path().parent().unwrap()).unwrap();
+        fs::write(
+            store.path(),
+            br#"{
+                "api_key": "first", // comments must not bypass duplicate checks
+                "api_\u006bey": "second"
+            }"#,
+        )
+        .unwrap();
+        assert!(read_key(&store).is_err());
     }
 
     #[test]
