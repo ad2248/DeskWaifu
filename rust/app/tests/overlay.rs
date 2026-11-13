@@ -1219,6 +1219,86 @@ fn overlay_tap_dispatches_real_expressions_on_a_model_without_hit_areas() {
     runtime.quit();
 }
 
+/// An Add expression is a layer over the motion base, not a new base for the
+/// next frame. Exercise Scene::update through real taps, SDK blending and drawing.
+#[test]
+fn overlay_add_expression_does_not_accumulate_across_frames() {
+    if !live_test_enabled("overlay_add_expression_does_not_accumulate_across_frames") {
+        return;
+    }
+    let _compositor_lock = lock_compositor();
+    let compositor = Compositor::spawn();
+    let fixture = fixture();
+    let dir = tempfile::tempdir().unwrap();
+    let target = model_dir_without_hit_areas(dir.path(), "AddExpression", &fixture);
+    let model_json = target.join(fixture.file_name().unwrap());
+    let mut document: Value = serde_json::from_slice(&fs::read(&model_json).unwrap()).unwrap();
+    // Keep Haru's real moc/textures, but isolate expression blending from motions
+    // and eye blink. Do not use set_parameter: its persistent override would mask
+    // the expression output and make this regression pass for the wrong reason.
+    document["FileReferences"]["Motions"] = json!({});
+    document.as_object_mut().unwrap().remove("Groups");
+    document["FileReferences"]["Expressions"] =
+        json!([{"Name":"AddAngle","File":"add-angle.exp3.json"}]);
+    fs::write(model_json, serde_json::to_vec(&document).unwrap()).unwrap();
+    fs::write(
+        target.join("add-angle.exp3.json"),
+        serde_json::to_vec(&json!({
+            "Type":"Live2D Expression", "FadeInTime":0.0, "FadeOutTime":0.0,
+            "Parameters":[{"Id":"ParamAngleX","Value":3.0,"Blend":"Add"}]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let runtime = Runtime::start(
+        &compositor,
+        &["--models-dir".as_ref(), dir.path().as_os_str()],
+    );
+    let before = runtime.settled_frame(Some("ParamAngleX"));
+    let base = before["parameter_value"].as_f64().unwrap();
+    let mut fake = fake_input::FakeInput::new(compositor.connect());
+    fake.move_absolute(1, 1);
+    let mut taps = 0;
+    for started in 1..=3 {
+        let tapped = tap_opaque_point(&runtime, &mut fake, taps, |frame| {
+            // With the identity view, y < height/2 is the fallback Head hit:
+            // it starts the expression without trying a deliberately absent motion.
+            region_rects(frame)
+                .into_iter()
+                .filter(|&(_, y, _, h)| y + h / 2 < count(frame, "height") as i32 / 2)
+                .max_by_key(|&(_, _, w, h)| w * h)
+                .map(|(x, y, w, h)| (x + w / 2, y + h / 2))
+                .expect("Haru must have opaque head pixels above the model midline")
+        });
+        taps = count(&tapped, "taps");
+        assert_eq!(count(&tapped, "expressions_started"), started, "{tapped}");
+        assert_eq!(tapped["last_hit"], "Head", "{tapped}");
+        assert_eq!(tapped["interaction_error"], Value::Null, "{tapped}");
+        let mut checksum = None;
+        let mut previous_frame = count(&before, "frames_drawn");
+        for _ in 0..12 {
+            let frame = runtime.settled_frame(Some("ParamAngleX"));
+            let value = frame["parameter_value"].as_f64().unwrap();
+            assert!(
+                (value - (base + 3.0)).abs() < 1e-5,
+                "Add must apply once per frame, not feed back into the base: {frame}"
+            );
+            assert!(count(&frame, "frames_drawn") > previous_frame, "{frame}");
+            previous_frame = count(&frame, "frames_drawn");
+            let pixels = count(&frame, "pixel_checksum");
+            assert_ne!(pixels, count(&before, "pixel_checksum"), "{frame}");
+            if let Some(expected) = checksum {
+                assert_eq!(
+                    pixels, expected,
+                    "the isolated expression pose must stay stable: {frame}"
+                );
+            }
+            checksum = Some(pixels);
+        }
+    }
+    runtime.quit();
+}
+
 /// The centre of the tallest input-region rectangle of a reply, so a click lands
 /// on opaque model pixels rather than the transparent margin.
 fn largest_rect_centre(reply: &Value) -> (i32, i32) {

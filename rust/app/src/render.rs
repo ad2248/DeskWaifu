@@ -265,13 +265,19 @@ impl Interaction {
     /// `CropInteraction::Drag(start, Model, dx, dy, height)`, which ends in
     /// `InputController::Drag`. This runtime has no transform editor, so the same
     /// offset is applied to the in-memory `View` and nothing is persisted.
-    fn moved(&mut self, x: i32, y: i32, height: i32) -> Option<ViewState> {
+    fn moved(&mut self, x: i32, y: i32, width: i32, height: i32) -> Option<ViewState> {
         let press = self.press.as_mut()?;
         if !press.dragged && is_tap(press.x, press.y, x, y) {
             return None;
         }
         press.dragged = true;
-        Some(drag_transform(press.view, x - press.x, y - press.y, height))
+        Some(drag_transform(
+            press.view,
+            x - press.x,
+            y - press.y,
+            width,
+            height,
+        ))
     }
 
     /// Applies the C++ `InputController::Release` rules to one left release and
@@ -403,16 +409,15 @@ pub fn fallback_part(model_y: f32) -> Part {
     }
 }
 
-/// The C++ `InputController::Drag`: `dx`/`dy` surface pixels become clip-space
-/// translation, `2 / height / scale` per pixel, with `y` flipped.
-pub fn drag_transform(view: ViewState, dx: i32, dy: i32, height: i32) -> ViewState {
-    if height <= 0 || view.zoom <= 0.0 {
+/// Surface-pixel drag offsets mapped to clip-space translation, matching the
+/// viewport axes of `Scene::mvp`; y is flipped because surface coordinates point down.
+pub fn drag_transform(view: ViewState, dx: i32, dy: i32, width: i32, height: i32) -> ViewState {
+    if width <= 0 || height <= 0 {
         return view;
     }
-    let units_per_pixel = 2.0 / height as f32 / view.zoom;
     ViewState {
-        x: view.x + dx as f32 * units_per_pixel,
-        y: view.y - dy as f32 * units_per_pixel,
+        x: view.x + 2.0 * dx as f32 / width as f32,
+        y: view.y - 2.0 * dy as f32 / height as f32,
         ..view
     }
 }
@@ -722,6 +727,12 @@ impl Scene {
                 .update(delta)
                 .map_err(|e| format!("tap motion update failed: {e}"))?;
         }
+        // Save the motion-updated base before expressions blend on top. Saving
+        // after expression update would feed an additive expression's output back
+        // into the next frame and accumulate it indefinitely.
+        model
+            .save_parameters()
+            .map_err(|e| format!("cannot save parameters: {e}"))?;
         if let Some(manager) = expressions {
             manager
                 .update(delta)
@@ -732,9 +743,6 @@ impl Scene {
                 .update(delta)
                 .map_err(|e| format!("eye blink update failed: {e}"))?;
         }
-        model
-            .save_parameters()
-            .map_err(|e| format!("cannot save parameters: {e}"))?;
         // IPC parameter writes are re-applied after the base layer restore, so a
         // written value survives every frame until it is written again.
         for &(index, value) in overrides.iter() {
@@ -1107,10 +1115,12 @@ impl Session {
             match event {
                 PointerEvent::Entered { x, y } | PointerEvent::Moved { x, y } => {
                     self.interaction.cursor = Some((x, y));
-                    if let Some(dragged) =
-                        self.interaction
-                            .moved(x as i32, y as i32, self.size.1 as i32)
-                    {
+                    if let Some(dragged) = self.interaction.moved(
+                        x as i32,
+                        y as i32,
+                        self.size.0 as i32,
+                        self.size.1 as i32,
+                    ) {
                         // The C++ `PointerButton` refuses to start a drag while
                         // hidden and `ModelWindowState::CancelGesture` clears the
                         // recogniser, so a hidden model neither moves nor keeps a
@@ -1742,10 +1752,15 @@ mod tests {
         let start = view();
         interaction.press(100, 100, start);
         // Inside the threshold the press is still a tap.
-        assert_eq!(interaction.moved(104, 106, HEIGHT as i32), None);
+        assert_eq!(
+            interaction.moved(104, 106, WIDTH as i32, HEIGHT as i32),
+            None
+        );
         // Beyond it the model follows the C++ `InputController::Drag` math.
-        let dragged = interaction.moved(130, 100, HEIGHT as i32).unwrap();
-        assert_eq!(dragged.x, 30.0 * 2.0 / HEIGHT as f32);
+        let dragged = interaction
+            .moved(130, 100, WIDTH as i32, HEIGHT as i32)
+            .unwrap();
+        assert_eq!(dragged.x, 30.0 * 2.0 / WIDTH as f32);
         assert_eq!(dragged.y, 0.0);
         assert_eq!(
             interaction.release(1_000, 130, 100).0,
@@ -1764,10 +1779,12 @@ mod tests {
             ..view()
         };
         interaction.press(100, 100, start);
-        interaction.moved(120, 100, HEIGHT as i32);
+        interaction.moved(120, 100, WIDTH as i32, HEIGHT as i32);
         // A second motion re-derives from `start`, so the offsets never accumulate.
-        let dragged = interaction.moved(140, 100, HEIGHT as i32).unwrap();
-        let step = 40.0 * 2.0 / HEIGHT as f32;
+        let dragged = interaction
+            .moved(140, 100, WIDTH as i32, HEIGHT as i32)
+            .unwrap();
+        let step = 40.0 * 2.0 / WIDTH as f32;
         assert!((dragged.x - (0.25 + step)).abs() < 1e-6);
         assert!((dragged.y - (-0.5)).abs() < 1e-6);
     }
@@ -1829,17 +1846,21 @@ mod tests {
     }
 
     #[test]
-    fn a_drag_moves_with_the_surface_height_and_zoom() {
-        let dragged = drag_transform(view(), 10, -10, 480);
-        assert!((dragged.x - 10.0 * 2.0 / 480.0).abs() < 1e-6);
+    fn a_drag_maps_each_axis_to_its_viewport_dimension_without_zoom_scaling() {
+        let dragged = drag_transform(view(), 10, -10, 640, 480);
+        assert!((dragged.x - 10.0 * 2.0 / 640.0).abs() < 1e-6);
         // A downward surface motion moves the model down in clip space.
         assert!((dragged.y - 10.0 * 2.0 / 480.0).abs() < 1e-6);
-        // Invalid dimensions and a non-positive zoom keep the transform.
-        assert_eq!(drag_transform(view(), 10, 10, 0), view());
-        let invalid = ViewState {
-            zoom: 0.0,
+        let zoomed = ViewState {
+            zoom: 2.0,
             ..view()
         };
-        assert_eq!(drag_transform(invalid, 10, 10, 480), invalid);
+        assert_eq!(
+            drag_transform(zoomed, 10, 10, 640, 480).x,
+            zoomed.x + 20.0 / 640.0
+        );
+        // Invalid dimensions keep the transform.
+        assert_eq!(drag_transform(view(), 10, 10, 0, 480), view());
+        assert_eq!(drag_transform(view(), 10, 10, 640, 0), view());
     }
 }
