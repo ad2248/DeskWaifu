@@ -857,6 +857,68 @@ fn a_trigger_while_speaking_cancels_and_a_late_completion_does_not_resume() {
 }
 
 #[test]
+fn replacing_speech_ends_reading_promptly_while_the_replacement_is_active() {
+    let Some(model) = fixture() else { return };
+    if !runtime_available() {
+        return;
+    }
+    let speech = Speech::hold();
+    let dir = tempdir().unwrap();
+    let models = Models::new(dir.path(), false);
+    let image = dir.path().join("clipboard.png");
+    write_png(&image, 64, 64);
+    let runtime = Runtime::start(
+        &model,
+        Setup {
+            ocr: Some(models.args()),
+            endpoint: Some(speech.endpoint.clone()),
+            image: Some(image),
+            ..Setup::default()
+        },
+    );
+    runtime.configure_speech();
+    assert_eq!(
+        runtime.request(json!({"command":"reading_clip"}))["queued"],
+        true
+    );
+    runtime.wait_state(PIPELINE_TIMEOUT, "speaking");
+    assert!(speech.connected(PIPELINE_TIMEOUT));
+    let deadline = Instant::now() + TIMEOUT;
+    let ours = loop {
+        let status = runtime.request(json!({"command":"get_speech_status"}));
+        if status["active"] == true && status["id"].as_u64().unwrap_or(0) != 0 {
+            break status["id"].clone();
+        }
+        assert!(
+            Instant::now() < deadline,
+            "speech did not become active: {status}"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    };
+    // Give reading several ticks to observe its own playback id before another
+    // client replaces it. The held peer cannot complete the original request.
+    std::thread::sleep(Duration::from_millis(100));
+    assert_eq!(runtime.status()["state"], "speaking");
+    assert_eq!(
+        runtime.request(json!({"command":"speak","text":"replacement","replace":true}))["ok"],
+        true
+    );
+    // Much shorter than the 65 s step timeout or the held peer's response budget.
+    let done = runtime.wait_state(Duration::from_secs(2), "idle");
+    assert_eq!(done["error"], "speech cancelled or replaced", "{done}");
+    let replacement = runtime.request(json!({"command":"get_speech_status"}));
+    assert_ne!(replacement["id"], ours, "{replacement}");
+    assert_eq!(replacement["active"], true, "{replacement}");
+    std::thread::sleep(Duration::from_millis(100));
+    assert_eq!(
+        runtime.status(),
+        done,
+        "replacement must not resume reading"
+    );
+    runtime.quit();
+}
+
+#[test]
 fn a_repeated_trigger_while_cancelling_does_not_start_a_new_run() {
     let Some(model) = fixture() else { return };
     if !runtime_available() {

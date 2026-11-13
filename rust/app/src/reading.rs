@@ -386,6 +386,13 @@ impl Reading {
             if !active && id == ours {
                 return self.complete();
             }
+            // Another client replaced our playback (`speak` with `replace:true`,
+            // or a fresh `speak`). Our id can never come back, so waiting for it
+            // would stall this run until the step timeout; the C++ pipeline ended
+            // with the same reason when its speak request was cancelled.
+            if id != ours && id != before {
+                return self.fail(SPEECH_REPLACED);
+            }
             return;
         }
         // The worker had not reported the new id yet. If it reported and the
@@ -618,16 +625,109 @@ fn paste() -> Result<Vec<u8>, String> {
 
 /// Writes the bytes next to a fresh private file and returns it. A file that
 /// cannot be written is the same failure as a failed PNG encode.
-fn write_temp(run: u64, bytes: &[u8]) -> Result<TempImage, String> {
-    let directory = env::temp_dir().join(format!("deskwaifu-reading-{}-{run}", std::process::id()));
-    fs::create_dir_all(&directory).map_err(|_| IMAGE_FAILED.to_string())?;
-    let path = directory.join("image.png");
-    // A leftover from a previous run with the same id would otherwise fail here;
-    // the run id makes that unlikely, so simply replace it.
-    let _ = fs::remove_file(&path);
-    fs::write(&path, bytes).map_err(|_| IMAGE_FAILED.to_string())?;
-    Ok(TempImage {
-        path: path.to_string_lossy().into_owned(),
-        directory,
-    })
+///
+/// The directory is created exclusively with mode 0700 and the PNG itself with
+/// `create_new` and mode 0600, so another local user can neither read the
+/// clipboard image nor pre-create a symlink in a predictable path that this
+/// process would then write through. The name is not derived from the run id
+/// alone: it uses system randomness and retries on a collision.
+fn write_temp(_run: u64, bytes: &[u8]) -> Result<TempImage, String> {
+    use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+
+    let base = env::temp_dir();
+    for _ in 0..16 {
+        let directory = base.join(format!(
+            "deskwaifu-reading-{}-{}",
+            std::process::id(),
+            unique_suffix()?
+        ));
+        match fs::DirBuilder::new().mode(0o700).create(&directory) {
+            Ok(()) => {}
+            Err(error) if error.kind() == ErrorKind::AlreadyExists => continue,
+            Err(_) => return Err(IMAGE_FAILED.into()),
+        }
+        let path = directory.join("image.png");
+        let mut file = match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&path)
+        {
+            Ok(file) => file,
+            Err(_) => {
+                let _ = fs::remove_dir(&directory);
+                return Err(IMAGE_FAILED.into());
+            }
+        };
+        if std::io::Write::write_all(&mut file, bytes).is_err() || file.sync_all().is_err() {
+            let _ = fs::remove_file(&path);
+            let _ = fs::remove_dir(&directory);
+            return Err(IMAGE_FAILED.into());
+        }
+        drop(file);
+        return Ok(TempImage {
+            path: path.to_string_lossy().into_owned(),
+            directory,
+        });
+    }
+    Err(IMAGE_FAILED.into())
+}
+
+/// A per-call suffix from the Linux system random source.
+fn unique_suffix() -> Result<u64, String> {
+    use std::io::Read;
+    let mut bytes = [0; 8];
+    fs::File::open("/dev/urandom")
+        .and_then(|mut random| random.read_exact(&mut bytes))
+        .map_err(|_| IMAGE_FAILED.to_string())?;
+    Ok(u64::from_ne_bytes(bytes))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+    #[test]
+    fn a_precreated_predictable_directory_symlink_is_not_reused() {
+        let target = tempfile::tempdir().unwrap();
+        let target_image = target.path().join("image.png");
+        fs::write(&target_image, b"must not be replaced").unwrap();
+        let run = u64::MAX;
+        let planted =
+            env::temp_dir().join(format!("deskwaifu-reading-{}-{run}", std::process::id()));
+        std::os::unix::fs::symlink(target.path(), &planted).unwrap();
+        let result = write_temp(run, b"private clipboard");
+        // Only remove the symlink this test created, never its target.
+        fs::remove_file(&planted).unwrap();
+        let image = result.unwrap();
+        assert_ne!(Path::new(&image.path), target_image);
+        assert_eq!(fs::read(&target_image).unwrap(), b"must not be replaced");
+        assert_eq!(fs::read(&image.path).unwrap(), b"private clipboard");
+    }
+
+    #[test]
+    fn temporary_images_are_private_independent_and_removed_on_drop() {
+        let first = write_temp(1, b"first clipboard").unwrap();
+        let second = write_temp(1, b"second clipboard").unwrap();
+        assert_ne!(first.directory, second.directory);
+        for image in [&first, &second] {
+            let directory = fs::symlink_metadata(&image.directory).unwrap();
+            let file = fs::symlink_metadata(&image.path).unwrap();
+            assert!(directory.is_dir());
+            assert!(file.is_file());
+            assert_eq!(directory.permissions().mode() & 0o777, 0o700);
+            assert_eq!(file.permissions().mode() & 0o777, 0o600);
+            assert_eq!(file.nlink(), 1);
+        }
+        assert_eq!(fs::read(&first.path).unwrap(), b"first clipboard");
+        assert_eq!(fs::read(&second.path).unwrap(), b"second clipboard");
+        let first_directory = first.directory.clone();
+        let second_directory = second.directory.clone();
+        drop(first);
+        assert!(!first_directory.exists());
+        assert_eq!(fs::read(&second.path).unwrap(), b"second clipboard");
+        drop(second);
+        assert!(!second_directory.exists());
+    }
 }
