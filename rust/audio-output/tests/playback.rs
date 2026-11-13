@@ -57,6 +57,10 @@ impl Fake {
     /// Emulates one device callback of `frames` frames and returns the number
     /// of frames that received queued audio.
     fn pull(&self, frames: usize) -> usize {
+        self.pull_at(frames, 0, 0)
+    }
+
+    fn pull_at(&self, frames: usize, callback_ns: u64, playback_ns: u64) -> usize {
         let state = self.state();
         let (Some(queue), Some(converter), Some(progress)) =
             (state.queue.clone(), state.converter, state.progress.clone())
@@ -65,14 +69,22 @@ impl Fake {
         };
         let device = converter.device();
         let mut buffer = vec![0u8; frames * device.frame_bytes()];
-        progress.begin_callback();
+        if callback_ns == 0 {
+            progress.begin_callback();
+        } else {
+            progress.begin_callback_at(callback_ns);
+        }
         progress.begin_fill();
         let filled = deskwaifu_audio_output::Queue::fill(
             &mut queue.lock().unwrap_or_else(|error| error.into_inner()),
             &converter,
             &mut buffer,
         );
-        progress.delivered(filled as u64);
+        if playback_ns == 0 {
+            progress.delivered(filled as u64);
+        } else {
+            progress.delivered_at(filled as u64, playback_ns, MONO_24K.sample_rate);
+        }
         progress.end_fill();
         filled
     }
@@ -332,6 +344,34 @@ fn drained_waits_for_delivery_and_an_idle_callback() {
 
     // The next callback means the previous buffer was consumed: now idle.
     fake.pull(256);
+    player.pump();
+    assert_eq!(player.take_events(), vec![Event::Drained(1)]);
+}
+
+#[test]
+fn player_waits_for_timestamped_tail_audio_to_finish_playing() {
+    let (mut player, fake) = player();
+    player.start(1, MONO_24K);
+    player.append(1, &pcm(240));
+    player.finish_input(1);
+
+    // The queue is emptied by the first callback; playback is predicted to
+    // start at 10 ms and last another 10 ms (24 kHz).
+    assert_eq!(fake.pull_at(256, 1_000_000, 10_000_000), 240);
+    player.pump();
+    assert_eq!(player.take_events(), vec![Event::PlaybackStarted(1)]);
+    assert_eq!(player.pending_bytes(), 0);
+    assert!(player.take_events().is_empty());
+
+    // Empty/silent callback at 15 ms is not proof that the tail played.
+    fake.pull_at(256, 15_000_000, 20_000_000);
+    player.pump();
+    assert!(player.take_events().is_empty());
+    assert_eq!(player.id(), 1);
+
+    // At the predicted end instant, the next callback advances progress and
+    // Player can emit Drained.
+    fake.pull_at(256, 20_000_000, 30_000_000);
     player.pump();
     assert_eq!(player.take_events(), vec![Event::Drained(1)]);
 }

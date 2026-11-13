@@ -23,28 +23,18 @@ use crate::{DeviceFormat, Error, SampleFormat, SourceFormat};
 /// device failure. The C++ player inherits Qt's synchronous start.
 const OPEN_TIMEOUT: Duration = Duration::from_secs(2);
 
-/// Progress counters for one stream.
+/// Progress counters for one stream. Playback progress is advanced only when
+/// a later CPAL callback timestamp reaches the predicted end of audio delivered
+/// by an earlier callback; a callback itself is not evidence that frames played.
 ///
-/// A callback marks everything delivered earlier as played and then delivers
-/// what the queue had. `played == delivered` therefore means the device has
-/// begun consuming the last frame handed to it, which is the Qt `IdleState`
-/// condition the C++ `Pump` waits for: it only reported `Drained` once
-/// `_sink->bytesFree()` had room for everything left in `_pending`, i.e. the
-/// sink buffer had been handed to the device.
-///
-/// The callback marks the played watermark *before* filling, so it never
-/// claims frames that were not yet written; the callback that delivers the
-/// final frames cannot also report them consumed, and the next one can. That
-/// costs at most one callback period before `Drained`, which is bounded by the
-/// device buffer and is exactly the moment Qt reached `IdleState`.
-///
-/// `callbacks` counts how often the stream pulled data, which is the closest
-/// cpal equivalent of Qt's `ActiveState` for [`Event::PlaybackStarted`].
+/// `callbacks` counts pulls, the closest cpal equivalent of Qt's `ActiveState`.
 #[derive(Debug, Default)]
 pub struct Progress {
     delivered: AtomicU64,
     played: AtomicU64,
     callbacks: AtomicU64,
+    scheduled_end_ns: AtomicU64,
+    scheduled_frames: AtomicU64,
     failed: AtomicBool,
     /// Callback buffers whose audio was taken from the queue but whose frame
     /// count has not been published to `delivered` yet. The player must not
@@ -59,17 +49,38 @@ impl Progress {
         Self::default()
     }
 
-    /// Marks the start of one callback: earlier deliveries have been consumed.
-    ///
-    /// A sink that pulls audio manually from a test must call this before
-    /// filling each buffer, exactly like a device callback.
+    /// Records the callback clock instant. Only audio whose scheduled end is
+    /// at or before this instant is considered played.
+    pub fn begin_callback_at(&self, callback_ns: u64) {
+        let end = self.scheduled_end_ns.load(Ordering::Relaxed);
+        if end != 0 && callback_ns >= end {
+            self.played.store(
+                self.scheduled_frames.load(Ordering::Relaxed),
+                Ordering::Relaxed,
+            );
+        }
+        self.callbacks.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Records frames and the predicted instant the first frame will play.
+    pub fn delivered_at(&self, frames: u64, playback_ns: u64, sample_rate: u32) {
+        let total = self.delivered.fetch_add(frames, Ordering::Relaxed) + frames;
+        if frames > 0 && sample_rate > 0 {
+            let duration_ns = (frames as u128 * 1_000_000_000 / sample_rate as u128) as u64;
+            self.scheduled_frames.store(total, Ordering::Relaxed);
+            self.scheduled_end_ns
+                .store(playback_ns.saturating_add(duration_ns), Ordering::Relaxed);
+        }
+    }
+
+    /// Test seam for sinks that do not provide playback timestamps.
     pub fn begin_callback(&self) {
         self.played
             .store(self.delivered.load(Ordering::Relaxed), Ordering::Relaxed);
         self.callbacks.fetch_add(1, Ordering::Relaxed);
     }
 
-    /// Records frames just written into the callback buffer.
+    /// Test seam for sinks that do not provide playback timestamps.
     pub fn delivered(&self, frames: u64) {
         self.delivered.fetch_add(frames, Ordering::Relaxed);
     }
@@ -263,8 +274,10 @@ impl SinkFactory for CpalFactory {
             let callback_progress = Arc::clone(&progress);
             let devices = Arc::clone(&progress);
             let callback_queue = Arc::clone(&queue);
-            let callback = move |data: &mut cpal::Data, _: &cpal::OutputCallbackInfo| {
-                callback_progress.begin_callback();
+            let callback = move |data: &mut cpal::Data, info: &cpal::OutputCallbackInfo| {
+                let timestamp = info.timestamp();
+                callback_progress
+                    .begin_callback_at(timestamp.callback.as_nanos().min(u64::MAX as u128) as u64);
                 let bytes = data.bytes_mut();
                 // Taking audio out of the queue and publishing its frame count
                 // must be one step for the drain check; see `Progress::begin_fill`.
@@ -273,7 +286,11 @@ impl SinkFactory for CpalFactory {
                     let mut queue = queue::lock(&callback_queue);
                     queue.fill(&converter, bytes)
                 };
-                callback_progress.delivered(filled as u64);
+                callback_progress.delivered_at(
+                    filled as u64,
+                    timestamp.playback.as_nanos().min(u64::MAX as u128) as u64,
+                    source.sample_rate,
+                );
                 callback_progress.end_fill();
             };
             let errors = move |_: cpal::Error| devices.fail();
@@ -362,6 +379,25 @@ mod tests {
 
         progress.fail();
         assert!(progress.failed());
+    }
+
+    #[test]
+    fn playback_timestamp_not_callback_count_controls_played_watermark() {
+        let progress = Progress::new();
+        progress.begin_callback_at(1_000_000_000);
+        progress.delivered_at(480, 1_010_000_000, 48_000);
+        assert!(!progress.is_drained());
+
+        // A callback can occur while the last chunk is still scheduled for
+        // later playback; merely asking for another buffer cannot drain it.
+        progress.begin_callback_at(1_015_000_000);
+        assert_eq!(progress.played_frames(), 0);
+        assert!(!progress.is_drained());
+
+        // At the injected clock instant after the predicted end, it is drained.
+        progress.begin_callback_at(1_025_000_000);
+        assert_eq!(progress.played_frames(), 480);
+        assert!(progress.is_drained());
     }
 
     #[test]
