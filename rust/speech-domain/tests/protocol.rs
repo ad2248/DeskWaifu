@@ -223,6 +223,64 @@ async fn reports_idle_timeout() {
 }
 
 #[tokio::test]
+async fn control_frames_do_not_extend_idle_deadline() {
+    let (endpoint, listener) = server().await;
+    let peer = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        let mut ws = accept(stream).await;
+        loop {
+            if ws.send(Message::Ping(vec![1])).await.is_err() {
+                break;
+            }
+            if ws.send(Message::Pong(vec![1])).await.is_err() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    });
+    let mut events = synthesize(endpoint, "key", request(), Duration::from_millis(100)).await;
+    assert_eq!(
+        timeout(Duration::from_secs(1), events.recv())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap_err(),
+        Error::Timeout
+    );
+    peer.abort();
+}
+
+#[tokio::test]
+async fn valid_business_events_reset_idle_deadline() {
+    let (endpoint, listener) = server().await;
+    tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        let mut ws = accept(stream).await;
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        send(&mut ws, "connected_success", json!({})).await;
+        incoming(&mut ws).await;
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        send(&mut ws, "task_started", json!({})).await;
+        incoming(&mut ws).await;
+        incoming(&mut ws).await;
+        tokio::time::sleep(Duration::from_millis(150)).await;
+    });
+    let mut events = synthesize(endpoint, "key", request(), Duration::from_millis(50)).await;
+    assert!(matches!(
+        events.recv().await.unwrap().unwrap(),
+        Event::Ready { .. }
+    ));
+    assert_eq!(
+        timeout(Duration::from_secs(1), events.recv())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap_err(),
+        Error::Timeout
+    );
+}
+
+#[tokio::test]
 async fn dropping_event_receiver_cancels_socket_task() {
     let (endpoint, listener) = server().await;
     let (closed_tx, closed_rx) = tokio::sync::oneshot::channel();

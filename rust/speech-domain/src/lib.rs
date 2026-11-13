@@ -152,22 +152,23 @@ async fn run(
         }
     };
     let mut phase = 0u8;
+    let idle = MAX_IDLE.min(timeout.max(Duration::from_millis(1)));
+    let mut deadline = tokio::time::Instant::now() + idle;
     loop {
-        let idle = MAX_IDLE.min(timeout.max(Duration::from_millis(1)));
         let next = tokio::select! {
             _ = tx.closed() => return,
-            result = tokio::time::timeout(idle, socket.next()) => result,
-        };
-        let msg = match next {
-            Err(_) => {
+            _ = tokio::time::sleep_until(deadline) => {
                 send_error(&tx, Error::Timeout).await;
                 return;
             }
-            Ok(None) | Ok(Some(Err(_))) => {
+            message = socket.next() => message,
+        };
+        let msg = match next {
+            None | Some(Err(_)) => {
                 send_error(&tx, Error::Network).await;
                 return;
             }
-            Ok(Some(Ok(m))) => m,
+            Some(Ok(m)) => m,
         };
         let text = match msg {
             Message::Text(t) => t,
@@ -270,6 +271,7 @@ async fn run(
                 return;
             }
         }
+        deadline = tokio::time::Instant::now() + idle;
     }
 }
 
