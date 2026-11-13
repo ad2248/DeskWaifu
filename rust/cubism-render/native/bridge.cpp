@@ -378,6 +378,13 @@ int cr_motion_manager_create(void* p, void** out) {
     g->model = model(p);
     g->manager = CSM_NEW CubismMotionManager();
     require(g->manager, "motion manager allocation failed");
+    // `CubismMotionQueueManager::UpdateMotion` calls its event callback
+    // unconditionally for every fired motion event, and the default callback is
+    // null, so a motion with a `UserData` event would crash the process. The
+    // desktop runtime has never acted on those events (the C++ never registers
+    // one either), so the callback discards them instead of ending playback.
+    g->manager->SetEventCallback(
+        [](const CubismMotionQueueManager*, const csmString&, void*) {});
     motion_managers.insert(g.get()); *out = g.release();
     API_END
 }

@@ -434,6 +434,31 @@ fn external_haru_surfaceless_pixels_and_lifetimes() {
 }
 
 #[test]
+fn a_motion_with_a_user_data_event_does_not_crash_the_motion_manager() {
+    // Regression: `CubismMotionQueueManager::UpdateMotion` calls its event
+    // callback for every fired `UserData` event without a null check, and the
+    // SDK default is null. Starting a motion with `UserData` therefore killed
+    // the process with SIGSEGV instead of playing.
+    let _session = session();
+    let haru = load();
+    let _egl = unsafe { Egl::new() };
+    let framework = unsafe { Framework::start(&haru.shaders) }.unwrap();
+    let model = framework.create_model(&haru.moc).unwrap();
+    let mut document: serde_json::Value = serde_json::from_slice(&haru.motion).unwrap();
+    document["Meta"]["UserDataCount"] = serde_json::json!(1);
+    document["Meta"]["TotalUserDataSize"] = serde_json::json!(4);
+    document["UserData"] = serde_json::json!([{"Time": 0.2, "Value": "test"}]);
+    let motion_json = serde_json::to_vec_pretty(&document).unwrap();
+    let motion = framework.create_motion(&motion_json).unwrap();
+    let mut manager = model.motion_manager().unwrap();
+    model.save_parameters().unwrap();
+    manager.start(&motion, 0).unwrap();
+    // Step past the event time; the callback must at least be installed.
+    assert!(step(&mut manager, 10, 0.05), "motion should update");
+    assert!(manager.update(0.0).is_ok());
+}
+
+#[test]
 fn external_haru_motion_expression_eye_blink_surfaceless() {
     let _session = session();
     let haru = load();
