@@ -46,6 +46,11 @@ pub struct Progress {
     played: AtomicU64,
     callbacks: AtomicU64,
     failed: AtomicBool,
+    /// Callback buffers whose audio was taken from the queue but whose frame
+    /// count has not been published to `delivered` yet. The player must not
+    /// report `Drained` while this is nonzero: the queue is already empty then,
+    /// but the device has not been told about those frames.
+    in_flight: AtomicU64,
 }
 
 impl Progress {
@@ -67,6 +72,29 @@ impl Progress {
     /// Records frames just written into the callback buffer.
     pub fn delivered(&self, frames: u64) {
         self.delivered.fetch_add(frames, Ordering::Relaxed);
+    }
+
+    /// Marks the point between taking audio out of the queue and publishing how
+    /// many frames it produced.
+    ///
+    /// A device callback must call [`Progress::begin_fill`] before it locks the
+    /// queue and [`Progress::end_fill`] right after it publishes `delivered`.
+    /// That makes "the queue is empty" and "every frame is counted" one atomic
+    /// decision for [`crate::Player::pump`], instead of two observations a
+    /// callback can be interrupted between — which used to report `Drained`
+    /// while the last buffer was still in flight.
+    pub fn begin_fill(&self) {
+        self.in_flight.fetch_add(1, Ordering::AcqRel);
+    }
+
+    /// Closes the window opened by [`Progress::begin_fill`].
+    pub fn end_fill(&self) {
+        self.in_flight.fetch_sub(1, Ordering::AcqRel);
+    }
+
+    /// Whether a callback is between `begin_fill` and `end_fill`.
+    pub fn filling(&self) -> bool {
+        self.in_flight.load(Ordering::Acquire) != 0
     }
 
     /// Reports a stream error; the player surfaces it as [`Error::DEVICE`].
@@ -94,9 +122,10 @@ impl Progress {
         self.played.load(Ordering::Relaxed)
     }
 
-    /// Whether every delivered frame has been consumed by the device.
+    /// Whether every delivered frame has been consumed by the device and no
+    /// callback is mid-fill.
     pub fn is_drained(&self) -> bool {
-        self.played_frames() >= self.delivered_frames()
+        !self.filling() && self.played_frames() >= self.delivered_frames()
     }
 }
 
@@ -237,11 +266,15 @@ impl SinkFactory for CpalFactory {
             let callback = move |data: &mut cpal::Data, _: &cpal::OutputCallbackInfo| {
                 callback_progress.begin_callback();
                 let bytes = data.bytes_mut();
+                // Taking audio out of the queue and publishing its frame count
+                // must be one step for the drain check; see `Progress::begin_fill`.
+                callback_progress.begin_fill();
                 let filled = {
                     let mut queue = queue::lock(&callback_queue);
                     queue.fill(&converter, bytes)
                 };
                 callback_progress.delivered(filled as u64);
+                callback_progress.end_fill();
             };
             let errors = move |_: cpal::Error| devices.fail();
             let stream = match device.build_output_stream_raw(

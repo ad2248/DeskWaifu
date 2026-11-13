@@ -493,11 +493,14 @@ impl SinkFactory for SilentFactory {
             let mut buffer = vec![0u8; 240 * format.frame_bytes()];
             while !callback_stop.load(Ordering::Relaxed) {
                 callback_progress.begin_callback();
+                // One step for the drain check, exactly like the real sink.
+                callback_progress.begin_fill();
                 let filled = {
                     let mut queue = queue.lock().unwrap_or_else(|error| error.into_inner());
                     Queue::fill(&mut queue, &converter, &mut buffer)
                 };
                 callback_progress.delivered(filled as u64);
+                callback_progress.end_fill();
                 std::thread::sleep(delay);
             }
         });

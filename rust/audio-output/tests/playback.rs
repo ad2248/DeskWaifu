@@ -66,13 +66,42 @@ impl Fake {
         let device = converter.device();
         let mut buffer = vec![0u8; frames * device.frame_bytes()];
         progress.begin_callback();
+        progress.begin_fill();
         let filled = deskwaifu_audio_output::Queue::fill(
             &mut queue.lock().unwrap_or_else(|error| error.into_inner()),
             &converter,
             &mut buffer,
         );
         progress.delivered(filled as u64);
+        progress.end_fill();
         filled
+    }
+
+    /// Emulates a callback that has already taken the last queued audio but has
+    /// not published its frame count yet, which is the window the drain check
+    /// must not mistake for completion.
+    fn pull_and_hold(&self, frames: usize) -> HeldFill {
+        let state = self.state();
+        let (Some(queue), Some(converter), Some(progress)) =
+            (state.queue.clone(), state.converter, state.progress.clone())
+        else {
+            panic!("open stream");
+        };
+        let device = converter.device();
+        let mut buffer = vec![0u8; frames * device.frame_bytes()];
+        progress.begin_callback();
+        progress.begin_fill();
+        let filled = deskwaifu_audio_output::Queue::fill(
+            &mut queue.lock().unwrap_or_else(|error| error.into_inner()),
+            &converter,
+            &mut buffer,
+        );
+        drop(state);
+        HeldFill {
+            progress,
+            filled,
+            done: false,
+        }
     }
 
     /// Emulates a device callback that reports a stream error.
@@ -112,6 +141,31 @@ impl SinkFactory for Fake {
 struct FakeSink {
     owner: Fake,
     progress: Arc<Progress>,
+}
+
+/// A callback that took audio out of the queue but has not published it yet.
+struct HeldFill {
+    progress: Arc<Progress>,
+    filled: usize,
+    done: bool,
+}
+
+impl HeldFill {
+    /// Publishes the frame count, finishing the callback.
+    fn release(mut self) -> usize {
+        self.progress.delivered(self.filled as u64);
+        self.progress.end_fill();
+        self.done = true;
+        self.filled
+    }
+}
+
+impl Drop for HeldFill {
+    fn drop(&mut self) {
+        if !self.done {
+            self.progress.end_fill();
+        }
+    }
 }
 
 impl Drop for FakeSink {
@@ -277,6 +331,37 @@ fn drained_waits_for_delivery_and_an_idle_callback() {
     assert_eq!(player.id(), 1);
 
     // The next callback means the previous buffer was consumed: now idle.
+    fake.pull(256);
+    player.pump();
+    assert_eq!(player.take_events(), vec![Event::Drained(1)]);
+}
+
+#[test]
+fn drained_waits_while_a_callback_is_still_publishing_its_frames() {
+    // Regression: the queue can look empty while the callback that emptied it
+    // has not published its frame count yet. Reporting `Drained` there truncates
+    // the last buffer.
+    let (mut player, fake) = player();
+    player.start(1, MONO_24K);
+    player.append(1, &pcm(400));
+    player.finish_input(1);
+    assert_eq!(fake.pull(256), 256);
+    player.pump();
+    assert_eq!(player.take_events(), vec![Event::PlaybackStarted(1)]);
+
+    // Take the remaining audio out of the queue but hold the publication.
+    let held = fake.pull_and_hold(256);
+    assert_eq!(player.pending_bytes(), 0, "queue is empty");
+    player.pump();
+    assert_eq!(
+        player.take_events(),
+        Vec::new(),
+        "an in-flight callback must not count as drained"
+    );
+    assert_eq!(player.id(), 1, "playback is still open");
+
+    // Publishing and then one idle callback finally drains it.
+    held.release();
     fake.pull(256);
     player.pump();
     assert_eq!(player.take_events(), vec![Event::Drained(1)]);
