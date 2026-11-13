@@ -252,6 +252,21 @@ fn mouth_arbitration_is_applied_to_core_parameter_and_reset_each_frame() {
         runtime.quit();
         return;
     };
+    let baseline = runtime.request(json!({"command":"get_parameters"}))["parameters"]
+        .as_array()
+        .unwrap()[index as usize]["value"]
+        .as_f64()
+        .unwrap();
+    std::thread::sleep(Duration::from_millis(40));
+    let untouched = runtime.request(json!({"command":"get_parameters"}))["parameters"]
+        .as_array()
+        .unwrap()[index as usize]["value"]
+        .as_f64()
+        .unwrap();
+    assert!(
+        (untouched - baseline).abs() < 1e-5,
+        "no source changed mouth to {untouched}"
+    );
 
     assert_eq!(
         runtime.request(json!({"command":"set_mouth_y","args":{"value":0.7}}))["ok"],
@@ -275,7 +290,10 @@ fn mouth_arbitration_is_applied_to_core_parameter_and_reset_each_frame() {
         .unwrap()[index as usize]["value"]
         .as_f64()
         .unwrap();
-    assert!(value.abs() < 1e-5, "reset mouth parameter was {value}");
+    assert!(
+        (value - baseline).abs() < 1e-5,
+        "reset mouth parameter was {value}, baseline {baseline}"
+    );
     runtime.quit();
 }
 

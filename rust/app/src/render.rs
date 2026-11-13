@@ -413,6 +413,24 @@ pub fn fallback_part(model_y: f32) -> Part {
     }
 }
 
+/// Apply a Wayland wheel delta in notch units around the current cursor.
+/// Positive vertical Wayland motion is down, opposite Qt's positive wheel angle.
+fn wheel_transform(view: ViewState, delta: f64, x: f64, y: f64, size: (u32, u32)) -> ViewState {
+    let (width, height) = (size.0 as f32, size.1 as f32);
+    let (anchor_x, anchor_y) = surface_to_clip(x, y, width, height);
+    let transform = Transform::new(view.zoom, view.x, view.y).zoom_around(
+        anchor_x,
+        anchor_y,
+        view.zoom * (1.0 - delta as f32 * 0.1),
+    );
+    ViewState {
+        zoom: transform.scale,
+        x: transform.x,
+        y: transform.y,
+        ..view
+    }
+}
+
 /// Surface-pixel drag offsets mapped to clip-space translation, matching the
 /// viewport axes of `Scene::mvp`; y is flipped because surface coordinates point down.
 pub fn drag_transform(view: ViewState, dx: i32, dy: i32, width: i32, height: i32) -> ViewState {
@@ -457,6 +475,7 @@ struct Scene {
     /// re-applied after the per-frame `LoadParameters`/`SaveParameters` layer
     /// restore, which would otherwise overwrite them with the base snapshot.
     overrides: Vec<(i32, f32)>,
+    mouth_control: Option<(i32, f32)>,
     /// Canvas size cached from load; the draw path must not fail on it.
     canvas: [f32; 2],
     /// The model's declared `HitAreas` as `(name, drawable id)`, and whether the
@@ -685,6 +704,7 @@ impl Scene {
             tap_manager: None,
             ignored_animations,
             overrides: Vec::new(),
+            mouth_control: None,
             canvas,
             hit_areas: entry
                 .model3
@@ -693,6 +713,12 @@ impl Scene {
                 .map(|(name, id)| (name.to_string(), id.to_string()))
                 .collect(),
         })
+    }
+
+    fn resize(&mut self, width: i32, height: i32) -> Result<(), String> {
+        self.renderer
+            .resize(width, height)
+            .map_err(|e| format!("cannot resize model renderer: {e}"))
     }
 
     /// One frame: the SDK layer order documented in `cubism-render`'s README.
@@ -704,6 +730,7 @@ impl Scene {
             expressions,
             tap_manager,
             overrides,
+            mouth_control,
             ..
         } = self;
         model
@@ -760,6 +787,11 @@ impl Scene {
             model
                 .set_parameter(index, value)
                 .map_err(|e| format!("cannot re-apply render parameter {index}: {e}"))?;
+        }
+        if let Some((index, value)) = mouth_control {
+            model
+                .set_parameter(*index, *value)
+                .map_err(|e| format!("cannot apply mouth control: {e}"))?;
         }
         model
             .update()
@@ -1069,7 +1101,8 @@ impl Session {
             .map_err(|e| format!("cannot present the transparent frame: {e}"))?;
         self.overlay
             .dispatch_pending()
-            .map_err(|e| format!("cannot dispatch Wayland events: {e}"))
+            .map_err(|e| format!("cannot dispatch Wayland events: {e}"))?;
+        self.sync_configured_size()
     }
 
     /// Applies one parameter to the rendered model by parameter ID.
@@ -1079,6 +1112,23 @@ impl Session {
         }
         let scene = self.scene.as_mut().expect("checked above");
         scene.set_parameter(id, value)
+    }
+
+    /// Sets or releases the transient mouth-control layer. Unlike `set_parameter`,
+    /// this value is not retained as a generic IPC override, so release restores
+    /// the current motion/expression result on the next frame.
+    pub fn set_mouth_control(&mut self, value: Option<f32>) -> Result<(), String> {
+        let Some(scene) = self.scene.as_mut() else {
+            return Ok(());
+        };
+        scene.mouth_control = value
+            .map(|value| {
+                scene
+                    .parameter_index("ParamMouthOpenY")
+                    .map(|index| (index, value))
+            })
+            .transpose()?;
+        Ok(())
     }
 
     /// The next 16 ms frame: update, draw, read back, derive the input region
@@ -1153,20 +1203,10 @@ impl Session {
                         self.interaction.counts.ignored_hidden += 1;
                         continue;
                     }
-                    // The C++ `PointerScroll`: zoom by `1 + vertical * .1` around
-                    // the cursor in clip space, through `Transform::zoom_around`,
-                    // which clamps the scale to the same 0.1..10 window.
+                    // Qt negates the Wayland vertical axis before reporting
+                    // `angleDelta().y()`: a positive Wayland delta zooms out.
                     if let Some((x, y)) = self.interaction.cursor {
-                        let (width, height) = (self.size.0 as f32, self.size.1 as f32);
-                        let (anchor_x, anchor_y) = surface_to_clip(x, y, width, height);
-                        let transform = Transform::new(view.zoom, view.x, view.y).zoom_around(
-                            anchor_x,
-                            anchor_y,
-                            view.zoom * (1.0 + delta as f32 * 0.1),
-                        );
-                        view.zoom = transform.scale;
-                        view.x = transform.x;
-                        view.y = transform.y;
+                        view = wheel_transform(view, delta, x, y, self.size);
                     }
                 }
                 PointerEvent::Button { button, pressed } => {
@@ -1457,7 +1497,36 @@ impl Session {
             .map_err(|e| format!("cannot present the frame: {e}"))?;
         self.overlay
             .dispatch_pending()
-            .map_err(|e| format!("cannot dispatch Wayland events: {e}"))
+            .map_err(|e| format!("cannot dispatch Wayland events: {e}"))?;
+        self.sync_configured_size()
+    }
+
+    fn sync_configured_size(&mut self) -> Result<(), String> {
+        let size = self.overlay.size();
+        if size == self.size {
+            return Ok(());
+        }
+        let (width, height) = (
+            i32::try_from(size.0).map_err(|_| "configured width exceeds renderer limits")?,
+            i32::try_from(size.1).map_err(|_| "configured height exceeds renderer limits")?,
+        );
+        if width <= 0 || height <= 0 {
+            return Err("compositor configured an empty overlay surface".into());
+        }
+        if let Some(scene) = self.scene.as_mut() {
+            scene.resize(width, height)?;
+        }
+        self.size = size;
+        self.pixels.clear();
+        self.stats = None;
+        // Old rectangles were clipped against the former surface and are no
+        // longer a safe input region. Become click-through until the next frame
+        // reads the newly sized buffer and derives a fresh region.
+        self.overlay
+            .set_input_region(&[])
+            .map_err(|e| format!("cannot clear input region after resize: {e}"))?;
+        self.region.clear();
+        Ok(())
     }
 
     /// Reads the drawn buffer, derives the input region from its alpha and
@@ -1816,6 +1885,12 @@ mod tests {
         assert_eq!(surface_to_clip(320.0, 240.0, 640.0, 480.0), (0.0, 0.0));
         // A degenerate surface cannot map anything.
         assert_eq!(surface_to_clip(1.0, 1.0, 0.0, 480.0), (0.0, 0.0));
+    }
+
+    #[test]
+    fn positive_wayland_wheel_notch_zooms_out_by_ten_percent() {
+        let result = wheel_transform(view(), 120.0 / 120.0, 320.0, 240.0, (640, 480));
+        assert!((result.zoom - 0.9).abs() < 1e-6);
     }
 
     #[test]

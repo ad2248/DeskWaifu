@@ -619,7 +619,13 @@ fn handle(
                 // same value is pushed there by ID; the reply keeps the Core value.
                 if let Some(session) = session.as_mut() {
                     if let Some(parameter) = current.model.parameters().get(index) {
-                        session.set_parameter(&parameter.id, value)?;
+                        // A live mouth-control layer has priority over this generic
+                        // override; once released, the scene's base animation resumes.
+                        if parameter.id != "ParamMouthOpenY" {
+                            if let Err(error) = session.set_parameter(&parameter.id, value) {
+                                eprintln!("deskwaifu-rust: cannot set rendered parameter: {error}");
+                            }
+                        }
                     }
                 }
                 Ok(
@@ -825,16 +831,38 @@ fn apply_mouth_control(
     current: &mut Loaded,
     controls: &Arbiter,
     session: &mut Option<render::Session>,
+    mouth_base: &mut Option<(usize, usize, f32)>,
 ) -> Result<(), String> {
     const MOUTH_OPEN_Y: &str = "ParamMouthOpenY";
-    if let Some(index) = current.model.parameter_index(MOUTH_OPEN_Y) {
-        let value = controls.status().mouth;
-        current
-            .model
-            .set_parameter_value(index, value)
-            .map_err(|e| e.to_string())?;
-        if let Some(session) = session.as_mut() {
-            session.set_parameter(MOUTH_OPEN_Y, value)?;
+    let status = controls.status();
+    if status.has_mouth {
+        if let Some(index) = current.model.parameter_index(MOUTH_OPEN_Y) {
+            let identity = current.entry;
+            if mouth_base.is_none_or(|(entry, _, _)| entry != identity) {
+                let base = current
+                    .model
+                    .parameter_value(index)
+                    .map_err(|e| e.to_string())?;
+                *mouth_base = Some((identity, index, base));
+            }
+            current
+                .model
+                .set_parameter_value(index, status.mouth)
+                .map_err(|e| e.to_string())?;
+        }
+    } else if let Some((entry, index, value)) = mouth_base.take() {
+        if entry == current.entry {
+            current
+                .model
+                .set_parameter_value(index, value)
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    if let Some(session) = session.as_mut() {
+        if let Err(error) = session.set_mouth_control(status.has_mouth.then_some(status.mouth)) {
+            // The renderer is an optional presentation surface; a missing/broken
+            // scene must not terminate the core model and IPC runtime.
+            eprintln!("deskwaifu-rust: cannot apply mouth control to renderer: {error}");
         }
     }
     Ok(())
@@ -882,6 +910,7 @@ fn run() -> Result<(), String> {
     };
     let mut current = initial;
     let mut controls = Arbiter::new(ModelIdentity::new(0, entries[0].descriptor.id.clone()));
+    let mut mouth_base = None;
     let mut quit = false;
     let mut next_update = Instant::now();
     while !quit && !TERMINATE.load(Ordering::Relaxed) {
@@ -930,7 +959,12 @@ fn run() -> Result<(), String> {
             }
             // The switch above may have replaced the session, and a new scene
             // needs its first frame on this tick; re-borrow after it.
-            apply_mouth_control(&mut current, &controls, &mut presentation.session)?;
+            apply_mouth_control(
+                &mut current,
+                &controls,
+                &mut presentation.session,
+                &mut mouth_base,
+            )?;
             if let Some(session) = presentation.session.as_mut() {
                 session.frame(presentation.view.render_state());
             }
