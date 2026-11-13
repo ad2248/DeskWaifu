@@ -7,6 +7,7 @@ name = "deskwaifu"
 version = "0.1.0"
 dependencies = [
  "deskwaifu-runtime",
+ "deskwaifu-test-plugin",
 ]
 
 [[package]]
@@ -19,3 +20,11 @@ dependencies = [
 [[package]]
 name = "deskwaifu-sdk"
 version = "0.1.0"
+
+[[package]]
+name = "deskwaifu-test-plugin"
+version = "0.1.0"
+dependencies = [
+ "deskwaifu-runtime",
+ "deskwaifu-sdk",
+]

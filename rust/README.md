@@ -1,46 +1,58 @@
 # DeskWaifu Rust 重写
 
-这是与现有 C++/Qt 项目并行的独立 Rust workspace。当前仅建立代码边界，不实现迁移中的业务功能；既不替代顶层 CMake 构建，也不改变现有插件。
+这是与现有 C++/Qt 项目并行的独立 Rust workspace，不接入顶层 CMake 构建，也不兼容现有 C++ 插件 ABI。目前实现了进程内静态组合的插件生命周期、类型化发布订阅和周期任务。
 
-## 目录约定
+## 目录与依赖方向
 
 ```text
 rust/
-├── Cargo.toml                 # workspace 与共享 lint
-├── apps/
-│   └── deskwaifu/             # 后端宿主的组合入口
-└── crates/
-    ├── sdk/                   # 插件与宿主共享的类型/契约
-    └── runtime/               # 消息路由、生命周期与宿主运行机制
+├── apps/deskwaifu/           # 组合 runtime 与插件，目前是自测宿主
+├── crates/
+│   ├── sdk/                 # Plugin、Context、Message 等共享契约
+│   └── runtime/             # 生命周期、有界 FIFO、单线程调度与计时
+└── plugins/test-plugin/      # 只依赖 SDK；每秒发消息并核验自订阅
 ```
 
-后续领域模块按迁移需求逐步建立 crate（例如 desktop、perception、speech、reading-clip、IPC）；控制面板可作为独立 app。不要为了预留名字而创建空 crate。Cubism 或其他 C/C++ SDK 的适配应放在单独的 bridge crate，保持 unsafe/FFI 边界清晰。
+依赖方向为 `app → runtime → sdk` 和 `app → plugin → sdk`。插件对 runtime 的依赖仅用于测试。runtime 不引用具体领域插件。后续按迁移需要新增 desktop、perception、speech 等 crate；控制面板作为独立 app，Cubism 等 FFI 放在独立 bridge crate，不预先创建空模块。
 
-## 依赖方向
+## SDK 与 runtime 的当前契约
 
-```text
-apps/deskwaifu → runtime → sdk
-领域插件 crates → sdk
-apps/deskwaifu → 领域插件 crates（装配时）
-```
+- `Plugin::initialize` 登记订阅；所有插件初始化成功后统一激活，再依次 `start`，所有启动完成后才能派发消息。
+- `Context::subscribe::<T>()` 根据 Rust `TypeId` 订阅，重复订阅不会重复投递。`publish(T)` 广播给所有订阅者，包括发布者自己；返回成功仅代表入队，没有订阅者也成功。
+- 消息负载为 `Arc<dyn Any + Send + Sync>`，接收方通过 `Message::payload::<T>()` 读取；附带发送者 `PluginId`。这是同一可执行程序中的类型标识，不是 IPC 序列化格式或稳定 ABI。
+- 容量限制排队的广播条数，每条广播保存共享负载与投递目标；队列满返回 `QueueFull`，整个广播不会部分入队。不限制消息字节数或插件内部缓冲。
+- 回调在调用 runtime 的线程上串行执行，发布不会递归调用接收者。每次 `advance` 最多派发容量数量的广播，防止自发消息让一次调度永不结束；排队广播按 FIFO、接收者按注册顺序派发。
+- `tick_interval` 在初始化后读取，必须非零。首次 tick 在一个周期后执行；落后时跳过错过的 tick，不追赶。回调应短小，阻塞工作应交给插件拥有的 worker；当前 Context 不能传到工作线程发布消息。
+- `advance(Duration)` 推进逻辑时钟，方便测试不等待真实时间；`run_for(Duration)` 以单调时钟运行有限时长。不要在同一次运行中混用手动推进和外部真实时间假设。
+- 初始化、启动、tick 或消息处理返回错误时，宿主使所有端点失效并丢弃排队消息，再逆序停止所有尝试过初始化的插件。停止某个插件失败不会阻止其余插件清理；不会捕获 panic。
+- 显式 `stop()` 可取得清理错误，可重复调用；Drop 仅兜底清理并忽略错误。停止后的 runtime 不可重启，插件应在 stop 中等待自己的 worker 结束。
 
-`runtime` 不应反向依赖具体领域插件；插件之间通过 SDK 中的类型化消息或 capability 契约协作，而非互相依赖实现。UI 与 IPC transport 也不应渗入领域契约。
+SDK 不引入 Qt、GPUI、Tokio 或其他执行器依赖。尚未实现 capability 请求/响应、deadline/取消、运行时插件加载、工作线程投递、IPC、渲染快照交换和生产级常驻宿主。
 
-## 从现有设计迁移时保留的语义
-
-- 端点与插件上下文有明确生命周期；关闭时先使端点失效，再停止插件并等待其工作线程退出。
-- capability 请求需表达 request ID、deadline、取消及不可用等结果；取消请求不等同于底层工作已停止。
-- 控制命令使用有序、有界队列；渲染状态/帧使用 latest-value 快照，避免积压过期帧。
-- OCR 等阻塞 FFI 工作由专属 worker 拥有；逻辑超时不能提前释放仍被任务使用的资源。
-- 控制面板与后端继续通过独立 IPC 解耦。
-
-这些是迁移约束，不是此骨架已实现的功能。选定具体执行器、UI toolkit 和动态插件策略前，应先验证窗口/layer-shell、Cubism 渲染线程及现有 FFI 的实际需求。不要将 Rust trait object 直接跨动态库当作稳定 ABI；可先静态组合 crate，只有确认需要第三方运行时加载后再设计明确的 C ABI 或进程协议。
-
-## 检查
+## 运行测试插件
 
 在仓库根目录运行：
 
 ```sh
-cargo fmt --manifest-path rust/Cargo.toml --check
-cargo test --manifest-path rust/Cargo.toml
+cargo run --manifest-path rust/Cargo.toml -p deskwaifu
 ```
+
+宿主运行约 3.2 秒。测试插件每秒发布一个带递增序号的消息，并验证自己收到的序号；下一次 tick 或停止时发现遗漏会返回错误。正常情况下输出三组发送/接收记录及 `sent: 3, received: 3`。这是有限时长自测程序，不是完整桌宠后端。
+
+## 检查
+
+```sh
+cargo fmt --manifest-path rust/Cargo.toml --all --check
+cargo test --manifest-path rust/Cargo.toml --workspace
+cargo clippy --manifest-path rust/Cargo.toml --workspace --all-targets -- -D warnings
+```
+
+测试使用手动推进的逻辑时钟检查每秒发送，不依赖实际 sleep。
+
+## 后续迁移约束
+
+- capability 请求需要单独表达请求 ID、截止时间、取消和不可用等结果；取消不等同于底层工作已停止。
+- 控制命令使用有界队列；渲染状态和帧采用 latest-value 快照，不能积压旧帧。
+- OCR 等阻塞 FFI 由专用 worker 拥有；逻辑超时不能提前释放仍在执行的资源。
+- 控制面板与后端通过 IPC 解耦，UI 与 transport 类型不能渗入领域契约。
+- 先验证窗口/layer-shell、Cubism 渲染和真实 FFI 的需求，再选择 UI 与执行器。若需要动态插件，明确设计 C ABI 或进程协议，不能直接跨动态库传 Rust trait object。
