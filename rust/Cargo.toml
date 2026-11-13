@@ -1,0 +1,15 @@
+[workspace]
+members = ["apps/deskwaifu", "crates/sdk", "crates/runtime"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace.dependencies]
+deskwaifu-sdk = { path = "crates/sdk" }
+deskwaifu-runtime = { path = "crates/runtime" }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
