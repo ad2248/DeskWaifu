@@ -135,11 +135,13 @@ async fn run(
         max_frame_size: Some(MAX_MESSAGE),
         ..Default::default()
     };
-    let connection = tokio::time::timeout(
-        timeout,
-        connect_async_with_config(request, Some(config), false),
-    )
-    .await;
+    let connection = tokio::select! {
+        _ = tx.closed() => return,
+        connection = tokio::time::timeout(
+            timeout,
+            connect_async_with_config(request, Some(config), false),
+        ) => connection,
+    };
     let (mut socket, _) = match connection {
         Err(_) => {
             send_error(&tx, Error::Timeout).await;

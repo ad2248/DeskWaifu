@@ -2,7 +2,7 @@ use deskwaifu_speech_domain::{synthesize, Error, Event, PcmFormat, SpeechRequest
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Value};
 use std::time::Duration;
-use tokio::{net::TcpListener, time::timeout};
+use tokio::{io::AsyncReadExt, net::TcpListener, time::timeout};
 use tokio_tungstenite::{accept_async, tungstenite::Message};
 
 fn request() -> SpeechRequest {
@@ -281,15 +281,57 @@ async fn valid_business_events_reset_idle_deadline() {
 }
 
 #[tokio::test]
+async fn dropping_event_receiver_cancels_websocket_handshake() {
+    let (endpoint, listener) = server().await;
+    let (request_tx, request_rx) = tokio::sync::oneshot::channel();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut request = Vec::new();
+        let mut buffer = [0; 1024];
+        loop {
+            let count = stream.read(&mut buffer).await.unwrap();
+            if count == 0 {
+                return (request_tx.send(request).is_ok(), true);
+            }
+            request.extend_from_slice(&buffer[..count]);
+            if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                break;
+            }
+        }
+        let received_request = request_tx.send(request).is_ok();
+        let mut byte = [0];
+        let saw_eof = timeout(Duration::from_secs(1), stream.read(&mut byte))
+            .await
+            .is_ok_and(|result| matches!(result, Ok(0)));
+        (received_request, saw_eof)
+    });
+    let events = synthesize(endpoint, "key", request(), Duration::from_secs(10)).await;
+    request_rx.await.unwrap();
+    drop(events);
+    let (received_request, saw_eof) = timeout(Duration::from_secs(1), peer)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(received_request);
+    assert!(
+        saw_eof,
+        "client socket stayed open after receiver was dropped"
+    );
+}
+
+#[tokio::test]
 async fn dropping_event_receiver_cancels_socket_task() {
     let (endpoint, listener) = server().await;
+    let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
     let (closed_tx, closed_rx) = tokio::sync::oneshot::channel();
     tokio::spawn(async move {
         let (stream, _) = listener.accept().await.unwrap();
         let mut ws = accept(stream).await;
+        let _ = ready_tx.send(());
         let _ = closed_tx.send(timeout(Duration::from_secs(1), ws.next()).await.is_ok());
     });
     let events = synthesize(endpoint, "key", request(), Duration::from_secs(10)).await;
+    ready_rx.await.unwrap();
     drop(events);
     assert!(closed_rx.await.unwrap());
 }
