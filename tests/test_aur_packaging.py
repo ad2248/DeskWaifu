@@ -81,6 +81,10 @@ class AurPackagingTest(unittest.TestCase):
                 self.assertIn(
                     f"${{CMAKE_CURRENT_SOURCE_DIR}}/rust/{directory}/Cargo.toml", cmake
                 )
+                self.assertRegex(
+                    cmake,
+                    rf"rust/{re.escape(directory)}/(?:src/)?\*\.rs",
+                )
 
     def test_rust_runtime_native_dependencies_are_declared(self):
         # libonnxruntime.so.1 and libasound.so.2 come from the Rust runtime
