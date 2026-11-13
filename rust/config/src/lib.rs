@@ -185,8 +185,69 @@ impl<'de> Deserialize<'de> for UniqueValue {
 }
 
 fn parse_object(bytes: &[u8]) -> Result<Map<String, Value>, StoreError> {
-    let value: UniqueValue = serde_json::from_slice(bytes).map_err(|_| StoreError)?;
+    let uncommented = strip_json_comments(bytes)?;
+    let value: UniqueValue = serde_json::from_slice(&uncommented).map_err(|_| StoreError)?;
     value.0.as_object().cloned().ok_or(StoreError)
+}
+
+/// Removes C++-compatible `//` and `/* */` comments outside JSON strings while
+/// preserving quoted text and line boundaries.
+fn strip_json_comments(bytes: &[u8]) -> Result<Vec<u8>, StoreError> {
+    let mut output = bytes.to_vec();
+    let (mut index, mut quoted, mut escaped) = (0, false, false);
+    while index < bytes.len() {
+        if quoted {
+            match bytes[index] {
+                b'\\' if !escaped => escaped = true,
+                b'"' if !escaped => quoted = false,
+                _ => escaped = false,
+            }
+            index += 1;
+            continue;
+        }
+        if bytes[index] == b'"' {
+            quoted = true;
+            index += 1;
+            continue;
+        }
+        if bytes[index] == b'/' && index + 1 < bytes.len() {
+            let end = match bytes[index + 1] {
+                b'/' => {
+                    let mut end = index + 2;
+                    while end < bytes.len() && bytes[end] != b'\n' && bytes[end] != b'\r' {
+                        end += 1;
+                    }
+                    end
+                }
+                b'*' => {
+                    let mut end = index + 2;
+                    while end + 1 < bytes.len() && &bytes[end..end + 2] != b"*/" {
+                        end += 1;
+                    }
+                    if end + 1 >= bytes.len() {
+                        return Err(StoreError);
+                    }
+                    end + 2
+                }
+                _ => {
+                    index += 1;
+                    continue;
+                }
+            };
+            for byte in &mut output[index..end] {
+                if *byte != b'\n' && *byte != b'\r' {
+                    *byte = b' ';
+                }
+            }
+            index = end;
+            continue;
+        }
+        index += 1;
+    }
+    if quoted {
+        return Err(StoreError);
+    }
+    Ok(output)
 }
 
 fn validate_credential(value: &str) -> Result<(), StoreError> {
@@ -284,6 +345,37 @@ mod tests {
             .file_type()
             .is_symlink());
         assert!(!dir.path().join("missing.json").exists());
+    }
+
+    #[test]
+    fn credential_read_and_update_accept_cpp_style_comments() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = store(&dir);
+        fs::create_dir_all(store.path().parent().unwrap()).unwrap();
+        fs::write(
+            store.path(),
+            br#"{
+                // API credentials are managed by the user.
+                "keep": "https://example.test/a//b", /* inline comment */
+                "api_key": "old"
+            }"#,
+        )
+        .unwrap();
+        store.read().unwrap();
+        store.set("api_key", "new").unwrap();
+        let object = read_object(store.path()).unwrap();
+        assert_eq!(object["keep"], "https://example.test/a//b");
+        assert_eq!(object["api_key"], "new");
+    }
+
+    #[test]
+    fn credential_comments_must_be_terminated_and_duplicate_keys_stay_rejected() {
+        assert!(parse_object(br#"{"x":1, /* unterminated }"#).is_err());
+        assert!(parse_object(
+            br#"{"x":1, // comment
+"x":2}"#
+        )
+        .is_err());
     }
 
     #[test]
