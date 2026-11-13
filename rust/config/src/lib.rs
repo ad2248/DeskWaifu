@@ -43,13 +43,19 @@ impl CredentialStore {
 
     /// Read and validate the JSON object without creating an absent file.
     pub fn read(&self) -> Result<(), StoreError> {
-        self.read_object().map(|_| ())
+        let path = self.resolved()?;
+        read_object(&path).map(|_| ())
     }
 
     /// Set or clear a credential. Empty values remove the named field.
     pub fn set(&self, name: &str, credential: &str) -> Result<(), StoreError> {
         validate_credential(credential)?;
-        let mut object = self.read_object()?;
+        // Resolve before writing so a credential file that is a symbolic link
+        // keeps the link: `rename` onto the link path would replace the link
+        // itself with a regular file and leave the real target stale. This is
+        // the same resolution `store::Store` uses, so both paths agree.
+        let path = self.resolved()?;
+        let mut object = read_object(&path)?;
         if credential.is_empty() {
             object.remove(name);
         } else {
@@ -59,7 +65,7 @@ impl CredentialStore {
         if data.len() as u64 > MAX_FILE_SIZE {
             return Err(StoreError);
         }
-        let parent = self.path.parent().ok_or(StoreError)?;
+        let parent = path.parent().ok_or(StoreError)?;
         fs::create_dir_all(parent).map_err(|_| StoreError)?;
         let mut temp = tempfile::Builder::new()
             .prefix(".config-")
@@ -70,25 +76,31 @@ impl CredentialStore {
             .map_err(|_| StoreError)?;
         temp.write_all(&data).map_err(|_| StoreError)?;
         temp.as_file().sync_all().map_err(|_| StoreError)?;
-        temp.persist(&self.path).map_err(|_| StoreError)?;
+        temp.persist(&path).map_err(|_| StoreError)?;
         Ok(())
     }
 
-    fn read_object(&self) -> Result<Map<String, Value>, StoreError> {
-        let file = match File::open(&self.path) {
-            Ok(file) => file,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Map::new()),
-            Err(_) => return Err(StoreError),
-        };
-        let mut bytes = Vec::new();
-        file.take(MAX_FILE_SIZE + 1)
-            .read_to_end(&mut bytes)
-            .map_err(|_| StoreError)?;
-        if bytes.len() as u64 > MAX_FILE_SIZE {
-            return Err(StoreError);
-        }
-        parse_object(&bytes)
+    /// The backing path with symbolic links followed; a dangling link is an
+    /// error rather than a path that would be replaced.
+    fn resolved(&self) -> Result<PathBuf, StoreError> {
+        store::resolve(&self.path).map_err(|_| StoreError)
     }
+}
+
+fn read_object(path: &std::path::Path) -> Result<Map<String, Value>, StoreError> {
+    let file = match File::open(path) {
+        Ok(file) => file,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Map::new()),
+        Err(_) => return Err(StoreError),
+    };
+    let mut bytes = Vec::new();
+    file.take(MAX_FILE_SIZE + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| StoreError)?;
+    if bytes.len() as u64 > MAX_FILE_SIZE {
+        return Err(StoreError);
+    }
+    parse_object(&bytes)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -230,6 +242,48 @@ mod tests {
         let data: Value = serde_json::from_slice(&fs::read(store.path()).unwrap()).unwrap();
         assert!(data.get("api_key").is_none());
         assert_eq!(data["unknown"], true);
+    }
+
+    #[test]
+    fn a_symlinked_credential_file_keeps_its_link_and_updates_the_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = store(&dir);
+        let parent = store.path().parent().unwrap();
+        fs::create_dir_all(parent).unwrap();
+        let target = dir.path().join("real.json");
+        fs::write(&target, br#"{"keep":true}"#).unwrap();
+        std::os::unix::fs::symlink(&target, store.path()).unwrap();
+
+        store.set("api_key", "secret").unwrap();
+        assert!(
+            fs::symlink_metadata(store.path())
+                .unwrap()
+                .file_type()
+                .is_symlink(),
+            "the link itself must not be replaced by a regular file"
+        );
+        let data: Value = serde_json::from_slice(&fs::read(&target).unwrap()).unwrap();
+        assert_eq!(data["api_key"], "secret");
+        assert_eq!(data["keep"], true);
+        assert_eq!(
+            fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+    }
+
+    #[test]
+    fn a_dangling_credential_symlink_is_rejected_instead_of_replaced() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = store(&dir);
+        fs::create_dir_all(store.path().parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(dir.path().join("missing.json"), store.path()).unwrap();
+        assert!(store.set("api_key", "secret").is_err());
+        assert!(store.read().is_err());
+        assert!(fs::symlink_metadata(store.path())
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert!(!dir.path().join("missing.json").exists());
     }
 
     #[test]

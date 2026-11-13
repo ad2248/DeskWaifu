@@ -72,6 +72,7 @@ const BOOLS: &[&str] = &[
     "cropped",
     "enabled",
     "fullscreen_enabled",
+    "replace",
 ];
 
 fn parameter(key: &str, text: &str) -> Result<Value, String> {
@@ -275,6 +276,15 @@ mod tests {
         assert!(parameter("value", "1e999").is_err());
         assert_eq!(parameter("enabled", "1").unwrap(), json!(true));
         assert_eq!(parameter("name", "001").unwrap(), json!("001"));
+    }
+
+    #[test]
+    fn speak_replace_is_sent_as_a_json_boolean() {
+        // `Speech::speak` rejects a non-boolean `replace`, so a string would make
+        // a valid CLI invocation fail.
+        assert_eq!(parameter("replace", "true").unwrap(), json!(true));
+        assert_eq!(parameter("replace", "false").unwrap(), json!(false));
+        assert!(parameter("replace", "yes").is_err());
     }
     #[test]
     fn duplicate_and_reserved() {

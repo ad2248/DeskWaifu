@@ -37,6 +37,10 @@ file(GLOB_RECURSE DESKWAIFU_RUST_SOURCES CONFIGURE_DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/rust/ipc/Cargo.toml"
   "${CMAKE_CURRENT_SOURCE_DIR}/rust/model-domain/src/*.rs"
   "${CMAKE_CURRENT_SOURCE_DIR}/rust/model-domain/Cargo.toml"
+  # `ocr-engine` depends on `perception-domain`; a change there must rebuild the
+  # runtime instead of leaving the packaged binary stale.
+  "${CMAKE_CURRENT_SOURCE_DIR}/rust/perception-domain/src/*.rs"
+  "${CMAKE_CURRENT_SOURCE_DIR}/rust/perception-domain/Cargo.toml"
   "${CMAKE_CURRENT_SOURCE_DIR}/rust/config/src/*.rs"
   "${CMAKE_CURRENT_SOURCE_DIR}/rust/config/Cargo.toml"
   "${CMAKE_CURRENT_SOURCE_DIR}/rust/speech-domain/src/*.rs"

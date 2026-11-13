@@ -195,7 +195,7 @@ impl Store {
 }
 
 /// Resolve the config path like `realpath`, keeping a path whose leaf does not exist.
-fn resolve(path: &Path) -> Result<PathBuf, StoreError> {
+pub(crate) fn resolve(path: &Path) -> Result<PathBuf, StoreError> {
     match fs::canonicalize(path) {
         Ok(resolved) => Ok(resolved),
         Err(error) => {

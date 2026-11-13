@@ -52,15 +52,35 @@ class AurPackagingTest(unittest.TestCase):
         self.assertIn('${CMAKE_CURRENT_SOURCE_DIR}/rust/model-domain/Cargo.toml', cmake)
 
     def test_rust_runtime_build_tracks_every_linked_crate(self):
-        # The runtime links these workspace crates; a source change that CMake
-        # does not depend on leaves a stale binary in the packaged build.
-        cmake = (Path(__file__).resolve().parents[1] / "CMakeLists.txt").read_text()
-        rust_app = (Path(__file__).resolve().parents[1] / "rust/app/Cargo.toml").read_text()
-        dependencies = re.findall(r'^(deskwaifu-[\w-]+) = \{ path = "\.\./([\w-]+)" \}', rust_app, re.M)
-        self.assertIn(("deskwaifu-ocr-engine", "ocr-engine"), dependencies)
-        for _, directory in dependencies:
+        # The runtime links these workspace crates, directly and transitively; a
+        # source change that CMake does not depend on leaves a stale binary in the
+        # packaged build. `ocr-engine` reaches `perception-domain` only through a
+        # path dependency, which is exactly the case this must catch.
+        root = Path(__file__).resolve().parents[1]
+        cmake = (root / "CMakeLists.txt").read_text()
+
+        def path_dependencies(manifest):
+            return re.findall(
+                r'^(deskwaifu-[\w-]+) = \{ path = "\.\./([\w-]+)" \}',
+                manifest.read_text(),
+                re.M,
+            )
+
+        seen, pending = set(), [root / "rust/app"]
+        while pending:
+            manifest = pending.pop() / "Cargo.toml"
+            for _, directory in path_dependencies(manifest):
+                if directory in seen:
+                    continue
+                seen.add(directory)
+                pending.append(root / "rust" / directory)
+        self.assertIn("ocr-engine", seen)
+        self.assertIn("perception-domain", seen)
+        for directory in sorted(seen):
             with self.subTest(crate=directory):
-                self.assertIn(f"${{CMAKE_CURRENT_SOURCE_DIR}}/rust/{directory}/Cargo.toml", cmake)
+                self.assertIn(
+                    f"${{CMAKE_CURRENT_SOURCE_DIR}}/rust/{directory}/Cargo.toml", cmake
+                )
 
     def test_rust_runtime_native_dependencies_are_declared(self):
         # libonnxruntime.so.1 and libasound.so.2 come from the Rust runtime
