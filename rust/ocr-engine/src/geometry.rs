@@ -847,18 +847,43 @@ pub fn fill_polygon(width: usize, height: usize, polygon: &[(i32, i32)]) -> Vec<
     if polygon.len() < 3 || width == 0 || height == 0 {
         return mask;
     }
-    // Even-odd scanline fill over polygon edges, matching fillPoly's result.
+    // Even-odd scanline fill over polygon edges. OpenCV samples scanlines at
+    // integer pixel coordinates and includes polygon boundaries.
     let mut edges: Vec<(f64, f64, f64, f64)> = Vec::new();
     for index in 0..polygon.len() {
         let (x0, y0) = polygon[index];
         let (x1, y1) = polygon[(index + 1) % polygon.len()];
-        if y0 == y1 {
-            continue;
+        if y0 != y1 {
+            edges.push((x0 as f64, y0 as f64, x1 as f64, y1 as f64));
         }
-        edges.push((x0 as f64, y0 as f64, x1 as f64, y1 as f64));
+        // Rasterise the edge itself so horizontal and lower/right boundaries
+        // are included, as they are by cv::fillPoly.
+        let (mut x, mut y) = (x0, y0);
+        let dx = (x1 - x0).abs();
+        let sx = if x0 < x1 { 1 } else { -1 };
+        let dy = -(y1 - y0).abs();
+        let sy = if y0 < y1 { 1 } else { -1 };
+        let mut error = dx + dy;
+        loop {
+            if x >= 0 && y >= 0 && (x as usize) < width && (y as usize) < height {
+                mask[y as usize * width + x as usize] = 1;
+            }
+            if x == x1 && y == y1 {
+                break;
+            }
+            let twice = 2 * error;
+            if twice >= dy {
+                error += dy;
+                x += sx;
+            }
+            if twice <= dx {
+                error += dx;
+                y += sy;
+            }
+        }
     }
     for y in 0..height {
-        let scan = y as f64 + 0.5;
+        let scan = y as f64;
         let mut crossings: Vec<f64> = Vec::new();
         for &(x0, y0, x1, y1) in &edges {
             let (low, high, low_x, high_x) = if y0 < y1 {
@@ -984,10 +1009,16 @@ mod tests {
     }
 
     #[test]
-    fn fill_polygon_covers_a_rectangle_interior() {
+    fn fill_polygon_includes_opencv_rectangle_boundaries() {
+        let mask = fill_polygon(4, 4, &[(0, 0), (3, 0), (3, 3), (0, 3)]);
+        assert_eq!(mask, vec![1; 16]);
+
         let mask = fill_polygon(10, 10, &[(2, 2), (7, 2), (7, 7), (2, 7)]);
-        assert_eq!(mask[4 * 10 + 4], 1);
-        assert_eq!(mask[0], 0);
+        let mut expected = vec![0; 100];
+        for row in expected.as_chunks_mut::<10>().0.iter_mut().skip(2).take(6) {
+            row[2..8].fill(1);
+        }
+        assert_eq!(mask, expected);
     }
 
     #[test]
