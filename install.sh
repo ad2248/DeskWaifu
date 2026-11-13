@@ -76,15 +76,20 @@ check_pkg_config Qt6WaylandClient "Qt >= 6.5 Wayland development libraries"
 check_pkg_config Qt6StateMachine "qt6-scxml-dev / qt6-qtscxml-devel / qt6-scxml"
 check_pkg_config Qt6Widgets      "qt6-base-dev / qt6-qtbase-devel / qt6-base"
 check_pkg_config Qt6Network      "qt6-base-dev / qt6-qtbase-devel / qt6-base"
+check_pkg_config alsa            "alsa-lib (Arch Linux)"
+if ldconfig -p 2>/dev/null | grep -q 'libonnxruntime\.so'; then
+    success "system ONNX Runtime linker library found"
+else
+    error "system ONNX Runtime linker library not found. Install onnxruntime-cpu (Arch Linux)"
+    ERRORS=$((ERRORS + 1))
+fi
 
 if [ "$ERRORS" -gt 0 ]; then
     echo ""
     error "$ERRORS missing dependency(ies). Please install them and re-run this script."
     echo ""
-    info  "Arch Linux:       sudo pacman -S --needed base-devel cmake cargo rust pkgconf wayland wayland-protocols libglvnd egl-wayland qt6-base qt6-wayland qt6-scxml layer-shell-qt systemd-libs curl unzip"
-    info  "Ubuntu / Debian:  sudo apt install build-essential cmake cargo rustc pkg-config libwayland-dev wayland-protocols libegl-dev libgl-dev libglu1-mesa-dev libsystemd-dev qt6-base-dev libqt6opengl6-dev qt6-wayland qt6-wayland-dev qt6-scxml-dev curl unzip"
-    info  "Fedora:           sudo dnf install gcc-c++ cmake cargo rust pkgconf-pkg-config wayland-devel wayland-protocols-devel mesa-libEGL-devel mesa-libGL-devel systemd-devel qt6-qtbase-devel qt6-qtwayland-devel qt6-qtscxml-devel layer-shell-qt-devel curl unzip"
-    info  "Also install LayerShellQt >= 6.6 development files; older distributions may require a newer package or a source build."
+    info  "Arch Linux:       sudo pacman -S --needed base-devel cmake cargo rust pkgconf wayland wayland-protocols libglvnd egl-wayland qt6-base qt6-wayland qt6-scxml qt6-websockets qt6-multimedia layer-shell-qt systemd-libs alsa-lib onnxruntime-cpu libsamplerate curl unzip"
+    info  "This dependency list is verified against the Arch Linux package recipe. Other distributions must install equivalent Qt/Wayland, ALSA, and system ONNX Runtime development/linker packages themselves."
     exit 1
 fi
 

@@ -60,27 +60,26 @@ https://github.com/user-attachments/assets/95dfdedc-4957-4bb7-b79f-f3addd97a6db
 | **EGL & OpenGL** | `libegl-dev`, `libgl-dev` or equivalent |
 | **Qt 6.5+** | `Gui`, `OpenGL`, `WaylandClient`, `StateMachine`, `WebSockets`, `Multimedia`, `DBus`, `Concurrent` and the Qt Wayland platform plugin; `Widgets` and `Network` for the optional control panel |
 | **LayerShellQt 6.6+** | Required for the model's desktop overlay window |
+| **ALSA development library** | `cpal` uses its ALSA host for the default Rust build; Arch package: `alsa-lib` |
+| **System ONNX Runtime** | The Rust OCR engine links `onnxruntime` in every default build; Arch package: `onnxruntime-cpu` |
 | **curl, unzip** | For downloading third-party dependencies (GLEW) |
 
 ### Installing system dependencies
 
-**Arch Linux:**
+The repository's source-build and package recipes target Arch Linux; this is the
+only distro for which the package names below are verified:
+
 ```bash
-sudo pacman -S --needed base-devel cmake rust cargo pkgconf wayland wayland-protocols libglvnd egl-wayland qt6-base qt6-wayland qt6-scxml qt6-websockets qt6-multimedia layer-shell-qt systemd-libs curl unzip
+sudo pacman -S --needed base-devel cmake rust cargo pkgconf wayland wayland-protocols libglvnd egl-wayland qt6-base qt6-wayland qt6-scxml qt6-websockets qt6-multimedia layer-shell-qt systemd-libs alsa-lib onnxruntime-cpu libsamplerate curl unzip
 ```
 
-**Ubuntu / Debian:**
-```bash
-sudo apt install build-essential cmake rustc cargo pkg-config libwayland-dev wayland-protocols libegl-dev libgl-dev libglu1-mesa-dev libsystemd-dev qt6-base-dev libqt6opengl6-dev qt6-wayland qt6-wayland-dev qt6-scxml-dev qt6-websockets-dev qt6-multimedia-dev curl unzip
-```
-
-**Fedora:**
-```bash
-sudo dnf install gcc-c++ cmake rust cargo pkgconf-pkg-config wayland-devel wayland-protocols-devel mesa-libEGL-devel mesa-libGL-devel systemd-devel qt6-qtbase-devel qt6-qtwayland-devel qt6-qtscxml-devel qt6-qtwebsockets-devel qt6-qtmultimedia-devel layer-shell-qt-devel curl unzip
-```
-
-Install LayerShellQt **6.6+** development files as well. On distributions shipping
-older Qt/Plasma packages, a newer package repository or source build may be needed.
+`alsa-lib` supplies the ALSA headers and linker library needed by `cpal`;
+`onnxruntime-cpu` supplies the system `libonnxruntime` required by the Rust
+engine. The Rust ONNX link is unconditional, even when the optional C++ OCR
+module is disabled. `opencv`, `yaml-cpp`, and other native OCR development
+packages are separate and are only needed when building that C++ OCR module.
+Other distributions must install equivalent ALSA and ONNX Runtime development
+and linker packages; this project does not currently verify distro-specific names.
 
 ## Installation
 
