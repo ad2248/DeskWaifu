@@ -18,6 +18,7 @@ use std::fs;
 use std::io;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 struct Entry {
@@ -796,7 +797,52 @@ fn arguments() -> Result<Arguments, String> {
     })
 }
 
+static TERMINATE: AtomicBool = AtomicBool::new(false);
+
+extern "C" fn handle_termination_signal(_: libc::c_int) {
+    TERMINATE.store(true, Ordering::Relaxed);
+}
+
+fn install_termination_handlers() -> Result<(), String> {
+    // SAFETY: the handler only stores to a static atomic, which is signal-safe.
+    unsafe {
+        if libc::signal(
+            libc::SIGINT,
+            handle_termination_signal as *const () as libc::sighandler_t,
+        ) == libc::SIG_ERR
+            || libc::signal(
+                libc::SIGTERM,
+                handle_termination_signal as *const () as libc::sighandler_t,
+            ) == libc::SIG_ERR
+        {
+            return Err(io::Error::last_os_error().to_string());
+        }
+    }
+    Ok(())
+}
+
+fn apply_mouth_control(
+    current: &mut Loaded,
+    controls: &Arbiter,
+    session: &mut Option<render::Session>,
+) -> Result<(), String> {
+    const MOUTH_OPEN_Y: &str = "ParamMouthOpenY";
+    if let Some(index) = current.model.parameter_index(MOUTH_OPEN_Y) {
+        let value = controls.status().mouth;
+        current
+            .model
+            .set_parameter_value(index, value)
+            .map_err(|e| e.to_string())?;
+        if let Some(session) = session.as_mut() {
+            session.set_parameter(MOUTH_OPEN_Y, value)?;
+        }
+    }
+    Ok(())
+}
+
 fn run() -> Result<(), String> {
+    TERMINATE.store(false, Ordering::Relaxed);
+    install_termination_handlers()?;
     let arguments = arguments()?;
     let (root, single, socket_path) = (arguments.root, arguments.single, arguments.socket);
     let entries = if let Some(path) = single {
@@ -838,7 +884,7 @@ fn run() -> Result<(), String> {
     let mut controls = Arbiter::new(ModelIdentity::new(0, entries[0].descriptor.id.clone()));
     let mut quit = false;
     let mut next_update = Instant::now();
-    while !quit {
+    while !quit && !TERMINATE.load(Ordering::Relaxed) {
         if Instant::now() >= next_update {
             current.model.update();
             // Same 16 ms frame step the C++ runtime uses for both the model and
@@ -884,6 +930,7 @@ fn run() -> Result<(), String> {
             }
             // The switch above may have replaced the session, and a new scene
             // needs its first frame on this tick; re-borrow after it.
+            apply_mouth_control(&mut current, &controls, &mut presentation.session)?;
             if let Some(session) = presentation.session.as_mut() {
                 session.frame(presentation.view.render_state());
             }

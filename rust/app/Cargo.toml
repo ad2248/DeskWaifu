@@ -24,6 +24,7 @@ deskwaifu-overlay = { path = "../overlay" }
 deskwaifu-speech-domain = { path = "../speech-domain" }
 gl = "0.14"
 image = { version = "0.25", default-features = false, features = ["png"] }
+libc = "0.2"
 serde_json = "1"
 tokio = { version = "1", features = ["rt", "time"] }
 wayland-client = "0.31"

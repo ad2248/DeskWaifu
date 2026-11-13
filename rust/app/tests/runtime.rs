@@ -107,6 +107,13 @@ impl Runtime {
         assert!(self.child.wait().success());
         assert!(!self.socket.exists());
     }
+
+    fn terminate(&mut self, signal: i32) {
+        assert_eq!(
+            unsafe { libc::kill(self.child.0.id() as libc::pid_t, signal) },
+            0
+        );
+    }
 }
 
 fn fixture() -> Option<PathBuf> {
@@ -227,6 +234,83 @@ fn no_control() -> Value {
 /// Control values are `f32` in the arbiter, so compare them at that precision.
 fn float(status: &Value, key: &str) -> f32 {
     status[key].as_f64().unwrap() as f32
+}
+
+#[test]
+fn mouth_arbitration_is_applied_to_core_parameter_and_reset_each_frame() {
+    let Some(model) = fixture() else { return };
+    let runtime = Runtime::start("--model", &model);
+    let parameters = runtime.request(json!({"command":"get_parameters"}))["parameters"]
+        .as_array()
+        .unwrap()
+        .clone();
+    let Some(index) = parameters
+        .iter()
+        .find(|parameter| parameter["id"] == "ParamMouthOpenY")
+        .and_then(|parameter| parameter["index"].as_u64())
+    else {
+        runtime.quit();
+        return;
+    };
+
+    assert_eq!(
+        runtime.request(json!({"command":"set_mouth_y","args":{"value":0.7}}))["ok"],
+        true
+    );
+    std::thread::sleep(Duration::from_millis(40));
+    let value = runtime.request(json!({"command":"get_parameters"}))["parameters"]
+        .as_array()
+        .unwrap()[index as usize]["value"]
+        .as_f64()
+        .unwrap();
+    assert!((value - 0.7).abs() < 1e-5, "mouth parameter was {value}");
+
+    assert_eq!(
+        runtime.request(json!({"command":"set_mouth_y","args":{"reset":true}}))["ok"],
+        true
+    );
+    std::thread::sleep(Duration::from_millis(40));
+    let value = runtime.request(json!({"command":"get_parameters"}))["parameters"]
+        .as_array()
+        .unwrap()[index as usize]["value"]
+        .as_f64()
+        .unwrap();
+    assert!(value.abs() < 1e-5, "reset mouth parameter was {value}");
+    runtime.quit();
+}
+
+#[test]
+fn sigterm_removes_owned_socket_and_allows_restart_at_same_path() {
+    let Some(model) = fixture() else { return };
+    let mut runtime = Runtime::start("--model", &model);
+    let socket = runtime.socket.clone();
+    runtime.terminate(libc::SIGTERM);
+    assert!(runtime.child.wait().success());
+    assert!(!socket.exists());
+
+    let mut restarted = ChildGuard::spawn(&[
+        "--model".as_ref(),
+        model.as_os_str(),
+        "--socket".as_ref(),
+        socket.as_os_str(),
+    ]);
+    let deadline = Instant::now() + TIMEOUT;
+    loop {
+        if UnixStream::connect(&socket).is_ok() {
+            break;
+        }
+        if let Some(status) = restarted.0.try_wait().unwrap() {
+            panic!("runtime could not rebind socket ({status})");
+        }
+        assert!(Instant::now() < deadline, "runtime did not rebind in time");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let restarted = Runtime {
+        child: restarted,
+        socket,
+        _dir: runtime._dir,
+    };
+    restarted.quit();
 }
 
 #[test]

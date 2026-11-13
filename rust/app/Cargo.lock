@@ -310,6 +310,7 @@ dependencies = [
  "futures-util",
  "gl",
  "image",
+ "libc",
  "serde_json",
  "tempfile",
  "tokio",
