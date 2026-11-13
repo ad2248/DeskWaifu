@@ -87,6 +87,8 @@ const OCR_FAILED: &str = "OCR job failed";
 const TEST_IMAGE: &str = "DESKWAIFU_READING_TEST_IMAGE";
 /// The C++ `CreateImageFile` bound, and the native engine's own limit.
 const MAX_SIDE: u32 = 4096;
+/// A 4096x4096 RGBA PNG can require just over 64 MiB when uncompressed.
+const MAX_CLIPBOARD_BYTES: u64 = 68 * 1024 * 1024;
 /// How long one clipboard read may take before the worker is killed.
 const READ_TIMEOUT: Duration = Duration::from_secs(5);
 /// How often the worker polls the `wl-paste` child.
@@ -565,15 +567,32 @@ fn paste() -> Result<Vec<u8>, String> {
             ErrorKind::NotFound => WL_PASTE_MISSING.to_string(),
             _ => format!("cannot run wl-paste: {error}"),
         })?;
-    let mut stdout = child.stdout.take().ok_or(WL_PASTE_MISSING)?;
+    let stdout = child.stdout.take().ok_or(WL_PASTE_MISSING)?;
     let (sender, bytes) = mpsc::channel();
-    thread::spawn(move || {
+    let reader = thread::spawn(move || {
         let mut buffer = Vec::new();
-        let _ = std::io::Read::read_to_end(&mut stdout, &mut buffer);
-        let _ = sender.send(buffer);
+        let result = {
+            let mut stdout = std::io::Read::take(stdout, MAX_CLIPBOARD_BYTES + 1);
+            std::io::Read::read_to_end(&mut stdout, &mut buffer).map(|_| buffer)
+        };
+        let _ = sender.send(result);
     });
     let deadline = Instant::now() + READ_TIMEOUT;
+    let mut completed = None;
     let status = loop {
+        if completed.is_none() {
+            if let Ok(result) = bytes.try_recv() {
+                match result {
+                    Ok(buffer) if buffer.len() as u64 > MAX_CLIPBOARD_BYTES => {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        let _ = reader.join();
+                        return Err(IMAGE_FAILED.into());
+                    }
+                    result => completed = Some(result),
+                }
+            }
+        }
         match child.try_wait() {
             Ok(Some(status)) => break status,
             Ok(None) if Instant::now() < deadline => thread::sleep(READ_POLL),
@@ -594,9 +613,14 @@ fn paste() -> Result<Vec<u8>, String> {
         // "No selection owner" or similar; the C++ saw a null `QImage` there.
         return Err(NO_IMAGE.into());
     }
-    bytes
-        .recv_timeout(READ_TIMEOUT)
-        .map_err(|_| WL_PASTE_TIMEOUT.into())
+    let result = match completed {
+        Some(result) => result,
+        None => bytes
+            .recv_timeout(READ_TIMEOUT)
+            .map_err(|_| WL_PASTE_TIMEOUT.to_string())?,
+    };
+    let _ = reader.join();
+    result.map_err(|error| format!("cannot read wl-paste output: {error}"))
 }
 
 /// Writes the bytes next to a fresh private file and returns it. A file that

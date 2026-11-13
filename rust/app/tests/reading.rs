@@ -764,6 +764,43 @@ fn an_image_over_4096_pixels_per_side_is_rejected_before_ocr() {
 }
 
 #[test]
+fn oversized_wl_paste_output_is_bounded_and_stops_promptly() {
+    let Some(model) = fixture() else { return };
+    let dir = tempdir().unwrap();
+    let bin = dir.path().join("bin");
+    fs::create_dir_all(&bin).unwrap();
+    let wl_paste = bin.join("wl-paste");
+    fs::write(
+        &wl_paste,
+        "#!/bin/sh\nwhile :; do printf 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'; done\n",
+    )
+    .unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(&wl_paste, fs::Permissions::from_mode(0o755)).unwrap();
+    let runtime = Runtime::start(
+        &model,
+        Setup {
+            path: Some(bin.as_os_str().to_owned()),
+            ..Setup::default()
+        },
+    );
+    runtime.request(json!({"command":"reading_clip"}));
+    let started = Instant::now();
+    let done = runtime.wait_status(Duration::from_secs(10), |status| {
+        status["state"] == "idle"
+            && status["error"]
+                .as_str()
+                .is_some_and(|error| !error.is_empty())
+    });
+    assert_eq!(done["error"], "image is too large or PNG encoding failed");
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "oversized output was not stopped promptly"
+    );
+    runtime.quit();
+}
+
+#[test]
 fn a_missing_wl_paste_reports_a_clear_error_instead_of_hanging() {
     let Some(model) = fixture() else { return };
     let dir = tempdir().unwrap();
