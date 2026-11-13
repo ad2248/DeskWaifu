@@ -1,0 +1,13 @@
+[package]
+name = "deskwaifu-audio-capture"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# ALSA default host; the pipewire-alsa plugin routes it into PipeWire. The cpal
+# `pipewire` feature is omitted because libspa-sys needs libclang for bindgen,
+# which the packaged build image does not ship.
+cpal = "=0.18.1"
+# Incremental downmix + resample to 16 kHz mono PCM16 (libsamplerate), the Rust
+# port of `plugins/voice_input/private/audio/PcmNormalizer.cpp`.
+deskwaifu-audio-domain = { path = "../audio-domain" }

@@ -1,5 +1,5 @@
 [workspace]
-members = ["control", "ctl", "ipc", "config", "model-domain", "audio-domain", "audio-output", "client", "speech-domain", "asr-domain", "voice-domain", "perception-domain", "screenshot", "control-domain", "hotkey-domain", "overlay"]
+members = ["control", "ctl", "ipc", "config", "model-domain", "audio-domain", "audio-output", "audio-capture", "client", "speech-domain", "asr-domain", "voice-domain", "perception-domain", "screenshot", "control-domain", "hotkey-domain", "overlay"]
 resolver = "2"
 
 [patch.crates-io]

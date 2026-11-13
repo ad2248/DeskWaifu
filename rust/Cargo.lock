@@ -1378,6 +1378,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "deskwaifu-audio-capture"
+version = "0.1.0"
+dependencies = [
+ "cpal",
+ "deskwaifu-audio-domain",
+]
+
+[[package]]
 name = "deskwaifu-audio-domain"
 version = "0.1.0"
 
