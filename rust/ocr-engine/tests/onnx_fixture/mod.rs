@@ -34,7 +34,7 @@ fn bytes(field: u32, value: &[u8]) -> Vec<u8> {
 fn value_info(name: &str, shape: &[i64], element_type: u64) -> Vec<u8> {
     let mut dimensions = Vec::new();
     for (index, size) in shape.iter().enumerate() {
-        let dimension = if *size > 0 {
+        let dimension = if *size >= 0 {
             integer(1, *size as u64)
         } else {
             bytes(2, format!("dynamic_{index}").as_bytes())

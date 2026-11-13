@@ -167,6 +167,25 @@ fn a_real_session_executes_the_constant_graph() {
     assert_eq!(output.data[64 * 64 - 1], 0.0);
 }
 
+#[test]
+fn a_real_session_returns_an_empty_tensor_without_a_null_slice() {
+    let fixture = Fixture::new("session-empty-output");
+    write_model(
+        &fixture.detection,
+        &constant_model(&[1, 3, -1, -1], &[1, 1, 0, 64], &[], None, 1),
+    );
+    let options = Options::new().expect("ORT session options");
+    let session = Session::load(&fixture.detection, &options).expect("load empty constant");
+    assert_eq!(session.signature().unwrap().output_shape, vec![1, 1, 0, 64]);
+    // ORT can return a null data pointer for zero elements. It is not a valid
+    // pointer for from_raw_parts, even with a zero length.
+    let output = session
+        .run(&vec![0.0f32; 3 * 64 * 64], 64, 64)
+        .expect("run empty constant");
+    assert_eq!(output.shape, vec![1, 1, 0, 64]);
+    assert!(output.data.is_empty());
+}
+
 // ---------------------------------------------------------------------------
 // Valid construction and the detection + recognition result.
 // ---------------------------------------------------------------------------

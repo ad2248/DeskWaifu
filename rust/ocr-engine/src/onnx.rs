@@ -588,8 +588,14 @@ impl Session {
         if data.is_null() && elements > 0 {
             return Err(OrtError::Status("ONNX output data is null".into()));
         }
-        // SAFETY: the tensor holds `elements` float32 values.
-        let data = unsafe { std::slice::from_raw_parts(data.cast::<f32>(), elements) }.to_vec();
+        // An empty tensor may legally carry a null data pointer; `from_raw_parts`
+        // still requires a non-null, aligned pointer, so skip it entirely.
+        let data = if elements == 0 {
+            Vec::new()
+        } else {
+            // SAFETY: the tensor holds `elements` float32 values.
+            unsafe { std::slice::from_raw_parts(data.cast::<f32>(), elements) }.to_vec()
+        };
         Ok(Output { shape, data })
     }
 }
