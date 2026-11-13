@@ -84,6 +84,14 @@ impl View {
             hidden: self.hidden,
         }
     }
+
+    /// Adopts the transform the pointer policy resolved, which is how a drag and a
+    /// scroll really move and zoom the model: they rewrite this IPC-owned state.
+    fn sync(&mut self, state: render::ViewState) {
+        self.zoom = state.zoom;
+        self.x = state.x;
+        self.y = state.y;
+    }
 }
 
 struct OwnedSocket {
@@ -183,6 +191,35 @@ fn load_hotkeys(entry: usize, entries: &[Entry]) -> Hotkeys {
 
 fn error(message: impl ToString) -> Value {
     json!({"ok": false, "error": message.to_string()})
+}
+
+/// Copies the live pointer counters into a reply.
+///
+/// The values come from `Session`'s own event handling, so a test can prove a
+/// click really reached the model instead of inferring it from pixels. They are
+/// added only in overlay mode; the headless reply keeps its exact shape.
+fn interaction_fields(reply: &mut Value, session: &render::Session) {
+    let (counts, error) = session.interaction();
+    reply["pointer_events"] = json!(counts.pointer_events);
+    reply["taps"] = json!(counts.taps);
+    reply["double_clicks"] = json!(counts.double_clicks);
+    reply["drags"] = json!(counts.drags);
+    reply["right_clicks"] = json!(counts.right_clicks);
+    reply["middle_clicks"] = json!(counts.middle_clicks);
+    reply["scrolls"] = json!(counts.scrolls);
+    reply["ignored_hidden"] = json!(counts.ignored_hidden);
+    reply["last_hit"] = match counts.last_hit {
+        Some(part) => json!(part.name()),
+        None => Value::Null,
+    };
+    reply["expressions_started"] = json!(counts.expressions_started);
+    reply["motions_started"] = json!(counts.motions_started);
+    reply["hit_areas_declared"] = json!(counts.hit_areas_declared);
+    reply["hit_test_available"] = json!(counts.hit_test_available);
+    reply["interaction_error"] = match error {
+        Some(error) => json!(error),
+        None => Value::Null,
+    };
 }
 
 fn control_error(error: ControlError) -> String {
@@ -393,6 +430,7 @@ fn handle(
                         Some(error) => json!(error),
                         None => Value::Null,
                     };
+                    interaction_fields(&mut reply, session);
                 }
                 Ok(reply)
             }
@@ -421,6 +459,7 @@ fn handle(
                     })
                     .collect::<Vec<_>>()
                     .into();
+                interaction_fields(&mut reply, session);
                 if let Some(id) = args.get("id").and_then(Value::as_str) {
                     let value = session.parameter(id)?;
                     reply["parameter"] = json!(id);
@@ -817,6 +856,34 @@ fn run() -> Result<(), String> {
             presentation
                 .reading
                 .poll(&mut presentation.ocr, &mut presentation.speech);
+            if let Some(session) = presentation.session.as_mut() {
+                // The pointer policy runs before the frame, so a tap that starts
+                // an expression and a tap motion is visible in that same frame.
+                let mut state = presentation.view.render_state();
+                state = session.pump(state);
+                presentation.view.sync(state);
+                if session.take_next_model() {
+                    let count = entries.len();
+                    let index = (current.entry + 1) % count;
+                    // A right click is the C++ `next_model`, so it goes through
+                    // the same switch path (hotkeys, controls, rendered scene) and
+                    // a failure is reported rather than hidden.
+                    if let Err(error) = select(
+                        index,
+                        &entries,
+                        &mut current,
+                        &mut controls,
+                        &mut presentation.session,
+                        presentation.view.render_state(),
+                    ) {
+                        eprintln!(
+                            "deskwaifu-rust: right click could not switch the model: {error}"
+                        );
+                    }
+                }
+            }
+            // The switch above may have replaced the session, and a new scene
+            // needs its first frame on this tick; re-borrow after it.
             if let Some(session) = presentation.session.as_mut() {
                 session.frame(presentation.view.render_state());
             }

@@ -31,9 +31,13 @@ CUBISM_SDK_ROOT=/path/to/CubismSdkForNative-5-r.5 \
   overlay is click-through exactly where the model is transparent (see below)
 - rebuilds the rendered model, textures and renderer on `set_model`,
   `next_model` and `prev_model`
+- applies the C++ `InteractionProcessor` pointer policy to the events the
+  overlay reports, so the character really reacts to the mouse (see below)
 - plays the model's **first declared motion in a group named `Idle`**, if the
   model declares one, and blinks using the `Groups` entry named `EyeBlink`.
-  No motion is invented when none is declared, and there is no random selection.
+  A tap can additionally start the `TapBody` group and the declared
+  expressions. No motion is invented when none is declared, and there is no
+  random selection.
 
 Failing to reach the compositor, start the Framework, read a texture or create
 the renderer is a startup error: the process exits non-zero with the reason on
@@ -72,6 +76,67 @@ same buffer.
 If `set_input_region` fails, the frame fails as a renderer error rather than
 reporting a region that never reached the compositor.
 
+### Pointer interaction
+
+Every tick the runtime drains `deskwaifu_overlay::Overlay::take_events()` and
+applies `InteractionProcessor`'s policy to the model the overlay is drawing.
+The counters are reported in `get_status`/`debug_frame`, so a client can see that
+the policy really ran instead of inferring it from pixels.
+
+| C++ behaviour | this runtime |
+| --- | --- |
+| `IsTap`: both axis displacements **strictly** below 10 px | same threshold (`TAP_DISTANCE`) |
+| `ModelDoubleClick::Delay = 350 ms`, `Distance = 10 px` | same interval and distance |
+| a lone tap is dispatched by `interaction.tap_timeout` after `Delay` | the tick flushes it once that many milliseconds have really passed; the C++ imposes **no** dwell limit on press-to-release, so neither does this |
+| a second click inside the window cancels the pending tap | same, and counted as `double_clicks` |
+| a release beyond the threshold is a drag; `PointerMoved` applies `InputController::Drag` | same math, applied to the IPC-owned `View` (`x`/`y`) |
+| `PointerScroll` zooms by `1 + delta * .1` around the cursor | same, through `Transform::zoom_around` (scale clamped to `0.1..=10`) |
+| right **release** sends `next_model` | the tick runs the same `select` path as the IPC command |
+| middle **press** sends `switch_skin` | counted as `middle_clicks`, nothing else: the runtime has no skins |
+| `hidden && !screenEditing` returns early | a hidden model ignores every tap, drag, right/middle click and scroll; the recogniser is cleared, as `InteractionCancel` does |
+| tap on `Head` starts `random_expression` | next declared expression (round-robin, which is what the C++ cursor does) |
+| tap on `Body` starts `random_motion` `TapBody` and `random_expression` | next `TapBody` motion plus next declared expression |
+
+**Hit testing.** The C++ `LAppModel::HitTest` looks up the declared `HitAreas`
+entry by name, then tests the point against that drawable's axis-aligned vertex
+bounds (`IsHit`), after the point has been mapped through the projection.
+`LAppLive2DManager::HitSnapshot` builds that mapping from the same
+`BuildModelProjection` the draw uses. This runtime maps the surface point with
+`surface_to_model`, the exact inverse of the matrix `Scene::mvp` draws with
+(canvas fit, then `zoom`, then `x`/`y`).
+
+`cubism-render` exposes no drawable vertices, so the declared hit areas cannot be
+placed. For a model that declares `HitAreas` the runtime therefore resolves **no**
+part, sets `hit_test_available:false` and reports why in `interaction_error`; it
+does not guess, and starts nothing.
+
+A model that declares **no** `HitAreas` uses the C++
+`LAppModel::HitTest` fallback, which needs only the projection: `Head` when the
+model-space `y` is above the midline (`y > 0`), `Body` on or below it. That is
+implemented for real, and proved live on a copy of the fixture with its
+`HitAreas` section removed.
+
+**Deliberate differences.**
+
+- A **double-click** in the C++ opens the keyboard grab and emits
+  `interaction.double_click/v1`. This runtime has no keyboard grab, no key
+  binding surface and no notification bus, so a double-click only cancels the
+  pending tap and is counted. It starts no speech greeting and no grab.
+- A **middle click** does nothing: `switch_skin` has no counterpart because a
+  model directory holds one skin here.
+- A **drag** edits the in-memory `View`, which is the same state
+  `set_model_position` writes. The C++ routes a model drag through
+  `BeginLocalScreenEdit`, so it also switches screen/output when the pointer
+  leaves the window and persists the result; neither exists here, so the move
+  lasts until the process exits and the input region follows the drawn pixels.
+- There is no **screen-edit mode**, so `hidden && !screenEditing` is simply
+  `hidden`, and the C++ widening of the input region to the whole surface during
+  an edit never applies.
+- Motion priority: the idle motion has its own queue and a tap motion has a
+  second one, so a `TapBody` motion is never refused by the idle priority rules.
+  The C++ shares one manager and uses `PriorityNormal` over `PriorityIdle`; the
+  visible effect (a tap motion plays over the idle) is the same.
+
 ### Status and diagnostics
 
 `get_status` keeps its headless reply exactly as before. In overlay mode it adds:
@@ -88,6 +153,20 @@ reporting a region that never reached the compositor.
 | `input_region_pixels` | total area those rectangles cover |
 | `input_region_applied` | whether `set_input_region` accepted the region for that frame |
 | `renderer_error` | why rendering failed, or `null` |
+| `pointer_events` | pointer events drained from the overlay so far |
+| `taps` | clicks dispatched to hit testing |
+| `double_clicks` | second clicks that cancelled a pending tap |
+| `drags` | presses released beyond the tap threshold |
+| `right_clicks` | right releases (each advances the model) |
+| `middle_clicks` | middle presses (no skins, so no effect) |
+| `scrolls` | wheel events applied to the zoom |
+| `ignored_hidden` | button/scroll events dropped by the hidden-model guard |
+| `last_hit` | `"Head"`, `"Body"` or `null` for the last resolved tap |
+| `expressions_started` | expressions a tap really started |
+| `motions_started` | `TapBody` motions a tap really started |
+| `hit_areas_declared` | whether the model declares `HitAreas` |
+| `hit_test_available` | whether the declared hit areas could be tested |
+| `interaction_error` | why the last tap started nothing, or `null` |
 
 `debug_frame` forces one frame plus a fresh readback and returns the same
 counts, plus the exact `input_region` rectangle list. Passing
@@ -322,15 +401,19 @@ needs `libonnxruntime.so` (it is skipped like `tests/ocr.rs` otherwise) and
 
 ## Known gaps
 
-- **Pointer interaction and transform editing**: the input region decides which
-  pixels are clickable, but no pointer events are consumed yet: there is no
-  hit testing, dragging or tap motion. The C++ also widens the region to the
-  whole surface while a transform edit is in progress
-  (`ModelFrameInputRegions(true, ..)`); this runtime has no transform editor, so
-  that mode does not exist rather than being faked.
+- **Pointer interaction and transform editing**: taps, double-clicks, drags,
+  right clicks, middle clicks and scrolls are applied (see **Pointer
+  interaction**), but the C++ transform *editor* does not exist here: a drag
+  moves the in-memory view without the screen-edit transaction, cross-output
+  switch or config save, and `ModelFrameInputRegions(true, ..)` (whole-surface
+  input during an edit) never applies. Declared `HitAreas` cannot be resolved
+  because `cubism-render` exposes no drawable vertices; only the C++ fallback for
+  models without hit areas is implemented.
 - **Expressions, physics, pose, breathing, look-at**: `set_expression` and
-  `do_motion` fail explicitly instead of claiming success. Only the `Idle` motion
-  and eye blink are driven.
+  `do_motion` still fail explicitly instead of claiming success. A tap starts the
+  declared expressions and `TapBody` motions for real; the `Idle` motion and eye
+  blink are otherwise the only automatic animation, and physics, pose, breathing
+  and look-at are not driven.
 - **Window configuration**: size and anchors are fixed constants, not settings.
 - **Textures are not shared** between model instances, so a model switch
   re-uploads every texture (the C++ `TextureResidency` lease does not exist here).
@@ -360,6 +443,25 @@ switch keeps rendering, and that the input region is nonempty, inside the
 surface and non-overlapping for a drawn model, empty for a hidden one, and
 restored when it is shown again. Its non-live test proves `--overlay` without
 `WAYLAND_DISPLAY` fails with a clear error instead of hanging.
+
+Two more live tests inject **real** pointer input through KWin's
+`org_kde_kwin_fake_input` (the recipe `rust/overlay/tests/kwin.rs` proves; the
+protocol descriptors are declared by hand here because this test target has no
+`wayland-scanner` dev-dependency) and assert the runtime's own counters:
+
+- `overlay_pointer_policy_reacts_to_real_clicks`: a click on an opaque pixel
+  becomes a `tap`, a click in a transparent corner taps nothing, a right click
+  advances the model (`get_status` reports `Beta`), and a hidden model stays at
+  the same tap count while its region is empty.
+- `overlay_tap_dispatches_real_expressions_on_a_model_without_hit_areas`: the
+  same Haru assets with the `HitAreas` section removed, so the documented C++
+  fallback applies; the upper half resolves `Head` and starts an expression, the
+  lower half resolves `Body` and starts a `TapBody` motion plus an expression.
+
+`src/render.rs` also has pure tests for the policy itself: the strict 10 px tap
+threshold, the 350 ms/10 px double-click window, drag detection, the drag math,
+`surface_to_clip`, the exact inverse of the draw projection
+(`surface_to_model`), and the fallback Head/Body split.
 
 The alpha → rectangle mapping itself has pure unit tests in `src/render.rs`
 (no compositor needed): fully transparent, fully opaque, a single opaque block,
