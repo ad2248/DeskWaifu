@@ -82,6 +82,7 @@ const MAX_TEXT_UNITS: usize = 10_000;
 /// How long one iteration may wait for a source event, so `pump` keeps a
 /// sub-frame cadence without a separate timer thread.
 const POLL: Duration = Duration::from_millis(2);
+const SOURCE_EVENT_BUDGET: usize = 32;
 /// The C++ `SpeechProcessor` texts.
 const EMPTY_TEXT: &str = "speech text is empty";
 const BUSY: &str = "speech service is busy";
@@ -631,17 +632,13 @@ fn serve(endpoint: &str, mailbox: &Mailbox, reports: &Sender<Report>) {
         // fresh failure here.
         let mut ended = false;
         if let Some(events) = source.as_mut() {
-            loop {
-                let next =
-                    runtime.block_on(async { tokio::time::timeout(POLL, events.recv()).await });
-                let event = match next {
-                    Err(_) => break,
-                    Ok(None) => {
-                        ended = true;
-                        break;
-                    }
-                    Ok(Some(Ok(event))) => event,
-                    Ok(Some(Err(error))) => {
+            let (batch, closed) =
+                runtime.block_on(source_batch(events, tokio::time::Instant::now() + POLL));
+            ended = closed;
+            for result in batch {
+                let event = match result {
+                    Ok(event) => event,
+                    Err(error) => {
                         let previous = machine.id();
                         fail(&mut machine, PlayerError::Source(error));
                         settle(
@@ -701,6 +698,25 @@ fn serve(endpoint: &str, mailbox: &Mailbox, reports: &Sender<Report>) {
     emit(&mut machine, active_token, active_token, reports);
     let id = audio.id();
     audio.stop(id);
+}
+
+async fn source_batch(
+    events: &mut Events,
+    deadline: tokio::time::Instant,
+) -> (Vec<Result<SourceEvent, SourceError>>, bool) {
+    let mut batch = Vec::with_capacity(SOURCE_EVENT_BUDGET);
+    let mut closed = false;
+    for _ in 0..SOURCE_EVENT_BUDGET {
+        match tokio::time::timeout_at(deadline, events.recv()).await {
+            Err(_) => break,
+            Ok(None) => {
+                closed = true;
+                break;
+            }
+            Ok(Some(event)) => batch.push(event),
+        }
+    }
+    (batch, closed)
 }
 
 fn audio_error(code: ErrorCode) -> PlayerError {
@@ -852,6 +868,36 @@ pub(crate) mod tests {
             next_token: 1,
         };
         (speech, outgoing)
+    }
+
+    #[tokio::test]
+    async fn source_batch_is_bounded_and_leaves_the_worker_iteration_for_mailbox() {
+        let (sender, mut events) = tokio::sync::mpsc::channel(SOURCE_EVENT_BUDGET + 8);
+        for _ in 0..(SOURCE_EVENT_BUDGET + 8) {
+            sender.try_send(Ok(SourceEvent::Completed)).unwrap();
+        }
+
+        let (batch, closed) = source_batch(&mut events, tokio::time::Instant::now() + POLL).await;
+        assert_eq!(batch.len(), SOURCE_EVENT_BUDGET);
+        assert!(!closed);
+        assert_eq!(events.len(), 8);
+
+        let mailbox = Mailbox::new();
+        assert!(mailbox.send(Command {
+            token: 7,
+            text: "replacement".into(),
+            key: "test-key".into(),
+        }));
+        let command = mailbox
+            .take(Duration::ZERO)
+            .expect("mailbox remains serviceable");
+        assert_eq!(command.token, 7);
+        assert_eq!(command.text, "replacement");
+        assert_eq!(
+            events.len(),
+            8,
+            "remaining events belong to the next iteration"
+        );
     }
 
     #[test]
