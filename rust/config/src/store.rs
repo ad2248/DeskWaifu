@@ -119,6 +119,9 @@ impl Store {
         expected: &ConfigDocument,
         overwrite: bool,
     ) -> Result<ConfigDocument, StoreError> {
+        if document.len() as u64 > MAX_FILE_SIZE {
+            return Err(StoreError::new(OVERSIZED));
+        }
         let path = resolve(&self.path)?;
         let previous = read_text(&path)?;
         let latest = ConfigDocument::parse(&previous, true)

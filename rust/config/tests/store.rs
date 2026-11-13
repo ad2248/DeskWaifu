@@ -233,6 +233,22 @@ fn invalid_document_is_rejected_and_not_replaced() {
 }
 
 #[test]
+fn commit_rejects_oversized_documents_before_replacing_the_current_file() {
+    let root = tempfile::tempdir().unwrap();
+    let store = Store::new(root.path());
+    write(store.path(), "{\"model_x\":1}");
+    let snapshot = store.read().unwrap();
+    let oversized = format!("{{\"other\":\"{}\"}}", "x".repeat(MAX_FILE_SIZE as usize));
+    assert!(oversized.len() as u64 > MAX_FILE_SIZE);
+    for overwrite in [false, true] {
+        let error = store.commit(&oversized, &snapshot, overwrite).unwrap_err();
+        assert!(error.to_string().contains("4 MiB"), "{error}");
+        assert_eq!(fs::read_to_string(store.path()).unwrap(), "{\"model_x\":1}");
+        assert_eq!(store.read().unwrap(), snapshot);
+    }
+}
+
+#[test]
 fn oversized_file_is_rejected_and_unchanged() {
     let root = tempfile::tempdir().unwrap();
     let store = Store::new(root.path());
