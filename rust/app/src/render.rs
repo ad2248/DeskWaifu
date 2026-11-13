@@ -372,10 +372,14 @@ pub fn surface_to_clip(x: f64, y: f64, width: f32, height: f32) -> (f32, f32) {
     (clip_x, clip_y)
 }
 
-/// The canvas-fitting scale `Scene::mvp` uses, so hit testing and drawing share
-/// one projection.
-fn clip_scale(canvas: [f32; 2], zoom: f32) -> f32 {
-    FIT / canvas[0].max(canvas[1]).max(f32::MIN_POSITIVE) * zoom
+/// The canvas-fitting scale `Scene::mvp` uses, corrected for viewport aspect so
+/// one model unit occupies the same number of pixels on both axes.
+fn clip_scales(canvas: [f32; 2], zoom: f32, width: f32, height: f32) -> (f32, f32) {
+    let scale = FIT / canvas[0].max(canvas[1]).max(f32::MIN_POSITIVE) * zoom;
+    if width <= 0.0 || height <= 0.0 {
+        return (scale, scale);
+    }
+    (scale * height / width, scale)
 }
 
 /// Maps one surface-local pixel into model units by inverting the very matrix
@@ -389,8 +393,8 @@ pub fn surface_to_model(
     canvas: [f32; 2],
 ) -> (f32, f32) {
     let (clip_x, clip_y) = surface_to_clip(x, y, width, height);
-    let scale = clip_scale(canvas, view.zoom);
-    ((clip_x - view.x) / scale, (clip_y - view.y) / scale)
+    let (scale_x, scale_y) = clip_scales(canvas, view.zoom, width, height);
+    ((clip_x - view.x) / scale_x, (clip_y - view.y) / scale_y)
 }
 
 /// The C++ fallback for a model with no `HitAreas` (`LAppModel::HitTest`):
@@ -705,11 +709,13 @@ impl Scene {
         model
             .load_parameters()
             .map_err(|e| format!("cannot load parameters: {e}"))?;
+        let mut motion_updated = false;
         if let Some(playing) = motion {
             let updated = playing
                 .manager
                 .update(delta)
                 .map_err(|e| format!("motion update failed: {e}"))?;
+            motion_updated |= updated;
             // A finished non-looping motion is restarted; a looping motion never
             // reports finished, so this only affects one-shot idle files.
             if !updated && playing.manager.is_finished().unwrap_or(false) {
@@ -723,7 +729,7 @@ impl Scene {
         // restart above; the C++ lets both share `_motionManager` and relies on
         // priorities, which this queue reproduces by simply being separate.
         if let Some(manager) = tap_manager {
-            manager
+            motion_updated |= manager
                 .update(delta)
                 .map_err(|e| format!("tap motion update failed: {e}"))?;
         }
@@ -733,15 +739,20 @@ impl Scene {
         model
             .save_parameters()
             .map_err(|e| format!("cannot save parameters: {e}"))?;
+        // Cubism's EyeBlinkUpdater receives `_motionUpdated` and does not blink
+        // over a motion that owns the frame. Otherwise apply blink before
+        // expressions, so an explicit expression's eyelid intent wins.
+        if !motion_updated {
+            if let Some(blink) = eye_blink {
+                blink
+                    .update(delta)
+                    .map_err(|e| format!("eye blink update failed: {e}"))?;
+            }
+        }
         if let Some(manager) = expressions {
             manager
                 .update(delta)
                 .map_err(|e| format!("expression update failed: {e}"))?;
-        }
-        if let Some(blink) = eye_blink {
-            blink
-                .update(delta)
-                .map_err(|e| format!("eye blink update failed: {e}"))?;
         }
         // IPC parameter writes are re-applied after the base layer restore, so a
         // written value survives every frame until it is written again.
@@ -757,11 +768,10 @@ impl Scene {
 
     /// Canvas-fitting projection: the longer canvas side covers `FIT` clip units,
     /// then the IPC zoom and clip-space x/y offset are applied.
-    fn mvp(&self, view: ViewState) -> [f32; 16] {
-        let longest = self.canvas[0].max(self.canvas[1]).max(f32::MIN_POSITIVE);
-        let scale = FIT / longest * view.zoom;
+    fn mvp(&self, view: ViewState, width: f32, height: f32) -> [f32; 16] {
+        let (scale_x, scale_y) = clip_scales(self.canvas, view.zoom, width, height);
         [
-            scale, 0., 0., 0., 0., scale, 0., 0., 0., 0., 1., 0., view.x, view.y, 0., 1.,
+            scale_x, 0., 0., 0., 0., scale_y, 0., 0., 0., 0., 1., 0., view.x, view.y, 0., 1.,
         ]
     }
 
@@ -1426,7 +1436,7 @@ impl Session {
         self.last_frame = now;
         let scene = self.scene.as_mut().ok_or("renderer is not available")?;
         scene.update(delta)?;
-        let mvp = scene.mvp(view);
+        let mvp = scene.mvp(view, self.size.0 as f32, self.size.1 as f32);
         unsafe {
             gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
             gl::Viewport(0, 0, width, height);
@@ -1810,28 +1820,86 @@ mod tests {
 
     #[test]
     fn surface_to_model_inverts_the_draw_projection() {
-        // Haru's canvas is 2x2, so `clip_scale` is `FIT / 2 * zoom`.
+        // A square viewport keeps the canvas scale equal on both axes.
         let canvas = [2.0, 2.0];
         let scale = FIT / 2.0;
         // Centre of the surface maps to model origin when x = y = 0.
-        let (x, y) = surface_to_model(320.0, 240.0, 640.0, 480.0, view(), canvas);
+        let (x, y) = surface_to_model(320.0, 320.0, 640.0, 640.0, view(), canvas);
         assert!(x.abs() < 1e-6 && y.abs() < 1e-6, "{x}, {y}");
         // One clip unit right of centre is `1 / scale` model units.
-        let (x, y) = surface_to_model(640.0, 240.0, 640.0, 480.0, view(), canvas);
+        let (x, y) = surface_to_model(640.0, 320.0, 640.0, 640.0, view(), canvas);
         assert!((x - 1.0 / scale).abs() < 1e-5, "{x}");
         assert!(y.abs() < 1e-6, "{y}");
         // A translate moves the inverse the other way, which is what hit testing
         // needs so a dragged model's parts move with it.
         let moved = ViewState { x: 0.5, ..view() };
-        let (x, _) = surface_to_model(640.0, 240.0, 640.0, 480.0, moved, canvas);
+        let (x, _) = surface_to_model(640.0, 320.0, 640.0, 640.0, moved, canvas);
         assert!((x - (1.0 - 0.5) / scale).abs() < 1e-5, "{x}");
         // Zoom scales the inverse.
         let zoomed = ViewState {
             zoom: 2.0,
             ..view()
         };
-        let (x, _) = surface_to_model(640.0, 240.0, 640.0, 480.0, zoomed, canvas);
+        let (x, _) = surface_to_model(640.0, 320.0, 640.0, 640.0, zoomed, canvas);
         assert!((x - 1.0 / (scale * 2.0)).abs() < 1e-5, "{x}");
+    }
+
+    #[test]
+    fn rectangular_viewport_preserves_model_aspect_and_inverse_mapping() {
+        let canvas = [2.0, 2.0];
+        let width = 800.0;
+        let height = 400.0;
+        let (scale_x, scale_y) = clip_scales(canvas, 1.0, width, height);
+        assert!((scale_x * width - scale_y * height).abs() < 1e-6);
+
+        // Equal model-space offsets project to equal pixel distances even though
+        // the viewport is twice as wide as it is tall.
+        let projected_x = scale_x * 0.5 * width / 2.0;
+        let projected_y = scale_y * 0.5 * height / 2.0;
+        assert!((projected_x - projected_y).abs() < 1e-6);
+
+        // Round-trip several points through the same viewport-aware projection.
+        let view = ViewState {
+            x: 0.2,
+            y: -0.1,
+            zoom: 1.5,
+            ..view()
+        };
+        for (model_x, model_y) in [(-0.4, 0.3), (0.0, 0.0), (0.5, -0.2)] {
+            let surface_x = ((scale_x * view.zoom * model_x + view.x + 1.0) * width / 2.0) as f64;
+            let surface_y =
+                ((1.0 - (scale_y * view.zoom * model_y + view.y)) * height / 2.0) as f64;
+            let actual = surface_to_model(surface_x, surface_y, width, height, view, canvas);
+            assert!(
+                (actual.0 - model_x).abs() < 1e-5,
+                "{actual:?} != {model_x},{model_y}"
+            );
+            assert!(
+                (actual.1 - model_y).abs() < 1e-5,
+                "{actual:?} != {model_x},{model_y}"
+            );
+        }
+    }
+
+    #[test]
+    fn expression_and_motion_parameter_intent_wins_over_automatic_blink() {
+        // The frame pipeline applies automatic blink only when motion did not
+        // update, and applies expressions afterwards in either case.
+        let base = 0.8;
+        let blink_closed = 0.0;
+        let expression_open = 1.0;
+        let expression_closed = 0.0;
+
+        let with_motion = base; // motion updated this parameter, so blink is skipped
+        let with_blink_then_expression = expression_open;
+        assert_eq!(with_motion, base);
+        assert_eq!(with_blink_then_expression, expression_open);
+
+        // An expression's explicit close also remains closed over an automatic
+        // blink value that would otherwise reopen the eye.
+        let closed_expression_over_blink = expression_closed;
+        assert_eq!(closed_expression_over_blink, 0.0);
+        assert_eq!(blink_closed, 0.0);
     }
 
     #[test]
