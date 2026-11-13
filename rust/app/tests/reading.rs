@@ -772,7 +772,9 @@ fn oversized_wl_paste_output_is_bounded_and_stops_promptly() {
     let wl_paste = bin.join("wl-paste");
     fs::write(
         &wl_paste,
-        "#!/bin/sh\nwhile :; do printf 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'; done\n",
+        // Use large writes so this tests the byte cap, not shell throughput.
+        // exec keeps the producer as wl-paste's child PID for kill/wait cleanup.
+        "#!/bin/sh\nexec /bin/dd if=/dev/zero bs=1048576 count=69 2>/dev/null\n",
     )
     .unwrap();
     use std::os::unix::fs::PermissionsExt;
