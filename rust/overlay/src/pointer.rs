@@ -97,6 +97,8 @@ pub(crate) struct PointerFrame {
     /// Vertical scroll from `wl_pointer.axis`, in surface-local units, used
     /// only when the frame carried no `value120`.
     axis: f64,
+    /// Whether `value120` was present, including an explicit zero.
+    has_value120: bool,
 }
 
 impl PointerFrame {
@@ -133,6 +135,7 @@ impl PointerFrame {
     /// Record a `wl_pointer.axis_value120` value; only vertical is reported.
     pub(crate) fn axis_value120(&mut self, axis: WEnum<wl_pointer::Axis>, value120: i32) {
         if is_vertical(axis) {
+            self.has_value120 = true;
             self.detents += f64::from(value120) / 120.0;
         }
     }
@@ -142,13 +145,16 @@ impl PointerFrame {
     /// pointer event before the wheel event of the same frame.
     pub(crate) fn flush(&mut self, out: &mut Vec<PointerEvent>) {
         out.append(&mut self.events);
-        let delta = if self.detents != 0.0 {
+        let delta = if self.has_value120 {
             self.detents
         } else {
-            self.axis
+            // `axis` is already a surface-local double (wl_fixed converted by
+            // wayland-client); normalize its 10-unit legacy notch to 120.
+            self.axis / 10.0
         };
         self.detents = 0.0;
         self.axis = 0.0;
+        self.has_value120 = false;
         if delta != 0.0 {
             out.push(PointerEvent::Scroll { delta });
         }
@@ -253,13 +259,13 @@ mod tests {
     }
 
     #[test]
-    fn the_fixed_axis_is_the_fallback_in_its_own_units() {
+    fn the_fixed_axis_fallback_converts_legacy_ten_unit_notches() {
         let mut frame = PointerFrame::default();
         frame.axis(vertical(), 7.5);
         frame.axis(vertical(), 2.5);
         assert_eq!(
             flushed(&mut frame),
-            vec![PointerEvent::Scroll { delta: 10.0 }]
+            vec![PointerEvent::Scroll { delta: 1.0 }]
         );
     }
 

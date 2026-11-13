@@ -195,6 +195,16 @@ mod tests {
     }
 
     #[test]
+    fn a_reconfigured_size_changes_input_region_clipping_bounds() {
+        let size = resolve_configured_size((800, 600), (1024, 480));
+        assert_eq!(size, (1024, 480));
+        assert_eq!(
+            Rect::new(900, 400, 200, 100).clip(size.0, size.1),
+            Some(Rect::new(900, 400, 124, 80))
+        );
+    }
+
+    #[test]
     fn missing_global_error_names_the_global() {
         let error = crate::Error::MissingGlobal("zwlr_layer_shell_v1");
         assert_eq!(

@@ -227,6 +227,20 @@ impl Overlay {
             .map_or(self.state.requested_size, Egl::size)
     }
 
+    /// Request a new layer-surface size. The compositor's subsequent configure
+    /// event is authoritative; call `roundtrip` or `dispatch_pending` to receive it.
+    pub fn request_size(&mut self, width: u32, height: u32) -> Result<(), Error> {
+        if width == 0 || height == 0 {
+            return Err(Error::InvalidSize);
+        }
+        self.state.requested_size = (width, height);
+        let layer_surface = self.state.layer_surface.as_ref().ok_or(Error::Closed)?;
+        layer_surface.set_size(width, height);
+        self.state.surface.as_ref().ok_or(Error::Closed)?.commit();
+        self.connection.flush()?;
+        Ok(())
+    }
+
     /// Whether the compositor asked for the surface to be closed.
     pub fn is_closed(&self) -> bool {
         self.state.closed

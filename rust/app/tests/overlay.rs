@@ -1243,7 +1243,7 @@ fn overlay_add_expression_does_not_accumulate_across_frames() {
     fs::write(model_json, serde_json::to_vec(&document).unwrap()).unwrap();
     fs::write(
         target.join("add-angle.exp3.json"),
-        serde_json::to_vec(&json!({
+        serde_json::to_vec_pretty(&json!({
             "Type":"Live2D Expression", "FadeInTime":0.0, "FadeOutTime":0.0,
             "Parameters":[{"Id":"ParamAngleX","Value":3.0,"Blend":"Add"}]
         }))

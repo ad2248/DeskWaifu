@@ -58,6 +58,7 @@ const RELEASED: u32 = 0;
 /// The `org_kde_kwin_fake_input.axis` value used as one wheel notch, in the
 /// surface-local units of `wl_pointer.axis`.
 const SCROLL_UNITS: f64 = 10.0;
+const SCROLL_NOTCH: f64 = 1.0;
 
 static COMPOSITOR_LOCK: Mutex<()> = Mutex::new(());
 
@@ -733,14 +734,24 @@ fn overlay_configures_and_renders_transparent() {
 
     let mut overlay = Overlay::connect(compositor.connect(), overlay_config(WIDTH, HEIGHT))
         .expect("create the overlay surface");
-    let size = overlay.size();
+    let initial_size = overlay.size();
     assert_eq!(
-        (size.0 > 0, size.1 > 0),
+        (initial_size.0 > 0, initial_size.1 > 0),
         (true, true),
-        "configure must provide a nonzero surface size, got {size:?}"
+        "configure must provide a nonzero surface size, got {initial_size:?}"
     );
     overlay.roundtrip().expect("roundtrip after configure");
     assert!(!overlay.is_closed(), "overlay surface must stay open");
+
+    overlay
+        .request_size(640, 360)
+        .expect("request a resized layer surface");
+    overlay.roundtrip().expect("receive resized configure");
+    let size = overlay.size();
+    assert_eq!(size, (640, 360), "configure size must update EGL window");
+    overlay
+        .set_input_region(&[Rect::new(600, 340, 80, 40)])
+        .expect("apply region clipped to resized dimensions");
 
     overlay
         .make_current()
@@ -1127,8 +1138,8 @@ fn overlay_reports_pointer_events_and_respects_the_input_region() {
         })
         .unwrap_or_else(|| panic!("no PointerScroll arrived: {scroll_events:?}"));
     assert!(
-        (scrolled - SCROLL_UNITS).abs() <= POINTER_TOLERANCE,
-        "the fixed axis must be reported in its own units: {scrolled} vs {SCROLL_UNITS}"
+        (scrolled - SCROLL_NOTCH).abs() <= POINTER_TOLERANCE,
+        "the legacy axis must be normalized to notches: {scrolled} vs {SCROLL_NOTCH}"
     );
     assert_eq!(
         scroll_events
