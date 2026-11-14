@@ -28,7 +28,7 @@ concurrency:
 
 jobs:
   release:
-    runs-on: deskwaifu-arch
+    runs-on: deskwaifu-rust
     timeout-minutes: 60
     env:
       http_proxy: http://100.64.0.11:7912
@@ -65,13 +65,9 @@ jobs:
         if: ${{ github.event.inputs.notes_only != 'true' }}
         run: bash "$RELEASE_TOOLS_DIR/scripts/release-build.sh"
 
-      - name: Discard test packages without executing tests
-        if: ${{ github.event.inputs.notes_only != 'true' }}
-        run: python3 "$RELEASE_TOOLS_DIR/scripts/release-packaging.py" prune-tests release-assets "$RELEASE_TAG" "$RELEASE_COMMIT"
-
       - name: Upload verified packages to GitHub release
         # Never expose this credential to checkout, dependency acquisition,
-        # CMake, makepkg, tests, or shell profiles used by the build user.
+        # Cargo, makepkg, tests, or shell profiles used by the build user.
         env:
           RELEASE_UPLOAD: ${{ secrets.RELEASE_UPLOAD }}
           RELEASE_NOTES: ${{ github.event.inputs.release_notes }}

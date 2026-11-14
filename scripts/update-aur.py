@@ -13,7 +13,7 @@ from urllib.request import urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY = "ad2248/DeskWaifu"
-PACKAGES = ("deskwaifu-bin", "deskwaifu-ocr-bin")
+PACKAGES = ("deskwaifu-bin",)
 
 
 def release_tool(name):
@@ -126,7 +126,14 @@ def update(tag):
             (directory / name).write_bytes(download(base + name))
         commit = public_tag_commit(tag)
         checksums, dependencies = verify_assets(directory, tag, commit)
-        text = render_recipe((recipe / "PKGBUILD").read_text(), tag, checksums)
+        current = (recipe / "PKGBUILD").read_text()
+        if "deskwaifu-ocr-bin" in current:
+            # Migrate the legacy split recipe only for a new release identity.
+            old_tag = re.search(r"^_tag=(\S+)$", current, re.M).group(1)
+            if old_tag == tag:
+                raise ValueError("Cannot replace a legacy release with Rust assets")
+            current = (ROOT / "packaging/aur-template/PKGBUILD").read_text()
+        text = render_recipe(current, tag, checksums)
         # Generate metadata before changing either maintained file.
         (directory / "PKGBUILD").write_text(text)
         srcinfo = subprocess.check_output(["makepkg", "--printsrcinfo"], cwd=directory, text=True)

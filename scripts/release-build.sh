@@ -28,24 +28,13 @@ cleanup() {
     rm -rf -- "$work"
 }
 trap cleanup EXIT
-mkdir -p "$work/home" "$work/packages" "$work/private-deps"
-mkdir -p "$work/release-tools/scripts" "$work/release-tools/cmake" "$work/release-tools/tests"
-cp "$tools_root/scripts/prepare-installed-tests.py" "$tools_root/scripts/run-installed-tests.py" \
-    "$tools_root/scripts/test-environment.py" "$work/release-tools/scripts/"
-cp "$tools_root/cmake/InstallTests.cmake" "$work/release-tools/cmake/"
-cp "$tools_root/tests/gate.json" "$work/release-tools/tests/"
+mkdir -p "$work/home" "$work/packages"
 
-# Prepare sources using system-installed build dependencies.
-# The private SDK/GLEW are already in the runner image, not fetched during build.
-deps_dir=$(bash "$tools_root/scripts/find-deps-dir.sh")
-cp -aL "$deps_dir/CubismSdkForNative-5-r.5" "$deps_dir/glew" "$work/private-deps/"
+# The fixed runner image supplies Cargo and the system toolchain. The selected
+# source archive includes Cargo.lock; --frozen prohibits network acquisition.
 git archive --format=tar.gz --prefix=deskwaifu/ "$RELEASE_COMMIT" > "$work/deskwaifu.tar.gz"
 export SOURCE_DATE_EPOCH
 SOURCE_DATE_EPOCH=$(git show -s --format=%ct "$RELEASE_COMMIT")
-tar --sort=name --mtime="@$SOURCE_DATE_EPOCH" --owner=0 --group=0 --numeric-owner \
-    -czf "$work/private-deps.tar.gz" -C "$work" private-deps
-tar --sort=name --mtime="@$SOURCE_DATE_EPOCH" --owner=0 --group=0 --numeric-owner \
-    -czf "$work/release-tools.tar.gz" -C "$work" release-tools
 python3 "$tools_root/scripts/release-packaging.py" prepare "$work" "$RELEASE_TAG" "$RELEASE_COMMIT"
 
 # Never grant the build user write access to the checkout or sudo. Only this new
@@ -75,23 +64,8 @@ for trusted in "$root" "$tools_root"; do
         trusted=$parent
     done
 done
-# Optionally route compiler caching to the runner's persistent cache volume.
-# The workflow's clean option, a missing /cache volume, or a missing ccache
-# binary each fall back to the previous uncached release build.
-if [[ "${DESKWAIFU_CLEAN_BUILD:-false}" != "true" && -d /cache && -x /usr/bin/ccache ]]; then
-    install -d -m 0777 /cache/ccache-makepkg
-    chown "$build_user:$build_user" /cache/ccache-makepkg
-    cat > /etc/makepkg.conf.d/zz-deskwaifu-ccache.conf <<'EOF'
-# Managed by scripts/release-build.sh: enable compiler caching only for
-# non-clean CI builds whose runner mounts the persistent cache volume.
-export DESKWAIFU_CCACHE=1
-export CCACHE_DIR=/cache/ccache-makepkg
-export CCACHE_UMASK=000
-export CCACHE_MAXSIZE=8G
-EOF
-fi
 runuser -u "$build_user" -- env -i PATH=/usr/bin:/bin HOME="$work/home" SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" TZ=UTC LANG=C.UTF-8 \
-    PKGDEST="$work/packages" CMAKE_BUILD_PARALLEL_LEVEL="${CMAKE_BUILD_PARALLEL_LEVEL:-4}" \
+    PKGDEST="$work/packages" CARGO_HOME="$work/home/.cargo" \
     bash -c 'cd "$1"; makepkg --cleanbuild --noconfirm' _ "$work"
 output="$root/release-assets"
 mkdir "$output" # Refuse stale artifacts from another tag/run.

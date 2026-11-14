@@ -1,21 +1,15 @@
 #!/usr/bin/env python3
-"""Render makepkg input and verify the actual split-package payload before upload."""
+"""Render makepkg input and verify the single Rust package before upload."""
 import argparse
 import hashlib
 import json
 from pathlib import Path
 import shlex
-import shutil
 import subprocess
 
 ROOT = Path(__file__).resolve().parent.parent
-PLUGINS = ("desktop", "perception", "ipc", "speech", "reading_clip", "system", "interaction", "model")
-MAIN_DEPENDS = {"glibc", "gcc-libs", "wayland", "libglvnd", "systemd-libs", "qt6-base>=6.5",
-                "qt6-wayland>=6.5", "qt6-scxml>=6.5", "qt6-websockets>=6.5", "qt6-multimedia>=6.5",
-                "layer-shell-qt>=6.6", "bash", "python", "psmisc"}
-SDK_LIBRARIES = {f"usr/lib/libdeskwaifu_{name}.so.{version}" for name in ("events", "plugin_sdk", "gui_plugin_sdk")
-                 for version in ("2", "2.0")}
-PACKAGE_NAMES = ("deskwaifu-bin", "deskwaifu-ocr-bin", "deskwaifu-tests", "deskwaifu-ocr-tests")
+MAIN_DEPENDS = {"glibc", "gcc-libs"}
+PACKAGE_NAMES = ("deskwaifu-bin",)
 
 
 def digest(path):
@@ -24,14 +18,10 @@ def digest(path):
 
 
 def prepare(directory, tag, commit):
-    ort_patch = directory / "system-onnxruntime.patch"
-    shutil.copy2(ROOT / "packaging/release/system-onnxruntime.patch", ort_patch)
     template = (ROOT / "packaging/release/PKGBUILD.in").read_text()
-    for key, value in {"SOURCE_SHA": digest(directory / "deskwaifu.tar.gz"),
-                       "TOOLS_SHA": digest(directory / "release-tools.tar.gz"),
-                       "PRIVATE_SHA": digest(directory / "private-deps.tar.gz"),
-                       "ORT_PATCH_SHA": digest(ort_patch), "PKGVER": shlex.quote(tag)}.items():
-        template = template.replace(f"@{key}@", value)
+    # Substitute the untrusted tag last so tag text cannot become a placeholder.
+    template = template.replace("@SOURCE_SHA@", digest(directory / "deskwaifu.tar.gz"))
+    template = template.replace("@PKGVER@", shlex.quote(tag))
     (directory / "PKGBUILD").write_text(template)
 
 
@@ -52,84 +42,42 @@ def verify_unversioned_dependencies(dependencies):
 
 def verify_content(name, info, files, version):
     verify_unversioned_dependencies(info.get("depend", []))
-    if info.get("pkgname") != [name] or info.get("pkgver") != [version + "-1"] or info.get("arch") != ["x86_64"]:
+    if (name not in PACKAGE_NAMES or info.get("pkgname") != [name] or
+            info.get("pkgver") != [version + "-1"] or info.get("arch") != ["x86_64"]):
         raise ValueError(f"Wrong package identity/version/architecture: {name}")
-    directories = {path.removeprefix("./").rstrip("/") for path in files if path.endswith("/")}
-    files = {path.removeprefix("./").rstrip("/") for path in files}
-    if any(Path(path).name.startswith("libonnxruntime") or
-           path.startswith("usr/share/licenses/deskwaifu-ocr/onnxruntime/") for path in files):
-        raise ValueError("ONNX Runtime must be a system dependency, not bundled")
-    if name in ("deskwaifu-tests", "deskwaifu-ocr-tests"):
-        ocr = name == "deskwaifu-ocr-tests"
-        prefix = "usr/lib/deskwaifu/" + ("ocr-tests" if ocr else "tests")
-        dependency = "deskwaifu-ocr-bin" if ocr else "deskwaifu-bin"
-        if dependency not in info.get("depend", []):
-            raise ValueError("Test package needs its runtime package")
-        if not {f"{prefix}/run.py", f"{prefix}/installed-tests.json"} <= files:
-            raise ValueError("Missing installed test runner/registry")
-        if any(path.startswith("usr/bin/") or path.startswith("usr/lib/deskwaifu/plugins/") for path in files):
-            raise ValueError("Test packages must not duplicate production files")
-        return
-    if any("/tests/" in path or "/ocr-tests/" in path for path in files):
-        raise ValueError("Runtime packages must not contain tests")
-    if any(path.endswith((".onnx", ".pdiparams", ".pdmodel")) or
-           (path.startswith("usr/share/deskwaifu/ocr/") and
-            not (path == "usr/share/deskwaifu/ocr/models" and path in directories)) or
-           "dictionary" in path.lower() or Path(path).name in {"inference.yml", "inference.yaml"} for path in files):
-        raise ValueError("Models/dictionaries must not be shipped in release packages")
-    if name == "deskwaifu-bin":
-        required = {"usr/bin/deskwaifu", "usr/bin/deskwaifu-control", "usr/bin/deskwaifu-ctl", "usr/bin/deskwaifu-cursor-guard"}
-        required.update(f"usr/lib/deskwaifu/plugins/{plugin}/{plugin}.so" for plugin in PLUGINS)
-        required.update(SDK_LIBRARIES)
-        if any(path.startswith("usr/lib/deskwaifu/ocr/") or path == "usr/libexec/deskwaifu-ocr" for path in files):
-            raise ValueError("Main package must not contain OCR module/runtime")
-        if any(dep.startswith(("opencv", "onnxruntime", "deskwaifu-ocr")) for dep in info.get("depend", [])):
-            raise ValueError("Main package must not require the optional OCR runtime")
-        if not MAIN_DEPENDS <= set(info.get("depend", [])):
-            raise ValueError(f"Missing main runtime dependencies: {sorted(MAIN_DEPENDS - set(info.get('depend', [])))}")
-    else:
-        required = {"usr/lib/deskwaifu/ocr/deskwaifu-ocr.so"}
-        if "usr/libexec/deskwaifu-ocr" in files:
-            raise ValueError("OCR package must not contain the retired helper executable")
-        if not {"deskwaifu-bin", "opencv", "yaml-cpp", "onnxruntime-cpu"} <= set(info.get("depend", [])):
-            raise ValueError("OCR package needs the main package, OpenCV, yaml-cpp and system onnxruntime-cpu")
-        if any(path.startswith("usr/lib/deskwaifu/plugins/") for path in files):
-            raise ValueError("OCR package must not duplicate main plugins")
-    if not required <= files:
-        raise ValueError(f"Missing package files: {sorted(required - files)}")
+    if set(info.get("depend", [])) != MAIN_DEPENDS:
+        raise ValueError("Unexpected Rust runtime dependencies")
+    # Only makepkg metadata, directory entries and the application are allowed.
+    # This rejects old plugins, SDKs, OCR assets and installed-test payloads.
+    allowed = {".PKGINFO", ".BUILDINFO", ".MTREE", "usr/", "usr/bin/", "usr/bin/deskwaifu"}
+    files = {path.removeprefix("./") for path in files}
+    if not files <= allowed:
+        raise ValueError(f"Unexpected package files: {sorted(files - allowed)}")
+    if "usr/bin/deskwaifu" not in files:
+        raise ValueError("Missing package files: usr/bin/deskwaifu")
 
 
-def verify(directory, tag, commit, include_tests=False):
-    version = tag
+def verify(directory, tag, commit):
     packages = sorted(directory.glob("*.pkg.tar.zst"))
-    expected = {f"{name}-{version}-1-x86_64.pkg.tar.zst": name for name in (PACKAGE_NAMES if include_tests else PACKAGE_NAMES[:2])}
+    expected = {f"deskwaifu-bin-{tag}-1-x86_64.pkg.tar.zst": "deskwaifu-bin"}
     if {path.name for path in packages} != expected.keys():
         raise ValueError("Unexpected or missing versioned x86_64 packages")
     for path in packages:
         info = metadata(subprocess.check_output(["bsdtar", "-xOf", str(path), ".PKGINFO"], text=True))
         files = subprocess.check_output(["bsdtar", "-tf", str(path)], text=True).splitlines()
-        verify_content(expected[path.name], info, files, version)
+        verify_content(expected[path.name], info, files, tag)
     manifest = directory / "release-metadata.json"
-    manifest.write_text(json.dumps({"tag": tag, "commit": commit, "pkgver": version, "pkgrel": 1,
-                                    "ocr_models_included": False}, sort_keys=True, indent=2) + "\n")
-    assets = sorted([*(path for path in packages if expected[path.name] in PACKAGE_NAMES[:2]), manifest])
+    manifest.write_text(json.dumps({"tag": tag, "commit": commit, "pkgver": tag, "pkgrel": 1},
+                                   sort_keys=True, indent=2) + "\n")
+    assets = sorted([*packages, manifest])
     (directory / "SHA256SUMS").write_text("".join(f"{digest(path)}  {path.name}\n" for path in assets))
-
-
-def prune_tests(directory, tag, commit):
-    verify(directory, tag, commit, include_tests=True)
-    for name in PACKAGE_NAMES[2:]:
-        (directory / f"{name}-{tag}-1-x86_64.pkg.tar.zst").unlink()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("prepare", "verify", "prune-tests"))
+    parser.add_argument("command", choices=("prepare", "verify"))
     parser.add_argument("directory", type=Path)
     parser.add_argument("tag")
     parser.add_argument("commit")
     args = parser.parse_args()
-    if args.command == "verify":
-        verify(args.directory, args.tag, args.commit, include_tests=True)
-    else:
-        {"prepare": prepare, "prune-tests": prune_tests}[args.command](args.directory, args.tag, args.commit)
+    {"prepare": prepare, "verify": verify}[args.command](args.directory, args.tag, args.commit)

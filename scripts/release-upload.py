@@ -150,13 +150,13 @@ def load_assets(directory, tag, commit):
     if not re.fullmatch(r"[0-9a-f]{40}", commit):
         raise ValueError("Expected a full source commit SHA")
     version = tag
-    names = {f"{name}-{version}-1-x86_64.pkg.tar.zst" for name in ("deskwaifu-bin", "deskwaifu-ocr-bin")}
+    names = {f"{name}-{version}-1-x86_64.pkg.tar.zst" for name in ("deskwaifu-bin",)}
     names.update(("release-metadata.json", "SHA256SUMS"))
     if {path.name for path in directory.iterdir()} != names:
         raise ValueError("Unexpected or missing release artifacts")
     assets = {name: (directory / name).read_bytes() for name in sorted(names)}
     manifest = json.loads(assets["release-metadata.json"])
-    if manifest != {"tag": tag, "commit": commit, "pkgver": version, "pkgrel": 1, "ocr_models_included": False}:
+    if manifest != {"tag": tag, "commit": commit, "pkgver": version, "pkgrel": 1}:
         raise ValueError("Artifact manifest does not match selected source tag/commit")
     expected_sums = "".join(f"{hashlib.sha256(assets[name]).hexdigest()}  {name}\n"
                             for name in sorted(names - {"SHA256SUMS"}))
@@ -173,7 +173,7 @@ def publish(api, tag, commit, assets, notes=""):
             release = api.request("POST", "/releases", {
                 "tag_name": tag, "target_commitish": commit, "name": tag, "draft": True,
                 "body": notes if notes.strip() else
-                        f"Source commit: `{commit}`\n\nArch x86_64 binary packages. OCR models and dictionaries are not included.",
+                        f"Source commit: `{commit}`\n\nArch x86_64 Rust binary package.",
             })
         except ApiError as error:
             if error.status != 422:

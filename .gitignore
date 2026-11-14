@@ -1,7 +1,10 @@
-build
-build-*
+/target/
+/rust/target/
+/release-assets/
+/build*
 CubismSdkForNative*
 models
 thirdParty/glew
 thirdParty/glfw
+__pycache__/
 CLAUDE.md

@@ -17,6 +17,8 @@ def select_tag(event, ref, explicit):
         raise ValueError("Only tag pushes and explicit-tag manual dispatches may release")
     if not tag:
         raise ValueError("An explicit tag is required")
+    if any(character in tag for character in "\r\n\0"):
+        raise ValueError("Release tag must not contain control characters")
     return tag
 
 
@@ -74,13 +76,8 @@ def main():
     tools = Path(tempfile.mkdtemp(prefix="deskwaifu-release-tools-", dir=os.environ.get("RUNNER_TEMP")))
     tool_source = Path(__file__).resolve().parents[1]
     for relative in ("scripts/release-source.py", "scripts/release-build.sh", "scripts/release-packaging.py",
-                     "scripts/release-upload.py", "scripts/find-deps-dir.sh", "packaging/release/PKGBUILD.in",
-                     "packaging/release/system-onnxruntime.patch",
-                     "tests/test_release_packaging.py", ".gitea/workflows/release.yml",
-                     ".gitea/workflows/ci.yml", "Containerfile", "scripts/rebuild-ci-image.sh",
-                     "scripts/prepare-installed-tests.py", "scripts/run-installed-tests.py", "scripts/test-environment.py",
-                     "scripts/test-installed-packages.py", "scripts/package-smoke.py", "plugins/perception/tests/test_ocr_native_models.py",
-                     "cmake/InstallTests.cmake", "tests/gate.json"):
+                     "scripts/release-upload.py", "packaging/release/PKGBUILD.in",
+                     "tests/test_release_packaging.py", ".gitea/workflows/release.yml"):
         target = tools / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(tool_source / relative, target)

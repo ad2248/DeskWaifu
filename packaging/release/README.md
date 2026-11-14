@@ -1,55 +1,40 @@
-# 二进制包构建约定
+# Rust Arch release package
 
-CI 和 release 都通过 `scripts/release-build.sh` 调用同一份
-`PKGBUILD.in`，以相同参数开启测试目标，生成四个包：
+The release workflow builds one `deskwaifu-bin-<tag>-1-x86_64.pkg.tar.zst` from the
+exact selected Git tag. The workspace and `Cargo.lock` must live at repository
+root. `cargo build --release --frozen` builds without updating the lockfile or
+accessing the network; the current workspace has no external dependencies.
+The package installs only `/usr/bin/deskwaifu`, with `glibc` and `gcc-libs` as
+runtime dependencies. C++ plugins, private SDKs, OCR models and installed-test
+packages are no longer packaged.
 
-- `deskwaifu-bin`：平台及默认插件。
-- `deskwaifu-ocr-bin`：OCR 扩展，依赖系统 `onnxruntime-cpu`，不内置运行库或模型。
-- `deskwaifu-tests`：可安装的平台单元/集成测试及私有测试夹具。
-- `deskwaifu-ocr-tests`：可安装的 OCR 测试，以标准库生成微型 ONNX 夹具。
+The fixed `deskwaifu-rust` runner provides Cargo, the system toolchain and
+makepkg. A root orchestrator archives the selected source, then invokes makepkg
+as a temporary unprivileged account with a clean environment. The account cannot
+write to the checkout or trusted release-tool snapshot. Upload credentials exist
+only in the final workflow step. Package identity, payload and checksums are
+verified before upload; different existing remote assets are never overwritten.
+Tag names are passed unchanged to makepkg (Arch-incompatible versions fail rather
+than silently being renamed). Historical C++ tags are not supported by this Rust
+packaging recipe. Notes-only updates still support existing releases.
 
-测试包依赖对应的正式包，依赖项仅声明包名。测试程序、脚本和夹具不会进入正式包。
-平台测试包含 SDK 示例资源，仅供私有 CI 使用，不能作为公开发布附件。
+The Rust workspace currently declares no license. The package therefore records
+`LicenseRef-Unknown`, not the retired SDK's license; establish a project license
+before public redistribution.
 
-逐字节一致的前提是源码提交、包版本、打包工具提交和 runner 镜像 ID
-全部相同。镜像固定系统依赖、编译器及 makepkg 配置；流水线不得临时
-升级系统包。ONNX Runtime 与其他系统依赖一样由固定镜像提供，不再下载
-独立 SDK 或捆绑动态库；私有依赖也来自同一镜像。构建脚本固定工作路径、
-构建用户名、时区和源码时间戳。
+## AUR
 
-手动运行 CI 时传入已有 `tag`，即可构建与 release 相同版本的包；不传
-时构建当前提交，以 `0.0.0.r<完整提交 SHA>` 为临时包版本。CI 依次安装：
+The existing AUR submodule is deliberately unchanged until a new Rust release
+has been published. Run `python3 scripts/update-aur.py <exact-tag>` after release:
+it verifies public assets and their commit/checksums, migrates a legacy split
+recipe using `packaging/aur-template/PKGBUILD`, and generates `.SRCINFO`. Review
+and test that diff before committing the submodule and its parent pointer. It
+refuses to replace the old layout under the same release tag. No workflow commits
+to or automatically publishes the AUR repository.
 
-1. 平台包，执行 IPC、缺少可选 OCR 时的冒烟测试。
-2. OCR 包，执行真实模块加载和合成 ONNX 模型识别冒烟测试。
-3. 平台测试包，执行平台单元和集成测试。
-4. OCR 测试包，执行原生 OCR 单元和集成测试。
+## Verification
 
-安装环境由固定镜像中的已安装系统包按依赖闭包生成，通过 PRoot 运行，
-不挂载源码、构建树或 `/opt` 私有 SDK；不联网安装或升级系统依赖。
-第一阶段没有 OCR 包及其 OpenCV/yaml-cpp/ONNX Runtime 依赖。测试以 nobody 执行，
-测试安装目录只读，所有临时文件写入独立的可清理目录。
-专用 runner 的容器选项为 `/tmp` 配置
-`--tmpfs=/tmp:rw,exec,nosuid,size=4g,mode=1777`，在既有 8 GiB 容器内存
-限额内使用内存临时盘，减少服务器磁盘占用和同步写入测试的存储延迟。
-
-CI 还会清理构建目录后重建，比较四个完整安装包；不上传或保留安装包，
-成功或失败均清理。原有源码架构检查、编译变体、变异测试及 sanitizer
-检查继续在独立的源码测试任务运行，不冒充安装后测试。
-
-Release 同样当场编译四包，但不执行任何测试。校验包清单后删除两个
-测试包，仅上传两个正式包、正式包校验和及元数据，最后清理临时包。
-跨流水线验证应比较完整安装包的 SHA-256，不能仅比较其中的可执行文件。
-
-发布必须选择已有标签；历史标签的应用源码使用所选标签，但打包工具
-来自启动工作流的提交。因此验证历史版本时，CI 和 release 应从同一
-修复分支启动并选择同一标签。所选源码须包含可安装测试支持；早于该
-功能的历史标签不会自动改写源码或退化成不含测试包的发布。
-
-已发布版本的同名不同内容附件禁止自动覆盖。如仅需补充发布说明，
-手动运行 release 并设置 `notes_only=true`：此模式要求 GitHub 已存在
-非草稿发布且标签提交一致，只更新正文，不编译、不修改任何附件或标签。
-
-镜像包含专有 SDK，必须通过 `scripts/rebuild-ci-image.sh` 私下传输，
-不得上传公开 registry。验收成功后更新专用 runner 的固定镜像 ID，
-保持 `force_pull: false`，再重启 runner。
+Run `python3 -B tests/test_release_packaging.py`. On Arch with makepkg, bsdtar,
+fakeroot and Cargo, the nonroot integration test builds an offline Rust fixture
+using the real PKGBUILD and verifies the package, manifest and upload checksums.
+It is skipped where those prerequisites are unavailable.
