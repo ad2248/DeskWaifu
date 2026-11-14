@@ -42,57 +42,78 @@ def archive(path, files):
             target.addfile(info, io.BytesIO(data))
 
 
-def fixture_files(ocr=False):
-    if ocr:
-        return {"usr/lib/deskwaifu/ocr/deskwaifu-ocr.so"}
-    return {"usr/bin/deskwaifu", "usr/bin/deskwaifu-control", "usr/bin/deskwaifu-ctl", "usr/bin/deskwaifu-cursor-guard",
-            *(f"usr/lib/deskwaifu/plugins/{name}/{name}.so" for name in packaging.PLUGINS),
-            *packaging.SDK_LIBRARIES}
-
-
 class PackagingTest(unittest.TestCase):
-    def test_test_packages_require_runtime_and_do_not_leak_into_it(self):
-        for name, runtime, directory in (("deskwaifu-tests", "deskwaifu-bin", "tests"),
-                                         ("deskwaifu-ocr-tests", "deskwaifu-ocr-bin", "ocr-tests")):
-            info = {"pkgname": [name], "pkgver": ["1.2.3-1"], "arch": ["x86_64"],
-                    "depend": [runtime]}
-            files = {f"usr/lib/deskwaifu/{directory}/run.py", f"usr/lib/deskwaifu/{directory}/installed-tests.json"}
-            packaging.verify_content(name, info, files, "1.2.3")
-            with self.assertRaisesRegex(ValueError, "needs its runtime package"):
-                packaging.verify_content(name, dict(info, depend=[]), files, "1.2.3")
-            with self.assertRaisesRegex(ValueError, "must not duplicate"):
-                packaging.verify_content(name, info, files | {"usr/bin/deskwaifu"}, "1.2.3")
-            with self.assertRaisesRegex(ValueError, "system dependency, not bundled"):
-                packaging.verify_content(name, info, files | {f"usr/lib/deskwaifu/{directory}/libonnxruntime.so.1"}, "1.2.3")
+    def test_control_characters_cannot_inject_release_environment(self):
+        for tag in ("v1\nRELEASE_COMMIT=evil", "v1\rbroken", "v1\0broken"):
+            for event, ref, explicit in (("workflow_dispatch", "", tag), ("push", "refs/tags/" + tag, "")):
+                with self.subTest(tag=tag, event=event), self.assertRaisesRegex(ValueError, "control characters"):
+                    source.select_tag(event, ref, explicit)
+
+    def test_internal_dependencies_are_unversioned(self):
+        packaging.verify_unversioned_dependencies(["deskwaifu-bin"])
+        for operator in ("=", ">=", "<=", ">", "<"):
+            with self.assertRaisesRegex(ValueError, "without a version constraint"):
+                packaging.verify_unversioned_dependencies(["deskwaifu-bin" + operator + "1.0"])
+
+    def test_single_rust_payload_and_identity(self):
         info = {"pkgname": ["deskwaifu-bin"], "pkgver": ["1.2.3-1"], "arch": ["x86_64"],
                 "depend": sorted(packaging.MAIN_DEPENDS)}
-        with self.assertRaisesRegex(ValueError, "must not contain tests"):
-            packaging.verify_content("deskwaifu-bin", info, fixture_files() | {"usr/lib/deskwaifu/tests/run.py"}, "1.2.3")
+        files = {"usr/", "usr/bin/", "usr/bin/deskwaifu", ".PKGINFO", ".BUILDINFO", ".MTREE"}
+        packaging.verify_content("deskwaifu-bin", info, files, "1.2.3")
+        for field, value in (("pkgname", ["deskwaifu-ocr-bin"]), ("pkgver", ["2.0-1"]),
+                             ("arch", ["any"]), ("depend", ["qt6-base"])):
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                packaging.verify_content("deskwaifu-bin", dict(info, **{field: value}), files, "1.2.3")
+        for extra in ("usr/lib/deskwaifu/plugins/model.so", "usr/share/models/model.onnx",
+                      "usr/lib/deskwaifu/tests/run.py", "../escape", "usr/bin/deskwaifu-control"):
+            with self.subTest(extra=extra), self.assertRaisesRegex(ValueError, "Unexpected package files"):
+                packaging.verify_content("deskwaifu-bin", info, files | {extra}, "1.2.3")
+        with self.assertRaisesRegex(ValueError, "Missing package files"):
+            packaging.verify_content("deskwaifu-bin", info, files - {"usr/bin/deskwaifu"}, "1.2.3")
 
-    def test_ci_and_release_share_packaging_and_fixed_dependencies(self):
-        ci = (ROOT / ".gitea/workflows/ci.yml").read_text()
-        release = (ROOT / ".gitea/workflows/release.yml").read_text()
-        for workflow in (ci, release):
-            self.assertIn('bash "$RELEASE_TOOLS_DIR/scripts/release-build.sh"', workflow)
-            self.assertNotIn("pacman -", workflow)
-            self.assertIn("runs-on: deskwaifu-arch", workflow)
-        self.assertEqual(ci.count('bash "$RELEASE_TOOLS_DIR/scripts/release-build.sh"'), 1,
-                         "CI builds the release packages once; reproduction is not a CI gate")
-        self.assertNotIn("package-reference", ci)
-        self.assertIn('scripts/test-installed-packages.py" release-assets', ci)
-        self.assertIn("Preserve test evidence\n        if: failure()", ci,
-                      "Passing runs must not spend time uploading evidence")
-        self.assertNotIn("name: arch-packages", ci)
-        self.assertIn("Clean temporary packages", ci)
-        self.assertNotIn("Test preserved release tooling", release)
-        self.assertIn("Discard test packages without executing tests", release)
-        image = (ROOT / "Containerfile").read_text()
-        acceptance = (ROOT / "scripts/rebuild-ci-image.sh").read_text()
-        for dependency in ("opencv", "yaml-cpp", "onnxruntime-cpu", "psmisc", "python", "libarchive"):
-            self.assertIn(f"        {dependency} \\\n", image)
-        self.assertIn("find_package(OpenCV REQUIRED COMPONENTS core imgproc)", acceptance)
-        self.assertIn("find_package(yaml-cpp REQUIRED)", acceptance)
-        self.assertIn("find_package(onnxruntime CONFIG REQUIRED)", acceptance)
+    @unittest.skipUnless(all(shutil.which(tool) for tool in ("makepkg", "bsdtar", "fakeroot", "cargo"))
+                         and os.getuid() != 0, "requires Arch tools, Cargo and nonroot user")
+    def test_real_makepkg_rust_package_and_checksums(self):
+        with tempfile.TemporaryDirectory(prefix="release-rust-", dir=TEMP_ROOT) as temporary:
+            work = Path(temporary)
+            archive(work / "deskwaifu.tar.gz", {
+                "deskwaifu/Cargo.toml": '[package]\nname="deskwaifu"\nversion="0.1.0"\nedition="2021"\n',
+                "deskwaifu/Cargo.lock": 'version = 4\n\n[[package]]\nname = "deskwaifu"\nversion = "0.1.0"\n',
+                "deskwaifu/src/main.rs": 'fn main() { println!("release fixture"); }\n'})
+            packaging.prepare(work, TAG, COMMIT)
+            env = dict(os.environ, PKGDEST=str(work / "packages"), SOURCE_DATE_EPOCH="1700000000")
+            result = subprocess.run(["makepkg", "--nodeps", "--noconfirm"], cwd=work, env=env,
+                                    text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            self.assertEqual(result.returncode, 0, result.stdout)
+            packaging.verify(work / "packages", TAG, COMMIT)
+            self.assertEqual(len(upload.load_assets(work / "packages", TAG, COMMIT)), 3)
+            package = next((work / "packages").glob("*.pkg.tar.zst"))
+            binary = subprocess.check_output(["bsdtar", "-xOf", str(package), "usr/bin/deskwaifu"])
+            executable = work / "deskwaifu"
+            executable.write_bytes(binary)
+            executable.chmod(0o755)
+            self.assertEqual(subprocess.check_output([str(executable)], text=True), "release fixture\n")
+            package.write_bytes(package.read_bytes() + b"tampered")
+            with self.assertRaisesRegex(ValueError, "checksum mismatch"):
+                upload.load_assets(work / "packages", TAG, COMMIT)
+            (work / "packages/deskwaifu-ocr-bin-old.pkg.tar.zst").write_bytes(b"stale")
+            with self.assertRaisesRegex(ValueError, "Unexpected or missing"):
+                packaging.verify(work / "packages", TAG, COMMIT)
+
+    def test_rust_release_uses_frozen_build_without_private_dependencies(self):
+        recipe = (ROOT / "packaging/release/PKGBUILD.in").read_text()
+        self.assertIn("cargo build --release --frozen", recipe)
+        self.assertIn('"$pkgdir/usr/bin/deskwaifu"', recipe)
+        self.assertNotIn("private-deps", recipe)
+        self.assertNotIn("cmake", recipe)
+        workflow = (ROOT / ".gitea/workflows/release.yml").read_text()
+        self.assertIn("runs-on: deskwaifu-rust", workflow)
+        self.assertNotIn("prune-tests", workflow)
+        self.assertNotIn("pacman -", workflow)
+        script = (ROOT / "scripts/release-build.sh").read_text()
+        self.assertIn("env -i PATH=/usr/bin:/bin", script)
+        self.assertNotRegex(script, r"(?m)^\s*sudo\s")
+
 
     def test_package_build_identity_is_independent_of_pid_and_workspace(self):
         script = (ROOT / "scripts/release-build.sh").read_text()
@@ -103,18 +124,6 @@ class PackagingTest(unittest.TestCase):
         self.assertIn('SOURCE_DATE_EPOCH=$(git show -s --format=%ct "$RELEASE_COMMIT")', script)
         self.assertIn('PACKAGER="DeskWaifu reproducible build"', (ROOT / "Containerfile").read_text())
 
-    def test_release_build_uses_persistent_cache_only_when_mounted_and_not_clean(self):
-        script = (ROOT / "scripts/release-build.sh").read_text()
-        self.assertIn('if [[ "${DESKWAIFU_CLEAN_BUILD:-false}" != "true" && -d /cache && -x /usr/bin/ccache ]]', script)
-        self.assertIn("/etc/makepkg.conf.d/zz-deskwaifu-ccache.conf", script)
-        self.assertIn("export DESKWAIFU_CCACHE=1", script)
-        self.assertIn("export CCACHE_DIR=/cache/ccache-makepkg", script)
-        self.assertIn('chown "$build_user:$build_user" /cache/ccache-makepkg', script)
-        pkgbuild = (ROOT / "packaging/release/PKGBUILD.in").read_text()
-        self.assertEqual(pkgbuild.count('if [[ -n "${DESKWAIFU_CCACHE:-}" ]]; then'), 1)
-        self.assertEqual(pkgbuild.count("-DCMAKE_CXX_COMPILER_LAUNCHER=ccache"), 1,
-                         "The launcher array must feed both the main and OCR configures")
-        self.assertIn("ccache \\\n", (ROOT / "Containerfile").read_text())
 
     def test_current_tools_survive_checkout_of_historical_tag(self):
         with tempfile.TemporaryDirectory(prefix="release-historical-tools-", dir=TEMP_ROOT) as temporary:
@@ -147,8 +156,6 @@ class PackagingTest(unittest.TestCase):
             acquired = root / "acquired"
             acquired.mkdir()
             (acquired / "deskwaifu.tar.gz").write_bytes(b"source")
-            (acquired / "private-deps.tar.gz").write_bytes(b"deps")
-            (acquired / "release-tools.tar.gz").write_bytes(b"tools")
             subprocess.run([sys.executable, "-B", str(tools / "scripts/release-packaging.py"),
                             "prepare", str(acquired), "0.1.0", commit], check=True)
             self.assertIn("pkgver=0.1.0\n", (acquired / "PKGBUILD").read_text())
@@ -163,8 +170,6 @@ class PackagingTest(unittest.TestCase):
                 with tempfile.TemporaryDirectory(prefix="release-raw-tag-", dir=TEMP_ROOT) as temporary:
                     work = Path(temporary)
                     (work / "deskwaifu.tar.gz").write_bytes(b"source")
-                    (work / "private-deps.tar.gz").write_bytes(b"deps")
-                    (work / "release-tools.tar.gz").write_bytes(b"tools")
                     packaging.prepare(work, tag, COMMIT)
                     result = subprocess.check_output(["bash", "-c", '. "$1"; printf "%s" "$pkgver"',
                                                       "_", str(work / "PKGBUILD")], cwd=work, text=True)
@@ -176,8 +181,6 @@ class PackagingTest(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="release-invalid-pkgver-", dir=TEMP_ROOT) as temporary:
             work = Path(temporary)
             (work / "deskwaifu.tar.gz").write_bytes(b"source")
-            (work / "private-deps.tar.gz").write_bytes(b"deps")
-            (work / "release-tools.tar.gz").write_bytes(b"tools")
             for tag in ("release/2026", "v1.2.3-rc.1", "发布"):
                 with self.subTest(tag=tag):
                     packaging.prepare(work, tag, COMMIT)
@@ -206,56 +209,6 @@ class PackagingTest(unittest.TestCase):
                         source.main()
                     git.assert_not_called()
 
-    def test_payload_and_runtime_dependencies(self):
-        for name, ocr in (("deskwaifu-bin", False), ("deskwaifu-ocr-bin", True)):
-            info = {"pkgname": [name], "pkgver": ["1.2.3-1"], "arch": ["x86_64"],
-                    "depend": ["deskwaifu-bin", "opencv", "yaml-cpp", "onnxruntime-cpu"] if ocr else sorted(packaging.MAIN_DEPENDS)}
-            packaging.verify_content(name, info, fixture_files(ocr), "1.2.3")
-            if ocr:
-                for bundled in ("usr/lib/deskwaifu/ocr/libonnxruntime.so.1",
-                                "usr/lib/libonnxruntime_providers_shared.so",
-                                "usr/share/licenses/deskwaifu-ocr/onnxruntime/LICENSE"):
-                    with self.subTest(bundled=bundled), self.assertRaisesRegex(ValueError, "not bundled"):
-                        packaging.verify_content(name, info, fixture_files(True) | {bundled}, "1.2.3")
-                with self.assertRaisesRegex(ValueError, "system onnxruntime-cpu"):
-                    packaging.verify_content(name, dict(info, depend=["deskwaifu-bin", "opencv", "yaml-cpp"]),
-                                             fixture_files(True), "1.2.3")
-                with self.assertRaisesRegex(ValueError, "retired helper"):
-                    packaging.verify_content(name, info, fixture_files(True) | {"usr/libexec/deskwaifu-ocr"}, "1.2.3")
-                with self.assertRaisesRegex(ValueError, "Missing package files"):
-                    packaging.verify_content(name, info, fixture_files(True) - {"usr/lib/deskwaifu/ocr/deskwaifu-ocr.so"}, "1.2.3")
-            for extra in ("usr/share/deskwaifu/ocr/detection.onnx", "usr/share/other/dictionary.json", "usr/share/model/inference.yml"):
-                with self.assertRaisesRegex(ValueError, "Models/dictionaries"):
-                    packaging.verify_content(name, info, fixture_files(ocr) | {extra}, "1.2.3")
-            with self.assertRaisesRegex(ValueError, "Missing package files"):
-                packaging.verify_content(name, info, set(), "1.2.3")
-        info["depend"] = ["deskwaifu-bin", "opencv"]
-        with self.assertRaisesRegex(ValueError, "yaml-cpp"):
-            packaging.verify_content(name, info, fixture_files(True), "1.2.3")
-
-    def test_internal_dependencies_must_be_package_names(self):
-        for name in packaging.PACKAGE_NAMES:
-            packaging.verify_unversioned_dependencies([name])
-            for operator in ("=", ">=", "<=", ">", "<"):
-                for include_plain in (False, True):
-                    with self.subTest(name=name, operator=operator, include_plain=include_plain):
-                        dependencies = [name + operator + "1.2.3"]
-                        if include_plain:
-                            dependencies.append(name)
-                        with self.assertRaisesRegex(ValueError, "without a version constraint"):
-                            packaging.verify_unversioned_dependencies(dependencies)
-                        with self.assertRaisesRegex(ValueError, "without a version constraint"):
-                            packaging.verify_content(name, {"depend": dependencies}, [], "1.2.3")
-
-    def test_empty_ocr_model_directory_is_allowed_but_payload_is_not(self):
-        info = {"pkgname": ["deskwaifu-ocr-bin"], "pkgver": ["1.2.3-1"], "arch": ["x86_64"],
-                "depend": ["deskwaifu-bin", "opencv", "yaml-cpp", "onnxruntime-cpu"]}
-        directories = {"./usr/share/deskwaifu/ocr/", "./usr/share/deskwaifu/ocr/models/"}
-        packaging.verify_content("deskwaifu-ocr-bin", info, fixture_files(True) | directories, "1.2.3")
-        for payload in ("usr/share/deskwaifu/ocr/models", "usr/share/deskwaifu/ocr/models/model.onnx",
-                        "usr/share/deskwaifu/ocr/models/inference.yml", "usr/share/deskwaifu/ocr/models/README"):
-            with self.subTest(payload=payload), self.assertRaisesRegex(ValueError, "Models/dictionaries"):
-                packaging.verify_content("deskwaifu-ocr-bin", info, fixture_files(True) | {payload}, "1.2.3")
 
     def test_actual_checkout_is_detached_tag_not_dispatch_branch(self):
         with tempfile.TemporaryDirectory(prefix="release-source-", dir=TEMP_ROOT) as temporary:
@@ -430,105 +383,12 @@ class PackagingTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(git("rev-parse", tag), head)
 
-    def test_package_split_does_not_leak_runtime_or_plugins(self):
-        main_info = {"pkgname": ["deskwaifu-bin"], "pkgver": ["1.2.3-1"], "arch": ["x86_64"]}
-        with self.assertRaisesRegex(ValueError, "must not contain OCR"):
-            packaging.verify_content("deskwaifu-bin", main_info, fixture_files() | fixture_files(True), "1.2.3")
-        main_info["depend"] = ["opencv"]
-        with self.assertRaisesRegex(ValueError, "must not require"):
-            packaging.verify_content("deskwaifu-bin", main_info, fixture_files(), "1.2.3")
-
-    def test_main_requires_direct_dependencies_and_all_sdk_runtime_libraries(self):
-        info = {"pkgname": ["deskwaifu-bin"], "pkgver": ["1.2.3-1"], "arch": ["x86_64"],
-                "depend": sorted(packaging.MAIN_DEPENDS)}
-        for missing in packaging.MAIN_DEPENDS:
-            with self.subTest(dependency=missing), self.assertRaisesRegex(ValueError, "Missing main runtime dependencies"):
-                packaging.verify_content("deskwaifu-bin", dict(info, depend=sorted(packaging.MAIN_DEPENDS - {missing})),
-                                         fixture_files(), "1.2.3")
-        with self.assertRaisesRegex(ValueError, "Missing main runtime dependencies"):
-            packaging.verify_content("deskwaifu-bin", dict(info, depend=[]), fixture_files(), "1.2.3")
-        for missing in packaging.SDK_LIBRARIES:
-            with self.subTest(library=missing), self.assertRaisesRegex(ValueError, "Missing package files"):
-                packaging.verify_content("deskwaifu-bin", info, fixture_files() - {missing}, "1.2.3")
-
-    @unittest.skipUnless(shutil.which("makepkg") and shutil.which("bsdtar") and shutil.which("fakeroot")
-                         and os.getuid() != 0, "requires Arch makepkg/fakeroot and a nonroot user")
-    def test_real_makepkg_split_package_metadata_and_payload(self):
-        # Exercise the real PKGBUILD package functions with an offline fake CMake
-        # installer. This is a packaging test, NOT an ELF/real application build.
-        with tempfile.TemporaryDirectory(prefix="release-packaging-", dir=TEMP_ROOT) as temporary:
-            work = Path(temporary)
-            archive(work / "deskwaifu.tar.gz", {
-                "deskwaifu/README.md": "fixture",
-                "deskwaifu/plugins/perception/native/CMakeLists.txt": "# fixture"})
-            archive(work / "private-deps.tar.gz", {
-                "private-deps/CubismSdkForNative-5-r.5/LICENSE.md": "fixture",
-                "private-deps/CubismSdkForNative-5-r.5/Core/LICENSE.md": "fixture",
-                "private-deps/CubismSdkForNative-5-r.5/Framework/LICENSE.md": "fixture",
-                "private-deps/glew/LICENSE.txt": "fixture"})
-            archive(work / "release-tools.tar.gz", {
-                "release-tools/scripts/test-environment.py": "# fixture\n",
-                "release-tools/scripts/prepare-installed-tests.py":
-                    "import pathlib,sys\np=pathlib.Path(sys.argv[1]);p.mkdir(exist_ok=True)\n"
-                    "(p/'installed-scripts').mkdir(exist_ok=True)\n"})
-            packaging.prepare(work, TAG, COMMIT)
-            pkgbuild = work / "PKGBUILD"
-            subprocess.run(["bash", "-n", str(pkgbuild)], check=True)
-            srcinfo = subprocess.check_output(["makepkg", "--printsrcinfo"], cwd=work, text=True)
-            sections = srcinfo.split("\npkgname = ")[1:]
-            for section in sections:
-                dependencies = packaging.metadata("\n".join(line.strip() for line in section.splitlines())).get("depends", [])
-                packaging.verify_unversioned_dependencies(dependencies)
-                name = section.splitlines()[0]
-                if name in ("deskwaifu-ocr-bin", "deskwaifu-tests"):
-                    self.assertIn("deskwaifu-bin", dependencies)
-                elif name == "deskwaifu-ocr-tests":
-                    self.assertIn("deskwaifu-ocr-bin", dependencies)
-            self.assertIn("depends = yaml-cpp", srcinfo)
-            self.assertIn("depends = onnxruntime-cpu", srcinfo)
-            self.assertIn("makedepends = onnxruntime-cpu", srcinfo)
-            self.assertNotIn("onnxruntime-linux", srcinfo)
-            self.assertIn("makedepends = opencv", srcinfo)
-            self.assertEqual(srcinfo.count("pkgname = "), 4)
-            bin_dir = work / "bin"
-            bin_dir.mkdir()
-            fake = bin_dir / "cmake"
-            fake.write_text("#!/usr/bin/env python3\nimport os, pathlib, sys\n"
-                            "if '--install' not in sys.argv: sys.exit(0)\n"
-                            f"files = {sorted(fixture_files())!r} if 'build-main' in sys.argv[2] else {sorted(fixture_files(True))!r}\n"
-                            "if sys.argv[-1] in ('DeskWaifuTests','DeskWaifuOCRTests'):\n"
-                            " prefix='usr/lib/deskwaifu/' + ('ocr-tests' if sys.argv[-1]=='DeskWaifuOCRTests' else 'tests')\n"
-                            " files=[prefix+'/run.py',prefix+'/installed-tests.json']\n"
-                            "for name in files:\n"
-                            " p = pathlib.Path(os.environ['DESTDIR']) / name\n"
-                            " p.parent.mkdir(parents=True, exist_ok=True)\n"
-                            " p.write_text('fixture, not an ELF binary\\n')\n")
-            fake.chmod(0o755)
-            env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", PKGDEST=str(work / "packages"),
-                       SOURCE_DATE_EPOCH="1700000000")
-            result = subprocess.run(["makepkg", "--nodeps", "--noconfirm"], cwd=work, env=env,
-                                    text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-            self.assertEqual(result.returncode, 0, result.stdout)
-            packaging.verify(work / "packages", TAG, COMMIT, include_tests=True)
-            first_build = {path.name: path.read_bytes() for path in (work / "packages").glob("*.pkg.tar.zst")}
-            result = subprocess.run(["makepkg", "--nodeps", "--cleanbuild", "--force", "--noconfirm"],
-                                    cwd=work, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-            self.assertEqual(result.returncode, 0, result.stdout)
-            self.assertEqual(first_build, {path.name: path.read_bytes()
-                                          for path in (work / "packages").glob("*.pkg.tar.zst")})
-            packaging.prune_tests(work / "packages", TAG, COMMIT)
-            assets = upload.load_assets(work / "packages", TAG, COMMIT)
-            self.assertEqual(len(assets), 4)
-            package = next((work / "packages").glob("deskwaifu-ocr-bin-*.pkg.tar.zst"))
-            package.write_bytes(package.read_bytes() + b"tampered")
-            with self.assertRaisesRegex(ValueError, "checksum mismatch"):
-                upload.load_assets(work / "packages", TAG, COMMIT)
 
     def test_workflow_secret_is_scoped_to_final_step(self):
         workflow = (ROOT / ".gitea/workflows/release.yml").read_text()
         self.assertEqual(workflow.count("secrets.RELEASE_UPLOAD"), 1)
         self.assertNotIn("secrets.RELEASE_UPLOAD", workflow.split("- name: Upload verified packages")[0])
-        self.assertIn("runs-on: deskwaifu-arch", workflow)
+        self.assertIn("runs-on: deskwaifu-rust", workflow)
         self.assertIn("tags: ['**']", workflow)
         self.assertIn("https://git.kals.top/actions/checkout@v4", workflow)
         self.assertIn("RELEASE_INPUT_TAG: ${{ github.event.inputs.tag }}", workflow)
@@ -790,10 +650,10 @@ class UploadTest(unittest.TestCase):
     def test_unprefixed_tag_assets_and_github_release_keep_original_name(self):
         with tempfile.TemporaryDirectory(prefix="release-plain-tag-", dir=TEMP_ROOT) as temporary:
             directory = Path(temporary)
-            for name in ("deskwaifu-bin", "deskwaifu-ocr-bin"):
+            for name in ("deskwaifu-bin",):
                 (directory / f"{name}-0.1.0-1-x86_64.pkg.tar.zst").write_bytes(b"fixture")
             (directory / "release-metadata.json").write_text(json.dumps({
-                "tag": "0.1.0", "commit": COMMIT, "pkgver": "0.1.0", "pkgrel": 1, "ocr_models_included": False}))
+                "tag": "0.1.0", "commit": COMMIT, "pkgver": "0.1.0", "pkgrel": 1}))
             files = sorted(directory.iterdir())
             (directory / "SHA256SUMS").write_text("".join(
                 f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n" for path in files))

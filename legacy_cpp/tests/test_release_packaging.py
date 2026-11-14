@@ -1,0 +1,950 @@
+import hashlib
+import importlib.util
+import io
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tarfile
+import tempfile
+import unittest
+from unittest.mock import patch
+from urllib.error import HTTPError
+from urllib.response import addinfourl
+
+ROOT = Path(__file__).resolve().parent.parent
+TEMP_ROOT = "/tmp/opencode" if Path("/tmp/opencode").is_dir() else None
+
+
+def load(name):
+    spec = importlib.util.spec_from_file_location(name.replace("-", "_"), ROOT / "scripts" / f"{name}.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+source = load("release-source")
+packaging = load("release-packaging")
+upload = load("release-upload")
+COMMIT = "a" * 40
+OTHER = "b" * 40
+TAG = "v1.2.3"
+
+
+def archive(path, files):
+    with tarfile.open(path, "w:gz") as target:
+        for name, content in files.items():
+            data = content.encode()
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            target.addfile(info, io.BytesIO(data))
+
+
+def fixture_files(ocr=False):
+    if ocr:
+        return {"usr/lib/deskwaifu/ocr/deskwaifu-ocr.so"}
+    return {"usr/bin/deskwaifu", "usr/bin/deskwaifu-control", "usr/bin/deskwaifu-ctl", "usr/bin/deskwaifu-cursor-guard",
+            *(f"usr/lib/deskwaifu/plugins/{name}/{name}.so" for name in packaging.PLUGINS),
+            *packaging.SDK_LIBRARIES}
+
+
+class PackagingTest(unittest.TestCase):
+    def test_test_packages_require_runtime_and_do_not_leak_into_it(self):
+        for name, runtime, directory in (("deskwaifu-tests", "deskwaifu-bin", "tests"),
+                                         ("deskwaifu-ocr-tests", "deskwaifu-ocr-bin", "ocr-tests")):
+            info = {"pkgname": [name], "pkgver": ["1.2.3-1"], "arch": ["x86_64"],
+                    "depend": [runtime]}
+            files = {f"usr/lib/deskwaifu/{directory}/run.py", f"usr/lib/deskwaifu/{directory}/installed-tests.json"}
+            packaging.verify_content(name, info, files, "1.2.3")
+            with self.assertRaisesRegex(ValueError, "needs its runtime package"):
+                packaging.verify_content(name, dict(info, depend=[]), files, "1.2.3")
+            with self.assertRaisesRegex(ValueError, "must not duplicate"):
+                packaging.verify_content(name, info, files | {"usr/bin/deskwaifu"}, "1.2.3")
+            with self.assertRaisesRegex(ValueError, "system dependency, not bundled"):
+                packaging.verify_content(name, info, files | {f"usr/lib/deskwaifu/{directory}/libonnxruntime.so.1"}, "1.2.3")
+        info = {"pkgname": ["deskwaifu-bin"], "pkgver": ["1.2.3-1"], "arch": ["x86_64"],
+                "depend": sorted(packaging.MAIN_DEPENDS)}
+        with self.assertRaisesRegex(ValueError, "must not contain tests"):
+            packaging.verify_content("deskwaifu-bin", info, fixture_files() | {"usr/lib/deskwaifu/tests/run.py"}, "1.2.3")
+
+    def test_ci_and_release_share_packaging_and_fixed_dependencies(self):
+        ci = (ROOT / ".gitea/workflows/ci.yml").read_text()
+        release = (ROOT / ".gitea/workflows/release.yml").read_text()
+        for workflow in (ci, release):
+            self.assertIn('bash "$RELEASE_TOOLS_DIR/scripts/release-build.sh"', workflow)
+            self.assertNotIn("pacman -", workflow)
+            self.assertIn("runs-on: deskwaifu-arch", workflow)
+        self.assertEqual(ci.count('bash "$RELEASE_TOOLS_DIR/scripts/release-build.sh"'), 1,
+                         "CI builds the release packages once; reproduction is not a CI gate")
+        self.assertNotIn("package-reference", ci)
+        self.assertIn('scripts/test-installed-packages.py" release-assets', ci)
+        self.assertIn("Preserve test evidence\n        if: failure()", ci,
+                      "Passing runs must not spend time uploading evidence")
+        self.assertNotIn("name: arch-packages", ci)
+        self.assertIn("Clean temporary packages", ci)
+        self.assertNotIn("Test preserved release tooling", release)
+        self.assertIn("Discard test packages without executing tests", release)
+        image = (ROOT / "Containerfile").read_text()
+        acceptance = (ROOT / "scripts/rebuild-ci-image.sh").read_text()
+        for dependency in ("opencv", "yaml-cpp", "onnxruntime-cpu", "psmisc", "python", "libarchive"):
+            self.assertIn(f"        {dependency} \\\n", image)
+        self.assertIn("find_package(OpenCV REQUIRED COMPONENTS core imgproc)", acceptance)
+        self.assertIn("find_package(yaml-cpp REQUIRED)", acceptance)
+        self.assertIn("find_package(onnxruntime CONFIG REQUIRED)", acceptance)
+
+    def test_package_build_identity_is_independent_of_pid_and_workspace(self):
+        script = (ROOT / "scripts/release-build.sh").read_text()
+        self.assertIn("work=/tmp/deskwaifu-package\nmkdir \"$work\"", script)
+        self.assertIn("candidate=dwrel\n", script)
+        self.assertNotIn("dwrel$$", script)
+        self.assertIn("TZ=UTC LANG=C.UTF-8", script)
+        self.assertIn('SOURCE_DATE_EPOCH=$(git show -s --format=%ct "$RELEASE_COMMIT")', script)
+        self.assertIn('PACKAGER="DeskWaifu reproducible build"', (ROOT / "Containerfile").read_text())
+
+    def test_release_build_uses_persistent_cache_only_when_mounted_and_not_clean(self):
+        script = (ROOT / "scripts/release-build.sh").read_text()
+        self.assertIn('if [[ "${DESKWAIFU_CLEAN_BUILD:-false}" != "true" && -d /cache && -x /usr/bin/ccache ]]', script)
+        self.assertIn("/etc/makepkg.conf.d/zz-deskwaifu-ccache.conf", script)
+        self.assertIn("export DESKWAIFU_CCACHE=1", script)
+        self.assertIn("export CCACHE_DIR=/cache/ccache-makepkg", script)
+        self.assertIn('chown "$build_user:$build_user" /cache/ccache-makepkg', script)
+        pkgbuild = (ROOT / "packaging/release/PKGBUILD.in").read_text()
+        self.assertEqual(pkgbuild.count('if [[ -n "${DESKWAIFU_CCACHE:-}" ]]; then'), 1)
+        self.assertEqual(pkgbuild.count("-DCMAKE_CXX_COMPILER_LAUNCHER=ccache"), 1,
+                         "The launcher array must feed both the main and OCR configures")
+        self.assertIn("ccache \\\n", (ROOT / "Containerfile").read_text())
+
+    def test_current_tools_survive_checkout_of_historical_tag(self):
+        with tempfile.TemporaryDirectory(prefix="release-historical-tools-", dir=TEMP_ROOT) as temporary:
+            root = Path(temporary)
+            repo = root / "source"
+            repo.mkdir()
+            def git(*args):
+                return subprocess.check_output(["git", "-C", str(repo), *args], text=True, stderr=subprocess.PIPE).strip()
+            git("init", "--initial-branch=main")
+            (repo / "scripts").mkdir()
+            historical = repo / "scripts/release-packaging.py"
+            historical.write_text('raise RuntimeError("historical packaging must not run")\n')
+            git("add", ".")
+            git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "historical")
+            commit = git("rev-parse", "HEAD")
+            git("tag", "0.1.0")
+            historical.write_text("# newer source\n")
+            git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-am", "later")
+            env_file = root / "env"
+            env = dict(os.environ, RELEASE_EVENT="workflow_dispatch", RELEASE_REF="refs/heads/main",
+                       RELEASE_INPUT_TAG="0.1.0", RELEASE_NOTES="## 更新\n- 历史版本发布\n",
+                       GITHUB_ENV=str(env_file), RUNNER_TEMP=str(root))
+            result = subprocess.run([sys.executable, "-B", str(ROOT / "scripts/release-source.py")],
+                                    cwd=repo, env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            values = dict(line.split("=", 1) for line in env_file.read_text().splitlines())
+            tools = Path(values["RELEASE_TOOLS_DIR"])
+            self.assertFalse(tools.is_relative_to(repo))
+            self.assertIn("historical packaging must not run", historical.read_text())
+            acquired = root / "acquired"
+            acquired.mkdir()
+            (acquired / "deskwaifu.tar.gz").write_bytes(b"source")
+            (acquired / "private-deps.tar.gz").write_bytes(b"deps")
+            (acquired / "release-tools.tar.gz").write_bytes(b"tools")
+            subprocess.run([sys.executable, "-B", str(tools / "scripts/release-packaging.py"),
+                            "prepare", str(acquired), "0.1.0", commit], check=True)
+            self.assertIn("pkgver=0.1.0\n", (acquired / "PKGBUILD").read_text())
+            self.assertEqual(git("rev-parse", "HEAD"), commit)
+
+    def test_arbitrary_tags_are_used_as_pkgver_without_conversion(self):
+        for tag in ("0.1.0", "v0.1.0", "nightly", "release/2026-10", "0.1.0-rc.1", "发布",
+                    "0.1.0+build", "@SOURCE_SHA@", "tag'$(touch SHOULD_NOT_EXIST)"):
+            with self.subTest(tag=tag):
+                self.assertEqual(source.select_tag("workflow_dispatch", "refs/heads/main", tag), tag)
+                self.assertEqual(source.select_tag("push", "refs/tags/" + tag, ""), tag)
+                with tempfile.TemporaryDirectory(prefix="release-raw-tag-", dir=TEMP_ROOT) as temporary:
+                    work = Path(temporary)
+                    (work / "deskwaifu.tar.gz").write_bytes(b"source")
+                    (work / "private-deps.tar.gz").write_bytes(b"deps")
+                    (work / "release-tools.tar.gz").write_bytes(b"tools")
+                    packaging.prepare(work, tag, COMMIT)
+                    result = subprocess.check_output(["bash", "-c", '. "$1"; printf "%s" "$pkgver"',
+                                                      "_", str(work / "PKGBUILD")], cwd=work, text=True)
+                    self.assertEqual(result, tag)
+                    self.assertFalse((work / "SHOULD_NOT_EXIST").exists())
+
+    @unittest.skipUnless(shutil.which("makepkg") and os.getuid() != 0, "requires nonroot makepkg")
+    def test_arch_incompatible_tags_fail_in_makepkg_without_fallback(self):
+        with tempfile.TemporaryDirectory(prefix="release-invalid-pkgver-", dir=TEMP_ROOT) as temporary:
+            work = Path(temporary)
+            (work / "deskwaifu.tar.gz").write_bytes(b"source")
+            (work / "private-deps.tar.gz").write_bytes(b"deps")
+            (work / "release-tools.tar.gz").write_bytes(b"tools")
+            for tag in ("release/2026", "v1.2.3-rc.1", "发布"):
+                with self.subTest(tag=tag):
+                    packaging.prepare(work, tag, COMMIT)
+                    result = subprocess.run(["makepkg", "--printsrcinfo"], cwd=work, capture_output=True, text=True)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("pkgver", result.stderr)
+
+    def test_tag_selection_never_accepts_branches_or_missing_manual_tag(self):
+        self.assertEqual(source.select_tag("push", "refs/tags/v1.2.3", ""), TAG)
+        self.assertEqual(source.select_tag("workflow_dispatch", "refs/heads/main", TAG), TAG)
+        for event, ref, explicit in [("push", "refs/heads/v1.2.3", ""),
+                                     ("workflow_dispatch", "refs/tags/v1.2.3", ""),
+                                     ("pull_request", "refs/tags/v1.2.3", "")]:
+            with self.assertRaises(ValueError):
+                source.select_tag(event, ref, explicit)
+
+    def test_manual_release_requires_notes_before_git_or_build(self):
+        for notes in (None, "", " \n\t"):
+            with self.subTest(notes=notes):
+                env = {"RELEASE_EVENT": "workflow_dispatch", "RELEASE_INPUT_TAG": TAG}
+                if notes is not None:
+                    env["RELEASE_NOTES"] = notes
+                with patch.dict(os.environ, env, clear=True), \
+                        patch.object(source, "git", side_effect=AssertionError("git must not run")) as git:
+                    with self.assertRaisesRegex(ValueError, "release_notes"):
+                        source.main()
+                    git.assert_not_called()
+
+    def test_payload_and_runtime_dependencies(self):
+        for name, ocr in (("deskwaifu-bin", False), ("deskwaifu-ocr-bin", True)):
+            info = {"pkgname": [name], "pkgver": ["1.2.3-1"], "arch": ["x86_64"],
+                    "depend": ["deskwaifu-bin", "opencv", "yaml-cpp", "onnxruntime-cpu"] if ocr else sorted(packaging.MAIN_DEPENDS)}
+            packaging.verify_content(name, info, fixture_files(ocr), "1.2.3")
+            if ocr:
+                for bundled in ("usr/lib/deskwaifu/ocr/libonnxruntime.so.1",
+                                "usr/lib/libonnxruntime_providers_shared.so",
+                                "usr/share/licenses/deskwaifu-ocr/onnxruntime/LICENSE"):
+                    with self.subTest(bundled=bundled), self.assertRaisesRegex(ValueError, "not bundled"):
+                        packaging.verify_content(name, info, fixture_files(True) | {bundled}, "1.2.3")
+                with self.assertRaisesRegex(ValueError, "system onnxruntime-cpu"):
+                    packaging.verify_content(name, dict(info, depend=["deskwaifu-bin", "opencv", "yaml-cpp"]),
+                                             fixture_files(True), "1.2.3")
+                with self.assertRaisesRegex(ValueError, "retired helper"):
+                    packaging.verify_content(name, info, fixture_files(True) | {"usr/libexec/deskwaifu-ocr"}, "1.2.3")
+                with self.assertRaisesRegex(ValueError, "Missing package files"):
+                    packaging.verify_content(name, info, fixture_files(True) - {"usr/lib/deskwaifu/ocr/deskwaifu-ocr.so"}, "1.2.3")
+            for extra in ("usr/share/deskwaifu/ocr/detection.onnx", "usr/share/other/dictionary.json", "usr/share/model/inference.yml"):
+                with self.assertRaisesRegex(ValueError, "Models/dictionaries"):
+                    packaging.verify_content(name, info, fixture_files(ocr) | {extra}, "1.2.3")
+            with self.assertRaisesRegex(ValueError, "Missing package files"):
+                packaging.verify_content(name, info, set(), "1.2.3")
+        info["depend"] = ["deskwaifu-bin", "opencv"]
+        with self.assertRaisesRegex(ValueError, "yaml-cpp"):
+            packaging.verify_content(name, info, fixture_files(True), "1.2.3")
+
+    def test_internal_dependencies_must_be_package_names(self):
+        for name in packaging.PACKAGE_NAMES:
+            packaging.verify_unversioned_dependencies([name])
+            for operator in ("=", ">=", "<=", ">", "<"):
+                for include_plain in (False, True):
+                    with self.subTest(name=name, operator=operator, include_plain=include_plain):
+                        dependencies = [name + operator + "1.2.3"]
+                        if include_plain:
+                            dependencies.append(name)
+                        with self.assertRaisesRegex(ValueError, "without a version constraint"):
+                            packaging.verify_unversioned_dependencies(dependencies)
+                        with self.assertRaisesRegex(ValueError, "without a version constraint"):
+                            packaging.verify_content(name, {"depend": dependencies}, [], "1.2.3")
+
+    def test_empty_ocr_model_directory_is_allowed_but_payload_is_not(self):
+        info = {"pkgname": ["deskwaifu-ocr-bin"], "pkgver": ["1.2.3-1"], "arch": ["x86_64"],
+                "depend": ["deskwaifu-bin", "opencv", "yaml-cpp", "onnxruntime-cpu"]}
+        directories = {"./usr/share/deskwaifu/ocr/", "./usr/share/deskwaifu/ocr/models/"}
+        packaging.verify_content("deskwaifu-ocr-bin", info, fixture_files(True) | directories, "1.2.3")
+        for payload in ("usr/share/deskwaifu/ocr/models", "usr/share/deskwaifu/ocr/models/model.onnx",
+                        "usr/share/deskwaifu/ocr/models/inference.yml", "usr/share/deskwaifu/ocr/models/README"):
+            with self.subTest(payload=payload), self.assertRaisesRegex(ValueError, "Models/dictionaries"):
+                packaging.verify_content("deskwaifu-ocr-bin", info, fixture_files(True) | {payload}, "1.2.3")
+
+    def test_actual_checkout_is_detached_tag_not_dispatch_branch(self):
+        with tempfile.TemporaryDirectory(prefix="release-source-", dir=TEMP_ROOT) as temporary:
+            root = Path(temporary)
+            origin = root / "origin"
+            origin.mkdir()
+
+            def git(*args):
+                return subprocess.check_output(["git", "-C", str(origin), *args], text=True, stderr=subprocess.PIPE).strip()
+
+            git("init", "--initial-branch=main")
+            (origin / "version").write_text("tagged source")
+            git("add", "version")
+            git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "release")
+            commit = git("rev-parse", "HEAD")
+            git("tag", TAG)
+            git("tag", "1.2.3")
+            git("tag", "release/2026-10")
+            (origin / "version").write_text("newer branch source, must not be packaged")
+            git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-am", "later")
+            checkout = root / "checkout"
+            subprocess.run(["git", "clone", "--quiet", str(origin), str(checkout)], check=True)
+            env_file = root / "env"
+            env = dict(os.environ, RELEASE_EVENT="workflow_dispatch", RELEASE_REF="refs/heads/main",
+                       RELEASE_INPUT_TAG=TAG, RELEASE_NOTES="发布说明",
+                       GITHUB_ENV=str(env_file), RUNNER_TEMP=str(root))
+            command = [sys.executable, "-B", str(ROOT / "scripts/release-source.py")]
+            result = subprocess.run(command, cwd=checkout, env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual((checkout / "version").read_text(), "tagged source")
+            self.assertIn(f"RELEASE_COMMIT={commit}", env_file.read_text())
+            symbolic = subprocess.run(["git", "symbolic-ref", "-q", "HEAD"], cwd=checkout, capture_output=True)
+            self.assertNotEqual(symbolic.returncode, 0)
+            env.update(RELEASE_INPUT_TAG="1.2.3")
+            result = subprocess.run(command, cwd=checkout, env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("RELEASE_TAG=1.2.3\n", env_file.read_text())
+            self.assertEqual((checkout / "version").read_text(), "tagged source")
+            # A moved tag/push identity must fail before changing source.
+            env.update(RELEASE_INPUT_TAG="release/2026-10")
+            result = subprocess.run(command, cwd=checkout, env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("RELEASE_TAG=release/2026-10\n", env_file.read_text())
+            env.update(RELEASE_EVENT="push", RELEASE_REF="refs/tags/" + TAG, RELEASE_EVENT_SHA=git("rev-parse", "HEAD"))
+            result = subprocess.run(command, cwd=checkout, env=env, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("moved since the push event", result.stderr)
+            env.update(RELEASE_EVENT_SHA=commit, RELEASE_NOTES="")
+            result = subprocess.run(command, cwd=checkout, env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertNotIn("RELEASE_NOTES=", env_file.read_text())
+
+    def test_dispatch_creates_missing_tag_on_latest_main(self):
+        with tempfile.TemporaryDirectory(prefix="release-create-tag-", dir=TEMP_ROOT) as temporary:
+            root = Path(temporary)
+            origin = root / "origin"
+            origin.mkdir()
+
+            def git(*args):
+                return subprocess.check_output(["git", "-C", str(origin), *args], text=True,
+                                               stderr=subprocess.PIPE).strip()
+
+            git("init", "--initial-branch=main")
+            (origin / "version").write_text("older source")
+            git("add", "version")
+            git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "first")
+            git("tag", "0.1.0")
+            (origin / "version").write_text("latest main source")
+            git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-am", "second")
+            main_head = git("rev-parse", "HEAD")
+            checkout = root / "checkout"
+            subprocess.run(["git", "clone", "--quiet", str(origin), str(checkout)], check=True)
+            env_file = root / "env"
+            env = dict(os.environ, RELEASE_EVENT="workflow_dispatch", RELEASE_REF="refs/heads/main",
+                       RELEASE_INPUT_TAG="0.2.0", RELEASE_NOTES="发布说明",
+                       RELEASE_NOTES_ONLY="false", GITEA_TOKEN="", GITHUB_TOKEN="",
+                       GITHUB_ENV=str(env_file), RUNNER_TEMP=str(root))
+            result = subprocess.run([sys.executable, "-B", str(ROOT / "scripts/release-source.py")],
+                                    cwd=checkout, env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(git("rev-parse", "0.2.0"), main_head)
+            self.assertEqual((checkout / "version").read_text(), "latest main source")
+            self.assertIn(f"RELEASE_TAG=0.2.0\nRELEASE_COMMIT={main_head}", env_file.read_text())
+            symbolic = subprocess.run(["git", "symbolic-ref", "-q", "HEAD"], cwd=checkout, capture_output=True)
+            self.assertNotEqual(symbolic.returncode, 0)
+
+    def test_dispatch_existing_tag_is_never_moved_by_main_progress(self):
+        with tempfile.TemporaryDirectory(prefix="release-existing-tag-", dir=TEMP_ROOT) as temporary:
+            root = Path(temporary)
+            origin = root / "origin"
+            origin.mkdir()
+
+            def git(*args):
+                return subprocess.check_output(["git", "-C", str(origin), *args], text=True,
+                                               stderr=subprocess.PIPE).strip()
+
+            git("init", "--initial-branch=main")
+            (origin / "version").write_text("tagged source")
+            git("add", "version")
+            git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "release")
+            tagged = git("rev-parse", "HEAD")
+            git("tag", TAG)
+            (origin / "version").write_text("newer main source, must not be released")
+            git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-am", "later")
+            checkout = root / "checkout"
+            subprocess.run(["git", "clone", "--quiet", str(origin), str(checkout)], check=True)
+            env_file = root / "env"
+            env = dict(os.environ, RELEASE_EVENT="workflow_dispatch", RELEASE_REF="refs/heads/main",
+                       RELEASE_INPUT_TAG=TAG, RELEASE_NOTES="发布说明",
+                       GITHUB_ENV=str(env_file), RUNNER_TEMP=str(root))
+            result = subprocess.run([sys.executable, "-B", str(ROOT / "scripts/release-source.py")],
+                                    cwd=checkout, env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(git("rev-parse", TAG), tagged)
+            self.assertEqual((checkout / "version").read_text(), "tagged source")
+
+    def test_push_event_and_notes_only_never_create_missing_tag(self):
+        with tempfile.TemporaryDirectory(prefix="release-missing-tag-", dir=TEMP_ROOT) as temporary:
+            root = Path(temporary)
+            origin = root / "origin"
+            origin.mkdir()
+
+            def git(*args):
+                return subprocess.check_output(["git", "-C", str(origin), *args], text=True,
+                                               stderr=subprocess.PIPE).strip()
+
+            git("init", "--initial-branch=main")
+            (origin / "version").write_text("source")
+            git("add", "version")
+            git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "only")
+            head = git("rev-parse", "HEAD")
+            checkout = root / "checkout"
+            subprocess.run(["git", "clone", "--quiet", str(origin), str(checkout)], check=True)
+            env_file = root / "env"
+            env = dict(os.environ, RELEASE_EVENT="push", RELEASE_REF="refs/tags/0.9.0",
+                       RELEASE_EVENT_SHA=head, RELEASE_NOTES="",
+                       GITHUB_ENV=str(env_file), RUNNER_TEMP=str(root))
+            command = [sys.executable, "-B", str(ROOT / "scripts/release-source.py")]
+            result = subprocess.run(command, cwd=checkout, env=env, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("does not exist", result.stderr)
+            env.update(RELEASE_EVENT="workflow_dispatch", RELEASE_REF="refs/heads/main",
+                       RELEASE_INPUT_TAG="0.9.0", RELEASE_NOTES="发布说明", RELEASE_NOTES_ONLY="true")
+            result = subprocess.run(command, cwd=checkout, env=env, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("existing tag", result.stderr)
+            self.assertEqual(git("tag", "--list", "0.9.0"), "")
+
+    def test_dispatch_tag_creation_survives_special_characters(self):
+        tag = "0.2.0-rc.1"
+        with tempfile.TemporaryDirectory(prefix="release-tag-chars-", dir=TEMP_ROOT) as temporary:
+            root = Path(temporary)
+            origin = root / "origin"
+            origin.mkdir()
+
+            def git(*args):
+                return subprocess.check_output(["git", "-C", str(origin), *args], text=True,
+                                               stderr=subprocess.PIPE).strip()
+
+            git("init", "--initial-branch=main")
+            (origin / "version").write_text("source")
+            git("add", "version")
+            git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "only")
+            head = git("rev-parse", "HEAD")
+            checkout = root / "checkout"
+            subprocess.run(["git", "clone", "--quiet", str(origin), str(checkout)], check=True)
+            env = dict(os.environ, RELEASE_EVENT="workflow_dispatch", RELEASE_REF="refs/heads/main",
+                       RELEASE_INPUT_TAG=tag, RELEASE_NOTES="发布说明",
+                       GITHUB_ENV=str(root / "env"), RUNNER_TEMP=str(root))
+            result = subprocess.run([sys.executable, "-B", str(ROOT / "scripts/release-source.py")],
+                                    cwd=checkout, env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(git("rev-parse", tag), head)
+
+    def test_package_split_does_not_leak_runtime_or_plugins(self):
+        main_info = {"pkgname": ["deskwaifu-bin"], "pkgver": ["1.2.3-1"], "arch": ["x86_64"]}
+        with self.assertRaisesRegex(ValueError, "must not contain OCR"):
+            packaging.verify_content("deskwaifu-bin", main_info, fixture_files() | fixture_files(True), "1.2.3")
+        main_info["depend"] = ["opencv"]
+        with self.assertRaisesRegex(ValueError, "must not require"):
+            packaging.verify_content("deskwaifu-bin", main_info, fixture_files(), "1.2.3")
+
+    def test_main_requires_direct_dependencies_and_all_sdk_runtime_libraries(self):
+        info = {"pkgname": ["deskwaifu-bin"], "pkgver": ["1.2.3-1"], "arch": ["x86_64"],
+                "depend": sorted(packaging.MAIN_DEPENDS)}
+        for missing in packaging.MAIN_DEPENDS:
+            with self.subTest(dependency=missing), self.assertRaisesRegex(ValueError, "Missing main runtime dependencies"):
+                packaging.verify_content("deskwaifu-bin", dict(info, depend=sorted(packaging.MAIN_DEPENDS - {missing})),
+                                         fixture_files(), "1.2.3")
+        with self.assertRaisesRegex(ValueError, "Missing main runtime dependencies"):
+            packaging.verify_content("deskwaifu-bin", dict(info, depend=[]), fixture_files(), "1.2.3")
+        for missing in packaging.SDK_LIBRARIES:
+            with self.subTest(library=missing), self.assertRaisesRegex(ValueError, "Missing package files"):
+                packaging.verify_content("deskwaifu-bin", info, fixture_files() - {missing}, "1.2.3")
+
+    @unittest.skipUnless(shutil.which("makepkg") and shutil.which("bsdtar") and shutil.which("fakeroot")
+                         and os.getuid() != 0, "requires Arch makepkg/fakeroot and a nonroot user")
+    def test_real_makepkg_split_package_metadata_and_payload(self):
+        # Exercise the real PKGBUILD package functions with an offline fake CMake
+        # installer. This is a packaging test, NOT an ELF/real application build.
+        with tempfile.TemporaryDirectory(prefix="release-packaging-", dir=TEMP_ROOT) as temporary:
+            work = Path(temporary)
+            archive(work / "deskwaifu.tar.gz", {
+                "deskwaifu/README.md": "fixture",
+                "deskwaifu/plugins/perception/native/CMakeLists.txt": "# fixture"})
+            archive(work / "private-deps.tar.gz", {
+                "private-deps/CubismSdkForNative-5-r.5/LICENSE.md": "fixture",
+                "private-deps/CubismSdkForNative-5-r.5/Core/LICENSE.md": "fixture",
+                "private-deps/CubismSdkForNative-5-r.5/Framework/LICENSE.md": "fixture",
+                "private-deps/glew/LICENSE.txt": "fixture"})
+            archive(work / "release-tools.tar.gz", {
+                "release-tools/scripts/test-environment.py": "# fixture\n",
+                "release-tools/scripts/prepare-installed-tests.py":
+                    "import pathlib,sys\np=pathlib.Path(sys.argv[1]);p.mkdir(exist_ok=True)\n"
+                    "(p/'installed-scripts').mkdir(exist_ok=True)\n"})
+            packaging.prepare(work, TAG, COMMIT)
+            pkgbuild = work / "PKGBUILD"
+            subprocess.run(["bash", "-n", str(pkgbuild)], check=True)
+            srcinfo = subprocess.check_output(["makepkg", "--printsrcinfo"], cwd=work, text=True)
+            sections = srcinfo.split("\npkgname = ")[1:]
+            for section in sections:
+                dependencies = packaging.metadata("\n".join(line.strip() for line in section.splitlines())).get("depends", [])
+                packaging.verify_unversioned_dependencies(dependencies)
+                name = section.splitlines()[0]
+                if name in ("deskwaifu-ocr-bin", "deskwaifu-tests"):
+                    self.assertIn("deskwaifu-bin", dependencies)
+                elif name == "deskwaifu-ocr-tests":
+                    self.assertIn("deskwaifu-ocr-bin", dependencies)
+            self.assertIn("depends = yaml-cpp", srcinfo)
+            self.assertIn("depends = onnxruntime-cpu", srcinfo)
+            self.assertIn("makedepends = onnxruntime-cpu", srcinfo)
+            self.assertNotIn("onnxruntime-linux", srcinfo)
+            self.assertIn("makedepends = opencv", srcinfo)
+            self.assertEqual(srcinfo.count("pkgname = "), 4)
+            bin_dir = work / "bin"
+            bin_dir.mkdir()
+            fake = bin_dir / "cmake"
+            fake.write_text("#!/usr/bin/env python3\nimport os, pathlib, sys\n"
+                            "if '--install' not in sys.argv: sys.exit(0)\n"
+                            f"files = {sorted(fixture_files())!r} if 'build-main' in sys.argv[2] else {sorted(fixture_files(True))!r}\n"
+                            "if sys.argv[-1] in ('DeskWaifuTests','DeskWaifuOCRTests'):\n"
+                            " prefix='usr/lib/deskwaifu/' + ('ocr-tests' if sys.argv[-1]=='DeskWaifuOCRTests' else 'tests')\n"
+                            " files=[prefix+'/run.py',prefix+'/installed-tests.json']\n"
+                            "for name in files:\n"
+                            " p = pathlib.Path(os.environ['DESTDIR']) / name\n"
+                            " p.parent.mkdir(parents=True, exist_ok=True)\n"
+                            " p.write_text('fixture, not an ELF binary\\n')\n")
+            fake.chmod(0o755)
+            env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", PKGDEST=str(work / "packages"),
+                       SOURCE_DATE_EPOCH="1700000000")
+            result = subprocess.run(["makepkg", "--nodeps", "--noconfirm"], cwd=work, env=env,
+                                    text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            self.assertEqual(result.returncode, 0, result.stdout)
+            packaging.verify(work / "packages", TAG, COMMIT, include_tests=True)
+            first_build = {path.name: path.read_bytes() for path in (work / "packages").glob("*.pkg.tar.zst")}
+            result = subprocess.run(["makepkg", "--nodeps", "--cleanbuild", "--force", "--noconfirm"],
+                                    cwd=work, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            self.assertEqual(result.returncode, 0, result.stdout)
+            self.assertEqual(first_build, {path.name: path.read_bytes()
+                                          for path in (work / "packages").glob("*.pkg.tar.zst")})
+            packaging.prune_tests(work / "packages", TAG, COMMIT)
+            assets = upload.load_assets(work / "packages", TAG, COMMIT)
+            self.assertEqual(len(assets), 4)
+            package = next((work / "packages").glob("deskwaifu-ocr-bin-*.pkg.tar.zst"))
+            package.write_bytes(package.read_bytes() + b"tampered")
+            with self.assertRaisesRegex(ValueError, "checksum mismatch"):
+                upload.load_assets(work / "packages", TAG, COMMIT)
+
+    def test_workflow_secret_is_scoped_to_final_step(self):
+        workflow = (ROOT / ".gitea/workflows/release.yml").read_text()
+        self.assertEqual(workflow.count("secrets.RELEASE_UPLOAD"), 1)
+        self.assertNotIn("secrets.RELEASE_UPLOAD", workflow.split("- name: Upload verified packages")[0])
+        self.assertIn("runs-on: deskwaifu-arch", workflow)
+        self.assertIn("tags: ['**']", workflow)
+        self.assertIn("https://git.kals.top/actions/checkout@v4", workflow)
+        self.assertIn("RELEASE_INPUT_TAG: ${{ github.event.inputs.tag }}", workflow)
+        self.assertIn("      release_notes:\n", workflow)
+        notes_input = workflow.split("      release_notes:\n", 1)[1].split("\n\n", 1)[0]
+        self.assertIn("required: true", notes_input)
+        self.assertIn("type: string", notes_input)
+        self.assertEqual(workflow.count("RELEASE_NOTES: ${{ github.event.inputs.release_notes }}"), 2)
+        self.assertNotIn("${{ github.event.inputs.release_notes }}", "\n".join(
+            line for line in workflow.splitlines() if "RELEASE_NOTES:" not in line))
+        self.assertNotIn('python3 -B "$RELEASE_TOOLS_DIR/tests/test_release_packaging.py"', workflow)
+        self.assertIn('bash "$RELEASE_TOOLS_DIR/scripts/release-build.sh"', workflow)
+        self.assertIn('python3 "$RELEASE_TOOLS_DIR/scripts/release-upload.py"', workflow)
+        job_env = workflow.split("    env:\n", 1)[1].split("    steps:", 1)[0]
+        for name in ("http_proxy", "https_proxy", "ALL_PROXY"):
+            self.assertIn(f"{name}: http://100.64.0.11:7912", job_env)
+        self.assertIn("no_proxy: 127.0.0.1,localhost", job_env)
+        subprocess.run(["bash", "-n", str(ROOT / "scripts/release-build.sh")], check=True)
+
+    def test_nonroot_release_orchestration_fails_before_acquisition(self):
+        with tempfile.TemporaryDirectory(prefix="release-nonroot-", dir=TEMP_ROOT) as temporary:
+            work = Path(temporary)
+            fake_id = work / "id"
+            fake_id.write_text("#!/bin/bash\necho 1000\n")
+            fake_id.chmod(0o755)
+            env = dict(os.environ, PATH=f"{work}:{os.environ['PATH']}")
+            env.pop("RELEASE_TAG", None)
+            env.pop("RELEASE_COMMIT", None)
+            result = subprocess.run(["bash", str(ROOT / "scripts/release-build.sh")], cwd=work, env=env,
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("require root orchestration", result.stderr)
+            self.assertNotIn("RELEASE_TAG", result.stderr)
+
+    def test_writable_trusted_checkout_blocks_makepkg(self):
+        script = (ROOT / "scripts/release-build.sh").read_text()
+        guard = script[script.index('for trusted in '):script.index('output="$root/release-assets"')]
+        with tempfile.TemporaryDirectory(prefix="release-trust-", dir=TEMP_ROOT) as temporary:
+            work = Path(temporary)
+            runuser = work / "runuser"
+            runuser.write_text('#!/bin/bash\necho "$*" >> "$CALL_LOG"\nexit 1\n')
+            runuser.chmod(0o755)
+            env = dict(os.environ, PATH=f"{work}:{os.environ['PATH']}", CALL_LOG=str(work / "calls"),
+                       root=str(ROOT), tools_root=str(ROOT), work=str(work), build_user="fixture")
+            result = subprocess.run(["bash", "-c", "set -euo pipefail\n" + guard], env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("can modify trusted release tooling", result.stderr)
+            calls = (work / "calls").read_text()
+            self.assertIn("test ! -w", calls)
+            self.assertNotIn("makepkg", calls)
+
+    def test_writable_ancestor_blocks_readonly_tool_tree_replacement(self):
+        script = (ROOT / "scripts/release-build.sh").read_text()
+        guard = script[script.index('for trusted in '):script.index('output="$root/release-assets"')]
+        with tempfile.TemporaryDirectory(prefix="release-parent-trust-", dir=TEMP_ROOT) as temporary:
+            work = Path(temporary)
+            runuser = work / "runuser"
+            runuser.write_text('#!/bin/bash\n'
+                               'while [[ "$1" != -- ]]; do shift; done\nshift\n'
+                               'if [[ "$1 $2" == "test !" ]]; then exit 0; fi\n'
+                               'if [[ "$1 $2 $3" == "test -w $WRITABLE_PARENT" ]]; then exit 0; fi\n'
+                               'exit 1\n')
+            runuser.chmod(0o755)
+            env = dict(os.environ, PATH=f"{work}:{os.environ['PATH']}", WRITABLE_PARENT=str(work),
+                       root=str(work / "checkout"), tools_root=str(work / "tools"), work=str(work), build_user="fixture")
+            result = subprocess.run(["bash", "-c", "set -euo pipefail\n" + guard], env=env, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("can replace trusted release tooling", result.stderr)
+
+    def test_root_user_creation_failure_does_not_delete_existing_account(self):
+        # Run the actual script's root-user section with failing useradd and
+        # mocked privileged commands. No real account operation is performed.
+        script = (ROOT / "scripts/release-build.sh").read_text()
+        cleanup = script[script.index("build_user=\n"):script.index("mkdir -p")]
+        root_block = script[script.index('candidate=dwrel'):script.index('output="$root/release-assets"')]
+        with tempfile.TemporaryDirectory(prefix="release-user-", dir=TEMP_ROOT) as temporary:
+            work = Path(temporary)
+            bin_dir = work / "bin"
+            bin_dir.mkdir()
+            log = work / "calls"
+            for command, body in {
+                "id": "echo 0", "useradd": 'echo useradd >> "$CALL_LOG"; exit 9',
+                "userdel": 'echo userdel >> "$CALL_LOG"',
+                "chown": 'echo chown >> "$CALL_LOG"',
+                "runuser": 'echo runuser >> "$CALL_LOG"',
+                "rm": 'echo cleanup >> "$CALL_LOG"',
+            }.items():
+                path = bin_dir / command
+                path.write_text("#!/bin/bash\n" + body + "\n")
+                path.chmod(0o755)
+            env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", CALL_LOG=str(log),
+                       work=str(work), SOURCE_DATE_EPOCH="1700000000")
+            result = subprocess.run(["bash", "-c", "set -euo pipefail\n" + cleanup + root_block], env=env,
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 9, result.stderr)
+            self.assertEqual(log.read_text().splitlines(), ["useradd", "cleanup"])
+
+
+class FakeAPI:
+    def __init__(self):
+        self.commit = COMMIT
+        self.has_commit = True
+        self.release = None
+        self.assets = {}
+        self.calls = []
+        self.failure = None
+        self.tag_type = "commit"
+
+    def request(self, method, path, data=None, binary=False, upload=False):
+        self.calls.append((method, path, data))
+        if self.failure and self.failure[:2] == (method, path):
+            raise upload_module.ApiError(self.failure[2], path)
+        if path.startswith("/git/ref/tags/"):
+            if self.commit is None:
+                raise upload_module.ApiError(404, path)
+            return {"object": {"type": self.tag_type, "sha": self.commit}}
+        if path.startswith("/git/tags/"):
+            return {"object": {"type": "commit", "sha": self.commit}}
+        if path.startswith("/git/commits/"):
+            if not self.has_commit:
+                raise upload_module.ApiError(404, path)
+            return {"sha": COMMIT}
+        if path == "/git/refs":
+            self.commit = data["sha"]
+            return {}
+        if path.startswith("/releases/tags/"):
+            if self.release is None:
+                raise upload_module.ApiError(404, path)
+            return self.release
+        if path.startswith("/releases?per_page="):
+            return [self.release] if self.release else []
+        if method == "POST" and path == "/releases":
+            self.release = dict(data, id=7)
+            return self.release
+        if method == "GET" and path.startswith("/releases/7/assets?"):
+            return list(self.assets.values())
+        if method == "POST" and path.startswith("/releases/7/assets?name="):
+            from urllib.parse import unquote
+            name = unquote(path.split("name=")[1])
+            asset = {"id": len(self.assets) + 1, "name": name, "size": len(data), "state": "uploaded",
+                     "digest": "sha256:" + hashlib.sha256(data).hexdigest(), "data": data}
+            self.assets[name] = asset
+            return asset
+        if binary and path.startswith("/releases/assets/"):
+            return next(asset["data"] for asset in self.assets.values() if str(asset["id"]) == path.split("/")[-1])
+        if method == "PATCH" and path == "/releases/7":
+            self.release.update(data)
+            return self.release
+        raise AssertionError((method, path, data))
+
+
+# The FakeAPI request's upload keyword must not shadow the imported module.
+upload_module = upload
+
+
+class UploadTest(unittest.TestCase):
+    def test_notes_only_never_changes_assets_or_creates_a_release(self):
+        api = FakeAPI()
+        upload.publish(api, TAG, COMMIT, {"package": b"keep"})
+        api.calls.clear()
+        upload.update_notes(api, TAG, COMMIT, "新说明\n")
+        self.assertEqual(api.assets["package"]["data"], b"keep")
+        self.assertEqual([(method, path, data) for method, path, data in api.calls if method != "GET"],
+                         [("PATCH", "/releases/7", {"body": "新说明\n"})])
+        for state in ("missing", "draft", "wrong-tag", "blank"):
+            api = FakeAPI()
+            if state == "draft":
+                api.release = {"id": 7, "tag_name": TAG, "draft": True}
+            if state == "wrong-tag":
+                api.commit = OTHER
+            with self.subTest(state=state), self.assertRaises(ValueError):
+                upload.update_notes(api, TAG, COMMIT, "" if state == "blank" else "说明")
+            self.assertTrue(all(method == "GET" for method, _, _ in api.calls))
+
+    def test_notes_only_cli_does_not_require_local_packages(self):
+        with patch.dict(os.environ, {"RELEASE_UPLOAD": "TEST", "RELEASE_NOTES": "说明"}, clear=True), \
+                patch.object(sys, "argv", ["release-upload.py", "missing", TAG, COMMIT, "--notes-only"]), \
+                patch.object(upload, "load_assets", side_effect=AssertionError("must not read packages")), \
+                patch.object(upload, "GitHub") as github, patch.object(upload, "update_notes") as update:
+            upload.main()
+            update.assert_called_once_with(github.return_value, TAG, COMMIT, "说明")
+
+    def test_release_notes_are_preserved_and_identical_rerun_does_not_write(self):
+        notes = '## 更新\n- 修复 "窗口" 与 `快捷键`\n$(touch SHOULD_NOT_EXIST)\nEOF\n'
+        api = FakeAPI()
+        upload.publish(api, TAG, COMMIT, {}, notes)
+        self.assertEqual(api.release["body"], notes)
+        self.assertFalse(api.release["draft"])
+        api.calls.clear()
+        upload.publish(api, TAG, COMMIT, {}, notes)
+        self.assertTrue(all(method == "GET" for method, _, _ in api.calls))
+
+    def test_notes_update_existing_public_release_or_draft(self):
+        for draft in (False, True):
+            with self.subTest(draft=draft):
+                api = FakeAPI()
+                upload.publish(api, TAG, COMMIT, {})
+                api.release["draft"] = draft
+                api.calls.clear()
+                upload.publish(api, TAG, COMMIT, {}, "新说明\n")
+                self.assertEqual(api.release["body"], "新说明\n")
+                self.assertFalse(api.release["draft"])
+                writes = [(method, path, data) for method, path, data in api.calls if method != "GET"]
+                expected = {"body": "新说明\n"}
+                if draft:
+                    expected["draft"] = False
+                self.assertEqual(writes, [("PATCH", "/releases/7", expected)])
+
+    def test_absent_or_blank_notes_preserve_existing_body(self):
+        api = FakeAPI()
+        upload.publish(api, TAG, COMMIT, {})
+        self.assertIn(f"Source commit: `{COMMIT}`", api.release["body"])
+        api.release["body"] = "人工编辑说明"
+        for notes in ("", " \n\t"):
+            api.calls.clear()
+            upload.publish(api, TAG, COMMIT, {}, notes)
+            self.assertEqual(api.release["body"], "人工编辑说明")
+            self.assertTrue(all(method == "GET" for method, _, _ in api.calls))
+
+    def test_notes_are_not_updated_when_asset_or_tag_verification_fails(self):
+        api = FakeAPI()
+        upload.publish(api, TAG, COMMIT, {"a": b"same"}, "原说明")
+        with self.assertRaisesRegex(ValueError, "differs"):
+            upload.publish(api, TAG, COMMIT, {"a": b"different"}, "新说明")
+        self.assertEqual(api.release["body"], "原说明")
+        original = api.request
+
+        def move_tag(method, path, data=None, **kwargs):
+            result = original(method, path, data, **kwargs)
+            if method == "POST" and path.startswith("/releases/7/assets?"):
+                api.commit = OTHER
+            return result
+
+        api.request = move_tag
+        with self.assertRaisesRegex(ValueError, "moved during upload"):
+            upload.publish(api, TAG, COMMIT, {"b": b"new"}, "新说明")
+        self.assertEqual(api.release["body"], "原说明")
+
+    def test_upload_main_reads_notes_from_environment(self):
+        notes = "## 更新\n- 新功能\n"
+        with patch.dict(os.environ, {"RELEASE_UPLOAD": "TEST_TOKEN", "RELEASE_NOTES": notes}, clear=True), \
+                patch.object(sys, "argv", ["release-upload.py", "assets", TAG, COMMIT]), \
+                patch.object(upload, "load_assets", return_value={}), \
+                patch.object(upload, "GitHub") as github, patch.object(upload, "publish") as publish:
+            upload.main()
+            publish.assert_called_once_with(github.return_value, TAG, COMMIT, {}, notes)
+
+    def test_arbitrary_github_release_tags_are_not_renamed_or_classified(self):
+        for tag in ("nightly", "release/2026-10", "发布", "0.1.0+build"):
+            with self.subTest(tag=tag):
+                api = FakeAPI()
+                api.commit = None
+                upload.publish(api, tag, COMMIT, {})
+                self.assertEqual(api.release["tag_name"], tag)
+                self.assertEqual(api.release["name"], tag)
+                self.assertNotIn("prerelease", api.release)
+                self.assertIn(("POST", "/git/refs", {"ref": "refs/tags/" + tag, "sha": COMMIT}), api.calls)
+
+    def test_unprefixed_tag_assets_and_github_release_keep_original_name(self):
+        with tempfile.TemporaryDirectory(prefix="release-plain-tag-", dir=TEMP_ROOT) as temporary:
+            directory = Path(temporary)
+            for name in ("deskwaifu-bin", "deskwaifu-ocr-bin"):
+                (directory / f"{name}-0.1.0-1-x86_64.pkg.tar.zst").write_bytes(b"fixture")
+            (directory / "release-metadata.json").write_text(json.dumps({
+                "tag": "0.1.0", "commit": COMMIT, "pkgver": "0.1.0", "pkgrel": 1, "ocr_models_included": False}))
+            files = sorted(directory.iterdir())
+            (directory / "SHA256SUMS").write_text("".join(
+                f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n" for path in files))
+            assets = upload.load_assets(directory, "0.1.0", COMMIT)
+            api = FakeAPI()
+            api.commit = None
+            upload.publish(api, "0.1.0", COMMIT, assets)
+            self.assertEqual(api.release["tag_name"], "0.1.0")
+            self.assertIn(("POST", "/git/refs", {"ref": "refs/tags/0.1.0", "sha": COMMIT}), api.calls)
+            with self.assertRaisesRegex(ValueError, "artifacts"):
+                upload.load_assets(directory, "v0.1.0", COMMIT)
+
+    def test_stdlib_uploader_honors_https_proxy_without_network(self):
+        proxy = "http://100.64.0.11:7912"
+        response = addinfourl(io.BytesIO(b'{"ok": true}'), {}, upload.API + "/releases", 200)
+        response.msg = "OK"
+        with patch.dict(os.environ, {"http_proxy": proxy, "https_proxy": proxy, "ALL_PROXY": proxy,
+                                     "no_proxy": "127.0.0.1,localhost"}, clear=True):
+            with patch("urllib.request.ProxyHandler.proxy_open", autospec=True, return_value=response) as proxied:
+                module = load("release-upload")
+                self.assertEqual(module.GitHub("TEST_TOKEN").request("GET", "/releases"), {"ok": True})
+                proxied.assert_called_once()
+                self.assertEqual(proxied.call_args.args[2:], (proxy, "https"))
+
+    def test_create_release_and_identical_rerun_make_no_writes(self):
+        api = FakeAPI()
+        api.commit = None
+        assets = {"one.pkg.tar.zst": b"one", "two.pkg.tar.zst": b"two"}
+        upload.publish(api, TAG, COMMIT, assets)
+        self.assertEqual(api.commit, COMMIT)
+        self.assertFalse(api.release["draft"])
+        api.calls.clear()
+        upload.publish(api, TAG, COMMIT, assets)
+        self.assertTrue(all(method == "GET" for method, _, _ in api.calls))
+
+    def test_annotated_tag_and_legacy_digest_download(self):
+        api = FakeAPI()
+        api.tag_type = "tag"
+        upload.publish(api, TAG, COMMIT, {"a": b"same"})
+        del api.assets["a"]["digest"]
+        upload.publish(api, TAG, COMMIT, {"a": b"same"})
+        self.assertTrue(any(path == "/releases/assets/1" for _, path, _ in api.calls))
+
+    def test_differing_assets_fail_preflight_without_uploading_missing_assets(self):
+        api = FakeAPI()
+        upload.publish(api, TAG, COMMIT, {"old": b"old"})
+        api.calls.clear()
+        with self.assertRaisesRegex(ValueError, "differs"):
+            upload.publish(api, TAG, COMMIT, {"new": b"new", "old": b"BAD"})
+        self.assertTrue(all(method == "GET" for method, _, _ in api.calls))
+        self.assertNotIn("new", api.assets)
+
+    def test_missing_commit_and_wrong_tag_never_create_release(self):
+        api = FakeAPI()
+        api.commit = OTHER
+        with self.assertRaisesRegex(ValueError, "different commit"):
+            upload.publish(api, TAG, COMMIT, {})
+        self.assertTrue(all(method == "GET" for method, _, _ in api.calls))
+        api.commit = None
+        api.has_commit = False
+        with self.assertRaises(upload.ApiError):
+            upload.publish(api, TAG, COMMIT, {})
+        self.assertIsNone(api.release)
+
+    def test_api_failure_is_not_treated_as_not_found(self):
+        for status in (401, 403, 429, 500):
+            with self.subTest(status=status):
+                api = FakeAPI()
+                api.failure = ("GET", "/releases/tags/" + TAG, status)
+                with self.assertRaises(upload.ApiError) as error:
+                    upload.publish(api, TAG, COMMIT, {})
+                self.assertEqual(error.exception.status, status)
+                self.assertIsNone(api.release)
+
+    def test_upload_failure_leaves_draft_for_safe_retry(self):
+        api = FakeAPI()
+        api.failure = ("POST", "/releases/7/assets?name=a", 500)
+        with self.assertRaises(upload.ApiError):
+            upload.publish(api, TAG, COMMIT, {"a": b"a"})
+        self.assertTrue(api.release["draft"])
+        api.failure = None
+        upload.publish(api, TAG, COMMIT, {"a": b"a"})
+        self.assertFalse(api.release["draft"])
+
+    def test_draft_hidden_by_tag_endpoint_is_reused(self):
+        api = FakeAPI()
+        upload.publish(api, TAG, COMMIT, {"a": b"a"})
+        api.release["draft"] = True
+        api.failure = ("GET", "/releases/tags/" + TAG, 404)
+        api.calls.clear()
+        upload.publish(api, TAG, COMMIT, {"a": b"a"})
+        self.assertFalse(api.release["draft"])
+        self.assertFalse(any(method == "POST" for method, _, _ in api.calls))
+
+    def test_redirect_drops_token_on_cdn_and_rejects_plaintext(self):
+        request = upload.Request(upload.API + "/releases/assets/1", headers={"Authorization": "Bearer SECRET"})
+        redirect = upload.SafeRedirect().redirect_request(
+            request, None, 302, "Found", {}, "https://release-assets.githubusercontent.com/file")
+        self.assertFalse(redirect.has_header("Authorization"))
+        with self.assertRaisesRegex(ValueError, "non-HTTPS"):
+            upload.SafeRedirect().redirect_request(request, None, 302, "Found", {}, "http://example.invalid/file")
+
+    def test_upload_conflict_accepts_only_identical_concurrent_winner(self):
+        for winning_data in (b"same", b"DIFF"):
+            with self.subTest(winner=winning_data):
+                api = FakeAPI()
+                original = api.request
+
+                def race(method, path, data=None, **kwargs):
+                    if method == "POST" and path == "/releases/7/assets?name=a":
+                        original(method, path, winning_data, **kwargs)
+                        raise upload.ApiError(422, path)
+                    return original(method, path, data, **kwargs)
+
+                api.request = race
+                if winning_data == b"same":
+                    upload.publish(api, TAG, COMMIT, {"a": b"same"})
+                    self.assertFalse(api.release["draft"])
+                else:
+                    with self.assertRaisesRegex(ValueError, "differs"):
+                        upload.publish(api, TAG, COMMIT, {"a": b"same"})
+                    self.assertTrue(api.release["draft"])
+
+    def test_tag_move_during_upload_does_not_publish_draft(self):
+        api = FakeAPI()
+        original = api.request
+
+        def move_tag(method, path, data=None, **kwargs):
+            result = original(method, path, data, **kwargs)
+            if method == "POST" and path.startswith("/releases/7/assets?"):
+                api.commit = OTHER
+            return result
+
+        api.request = move_tag
+        with self.assertRaisesRegex(ValueError, "moved during upload"):
+            upload.publish(api, TAG, COMMIT, {"a": b"same"})
+        self.assertTrue(api.release["draft"])
+
+    def test_incomplete_remote_asset_never_overwritten(self):
+        api = FakeAPI()
+        upload.publish(api, TAG, COMMIT, {"a": b"a"})
+        api.assets["a"]["state"] = "starter"
+        with self.assertRaisesRegex(ValueError, "incomplete"):
+            upload.publish(api, TAG, COMMIT, {"a": b"a"})
+
+    def test_stdlib_http_errors_hide_token(self):
+        with patch.object(upload, "urlopen", side_effect=HTTPError("url", 403, "denied", {}, None)):
+            with self.assertRaises(upload.ApiError) as error:
+                upload.GitHub("TOP_SECRET").request("GET", "/releases")
+        self.assertNotIn("TOP_SECRET", str(error.exception))
+
+
+if __name__ == "__main__":
+    unittest.main()

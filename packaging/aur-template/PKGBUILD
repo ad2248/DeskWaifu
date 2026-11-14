@@ -1,0 +1,23 @@
+# Binary consumer for Rust releases; rendered by scripts/update-aur.py.
+pkgname=deskwaifu-bin
+pkgver=0.1.0
+pkgrel=1
+_tag=0.1.0
+_upstream_pkgrel=1
+pkgdesc='DeskWaifu Rust plugin runtime (early self-test host)'
+arch=('x86_64')
+url='https://github.com/ad2248/DeskWaifu'
+license=('custom')
+depends=('gcc-libs' 'glibc')
+provides=('deskwaifu')
+conflicts=('deskwaifu')
+options=('!strip' '!debug')
+source=("https://github.com/ad2248/DeskWaifu/releases/download/$_tag/deskwaifu-bin-$_tag-$_upstream_pkgrel-x86_64.pkg.tar.zst")
+noextract=("deskwaifu-bin-$_tag-$_upstream_pkgrel-x86_64.pkg.tar.zst")
+sha256sums=(
+  'SKIP'
+)
+
+package() {
+  bsdtar -xf "$srcdir/deskwaifu-bin-$_tag-$_upstream_pkgrel-x86_64.pkg.tar.zst" -C "$pkgdir" usr/
+}

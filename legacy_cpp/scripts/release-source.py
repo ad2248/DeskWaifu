@@ -1,0 +1,96 @@
+#!/usr/bin/env python3
+"""Select an explicit release tag, never a branch, before acquiring/building sources."""
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import tempfile
+
+
+def select_tag(event, ref, explicit):
+    if event == "workflow_dispatch":
+        tag = explicit
+    elif event == "push" and ref.startswith("refs/tags/"):
+        tag = ref.removeprefix("refs/tags/")
+    else:
+        raise ValueError("Only tag pushes and explicit-tag manual dispatches may release")
+    if not tag:
+        raise ValueError("An explicit tag is required")
+    return tag
+
+
+def git(*args):
+    return subprocess.check_output(["git", *args], text=True).strip()
+
+
+def existing_tag_commit(tag):
+    result = subprocess.run(["git", "rev-parse", "--verify", f"refs/tags/{tag}^{{commit}}"],
+                            text=True, capture_output=True)
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip()
+
+
+def push_tag(tag):
+    url = git("remote", "get-url", "origin")
+    token = os.environ.get("GITEA_TOKEN") or os.environ.get("GITHUB_TOKEN") or ""
+    if token and re.match(r"https?://", url):
+        # checkout uses persist-credentials: false, so inject the job token for
+        # this push only. Git redacts the password in its own diagnostics.
+        scheme, _, rest = url.partition("://")
+        url = f"{scheme}://x:{token}@{rest}"
+    subprocess.run(["git", "push", url, f"refs/tags/{tag}"], check=True)
+
+
+def main():
+    event = os.environ["RELEASE_EVENT"]
+    if event == "workflow_dispatch" and not os.environ.get("RELEASE_NOTES", "").strip():
+        raise ValueError("release_notes is required for manual releases and must not be blank")
+    tag = select_tag(event, os.environ.get("RELEASE_REF", ""), os.environ.get("RELEASE_INPUT_TAG", ""))
+    commit = existing_tag_commit(tag)
+    if commit is None:
+        # Only a manual release may create the tag, and only on the current tip
+        # of main; tag pushes and notes-only updates never move repository refs.
+        if event != "workflow_dispatch":
+            raise ValueError(f"Release tag does not exist: {tag}")
+        if os.environ.get("RELEASE_NOTES_ONLY", "") == "true":
+            raise ValueError(f"Notes-only releases require an existing tag: {tag}")
+        commit = git("rev-parse", "--verify", "refs/remotes/origin/main^{commit}")
+        git("tag", tag, commit)
+        push_tag(tag)
+        print(f"Created missing release tag {tag} at main HEAD {commit}")
+    # checkout@v4 with fetch-depth: 0 acquired all tags using its own scoped
+    # credentials. Resolve only refs/tags, never a same-named branch, and do not
+    # require persisted checkout credentials for a second private-repo fetch.
+    if event == "push":
+        event_sha = os.environ.get("RELEASE_EVENT_SHA", "")
+        if not re.fullmatch(r"[0-9a-f]{40}", event_sha):
+            raise ValueError("Missing tag-push commit identity")
+        if git("rev-parse", "--verify", f"{event_sha}^{{commit}}") != commit:
+            raise ValueError("Release tag moved since the push event")
+    # Keep the workflow's trusted tooling when the selected historical source
+    # contains older release scripts. Only application source changes below.
+    tools = Path(tempfile.mkdtemp(prefix="deskwaifu-release-tools-", dir=os.environ.get("RUNNER_TEMP")))
+    tool_source = Path(__file__).resolve().parents[1]
+    for relative in ("scripts/release-source.py", "scripts/release-build.sh", "scripts/release-packaging.py",
+                     "scripts/release-upload.py", "scripts/find-deps-dir.sh", "packaging/release/PKGBUILD.in",
+                     "packaging/release/system-onnxruntime.patch",
+                     "tests/test_release_packaging.py", ".gitea/workflows/release.yml",
+                     ".gitea/workflows/ci.yml", "Containerfile", "scripts/rebuild-ci-image.sh",
+                     "scripts/prepare-installed-tests.py", "scripts/run-installed-tests.py", "scripts/test-environment.py",
+                     "scripts/test-installed-packages.py", "scripts/package-smoke.py", "plugins/perception/tests/test_ocr_native_models.py",
+                     "cmake/InstallTests.cmake", "tests/gate.json"):
+        target = tools / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(tool_source / relative, target)
+    subprocess.run(["git", "checkout", "--detach", f"refs/tags/{tag}"], check=True)
+    if git("rev-parse", "HEAD") != commit:
+        raise ValueError("Checkout does not match release tag")
+    with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as stream:
+        stream.write(f"RELEASE_TAG={tag}\nRELEASE_COMMIT={commit}\nRELEASE_TOOLS_DIR={tools}\n")
+    print(f"Selected {tag} at {commit}")
+
+
+if __name__ == "__main__":
+    main()

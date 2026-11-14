@@ -1,81 +1,36 @@
 #!/usr/bin/env bash
-# 构建 Gitea 运行器使用的 Arch Linux CI 镜像，并私下传输。
+# Build, validate and privately transfer the Rust CI image.
 set -euo pipefail
-
-IMAGE_REPO=localhost/deskwaifu-ci
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SOURCE_DIR="$(dirname "$SCRIPT_DIR")"
-CONTAINERFILE="$SOURCE_DIR/Containerfile"
-PACMAN_MIRROR=${DESKWAIFU_PACMAN_MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/archlinux}
+SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RUNNER_HOST=${DESKWAIFU_RUNNER_HOST:-st}
-
-if ! command -v podman >/dev/null 2>&1; then
-    echo "Error: podman is required" >&2
-    exit 1
-fi
-if [[ ! -f $SOURCE_DIR/CubismSdkForNative-5-r.5/Core/include/Live2DCubismCore.h ]]; then
-    echo "Error: CubismSdkForNative-5-r.5 is required in the repository root" >&2
-    exit 1
-fi
-if [[ ! -f $SOURCE_DIR/thirdParty/glew/include/GL/glew.h ]]; then
-    echo "Error: thirdParty/glew is required; run thirdParty/scripts/setup_glew" >&2
-    exit 1
-fi
-
-CONTAINER_HASH=$(git -C "$SOURCE_DIR" hash-object Containerfile)
-TAG="arch-$(date -u +%Y%m%d%H%M)-${CONTAINER_HASH:0:12}"
-IMAGE="$IMAGE_REPO:$TAG"
-
-echo "Building $IMAGE"
-podman build --target ci \
-    --build-arg "PACMAN_MIRROR=$PACMAN_MIRROR" \
-    -t "$IMAGE" "$SOURCE_DIR"
-
-echo "Checking the CI image"
-podman run --rm "$IMAGE" bash -ceu '
-    cmake --version
-    ninja --version
+command -v podman >/dev/null
+hash=$(git -C "$SOURCE_DIR" hash-object Containerfile)
+image="localhost/deskwaifu-rust-ci:arch-$(date -u +%Y%m%d%H%M)-${hash:0:12}"
+podman build --target ci --build-arg "PACMAN_MIRROR=${DESKWAIFU_PACMAN_MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/archlinux}" -t "$image" "$SOURCE_DIR"
+podman run --rm "$image" bash -ceu '
+    rustc --version
+    cargo --version
+    cargo fmt --version
+    cargo clippy --version
     makepkg --version
-    ccache --version
-    bsdtar --version
     python3 --version
-    command -v fakeroot runuser useradd userdel fuser wl-copy wl-paste pipewire pipewire-pulse wireplumber pw-cat pw-play pw-loopback pw-cli wpctl
-    wl-copy --version
-    wl-paste --version
-    pipewire --version
-    wireplumber --version
-    proot --version
-    runuser -u nobody -- proot -r / -w /tmp /usr/bin/true
-    pkgconf --modversion yaml-cpp
-    ocr_check=$(mktemp -d)
-    printf "%s\n" "cmake_minimum_required(VERSION 3.25)" \
-        "project(ocr_dependencies LANGUAGES CXX)" \
-        "find_package(OpenCV REQUIRED COMPONENTS core imgproc)" \
-        "find_package(yaml-cpp REQUIRED)" \
-        "find_package(onnxruntime CONFIG REQUIRED)" > "$ocr_check/CMakeLists.txt"
-    cmake -S "$ocr_check" -B "$ocr_check/build" -G Ninja
-    rm -rf "$ocr_check"
-    wayland-scanner --version
-    sway --version
-    QT_QPA_PLATFORM=offscreen kwin_wayland --version
-    QT_QPA_PLATFORM=offscreen kscreen-doctor --help >/dev/null
-    dbus-run-session -- true
-    locale_dir=$(mktemp -d)
-    localedef --no-archive -i de_DE -f UTF-8 "$locale_dir/de_DE.UTF-8"
-    rm -rf "$locale_dir"
-    pkgconf --modversion Qt6Core Qt6Widgets Qt6OpenGL Qt6WaylandClient Qt6StateMachine Qt6WebSockets Qt6Multimedia Qt6Network Qt6DBus samplerate
-    test -f /usr/lib/cmake/LayerShellQt/LayerShellQtConfig.cmake
-    test -f /opt/deskwaifu-deps/CubismSdkForNative-5-r.5/Core/include/Live2DCubismCore.h
-    test -f /opt/deskwaifu-deps/glew/include/GL/glew.h
+    node --version
+    git --version
+    bsdtar --version
+    command -v fakeroot runuser useradd userdel
     test ! -S /var/run/docker.sock
+    scratch=$(mktemp -d)
+    cd "$scratch"
+    cargo new --bin --vcs none check-image
+    cd check-image
+    cargo generate-lockfile --offline
+    cargo fmt --all --check
+    cargo clippy --frozen --all-targets -- -D warnings
+    cargo test --frozen
+    cargo build --frozen --release
 '
-
-# Gitea 包继承所属用户的可见性，而非关联仓库的可见性。
-# 不能将包含 SDK 的镜像推送到可能公开的用户命名空间。
-IMAGE_ID=$(podman image inspect "$IMAGE" --format '{{.Id}}')
-IMAGE_ID="sha256:${IMAGE_ID#sha256:}"
-echo "Transferring $IMAGE privately to $RUNNER_HOST"
-podman save --format oci-archive "$IMAGE" | gzip -1 | ssh "$RUNNER_HOST" 'gzip -d | podman load'
-ssh "$RUNNER_HOST" podman image exists "$IMAGE_ID"
-echo "Configure the runner label as (force_pull must remain false):"
-echo "  deskwaifu-arch:docker://$IMAGE_ID"
+image_id=$(podman image inspect "$image" --format '{{.Id}}')
+image_id="sha256:${image_id#sha256:}"
+podman save --format oci-archive "$image" | gzip -1 | ssh "$RUNNER_HOST" 'gzip -d | podman load'
+ssh "$RUNNER_HOST" podman image exists "$image_id"
+echo "Rust runner label (keep force_pull: false): deskwaifu-rust:docker://$image_id"
