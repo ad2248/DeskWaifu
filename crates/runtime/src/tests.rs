@@ -51,6 +51,7 @@ fn full_queue_still_accepts_unsubscribed_types() {
             bus: &mut bus,
             id: PluginId(0),
             initializing: false,
+            commands: &mut BTreeMap::new(),
         };
         host.publish(Message::new(PluginId(0), 1_u32)).unwrap();
         host.publish(Message::new(PluginId(0), "unsubscribed"))
@@ -67,6 +68,7 @@ fn full_queue_still_accepts_unsubscribed_types() {
         bus: &mut bus,
         id: PluginId(0),
         initializing: false,
+        commands: &mut BTreeMap::new(),
     };
     assert_eq!(
         host.publish(Message::new(PluginId(0), 1_u32)),

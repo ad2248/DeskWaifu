@@ -2,6 +2,14 @@
 use std::{any::Any, any::TypeId, sync::Arc, time::Duration};
 
 pub type PluginResult = Result<(), String>;
+pub type CommandCallback = fn(&[String]) -> Result<String, String>;
+
+#[derive(Clone)]
+pub struct Command {
+    pub name: String,
+    pub help: Vec<String>,
+    pub callback: CommandCallback,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct PluginId(pub usize);
@@ -57,6 +65,7 @@ pub trait Host {
     fn id(&self) -> PluginId;
     fn subscribe(&mut self, message_type: TypeId) -> PluginResult;
     fn publish(&mut self, message: Message) -> Result<(), PublishError>;
+    fn register_command(&mut self, command: Command) -> PluginResult;
 }
 
 pub struct Context<'a> {
@@ -79,6 +88,20 @@ impl<'a> Context<'a> {
     /// 返回成功仅表示入队；无订阅者也成功。不会同步调用其他插件。
     pub fn publish<T: Any + Send + Sync>(&mut self, payload: T) -> Result<(), PublishError> {
         self.host.publish(Message::new(self.id(), payload))
+    }
+
+    /// 仅在 initialize 阶段注册命令；名称必须是单个子命令标识。
+    pub fn register_command(
+        &mut self,
+        name: impl Into<String>,
+        help: Vec<String>,
+        callback: crate::CommandCallback,
+    ) -> PluginResult {
+        self.host.register_command(crate::Command {
+            name: name.into(),
+            help,
+            callback,
+        })
     }
 }
 

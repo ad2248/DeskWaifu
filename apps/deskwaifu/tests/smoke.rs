@@ -1,11 +1,7 @@
-use std::{
-    process::Command,
-    time::{Duration, Instant},
-};
+use std::process::Command;
 
 #[test]
-fn demo_runs_periodically_and_verifies_self_delivery() {
-    let started = Instant::now();
+fn default_invocation_prints_registered_commands() {
     let output = Command::new(env!("CARGO_BIN_EXE_deskwaifu"))
         .output()
         .unwrap();
@@ -14,9 +10,7 @@ fn demo_runs_periodically_and_verifies_self_delivery() {
         "stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(started.elapsed() >= Duration::from_secs(3));
     let stdout = String::from_utf8(output.stdout).unwrap();
-    assert!(stdout.contains("[test-plugin] sent #1"), "{stdout}");
-    assert!(stdout.contains("[test-plugin] received own #1"), "{stdout}");
-    assert!(stdout.contains("self-message check passed:"), "{stdout}");
+    assert!(stdout.contains("help  Show available commands"), "{stdout}");
+    assert!(stdout.contains("test  Run the test command."), "{stdout}");
 }
