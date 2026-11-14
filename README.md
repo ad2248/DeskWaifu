@@ -1,16 +1,17 @@
 # DeskWaifu Rust 重写
 
-项目现已切换为根目录 Rust workspace，旧 C++/Qt 实现归档于 [`legacy_cpp/`](legacy_cpp/ARCHIVE.md)，不参与当前构建；不兼容旧插件 ABI。目前实现了进程内静态组合的插件生命周期、类型化发布订阅和周期任务。
+项目现已切换为根目录 Rust workspace，旧 C++/Qt 实现归档于 [`legacy_cpp/`](legacy_cpp/ARCHIVE.md)，不参与当前构建；不兼容旧插件 ABI。目前实现了进程内静态组合的插件生命周期、周期任务、插件命令注册和平台 JSON socket IPC。命令通路不使用消息广播；SDK/runtime 中原有类型化发布订阅接口暂时保留。
 
 ## 目录与依赖方向
 
 ```text
 ./
-├── apps/deskwaifu/           # 组合 runtime 与插件，目前是自测宿主
+├── apps/deskwaifu/           # 常驻平台宿主 + IPC 命令行客户端
 ├── crates/
-│   ├── sdk/                 # Plugin、Context、Message 等共享契约
-│   └── runtime/             # 生命周期、有界 FIFO、单线程调度与计时
-└── plugins/test-plugin/      # 只依赖 SDK；每秒发消息并核验自订阅
+│   ├── sdk/                 # Plugin、Context、命令注册等共享契约
+│   ├── runtime/             # 生命周期、命令派发、单线程调度与计时
+│   └── os/                  # 平台链接的 Unix socket / JSON IPC 组件（不是插件）
+└── plugins/test-plugin/      # 只依赖 SDK；注册 test 命令，返回收到的参数
 ```
 
 依赖方向为 `app → runtime → sdk` 和 `app → plugin → sdk`。插件对 runtime 的依赖仅用于测试。runtime 不引用具体领域插件。后续按迁移需要新增 desktop、perception、speech 等 crate；控制面板作为独立 app，Cubism 等 FFI 放在独立 bridge crate，不预先创建空模块。
@@ -27,17 +28,52 @@
 - 初始化、启动、tick 或消息处理返回错误时，宿主使所有端点失效并丢弃排队消息，再逆序停止所有尝试过初始化的插件。停止某个插件失败不会阻止其余插件清理；不会捕获 panic。
 - 显式 `stop()` 可取得清理错误，可重复调用；Drop 仅兜底清理并忽略错误。停止后的 runtime 不可重启，插件应在 stop 中等待自己的 worker 结束。
 
-SDK 不引入 Qt、GPUI、Tokio 或其他执行器依赖。尚未实现 capability 请求/响应、deadline/取消、运行时插件加载、工作线程投递、IPC、渲染快照交换和生产级常驻宿主。
+- `Context::register_command(name, help, callback)` 在初始化期间注册子命令，`help` 为字符串数组，回调接收子命令后的 `&[String]` 并返回输出或错误。重复命令和保留的 `help` 被拒绝。内建 `help` 对齐显示所有已注册命令及多行帮助。
 
-## 运行测试插件
+SDK 不引入 Qt、GPUI、Tokio 或其他执行器依赖。尚未实现 capability 请求/响应、deadline/取消、运行时插件加载、工作线程投递、渲染快照交换和完整桌宠后端。
 
-在仓库根目录运行：
+## 运行平台与测试插件
+
+直接运行 `deskwaifu` 启动常驻主程序（当前 IPC 仅支持 Unix 系统）；在另一个终端运行 `deskwaifu test` 调用测试插件，`deskwaifu help` 查看所有已注册子命令。主程序与 CLI 使用同一个可执行文件，不需要额外的 `serve` 子命令。
+
+在源码目录中等价的 Cargo 用法：
 
 ```sh
+# 终端一：启动主程序
 cargo run -p deskwaifu
 ```
 
-宿主运行约 3.2 秒。测试插件每秒发布一个带递增序号的消息，并验证自己收到的序号；下一次 tick 或停止时发现遗漏会返回错误。正常情况下输出三组发送/接收记录及 `sent: 3, received: 3`。这是有限时长自测程序，不是完整桌宠后端。
+```sh
+# 终端二：调用插件子命令
+cargo run -p deskwaifu -- test
+cargo run -p deskwaifu -- test '你好 world' '' '001'
+cargo run -p deskwaifu -- help
+```
+
+socket 地址固定为 **`/tmp/deskwaifu.socket`**，不读取 `XDG_RUNTIME_DIR`，也不提供 `--socket` 配置。`deskwaifu test ...` 将 `test` 及其后的参数编码成 CLI 请求，通过该 socket 发送给已运行的主程序，再由 runtime 调用插件注册的回调。客户端不会自己加载插件或回退到本地派发；主程序未启动时命令调用返回错误。`--help` 显示启动器用法，无需启动主程序。
+
+socket 权限为 0600。已有路径不会被覆盖或自动删除，包括崩溃后遗留的 socket；应确认无存活服务后再自行清理。再次无参数启动时若地址已占用，会报错而不会替换原有监听器。Ctrl+C 正常退出会停止插件并移除当前主程序自己的 socket；强制终止（SIGKILL）不保证清理。固定路径意味着同一系统同一时间只能有一个实例绑定此地址。
+
+### JSON socket 私有协议
+
+传输为 Unix stream socket；UTF-8 JSON 以 LF（`\n`）分帧，每行一个完整请求/响应。支持拆包、粘包及长连接，响应与请求同序；无需请求 ID。换行出现在 JSON 字符串中时必须转义。
+
+请求示例（行末还需 LF）：
+
+```json
+{"source":"cli","payload":["test","你好 world","","001"]}
+```
+
+- `source` 目前只接受 `cli`；`gui` 及其他来源返回错误，不实现 GUI 负载或处理逻辑。
+- `payload` 必须是字符串数组，第一个元素为子命令（不含可执行文件名），后续元素原样交给回调。不 trim、不按空格拆分，不解释为 shell 或继续解析正文 JSON。
+- 信封字段严格校验，不接受未知字段。空数组由命令派发层返回缺少命令错误。
+- 成功响应：`{"status":"ok","output":"命令输出"}`。
+- 失败响应：`{"status":"error","error":"错误描述"}`。CLI 成功打印输出并退出 0，协议或命令错误退出非 0。
+- 单条请求/响应最大 64 KiB（不含末尾 LF，按编码后的 JSON 字节计数）。超长请求返回错误并关闭连接，超长命令输出改为错误响应，不截断输出或执行超长请求。
+- 无效 JSON/UTF-8/信封返回错误，不派发命令；仍可继续发送下一条完整请求。EOF 前没有 LF 的半帧不执行，返回错误后关闭连接。
+- 最多同时维护 32 个连接；连接空闲读写超时 10 秒。平台以非阻塞方式有界读写，每连接每轮最多派发一条命令，避免某个半帧或不读响应的客户端阻塞整个宿主。回调本身仍需短小，不提供执行超时或取消。
+
+IPC 不经过插件广播总线。平台拥有 socket 和 runtime，在同一主线程调用已注册的命令；`crates/os` 不依赖 SDK/runtime，插件无需了解传输协议。
 
 ## 检查
 
@@ -47,7 +83,7 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-测试使用手动推进的逻辑时钟检查每秒发送，不依赖实际 sleep。
+runtime 测试使用手动推进的逻辑时钟；IPC 测试使用真实 Unix socket 验证原始参数、分帧、异常隔离与资源清理，应用测试启动真实服务进程并通过 CLI 调用。
 
 ## 后续迁移约束
 

@@ -1,6 +1,7 @@
 //! 注册用于验证命令系统的 `test` 子命令。
 use deskwaifu_sdk::{Context, Plugin, PluginResult};
 
+#[derive(Default)]
 pub struct TestPlugin;
 
 impl TestPlugin {
