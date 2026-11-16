@@ -30,8 +30,8 @@ cleanup() {
 trap cleanup EXIT
 mkdir -p "$work/home" "$work/packages"
 
-# The fixed runner image supplies Cargo and the system toolchain. The selected
-# source archive includes Cargo.lock; --frozen prohibits network acquisition.
+# The fixed runner image supplies Cargo and the system toolchain. Fetch locked
+# dependencies as the build user before the offline build of this exact archive.
 git archive --format=tar.gz --prefix=deskwaifu/ "$RELEASE_COMMIT" > "$work/deskwaifu.tar.gz"
 export SOURCE_DATE_EPOCH
 SOURCE_DATE_EPOCH=$(git show -s --format=%ct "$RELEASE_COMMIT")
@@ -64,9 +64,23 @@ for trusted in "$root" "$tools_root"; do
         trusted=$parent
     done
 done
+# Only this dependency-acquisition phase may use the network. Fetch executes no
+# compilation/build scripts, runs without root or upload credentials, and fills
+# the same fresh CARGO_HOME that makepkg uses. Forward only proxy configuration.
+runuser -u "$build_user" -- env -i PATH=/usr/bin:/bin HOME="$work/home" \
+    CARGO_HOME="$work/home/.cargo" \
+    http_proxy="${http_proxy:-${HTTP_PROXY:-}}" https_proxy="${https_proxy:-${HTTPS_PROXY:-}}" \
+    ALL_PROXY="${ALL_PROXY:-${all_proxy:-}}" no_proxy="${no_proxy:-${NO_PROXY:-}}" \
+    bash -euc '
+        cd "$1"
+        mkdir fetch-source
+        tar -xzf deskwaifu.tar.gz -C fetch-source
+        cargo fetch --locked --manifest-path fetch-source/deskwaifu/Cargo.toml
+        rm -rf fetch-source
+    ' _ "$work"
 runuser -u "$build_user" -- env -i PATH=/usr/bin:/bin HOME="$work/home" SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" TZ=UTC LANG=C.UTF-8 \
-    PKGDEST="$work/packages" CARGO_HOME="$work/home/.cargo" \
-    bash -c 'cd "$1"; makepkg --cleanbuild --noconfirm' _ "$work"
+    PKGDEST="$work/packages" CARGO_HOME="$work/home/.cargo" CARGO_NET_OFFLINE=true \
+    bash -euc 'cd "$1"; makepkg --cleanbuild --noconfirm' _ "$work"
 output="$root/release-assets"
 mkdir "$output" # Refuse stale artifacts from another tag/run.
 cp "$work/packages/"*.pkg.tar.zst "$output/"

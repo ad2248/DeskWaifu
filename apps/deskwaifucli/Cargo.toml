@@ -1,0 +1,11 @@
+[package]
+name = "deskwaifucli"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+deskwaifu-os = { path = "../../crates/os" }
+
+[lints]
+workspace = true

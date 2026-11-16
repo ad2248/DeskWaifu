@@ -8,7 +8,6 @@ publish.workspace = true
 deskwaifu-os = { path = "../../crates/os" }
 ctrlc = "3"
 deskwaifu-runtime.workspace = true
-deskwaifu-test-plugin.workspace = true
 
 [lints]
 workspace = true

@@ -9,6 +9,10 @@ use std::{
     time::{Duration, Instant},
 };
 
+// 将动态库操作的 unsafe 边界限制在一个模块内。
+#[allow(unsafe_code)]
+mod dynamic;
+
 struct Delivery {
     message: Message,
     targets: Vec<usize>,
@@ -92,6 +96,8 @@ pub struct Runtime {
     state: State,
     elapsed: Duration,
     commands: BTreeMap<String, Command>,
+    // 必须最后释放：实例、队列负载、命令回调及其析构代码都可能位于动态库。
+    libraries: Vec<libloading::Library>,
 }
 
 impl Runtime {
@@ -108,10 +114,15 @@ impl Runtime {
             state: State::Created,
             elapsed: Duration::ZERO,
             commands: BTreeMap::new(),
+            libraries: Vec::new(),
         }
     }
 
     pub fn add(&mut self, plugin: impl Plugin + 'static) -> Result<PluginId, String> {
+        self.add_boxed(Box::new(plugin))
+    }
+
+    fn add_boxed(&mut self, plugin: Box<dyn Plugin>) -> Result<PluginId, String> {
         if self.state != State::Created {
             return Err("plugins must be added before start".into());
         }
@@ -124,7 +135,7 @@ impl Runtime {
         }
         let id = PluginId(self.entries.len());
         self.entries.push(Entry {
-            plugin: Box::new(plugin),
+            plugin,
             initialized: false,
             interval: None,
             next_tick: None,

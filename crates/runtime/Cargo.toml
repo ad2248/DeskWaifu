@@ -5,6 +5,7 @@ edition.workspace = true
 publish.workspace = true
 
 [dependencies]
+libloading = "0.8"
 deskwaifu-sdk.workspace = true
 
 [lints]

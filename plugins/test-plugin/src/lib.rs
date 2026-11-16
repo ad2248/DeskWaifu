@@ -4,6 +4,8 @@ use deskwaifu_sdk::{Context, Plugin, PluginResult};
 #[derive(Default)]
 pub struct TestPlugin;
 
+deskwaifu_sdk::export_plugin!(TestPlugin::new());
+
 impl TestPlugin {
     pub fn new() -> Self {
         Self

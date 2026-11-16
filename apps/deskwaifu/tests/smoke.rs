@@ -1,5 +1,8 @@
 #![cfg(unix)]
 
+#[path = "../../../tests/support/mod.rs"]
+mod support;
+
 use deskwaifu_os::SOCKET_PATH;
 use std::{
     fs,
@@ -15,8 +18,8 @@ struct Host {
 }
 
 impl Host {
-    fn start() -> Self {
-        let child = Command::new(env!("CARGO_BIN_EXE_deskwaifu"))
+    fn start(executable: &std::path::Path) -> Self {
+        let child = Command::new(executable)
             .env_remove("XDG_RUNTIME_DIR")
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -40,6 +43,26 @@ impl Host {
             thread::sleep(Duration::from_millis(5));
         }
     }
+
+    fn stop(&mut self) {
+        assert!(
+            Command::new("kill")
+                .args(["-INT", &self.child.id().to_string()])
+                .status()
+                .unwrap()
+                .success()
+        );
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if let Some(status) = self.child.try_wait().unwrap() {
+                assert!(status.success());
+                break;
+            }
+            assert!(Instant::now() < deadline, "platform did not stop");
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert!(fs::symlink_metadata(SOCKET_PATH).is_err());
+    }
 }
 
 impl Drop for Host {
@@ -55,8 +78,8 @@ impl Drop for Host {
     }
 }
 
-fn call(args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_deskwaifu"))
+fn call_cli(executable: &std::path::Path, args: &[&str]) -> Output {
+    Command::new(executable)
         .env("XDG_RUNTIME_DIR", "/nonexistent/ignored-runtime")
         .args(args)
         .output()
@@ -66,18 +89,52 @@ fn call(args: &[&str]) -> Output {
 // One test owns the fixed address: do not run several hosts in parallel, or
 // remove an existing user socket merely to make the test pass.
 #[test]
-fn deskwaifu_test_uses_fixed_socket_and_default_invocation_starts_platform() {
+fn separate_cli_calls_dynamic_plugin_on_fixed_socket() {
     assert_eq!(SOCKET_PATH, "/tmp/deskwaifu.socket");
     assert!(
         fs::symlink_metadata(SOCKET_PATH).is_err(),
         "{SOCKET_PATH} already exists; refusing to disturb an existing platform"
     );
+    // Deploy a copied executable and an independently built .so. Run from a
+    // different working directory to verify lookup is relative to current_exe.
+    let build = support::PluginBuild::new();
+    let output = Command::new(env!("CARGO"))
+        .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
+        .args([
+            "build",
+            "--offline",
+            "--locked",
+            "-p",
+            "deskwaifucli",
+            "--target-dir",
+        ])
+        .arg(&build.target)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let cli = build.target.join("debug/deskwaifucli");
+    let call = |args: &[&str]| call_cli(&cli, args);
     let output = call(&["test"]);
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("start 'deskwaifu' first"));
     assert!(output.stdout.is_empty());
-
-    let mut host = Host::start();
+    assert!(call(&[]).status.success());
+    let output = call(&["--help"]);
+    assert!(output.status.success());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("deskwaifucli test [ARGS...]"));
+    let deployment = build.target.join("deployment");
+    let plugins = deployment.join("plugins");
+    fs::create_dir_all(&plugins).unwrap();
+    let executable = deployment.join("deskwaifu");
+    fs::copy(env!("CARGO_BIN_EXE_deskwaifu"), &executable).unwrap();
+    fs::copy(build.plugin(), plugins.join("test.so")).unwrap();
+    let launcher = build.target.join("launcher");
+    std::os::unix::fs::symlink(&executable, &launcher).unwrap();
+    let mut host = Host::start(&launcher);
     let output = call(&["test"]);
     assert!(output.status.success(), "{output:?}");
     assert_eq!(
@@ -106,39 +163,53 @@ fn deskwaifu_test_uses_fixed_socket_and_default_invocation_starts_platform() {
         );
     }
     // A second no-argument invocation must not replace the existing listener.
-    let output = call(&[]);
+    let output = Command::new(&executable).output().unwrap();
     assert!(!output.status.success());
     assert!(
         String::from_utf8_lossy(&output.stderr).contains("cannot listen on /tmp/deskwaifu.socket")
     );
     assert!(call(&["test"]).status.success());
 
-    assert!(
-        Command::new("kill")
-            .args(["-INT", &host.child.id().to_string()])
-            .status()
-            .unwrap()
-            .success()
-    );
-    let deadline = Instant::now() + Duration::from_secs(5);
-    loop {
-        if let Some(status) = host.child.try_wait().unwrap() {
-            assert!(status.success());
-            break;
-        }
-        assert!(Instant::now() < deadline, "platform did not stop");
-        thread::sleep(Duration::from_millis(5));
-    }
+    host.stop();
+    drop(host);
+
+    // Removing the .so removes the command: there is no statically linked fallback.
+    fs::remove_file(plugins.join("test.so")).unwrap();
+    let mut host = Host::start(&executable);
+    let output = call(&["test"]);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("unknown command: test"));
+    assert!(call(&["help"]).status.success());
+    host.stop();
+    drop(host);
+
+    // Bad libraries fail startup and release the socket rather than leaving a
+    // partially loaded command set running.
+    fs::write(plugins.join("invalid.so"), b"not a shared library").unwrap();
+    let output = Command::new(&executable).output().unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("load plugin"));
     assert!(fs::symlink_metadata(SOCKET_PATH).is_err());
 }
 
 #[test]
-fn launcher_help_describes_direct_commands_without_configuration() {
-    let output = call(&["--help"]);
-    assert!(output.status.success());
-    let stdout = String::from_utf8(output.stdout).unwrap();
-    assert!(stdout.contains("deskwaifu test [ARGS...]"));
-    assert!(stdout.contains("/tmp/deskwaifu.socket"));
-    assert!(!stdout.contains("--socket"));
-    assert!(!stdout.contains("serve"));
+fn main_program_rejects_all_arguments_instead_of_dispatching_commands() {
+    for args in [
+        vec!["test"],
+        vec!["help"],
+        vec!["--help"],
+        vec!["--socket", "/tmp/other.socket"],
+        vec![""],
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_deskwaifu"))
+            .args(&args)
+            .output()
+            .unwrap();
+        assert!(!output.status.success(), "{args:?}");
+        assert!(
+            String::from_utf8_lossy(&output.stderr)
+                .contains("does not accept arguments; use deskwaifucli")
+        );
+        assert!(output.stdout.is_empty());
+    }
 }

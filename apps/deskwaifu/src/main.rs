@@ -1,6 +1,5 @@
-use deskwaifu_os::{Response, SOCKET_PATH, Server, call};
+use deskwaifu_os::{SOCKET_PATH, Server};
 use deskwaifu_runtime::Runtime;
-use deskwaifu_test_plugin::TestPlugin;
 use std::{
     sync::{
         Arc,
@@ -10,14 +9,19 @@ use std::{
     time::{Duration, Instant},
 };
 
-const USAGE: &str = "Usage:
-  deskwaifu                       Start the platform
-  deskwaifu COMMAND [ARGS...]      Send a command to the running platform
-  deskwaifu test [ARGS...]         Run the test plugin command
-  deskwaifu help                   Show registered command help
-  deskwaifu --help                 Show this launcher help
-
-Socket: /tmp/deskwaifu.socket";
+// 仅加载可执行文件旁由同一仓库构建、由用户部署的可信插件。
+#[allow(unsafe_code)]
+fn load_plugins(runtime: &mut Runtime) -> Result<(), String> {
+    let executable = std::env::current_exe().map_err(|error| error.to_string())?;
+    let directory = executable
+        .parent()
+        .ok_or("cannot locate executable directory")?
+        .join("plugins");
+    // SAFETY: 本项目不承诺跨版本 ABI。部署约定要求插件与宿主同工具链同代码构建，
+    // 安装目录只包含可信插件；不能加载下载的任意 .so。
+    unsafe { runtime.load_plugins_from(&directory)? };
+    Ok(())
+}
 
 fn run_host() -> Result<(), String> {
     let mut server = Server::bind(SOCKET_PATH)
@@ -27,7 +31,7 @@ fn run_host() -> Result<(), String> {
     ctrlc::set_handler(move || signal.store(false, Ordering::Relaxed))
         .map_err(|error| format!("cannot register shutdown handler: {error}"))?;
     let mut runtime = Runtime::new(1024);
-    runtime.add(TestPlugin::new())?;
+    load_plugins(&mut runtime)?;
     runtime.start()?;
     eprintln!("Listening on {SOCKET_PATH}");
     let mut previous = Instant::now();
@@ -48,22 +52,8 @@ fn run_host() -> Result<(), String> {
 }
 
 fn main() -> Result<(), String> {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    if args.is_empty() {
-        return run_host();
+    if std::env::args_os().nth(1).is_some() {
+        return Err("deskwaifu does not accept arguments; use deskwaifucli for commands".into());
     }
-    if args.len() == 1 && matches!(args[0].as_str(), "--help" | "-h") {
-        println!("{USAGE}");
-        return Ok(());
-    }
-    // 子命令及其全部参数直接序列化；没有 serve 或 --socket 启动器参数。
-    match call(SOCKET_PATH, args)
-        .map_err(|error| format!("IPC {SOCKET_PATH}: {error}; start 'deskwaifu' first"))?
-    {
-        Response::Ok { output } => {
-            println!("{output}");
-            Ok(())
-        }
-        Response::Error { error } => Err(error),
-    }
+    run_host()
 }
