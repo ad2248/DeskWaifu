@@ -42,6 +42,27 @@ def archive(path, files):
             target.addfile(info, io.BytesIO(data))
 
 
+def rust_fixture():
+    """Offline workspace fixture exercising the real host + CLI + cdylib recipe."""
+    return {
+        "deskwaifu/Cargo.toml": ('[workspace]\nmembers = [".", "cli", "plugin"]\nresolver = "2"\n'
+                                '[package]\nname="deskwaifu"\nversion="0.1.0"\nedition="2021"\n'),
+        "deskwaifu/Cargo.lock": ('version = 4\n\n[[package]]\nname = "deskwaifu"\nversion = "0.1.0"\n'
+                                '\n[[package]]\nname = "deskwaifu-test-plugin"\nversion = "0.1.0"\n'
+                                '\n[[package]]\nname = "deskwaifucli"\nversion = "0.1.0"\n'),
+        "deskwaifu/src/main.rs": ('fn main() { assert_eq!(std::env::args().len(), 1); '
+                                 'println!("host fixture"); }\n'),
+        "deskwaifu/cli/Cargo.toml": ('[package]\nname="deskwaifucli"\nversion="0.1.0"\n'
+                                    'edition="2021"\n'),
+        "deskwaifu/cli/src/main.rs": ('fn main() { assert_eq!(std::env::args().nth(1).as_deref(), '
+                                     'Some("--help")); println!("cli fixture"); }\n'),
+        "deskwaifu/plugin/Cargo.toml": ('[package]\nname="deskwaifu-test-plugin"\nversion="0.1.0"\n'
+                                       'edition="2021"\n[lib]\ncrate-type=["rlib", "cdylib"]\n'),
+        "deskwaifu/plugin/src/lib.rs": '#[no_mangle]\npub extern "C" fn fixture() {}\n',
+        "deskwaifu/scripts/build.sh": (ROOT / "scripts/build.sh").read_text(),
+    }
+
+
 class PackagingTest(unittest.TestCase):
     def test_control_characters_cannot_inject_release_environment(self):
         for tag in ("v1\nRELEASE_COMMIT=evil", "v1\rbroken", "v1\0broken"):
@@ -58,7 +79,10 @@ class PackagingTest(unittest.TestCase):
     def test_single_rust_payload_and_identity(self):
         info = {"pkgname": ["deskwaifu-bin"], "pkgver": ["1.2.3-1"], "arch": ["x86_64"],
                 "depend": sorted(packaging.MAIN_DEPENDS)}
-        files = {"usr/", "usr/bin/", "usr/bin/deskwaifu", ".PKGINFO", ".BUILDINFO", ".MTREE"}
+        required = {"usr/bin/deskwaifu", "usr/bin/deskwaifucli", "usr/lib/deskwaifu/deskwaifu",
+                    "usr/lib/deskwaifu/plugins/libdeskwaifu_test_plugin.so"}
+        files = required | {"usr/", "usr/bin/", "usr/lib/", "usr/lib/deskwaifu/",
+                            "usr/lib/deskwaifu/plugins/", ".PKGINFO", ".BUILDINFO", ".MTREE"}
         packaging.verify_content("deskwaifu-bin", info, files, "1.2.3")
         for field, value in (("pkgname", ["deskwaifu-ocr-bin"]), ("pkgver", ["2.0-1"]),
                              ("arch", ["any"]), ("depend", ["qt6-base"])):
@@ -68,31 +92,29 @@ class PackagingTest(unittest.TestCase):
                       "usr/lib/deskwaifu/tests/run.py", "../escape", "usr/bin/deskwaifu-control"):
             with self.subTest(extra=extra), self.assertRaisesRegex(ValueError, "Unexpected package files"):
                 packaging.verify_content("deskwaifu-bin", info, files | {extra}, "1.2.3")
-        with self.assertRaisesRegex(ValueError, "Missing package files"):
-            packaging.verify_content("deskwaifu-bin", info, files - {"usr/bin/deskwaifu"}, "1.2.3")
+        for missing in required:
+            with self.subTest(missing=missing), self.assertRaisesRegex(ValueError, "Missing package files"):
+                packaging.verify_content("deskwaifu-bin", info, files - {missing}, "1.2.3")
 
     @unittest.skipUnless(all(shutil.which(tool) for tool in ("makepkg", "bsdtar", "fakeroot", "cargo"))
                          and os.getuid() != 0, "requires Arch tools, Cargo and nonroot user")
     def test_real_makepkg_rust_package_and_checksums(self):
         with tempfile.TemporaryDirectory(prefix="release-rust-", dir=TEMP_ROOT) as temporary:
             work = Path(temporary)
-            archive(work / "deskwaifu.tar.gz", {
-                "deskwaifu/Cargo.toml": '[package]\nname="deskwaifu"\nversion="0.1.0"\nedition="2021"\n',
-                "deskwaifu/Cargo.lock": 'version = 4\n\n[[package]]\nname = "deskwaifu"\nversion = "0.1.0"\n',
-                "deskwaifu/src/main.rs": 'fn main() { println!("release fixture"); }\n'})
+            archive(work / "deskwaifu.tar.gz", rust_fixture())
             packaging.prepare(work, TAG, COMMIT)
-            env = dict(os.environ, PKGDEST=str(work / "packages"), SOURCE_DATE_EPOCH="1700000000")
+            env = dict(os.environ, PKGDEST=str(work / "packages"), SOURCE_DATE_EPOCH="1700000000",
+                       CARGO_HOME=str(work / "cargo-home"), CARGO_TARGET_DIR="target")
             result = subprocess.run(["makepkg", "--nodeps", "--noconfirm"], cwd=work, env=env,
                                     text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
             self.assertEqual(result.returncode, 0, result.stdout)
             packaging.verify(work / "packages", TAG, COMMIT)
             self.assertEqual(len(upload.load_assets(work / "packages", TAG, COMMIT)), 3)
             package = next((work / "packages").glob("*.pkg.tar.zst"))
-            binary = subprocess.check_output(["bsdtar", "-xOf", str(package), "usr/bin/deskwaifu"])
-            executable = work / "deskwaifu"
-            executable.write_bytes(binary)
-            executable.chmod(0o755)
-            self.assertEqual(subprocess.check_output([str(executable)], text=True), "release fixture\n")
+            installed = work / "installed"
+            installed.mkdir()
+            subprocess.run(["bsdtar", "-xf", str(package), "-C", str(installed), "usr/"], check=True)
+            self.assert_installed_fixture(installed)
             package.write_bytes(package.read_bytes() + b"tampered")
             with self.assertRaisesRegex(ValueError, "checksum mismatch"):
                 upload.load_assets(work / "packages", TAG, COMMIT)
@@ -100,9 +122,38 @@ class PackagingTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Unexpected or missing"):
                 packaging.verify(work / "packages", TAG, COMMIT)
 
-    def test_rust_release_uses_frozen_build_without_private_dependencies(self):
+    def assert_installed_fixture(self, installed):
+        executable = installed / "usr/bin/deskwaifu"
+        self.assertTrue(executable.is_symlink())
+        self.assertEqual(executable.resolve(), installed / "usr/lib/deskwaifu/deskwaifu")
+        plugin = executable.resolve().parent / "plugins/libdeskwaifu_test_plugin.so"
+        self.assertTrue(plugin.read_bytes().startswith(b"\x7fELF"))
+        self.assertEqual(subprocess.check_output([str(executable)], text=True), "host fixture\n")
+        cli = installed / "usr/bin/deskwaifucli"
+        self.assertFalse(cli.is_symlink())
+        self.assertTrue(cli.read_bytes().startswith(b"\x7fELF"))
+        self.assertEqual(subprocess.check_output([str(cli), "--help"], text=True), "cli fixture\n")
+
+    @unittest.skipUnless(shutil.which("cargo"), "requires Cargo")
+    def test_real_rust_fixture_build_and_install_without_arch_tools(self):
+        with tempfile.TemporaryDirectory(prefix="release-fixture-", dir=TEMP_ROOT) as temporary:
+            work = Path(temporary)
+            for name, content in rust_fixture().items():
+                path = work / "src" / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content)
+            env = dict(os.environ, srcdir=str(work / "src"), pkgdir=str(work / "installed"),
+                       CARGO_HOME=str(work / "cargo-home"), CARGO_TARGET_DIR="target")
+            result = subprocess.run(["bash", "-euc", 'source "$1"; build; package', "_",
+                                     str(ROOT / "packaging/release/PKGBUILD.in")], env=env,
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assert_installed_fixture(work / "installed")
+
+    def test_rust_release_uses_offline_locked_build_without_private_dependencies(self):
         recipe = (ROOT / "packaging/release/PKGBUILD.in").read_text()
-        self.assertIn("cargo build --release --frozen", recipe)
+        self.assertIn("CARGO_NET_OFFLINE=true bash scripts/build.sh --release", recipe)
+        self.assertIn("cargo build --workspace --locked", (ROOT / "scripts/build.sh").read_text())
         self.assertIn('"$pkgdir/usr/bin/deskwaifu"', recipe)
         self.assertNotIn("private-deps", recipe)
         self.assertNotIn("cmake", recipe)
@@ -114,6 +165,67 @@ class PackagingTest(unittest.TestCase):
         self.assertIn("env -i PATH=/usr/bin:/bin", script)
         self.assertNotRegex(script, r"(?m)^\s*sudo\s")
 
+
+    def test_release_fetch_is_unprivileged_and_shares_offline_build_cache(self):
+        script = (ROOT / "scripts/release-build.sh").read_text()
+        phase = script[script.index('# Only this dependency-acquisition phase'):script.index('output="$root/release-assets"')]
+        with tempfile.TemporaryDirectory(prefix="release-fetch-", dir=TEMP_ROOT) as temporary:
+            work = Path(temporary)
+            tools = work / "tools"
+            tools.mkdir()
+            (work / "home").mkdir()
+            archive(work / "deskwaifu.tar.gz", rust_fixture())
+            log = work / "calls.jsonl"
+            # Emulate only the privilege transition: execute the actual env -i
+            # and shell phase, substituting observable cargo/makepkg commands.
+            runuser = tools / "runuser"
+            runuser.write_text(f'''#!{sys.executable}
+import subprocess, sys
+assert sys.argv[1:4] == ["-u", "fixture-user", "--"]
+command = sys.argv[4:]
+assert command[:3] == ["env", "-i", "PATH=/usr/bin:/bin"]
+command[2] = "PATH={tools}:/usr/bin:/bin"
+sys.exit(subprocess.run(command).returncode)
+''')
+            runuser.chmod(0o755)
+            for name in ("cargo", "makepkg"):
+                tool = tools / name
+                tool.write_text(f'''#!{sys.executable}
+import json, os, pathlib, sys
+home = pathlib.Path(os.environ["CARGO_HOME"])
+home.mkdir(parents=True, exist_ok=True)
+if {name!r} == "cargo":
+    assert sys.argv[1:] == ["fetch", "--locked", "--manifest-path", "fetch-source/deskwaifu/Cargo.toml"]
+    assert pathlib.Path(sys.argv[-1]).is_file()
+    assert "CARGO_NET_OFFLINE" not in os.environ
+    assert os.environ["https_proxy"] == "http://proxy.invalid:1234"
+    (home / "fetched").touch()
+else:
+    assert (home / "fetched").exists()
+    assert os.environ["CARGO_NET_OFFLINE"] == "true"
+    assert "https_proxy" not in os.environ
+assert "RELEASE_UPLOAD" not in os.environ
+assert "GITEA_TOKEN" not in os.environ
+with open({str(log)!r}, "a") as stream:
+    stream.write(json.dumps({{"tool": {name!r}, "home": str(home)}}) + "\\n")
+''')
+                tool.chmod(0o755)
+            env = dict(os.environ, PATH=str(tools) + os.pathsep + os.environ["PATH"],
+                       build_user="fixture-user", work=str(work), SOURCE_DATE_EPOCH="1700000000",
+                       RELEASE_UPLOAD="must-not-leak", GITEA_TOKEN="must-not-leak",
+                       https_proxy="http://proxy.invalid:1234")
+            result = subprocess.run(["bash", "-euc", phase], env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            calls = [json.loads(line) for line in log.read_text().splitlines()]
+            self.assertEqual([call["tool"] for call in calls], ["cargo", "makepkg"])
+            self.assertEqual({call["home"] for call in calls}, {str(work / "home/.cargo")})
+            self.assertFalse((work / "fetch-source").exists())
+            # A failed dependency fetch must never proceed to compilation.
+            log.unlink()
+            (tools / "cargo").write_text('#!/bin/sh\nexit 23\n')
+            result = subprocess.run(["bash", "-euc", phase], env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 23)
+            self.assertFalse(log.exists())
 
     def test_package_build_identity_is_independent_of_pid_and_workspace(self):
         script = (ROOT / "scripts/release-build.sh").read_text()

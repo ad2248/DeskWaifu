@@ -1,11 +1,17 @@
 //! 单线程、有界 FIFO 的进程内插件运行时，不依赖 Qt 或异步执行器。
-use deskwaifu_sdk::{Context, Host, Message, Plugin, PluginId, PluginResult, PublishError};
+use deskwaifu_sdk::{
+    Command, Context, Host, Message, Plugin, PluginId, PluginResult, PublishError,
+};
 use std::{
     any::TypeId,
-    collections::{HashSet, VecDeque},
+    collections::{BTreeMap, HashSet, VecDeque},
     thread,
     time::{Duration, Instant},
 };
+
+// 将动态库操作的 unsafe 边界限制在一个模块内。
+#[allow(unsafe_code)]
+mod dynamic;
 
 struct Delivery {
     message: Message,
@@ -22,6 +28,7 @@ struct ScopedHost<'a> {
     bus: &'a mut Bus,
     id: PluginId,
     initializing: bool,
+    commands: &'a mut BTreeMap<String, Command>,
 }
 impl Host for ScopedHost<'_> {
     fn id(&self) -> PluginId {
@@ -32,6 +39,19 @@ impl Host for ScopedHost<'_> {
             return Err("subscriptions require initialization".into());
         }
         self.bus.subscriptions[self.id.0].insert(message_type);
+        Ok(())
+    }
+    fn register_command(&mut self, command: Command) -> PluginResult {
+        if !self.initializing {
+            return Err("commands require initialization".into());
+        }
+        if command.name.is_empty() || command.name.chars().any(char::is_whitespace) {
+            return Err("command name must be a non-empty token".into());
+        }
+        if command.name == "help" || self.commands.contains_key(&command.name) {
+            return Err(format!("duplicate or reserved command: {}", command.name));
+        }
+        self.commands.insert(command.name.clone(), command);
         Ok(())
     }
     fn publish(&mut self, message: Message) -> Result<(), PublishError> {
@@ -75,6 +95,9 @@ pub struct Runtime {
     bus: Bus,
     state: State,
     elapsed: Duration,
+    commands: BTreeMap<String, Command>,
+    // 必须最后释放：实例、队列负载、命令回调及其析构代码都可能位于动态库。
+    libraries: Vec<libloading::Library>,
 }
 
 impl Runtime {
@@ -90,10 +113,16 @@ impl Runtime {
             },
             state: State::Created,
             elapsed: Duration::ZERO,
+            commands: BTreeMap::new(),
+            libraries: Vec::new(),
         }
     }
 
     pub fn add(&mut self, plugin: impl Plugin + 'static) -> Result<PluginId, String> {
+        self.add_boxed(Box::new(plugin))
+    }
+
+    fn add_boxed(&mut self, plugin: Box<dyn Plugin>) -> Result<PluginId, String> {
         if self.state != State::Created {
             return Err("plugins must be added before start".into());
         }
@@ -106,7 +135,7 @@ impl Runtime {
         }
         let id = PluginId(self.entries.len());
         self.entries.push(Entry {
-            plugin: Box::new(plugin),
+            plugin,
             initialized: false,
             interval: None,
             next_tick: None,
@@ -132,6 +161,7 @@ impl Runtime {
                 bus: &mut self.bus,
                 id: PluginId(id),
                 initializing: true,
+                commands: &mut self.commands,
             };
             entry
                 .plugin
@@ -151,6 +181,7 @@ impl Runtime {
                 bus: &mut self.bus,
                 id: PluginId(id),
                 initializing: false,
+                commands: &mut self.commands,
             };
             entry
                 .plugin
@@ -158,6 +189,49 @@ impl Runtime {
                 .map_err(|e| format!("{} start: {e}", entry.plugin.name()))?;
         }
         Ok(())
+    }
+
+    /// 执行 CLI 来源的原始 argv（第一个参数为子命令）。
+    pub fn dispatch_command(&self, argv: &[String]) -> Result<String, String> {
+        if self.state != State::Running {
+            return Err("runtime is not running".into());
+        }
+        let Some(name) = argv.first() else {
+            return Err("missing command (try 'help')".into());
+        };
+        if name == "help" {
+            return Ok(self.help_text());
+        }
+        let command = self
+            .commands
+            .get(name)
+            .ok_or_else(|| format!("unknown command: {name}"))?;
+        (command.callback)(&argv[1..])
+    }
+
+    /// 输出内建 help 与已注册子命令，按最长命令名对齐。
+    pub fn help_text(&self) -> String {
+        let width = self
+            .commands
+            .keys()
+            .map(String::len)
+            .max()
+            .unwrap_or(4)
+            .max(4);
+        let mut lines = vec![format!("{:<width$}  {}", "help", "Show available commands")];
+        for (name, command) in &self.commands {
+            for (index, text) in command.help.iter().enumerate() {
+                lines.push(format!(
+                    "{:<width$}  {}",
+                    if index == 0 { name.as_str() } else { "" },
+                    text
+                ));
+            }
+            if command.help.is_empty() {
+                lines.push(format!("{name:<width$}"));
+            }
+        }
+        lines.join("\n")
     }
 
     /// 推进逻辑时钟并串行执行到期任务，供测试无需真实等待地驱动运行时。
@@ -186,6 +260,7 @@ impl Runtime {
                     bus: &mut self.bus,
                     id: PluginId(id),
                     initializing: false,
+                    commands: &mut self.commands,
                 };
                 entry
                     .plugin
@@ -203,6 +278,7 @@ impl Runtime {
                     bus: &mut self.bus,
                     id: PluginId(id),
                     initializing: false,
+                    commands: &mut self.commands,
                 };
                 entry
                     .plugin
@@ -275,6 +351,7 @@ impl Runtime {
                     bus: &mut self.bus,
                     id: PluginId(id),
                     initializing: false,
+                    commands: &mut self.commands,
                 };
                 if let Err(error) = entry.plugin.stop(&mut Context::new(&mut host)) {
                     failures.push(format!("{} stop: {error}", entry.plugin.name()));

@@ -18,9 +18,14 @@ sha256sums=('@SOURCE_SHA@')
 
 build() {
   cd "$srcdir/deskwaifu"
-  cargo build --release --frozen
+  CARGO_NET_OFFLINE=true bash scripts/build.sh --release
 }
 
 package() {
-  install -Dm755 "$srcdir/deskwaifu/target/release/deskwaifu" "$pkgdir/usr/bin/deskwaifu"
+  install -Dm755 "$srcdir/deskwaifu/target/release/deskwaifu" "$pkgdir/usr/lib/deskwaifu/deskwaifu"
+  install -Dm755 "$srcdir/deskwaifu/target/release/deskwaifucli" "$pkgdir/usr/bin/deskwaifucli"
+  install -Dm755 "$srcdir/deskwaifu/target/release/plugins/libdeskwaifu_test_plugin.so" \
+    "$pkgdir/usr/lib/deskwaifu/plugins/libdeskwaifu_test_plugin.so"
+  install -dm755 "$pkgdir/usr/bin"
+  ln -s ../lib/deskwaifu/deskwaifu "$pkgdir/usr/bin/deskwaifu"
 }

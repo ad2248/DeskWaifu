@@ -2,11 +2,32 @@
 
 The release workflow builds one `deskwaifu-bin-<tag>-1-x86_64.pkg.tar.zst` from the
 exact selected Git tag. The workspace and `Cargo.lock` must live at repository
-root. `cargo build --release --frozen` builds without updating the lockfile or
-accessing the network; the current workspace has no external dependencies.
-The package installs only `/usr/bin/deskwaifu`, with `glibc` and `gcc-libs` as
-runtime dependencies. C++ plugins, private SDKs, OCR models and installed-test
-packages are no longer packaged.
+root. `CARGO_NET_OFFLINE=true bash scripts/build.sh --release` builds the whole
+workspace with `--locked` without updating the lockfile or accessing the network;
+beforehand, `release-build.sh` runs `cargo fetch --locked` as the temporary build
+user against a separate extraction of the selected source archive. Fetch and
+makepkg share the same fresh `CARGO_HOME`; no dependency cache is required in the
+runner image. Only the fetch phase receives allowlisted proxy settings. The
+subsequent makepkg invocation has `CARGO_NET_OFFLINE=true` and no proxy settings;
+compilation never runs as root and no upload credentials reach either phase.
+The package installs `/usr/lib/deskwaifu/deskwaifu` and its jointly built Rust
+plugin `/usr/lib/deskwaifu/plugins/libdeskwaifu_test_plugin.so`, with
+`/usr/bin/deskwaifu` symlinked to `../lib/deskwaifu/deskwaifu`, and the independent
+CLI installed at `/usr/bin/deskwaifucli`. The loader searches
+`plugins/` beside the actual executable, not beside the symlink or in the working
+directory. Runtime dependencies remain `glibc` and `gcc-libs`. C++ plugins, private
+SDKs, OCR models and installed-test packages are no longer packaged.
+
+Host and plugins must be built together from the same code with the same Rust
+toolchain. The plugin entry point uses Rust ABI, not a stable C ABI; there is no
+version compatibility check or sandbox. Load only trusted plugins. Plugins load
+at startup and unload on shutdown; hot reload is not supported.
+
+Use `/usr/bin/deskwaifucli --help` for a service-independent installation check.
+The host `deskwaifu` accepts no arguments (not even `--help`); invocation without
+arguments starts the persistent host and will not exit. To exercise a plugin,
+start that host and use `deskwaifucli test` in another terminal (the IPC socket is
+fixed at `/tmp/deskwaifu.socket`).
 
 The fixed `deskwaifu-rust` runner provides Cargo, the system toolchain and
 makepkg. A root orchestrator archives the selected source, then invokes makepkg
@@ -34,7 +55,10 @@ to or automatically publishes the AUR repository.
 
 ## Verification
 
-Run `python3 -B tests/test_release_packaging.py`. On Arch with makepkg, bsdtar,
-fakeroot and Cargo, the nonroot integration test builds an offline Rust fixture
-using the real PKGBUILD and verifies the package, manifest and upload checksums.
-It is skipped where those prerequisites are unavailable.
+Run `python3 -B tests/test_release_packaging.py`. The tests exercise fetch/build
+phase isolation and a real offline Rust host + CLI + cdylib fixture using the
+PKGBUILD's build/package functions, including the installed host symlink, ELF
+plugin, independent CLI and its `--help`.
+On Arch with makepkg, bsdtar, fakeroot and Cargo, an additional nonroot integration
+test creates the actual package and verifies its payload, manifest and upload
+checksums. Only the Arch-specific tests are skipped when those tools are absent.

@@ -1,7 +1,33 @@
-//! 与 UI、执行器和动态库 ABI 无关的进程内插件契约。
+//! 插件契约。动态插件直接使用 Rust 接口，必须与宿主使用同一工具链及同版代码构建。
+//! 不提供稳定 ABI；只加载可信插件。
 use std::{any::Any, any::TypeId, sync::Arc, time::Duration};
 
+/// 动态库导出的固定 Rust 函数名；不是 C ABI，也不承诺跨版本兼容。
+pub const PLUGIN_ENTRY_SYMBOL: &[u8] = b"deskwaifu_plugin_create\0";
+pub type PluginCreate = fn() -> Box<dyn Plugin>;
+
+/// 为插件生成 Rust 动态加载入口，表达式应创建一个新的插件实例。
+#[macro_export]
+macro_rules! export_plugin {
+    ($plugin:expr) => {
+        // 唯一导出符号，仅供同工具链、同版本宿主使用。
+        #[allow(unsafe_code)]
+        #[unsafe(no_mangle)]
+        pub fn deskwaifu_plugin_create() -> Box<dyn $crate::Plugin> {
+            Box::new($plugin)
+        }
+    };
+}
+
 pub type PluginResult = Result<(), String>;
+pub type CommandCallback = fn(&[String]) -> Result<String, String>;
+
+#[derive(Clone)]
+pub struct Command {
+    pub name: String,
+    pub help: Vec<String>,
+    pub callback: CommandCallback,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct PluginId(pub usize);
@@ -52,11 +78,12 @@ impl std::fmt::Display for PublishError {
 impl std::error::Error for PublishError {}
 
 /// 宿主适配接口；插件通常使用 Context 的类型化方法。
-/// 这些 Rust 接口仅用于同一程序内静态组合，不是稳定动态库 ABI。
+/// 支持静态组合和同工具链构建的动态插件，不是稳定动态库 ABI。
 pub trait Host {
     fn id(&self) -> PluginId;
     fn subscribe(&mut self, message_type: TypeId) -> PluginResult;
     fn publish(&mut self, message: Message) -> Result<(), PublishError>;
+    fn register_command(&mut self, command: Command) -> PluginResult;
 }
 
 pub struct Context<'a> {
@@ -79,6 +106,20 @@ impl<'a> Context<'a> {
     /// 返回成功仅表示入队；无订阅者也成功。不会同步调用其他插件。
     pub fn publish<T: Any + Send + Sync>(&mut self, payload: T) -> Result<(), PublishError> {
         self.host.publish(Message::new(self.id(), payload))
+    }
+
+    /// 仅在 initialize 阶段注册命令；名称必须是单个子命令标识。
+    pub fn register_command(
+        &mut self,
+        name: impl Into<String>,
+        help: Vec<String>,
+        callback: crate::CommandCallback,
+    ) -> PluginResult {
+        self.host.register_command(crate::Command {
+            name: name.into(),
+            help,
+            callback,
+        })
     }
 }
 

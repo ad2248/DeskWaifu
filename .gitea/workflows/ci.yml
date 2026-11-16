@@ -29,14 +29,18 @@ jobs:
           persist-credentials: false
       - name: Format
         run: cargo fmt --all --check
+      - name: Build host and stage plugins
+        run: bash scripts/build.sh
       - name: Lint
         run: cargo clippy --workspace --all-targets --frozen -- -D warnings
       - name: Test
         run: cargo test --workspace --frozen
       - name: Release build
-        run: cargo build --workspace --release --frozen
+        run: CARGO_NET_OFFLINE=true bash scripts/build.sh --release
       - name: Test release tooling
         run: python3 -B -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Test plugin deployment tooling
+        run: python3 -B -m unittest discover -s scripts -p 'test_*.py' -v
       - name: Test review tooling
         run: python3 -B -m unittest discover -s .gitea/scripts -p 'test_*.py' -v
 
@@ -57,10 +61,12 @@ jobs:
           export RELEASE_COMMIT="$(git rev-parse HEAD)"
           export RELEASE_TAG="0.0.0.r$RELEASE_COMMIT"
           bash scripts/release-build.sh
-      - name: Install and run packaged host
+      - name: Install package and check CLI
         run: |
           pacman -U --noconfirm release-assets/deskwaifu-bin-*.pkg.tar.zst
-          /usr/bin/deskwaifu
+          test "$(readlink -f /usr/bin/deskwaifu)" = /usr/lib/deskwaifu/deskwaifu
+          test -f /usr/lib/deskwaifu/plugins/libdeskwaifu_test_plugin.so
+          /usr/bin/deskwaifucli --help
       - name: Clean package artifacts
         if: always()
         run: rm -rf release-assets

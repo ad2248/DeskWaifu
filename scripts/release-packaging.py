@@ -47,14 +47,17 @@ def verify_content(name, info, files, version):
         raise ValueError(f"Wrong package identity/version/architecture: {name}")
     if set(info.get("depend", [])) != MAIN_DEPENDS:
         raise ValueError("Unexpected Rust runtime dependencies")
-    # Only makepkg metadata, directory entries and the application are allowed.
-    # This rejects old plugins, SDKs, OCR assets and installed-test payloads.
-    allowed = {".PKGINFO", ".BUILDINFO", ".MTREE", "usr/", "usr/bin/", "usr/bin/deskwaifu"}
+    # Only the host, its launcher symlink, the independent CLI and the jointly
+    # built Rust test plugin are allowed. Reject old plugins, SDKs and OCR assets.
+    required = {"usr/bin/deskwaifu", "usr/bin/deskwaifucli", "usr/lib/deskwaifu/deskwaifu",
+                "usr/lib/deskwaifu/plugins/libdeskwaifu_test_plugin.so"}
+    allowed = required | {".PKGINFO", ".BUILDINFO", ".MTREE", "usr/", "usr/bin/",
+                          "usr/lib/", "usr/lib/deskwaifu/", "usr/lib/deskwaifu/plugins/"}
     files = {path.removeprefix("./") for path in files}
     if not files <= allowed:
         raise ValueError(f"Unexpected package files: {sorted(files - allowed)}")
-    if "usr/bin/deskwaifu" not in files:
-        raise ValueError("Missing package files: usr/bin/deskwaifu")
+    if not required <= files:
+        raise ValueError(f"Missing package files: {sorted(required - files)}")
 
 
 def verify(directory, tag, commit):
