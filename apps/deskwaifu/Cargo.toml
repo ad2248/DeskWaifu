@@ -6,7 +6,7 @@ publish.workspace = true
 
 [dependencies]
 deskwaifu-os = { path = "../../crates/os" }
-ctrlc = "3"
+ctrlc = { version = "3", features = ["termination"] }
 deskwaifu-runtime.workspace = true
 
 [lints]

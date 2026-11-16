@@ -45,9 +45,13 @@ impl Host {
     }
 
     fn stop(&mut self) {
+        self.stop_with_signal("-INT");
+    }
+
+    fn stop_with_signal(&mut self, signal: &str) {
         assert!(
             Command::new("kill")
-                .args(["-INT", &self.child.id().to_string()])
+                .args([signal, &self.child.id().to_string()])
                 .status()
                 .unwrap()
                 .success()
@@ -170,8 +174,14 @@ fn separate_cli_calls_dynamic_plugin_on_fixed_socket() {
     );
     assert!(call(&["test"]).status.success());
 
-    host.stop();
+    // SIGTERM (ordinary kill/service-manager shutdown) must run the same cleanup
+    // as SIGINT, remove the socket, and allow an immediate restart with plugins.
+    host.stop_with_signal("-TERM");
     drop(host);
+    let mut restarted = Host::start(&executable);
+    assert!(call(&["test"]).status.success());
+    restarted.stop();
+    drop(restarted);
 
     // Removing the .so removes the command: there is no statically linked fallback.
     fs::remove_file(plugins.join("test.so")).unwrap();
