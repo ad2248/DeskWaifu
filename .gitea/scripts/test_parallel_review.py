@@ -53,9 +53,9 @@ class ParallelReviewTest(unittest.TestCase):
         source = SCRIPT.read_text()
         prompt = source.split('\nprompt="$(cat <<EOF\n', 1)[1].split('\nEOF\n)"', 1)[0]
         self.assertIn("独立 CI 可能正在并行运行", prompt)
-        self.assertIn("按需执行构建或测试", prompt)
-        self.assertIn("不要将本地验证等同于 CI 通过", prompt)
-        self.assertIn("测试覆盖缺口", prompt)
+        self.assertIn("只报告实际执行过的验证及其结果", prompt)
+        self.assertIn("远端 CI 状态以独立工作流的检查为准", prompt)
+        self.assertIn("检查测试是否覆盖了改动涉及的关键行为", prompt)
         self.assertNotIn("CI 已成功", source)
         self.assertNotIn("Successful CI", source)
         self.assertNotIn("REVIEW_CI_URL", source)

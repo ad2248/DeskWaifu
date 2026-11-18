@@ -38,19 +38,15 @@ class ReviewCliTest(unittest.TestCase):
     def test_review_prompt_allows_source_exploration_and_verification(self):
         source = SOURCE.read_text()
         prompt = source.split('\nprompt="$(cat <<EOF\n', 1)[1].split('\nEOF\n)"', 1)[0]
-        self.assertIn("可自由使用工具", prompt)
-        self.assertIn("按需执行构建或测试", prompt)
-        self.assertIn("目标分支代码不是 PR head", prompt)
-        # 回归：审查临时目录不是 Git 仓库，必须显式给出读取 PR head 源码的命令形式，
-        # 否则 agent 会在 $workdir 里执行 git show 失败，或把目标分支工作区当成 PR head。
-        self.assertIn('git -C "$repo_root" show <head_sha>:<path>', prompt)
-        self.assertIn('git -C "$repo_root" log -1 <head_sha>', prompt)
+        self.assertIn("通过 API 补充上下文", prompt)
+        self.assertIn("按需阅读相关代码、执行构建或测试", prompt)
+        # 回归：在临时目录里用目标仓库读取 PR head，避免把目标分支检出当作 PR 源码。
+        self.assertIn('git -C "$repo_root" show "<head_sha>:<path>"', prompt)
         self.assertIn("$workdir 不是 Git 仓库", prompt)
-        self.assertIn("context.md 的 Head 行", prompt)
-        self.assertIn("不代表 PR head", prompt)
-        sections = ("你是代码审查智能体", "审查注意事项：", "被审查的 PR 的上下文信息在：$workdir/context.md",
-                    "被审查的 PR 的目标分支代码在：$repo_root", "被审查的 PR（diff 形式）在：$workdir/diff.patch",
-                    "审查结果格式：", "## 结论", "## 阻塞问题", "## 非阻塞建议")
+        self.assertIn("从 Head 行确认本次审查的 head SHA", prompt)
+        self.assertIn("$repo_root 工作区检出的是目标分支", prompt)
+        sections = ("## 读懂改动", "## 判断是否批准", "## 提交审查结果", "## 输出最终报告",
+                    "## 结论", "## 阻塞问题", "## 非阻塞建议")
         positions = [prompt.index(section) for section in sections]
         self.assertEqual(positions, sorted(positions))
         for restriction in ("禁止调用 API", "仅根据附件", "不调用任何工具", "不要尝试其他命令"):
@@ -143,8 +139,13 @@ class ReviewCliTest(unittest.TestCase):
             self.assertNotIn("target-only.txt", diff)
             self.assertIn("+PR head", diff)
             prompt = (capture / "prompt.txt").read_text()
-            self.assertIn(f"被审查的 PR 的目标分支代码在：{repo}", prompt)
-            self.assertIn(f'git -C "{repo}" show <head_sha>:<path>', prompt)
+            self.assertIn(f"{repo} 工作区检出的是目标分支", prompt)
+            self.assertIn(f'git -C "{repo}" show "<head_sha>:<path>"', prompt)
+            self.assertIn("结合实际可达的输入、运行条件和后果", prompt)
+            self.assertIn("输入长度在内存或协议约束下远小于 uint64 的上限", prompt)
+            self.assertIn("暂缓批准：某个关键风险尚无法判断", prompt)
+            self.assertIn("也没有足以影响审批的待验证项", prompt)
+            self.assertIn("只有结论为“可以批准”时，才在审查临时目录执行以下操作", prompt)
             self.assertNotIn("$workdir", prompt)
             self.assertIn("/context.md", prompt)
             self.assertIn("/diff.patch", prompt)
