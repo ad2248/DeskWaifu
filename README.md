@@ -15,23 +15,26 @@
 └── plugins/test-plugin/      # 只依赖 SDK；注册 test 命令，返回收到的参数
 ```
 
-依赖方向为 `deskwaifu → runtime → sdk`、`deskwaifucli → os` 和 `plugin → sdk`；主程序不直接依赖具体插件，通过 runtime 加载独立 `.so`。插件对 runtime 的依赖仅用于测试。runtime 不引用具体领域插件。后续按迁移需要新增 desktop、perception、speech 等 crate；控制面板作为独立 app，Cubism 等 FFI 放在独立 bridge crate，不预先创建空模块。
+依赖方向为 `deskwaifu → os → runtime → sdk`、`deskwaifu → runtime`、`deskwaifucli → os` 和 `plugin → sdk`；主程序不直接依赖具体插件，通过 runtime 加载独立 `.so`。插件对 runtime 的依赖仅用于测试。runtime 不引用具体领域插件。后续按迁移需要新增 desktop、perception、speech 等 crate；控制面板作为独立 app，Cubism 等 FFI 放在独立 bridge crate，不预先创建空模块。
 
 ## SDK 与 runtime 的当前契约
 
-- `Plugin::initialize` 登记订阅；所有插件初始化成功后统一激活，再依次 `start`，所有启动完成后才能派发消息。
+- `Plugin::initialize` 登记订阅；尝试初始化所有插件后统一激活通信，只对初始化成功的插件调用 `start`，所有启动完成后才能派发消息。
 - `Context::subscribe::<T>()` 根据 Rust `TypeId` 订阅，重复订阅不会重复投递。`publish(T)` 广播给所有订阅者，包括发布者自己；返回成功仅代表入队，没有订阅者也成功。
 - 消息负载为 `Arc<dyn Any + Send + Sync>`，接收方通过 `Message::payload::<T>()` 读取；附带发送者 `PluginId`。这是同一可执行程序中的类型标识，不是 IPC 序列化格式或稳定 ABI。
 - 容量限制排队的广播条数，每条广播保存共享负载与投递目标；队列满返回 `QueueFull`，整个广播不会部分入队。不限制消息字节数或插件内部缓冲。
 - 回调在调用 runtime 的线程上串行执行，发布不会递归调用接收者。每次 `advance` 最多派发容量数量的广播，防止自发消息让一次调度永不结束；排队广播按 FIFO、接收者按注册顺序派发。
 - `tick_interval` 在初始化后读取，必须非零。首次 tick 在一个周期后执行；落后时跳过错过的 tick，不追赶。回调应短小，阻塞工作应交给插件拥有的 worker；当前 Context 不能传到工作线程发布消息。
 - `advance(Duration)` 推进逻辑时钟，方便测试不等待真实时间；`run_for(Duration)` 以单调时钟运行有限时长。不要在同一次运行中混用手动推进和外部真实时间假设。
-- 初始化、启动、tick 或消息处理返回错误时，宿主使所有端点失效并丢弃排队消息，再逆序停止所有尝试过初始化的插件。停止某个插件失败不会阻止其余插件清理；不会捕获 panic。
+- 初始化失败时，宿主记录插件名和错误，撤销该插件的命令与订阅，调用 `stop` 清理部分初始化的资源并跳过该插件。
+- 启动、tick 或消息处理返回错误时，宿主使所有端点失效并丢弃排队消息，再逆序停止已初始化的插件。停止某个插件失败后仍会清理其余插件。插件 panic 会继续传播。
 - 显式 `stop()` 可取得清理错误，可重复调用；Drop 仅兜底清理并忽略错误。停止后的 runtime 不可重启，插件应在 stop 中等待自己的 worker 结束。
 
 - `Context::register_command(name, help, callback)` 在初始化期间注册子命令，`help` 为字符串数组，回调接收子命令后的 `&[String]` 并返回输出或错误。重复命令和保留的 `help` 被拒绝。内建 `help` 对齐显示所有已注册命令及多行帮助。
 
-SDK 不引入 Qt、GPUI、Tokio 或其他执行器依赖。尚未实现 capability 请求/响应、deadline/取消、工作线程投递、渲染快照交换和完整桌宠后端。
+`apps/deskwaifu` 仅负责启动主线程上的 Tokio `current_thread` 异步上下文、加载插件并调用 `deskwaifu_os::run`。`crates/os` 负责绑定和监听 socket、启动与停止插件，在该主线程上执行异步主循环、插件回调与 IPC 命令派发；按 socket 就绪事件处理 IPC，并根据插件下一次到期时间推进插件时钟，不使用固定 5 ms 轮询；无消息、无周期任务时挂起等待，繁忙时跳过错过的 tick，收到 SIGINT / SIGTERM 后停止插件并清理 socket。插件回调仍为同步接口，不应阻塞主线程。
+
+SDK 与插件 runtime 本身不引入 Qt、GPUI、Tokio 或其他执行器依赖。尚未实现 capability 请求/响应、deadline/取消、工作线程投递、渲染快照交换和完整桌宠后端。
 
 ## 运行平台与测试插件
 
@@ -84,7 +87,7 @@ runtime 从**实际可执行文件所在目录**下的 `plugins/*.so` 加载插�
 - 无效 JSON/UTF-8/信封返回错误，不派发命令；仍可继续发送下一条完整请求。EOF 前没有 LF 的半帧不执行，返回错误后关闭连接。
 - 最多同时维护 32 个连接；连接空闲读写超时 10 秒。平台以非阻塞方式有界读写，每连接每轮最多派发一条命令，避免某个半帧或不读响应的客户端阻塞整个宿主。回调本身仍需短小，不提供执行超时或取消。
 
-IPC 不经过插件广播总线。平台拥有 socket 和 runtime，在同一主线程调用已注册的命令；`crates/os` 不依赖 SDK/runtime，插件无需了解传输协议。
+IPC 不经过插件广播总线。`crates/os` 的平台宿主拥有 socket 和 runtime，在同一主线程调用已注册的命令；IPC 协议处理不引用插件 SDK，插件无需了解传输协议。
 
 ## 检查
 

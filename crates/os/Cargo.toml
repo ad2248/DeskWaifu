@@ -5,12 +5,16 @@ edition.workspace = true
 publish.workspace = true
 
 [dependencies]
+libc = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+deskwaifu-runtime.workspace = true
+tokio = { version = "1", features = ["macros", "net", "rt", "signal", "time"] }
 
 [dev-dependencies]
-deskwaifu-runtime.workspace = true
+deskwaifu-sdk.workspace = true
 deskwaifu-test-plugin.workspace = true
+tokio = { version = "1", features = ["test-util"] }
 
 [lints]
 workspace = true
