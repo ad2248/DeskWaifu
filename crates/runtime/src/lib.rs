@@ -24,11 +24,13 @@ struct Bus {
     queue: VecDeque<Delivery>,
 }
 
+type Commands = BTreeMap<String, (PluginId, Command)>;
+
 struct ScopedHost<'a> {
     bus: &'a mut Bus,
     id: PluginId,
     initializing: bool,
-    commands: &'a mut BTreeMap<String, Command>,
+    commands: &'a mut Commands,
 }
 impl Host for ScopedHost<'_> {
     fn id(&self) -> PluginId {
@@ -51,7 +53,8 @@ impl Host for ScopedHost<'_> {
         if command.name == "help" || self.commands.contains_key(&command.name) {
             return Err(format!("duplicate or reserved command: {}", command.name));
         }
-        self.commands.insert(command.name.clone(), command);
+        self.commands
+            .insert(command.name.clone(), (self.id, command));
         Ok(())
     }
     fn publish(&mut self, message: Message) -> Result<(), PublishError> {
@@ -79,7 +82,7 @@ impl Host for ScopedHost<'_> {
 
 struct Entry {
     plugin: Box<dyn Plugin>,
-    initialized: bool,
+    initialization_attempted: bool,
     interval: Option<Duration>,
     next_tick: Option<Duration>,
 }
@@ -91,11 +94,12 @@ enum State {
 }
 
 pub struct Runtime {
-    entries: Vec<Entry>,
+    // 保留空槽，以免跳过插件后改变其他插件的 ID。
+    entries: Vec<Option<Entry>>,
     bus: Bus,
     state: State,
     elapsed: Duration,
-    commands: BTreeMap<String, Command>,
+    commands: Commands,
     // 必须最后释放：实例、队列负载、命令回调及其析构代码都可能位于动态库。
     libraries: Vec<libloading::Library>,
 }
@@ -129,23 +133,24 @@ impl Runtime {
         if self
             .entries
             .iter()
+            .flatten()
             .any(|entry| entry.plugin.name() == plugin.name())
         {
             return Err(format!("duplicate plugin: {}", plugin.name()));
         }
         let id = PluginId(self.entries.len());
-        self.entries.push(Entry {
+        self.entries.push(Some(Entry {
             plugin,
-            initialized: false,
+            initialization_attempted: false,
             interval: None,
             next_tick: None,
-        });
+        }));
         self.bus.subscriptions.push(HashSet::new());
         Ok(id)
     }
 
-    /// 所有 initialize 成功后才激活通信；所有 start 完成后才开始派发。
-    /// 初始化/启动失败时关闭整个宿主，不留下部分运行的插件。
+    /// 跳过初始化失败的插件，再统一激活通信并启动其余插件。
+    /// 启动回调返回错误时关闭整个宿主。
     pub fn start(&mut self) -> PluginResult {
         if self.state != State::Created {
             return Err("runtime cannot be started again".into());
@@ -155,28 +160,43 @@ impl Runtime {
     }
 
     fn start_inner(&mut self) -> PluginResult {
-        for (id, entry) in self.entries.iter_mut().enumerate() {
-            entry.initialized = true;
+        for (id, slot) in self.entries.iter_mut().enumerate() {
+            let Some(entry) = slot else { continue };
+            entry.initialization_attempted = true;
             let mut host = ScopedHost {
                 bus: &mut self.bus,
                 id: PluginId(id),
                 initializing: true,
                 commands: &mut self.commands,
             };
-            entry
+            let initialized = entry
                 .plugin
                 .initialize(&mut Context::new(&mut host))
-                .map_err(|e| format!("{} initialize: {e}", entry.plugin.name()))?;
-            let interval = entry.plugin.tick_interval();
-            if interval == Some(Duration::ZERO) {
-                return Err(format!("{}: zero tick interval", entry.plugin.name()));
+                .and_then(|()| {
+                    let interval = entry.plugin.tick_interval();
+                    if interval == Some(Duration::ZERO) {
+                        return Err("zero tick interval".into());
+                    }
+                    entry.interval = interval;
+                    entry.next_tick = interval;
+                    Ok(())
+                });
+            if let Err(error) = initialized {
+                let name = entry.plugin.name().to_owned();
+                eprintln!("{name} initialize: {error}; skipping plugin");
+                host.initializing = false;
+                host.bus.subscriptions[id].clear();
+                host.commands.retain(|_, (owner, _)| *owner != host.id);
+                if let Err(error) = entry.plugin.stop(&mut Context::new(&mut host)) {
+                    eprintln!("{name} stop after failed initialization: {error}");
+                }
+                *slot = None;
             }
-            entry.interval = interval;
-            entry.next_tick = interval;
         }
         self.bus.active = true;
         self.state = State::Running;
         for (id, entry) in self.entries.iter_mut().enumerate() {
+            let Some(entry) = entry else { continue };
             let mut host = ScopedHost {
                 bus: &mut self.bus,
                 id: PluginId(id),
@@ -202,7 +222,7 @@ impl Runtime {
         if name == "help" {
             return Ok(self.help_text());
         }
-        let command = self
+        let (_, command) = self
             .commands
             .get(name)
             .ok_or_else(|| format!("unknown command: {name}"))?;
@@ -219,7 +239,7 @@ impl Runtime {
             .unwrap_or(4)
             .max(4);
         let mut lines = vec![format!("{:<width$}  {}", "help", "Show available commands")];
-        for (name, command) in &self.commands {
+        for (name, (_, command)) in &self.commands {
             for (index, text) in command.help.iter().enumerate() {
                 lines.push(format!(
                     "{:<width$}  {}",
@@ -250,6 +270,7 @@ impl Runtime {
             .checked_add(delta)
             .ok_or("runtime clock overflow")?;
         for (id, entry) in self.entries.iter_mut().enumerate() {
+            let Some(entry) = entry else { continue };
             if entry.next_tick.is_some_and(|due| due <= self.elapsed) {
                 entry.next_tick = Some(
                     self.elapsed
@@ -273,7 +294,7 @@ impl Runtime {
                 break;
             };
             for id in delivery.targets {
-                let entry = &mut self.entries[id];
+                let entry = self.entries[id].as_mut().expect("subscribed plugin");
                 let mut host = ScopedHost {
                     bus: &mut self.bus,
                     id: PluginId(id),
@@ -301,6 +322,7 @@ impl Runtime {
         }
         self.entries
             .iter()
+            .flatten()
             .filter_map(|entry| entry.next_tick)
             .min()
             .map(|due| due.saturating_sub(self.elapsed))
@@ -332,6 +354,7 @@ impl Runtime {
     fn wait_duration(&self, callback_time: Duration, remaining: Duration) -> Duration {
         self.entries
             .iter()
+            .flatten()
             .filter_map(|entry| entry.next_tick)
             .map(|due| {
                 due.saturating_sub(self.elapsed)
@@ -352,7 +375,7 @@ impl Runtime {
         }
     }
 
-    /// 先统一失效、清空队列，再逆序停止所有尝试过初始化的插件。
+    /// 先统一失效、清空队列，再逆序停止剩余已初始化插件。
     pub fn stop(&mut self) -> PluginResult {
         if self.state == State::Stopped {
             return Ok(());
@@ -363,7 +386,10 @@ impl Runtime {
         self.bus.subscriptions.iter_mut().for_each(HashSet::clear);
         let mut failures = Vec::new();
         for (id, entry) in self.entries.iter_mut().enumerate().rev() {
-            if entry.initialized {
+            if let Some(entry) = entry
+                .as_mut()
+                .filter(|entry| entry.initialization_attempted)
+            {
                 let mut host = ScopedHost {
                     bus: &mut self.bus,
                     id: PluginId(id),

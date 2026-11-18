@@ -247,17 +247,21 @@ fn dynamic_plugins() {
     );
     clear_events(&build);
 
-    // Failed initialization stops even the partially initialized plugin, in reverse order.
+    // Failed initialization cleans up that plugin and leaves the healthy one running.
     {
         let mut runtime = Runtime::new(4);
         unsafe { runtime.load_plugin(&good) }.unwrap();
         unsafe { runtime.load_plugin(&failing) }.unwrap();
-        assert_eq!(
-            runtime.start(),
-            Err("failing initialize: fixture initialization failed".into())
-        );
+        runtime.start().unwrap();
         assert!(runtime.start().is_err());
-        assert!(runtime.dispatch_command(&["good".into()]).is_err());
+        assert_eq!(
+            runtime.dispatch_command(&["good".into()]),
+            Ok("fixture callback".into())
+        );
+        assert_eq!(
+            runtime.dispatch_command(&["failing".into()]),
+            Err("unknown command: failing".into())
+        );
         runtime.stop().unwrap();
         assert_eq!(
             events(&build),
@@ -267,6 +271,8 @@ fn dynamic_plugins() {
                 "good:initialize",
                 "failing:initialize",
                 "failing:stop",
+                "failing:destroy",
+                "good:start",
                 "good:stop"
             ]
         );
@@ -279,9 +285,10 @@ fn dynamic_plugins() {
             "good:initialize",
             "failing:initialize",
             "failing:stop",
+            "failing:destroy",
+            "good:start",
             "good:stop",
             "good:destroy",
-            "failing:destroy",
             "good:unload",
             "failing:unload"
         ]
@@ -289,7 +296,7 @@ fn dynamic_plugins() {
     clear_events(&build);
 
     // Distinct dynamic plugin names may load, but duplicate command registration
-    // fails initialization and rolls back both plugins without calling start.
+    // skips only the conflicting plugin and preserves the original command.
     {
         let mut runtime = Runtime::new(4);
         assert_eq!(unsafe { runtime.load_plugin(&good) }, Ok(PluginId(0)));
@@ -297,12 +304,12 @@ fn dynamic_plugins() {
             unsafe { runtime.load_plugin(&conflicting) },
             Ok(PluginId(1))
         );
-        assert_eq!(
-            runtime.start(),
-            Err("conflicting initialize: duplicate or reserved command: good".into())
-        );
+        runtime.start().unwrap();
         assert!(runtime.start().is_err());
-        assert!(runtime.dispatch_command(&["good".into()]).is_err());
+        assert_eq!(
+            runtime.dispatch_command(&["good".into()]),
+            Ok("fixture callback".into())
+        );
         assert!(unsafe { runtime.load_plugin(&plugin) }.is_err());
         runtime.stop().unwrap();
         assert_eq!(
@@ -313,6 +320,8 @@ fn dynamic_plugins() {
                 "good:initialize",
                 "conflicting:initialize",
                 "conflicting:stop",
+                "conflicting:destroy",
+                "good:start",
                 "good:stop"
             ]
         );
@@ -325,9 +334,10 @@ fn dynamic_plugins() {
             "good:initialize",
             "conflicting:initialize",
             "conflicting:stop",
+            "conflicting:destroy",
+            "good:start",
             "good:stop",
             "good:destroy",
-            "conflicting:destroy",
             "good:unload",
             "conflicting:unload"
         ]

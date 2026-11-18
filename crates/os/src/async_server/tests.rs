@@ -48,6 +48,88 @@ async fn response(server: &mut Server, peer: &mut UnixStream, calls: &mut usize)
 }
 
 #[tokio::test]
+async fn failed_client_registration_leaves_existing_connection_usable() {
+    let mut server = server();
+    let mut existing = UnixStream::connect(&server.path).unwrap();
+    existing.set_nonblocking(true).unwrap();
+    existing
+        .write_all(b"{\"source\":\"cli\",\"payload\":[\"first\"]}\n")
+        .unwrap();
+    let mut calls = 0;
+    assert_eq!(
+        response(&mut server, &mut existing, &mut calls).await,
+        Response::Ok {
+            output: "first".into()
+        }
+    );
+    let mut rejected = UnixStream::connect(&server.path).unwrap();
+    rejected.set_nonblocking(true).unwrap();
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while server.clients.len() < 2 {
+            step(&mut server, &mut calls).await;
+        }
+    })
+    .await
+    .unwrap();
+
+    existing
+        .write_all(b"{\"source\":\"cli\",\"payload\":[\"still alive\"]}\n")
+        .unwrap();
+    tokio::time::timeout(
+        Duration::from_secs(2),
+        server.poll_ready_with(
+            |args| {
+                calls += 1;
+                Ok(args.join(" "))
+            },
+            |_| Err(io::Error::from_raw_os_error(libc::EMFILE)),
+            |listener| listener.accept().map(|(stream, _)| stream),
+        ),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(server.clients.len(), 1);
+    assert_eq!(rejected.read(&mut [0]).unwrap(), 0);
+    assert_eq!(
+        response(&mut server, &mut existing, &mut calls).await,
+        Response::Ok {
+            output: "still alive".into()
+        }
+    );
+    assert_eq!(calls, 2);
+}
+
+#[tokio::test(start_paused = true)]
+#[allow(deprecated)]
+async fn descriptor_exhaustion_delays_accept_until_retry_deadline() {
+    let mut server = server();
+    let _peer = UnixStream::connect(&server.path).unwrap();
+    server
+        .poll_ready_with(
+            |_| panic!("no request to dispatch"),
+            |stream| AsyncFd::new(stream.try_clone()?),
+            |_| Err(io::Error::from_raw_os_error(libc::EMFILE)),
+        )
+        .await
+        .unwrap();
+    let retry_at = server.accept_retry_at.unwrap();
+    assert!(server.clients.is_empty());
+    assert!(
+        tokio::time::timeout(
+            ACCEPT_RETRY_DELAY / 2,
+            server.poll_ready(|_| unreachable!())
+        )
+        .await
+        .is_err()
+    );
+    let mut calls = 0;
+    step(&mut server, &mut calls).await;
+    assert!(Instant::now() >= retry_at);
+    assert_eq!(server.clients.len(), 1);
+}
+
+#[tokio::test]
 async fn idle_wait_cancellation_partial_frames_and_persistent_connection() {
     let mut server = server();
     let mut calls = 0;

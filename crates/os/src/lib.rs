@@ -186,6 +186,7 @@ impl Client {
 pub struct Server {
     listener: UnixListener,
     readiness: Option<tokio::io::unix::AsyncFd<UnixListener>>,
+    accept_retry_at: Option<Instant>,
     path: PathBuf,
     identity: (u64, u64),
     clients: Vec<Client>,
@@ -199,6 +200,7 @@ impl Server {
         let server = Self {
             listener,
             readiness: None,
+            accept_retry_at: None,
             path,
             identity: (metadata.dev(), metadata.ino()),
             clients: Vec::new(),

@@ -24,6 +24,7 @@ dependencies = [
  "deskwaifu-runtime",
  "deskwaifu-sdk",
  "deskwaifu-test-plugin",
+ "libc",
  "serde",
  "serde_json",
  "tokio",

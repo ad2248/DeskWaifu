@@ -6,6 +6,8 @@ use tokio::io::{Interest, unix::AsyncFd};
 #[cfg(test)]
 mod tests;
 
+const ACCEPT_RETRY_DELAY: Duration = Duration::from_millis(100);
+
 impl Server {
     /// 等待连接、读写就绪或活动超时，完成一轮有限处理后返回。
     ///
@@ -13,23 +15,55 @@ impl Server {
     /// 连接，每个客户端最多读取 4 KiB、执行一个请求、写入 4 KiB。
     /// 回调在调用线程执行，不要求 Send。适合与 runtime 截止时间及退出信号
     /// 一起 select；取消此 future 不丢失连接、半帧或待发送响应。
+    /// 无法注册到事件循环的客户端会单独关闭。
     // Tokio 1.54 的安全构造器已弃用，但替代接口要求 unsafe（本工作区禁止）。
     // 此处只注册拥有所有权的 std socket 副本，且从不替换/关闭注册内的 fd。
     #[allow(deprecated)]
     pub async fn poll_ready(
         &mut self,
+        handler: impl FnMut(&[String]) -> Result<String, String>,
+    ) -> io::Result<()> {
+        self.poll_ready_with(
+            handler,
+            |stream| AsyncFd::new(stream.try_clone()?),
+            |listener| listener.accept().map(|(stream, _)| stream),
+        )
+        .await
+    }
+
+    #[allow(deprecated)]
+    async fn poll_ready_with(
+        &mut self,
         mut handler: impl FnMut(&[String]) -> Result<String, String>,
+        mut register_client: impl FnMut(&UnixStream) -> io::Result<AsyncFd<UnixStream>>,
+        mut accept_client: impl FnMut(&UnixListener) -> io::Result<UnixStream>,
     ) -> io::Result<()> {
         if self.readiness.is_none() {
             self.readiness = Some(AsyncFd::new(self.listener.try_clone()?)?);
         }
-        for client in &mut self.clients {
-            if client.readiness.is_none() {
-                client.readiness = Some(AsyncFd::new(client.stream.try_clone()?)?);
+        self.clients.retain_mut(|client| {
+            if client.readiness.is_some() {
+                return true;
             }
-        }
+            match register_client(&client.stream) {
+                Ok(readiness) => {
+                    client.readiness = Some(readiness);
+                    true
+                }
+                Err(error) => {
+                    eprintln!("IPC client registration: {error}");
+                    false
+                }
+            }
+        });
 
-        let deadline = self.clients.iter().map(|c| c.active + CLIENT_TIMEOUT).min();
+        self.accept_retry_at = self.accept_retry_at.filter(|retry| *retry > Instant::now());
+        let deadline = self
+            .clients
+            .iter()
+            .map(|c| c.active + CLIENT_TIMEOUT)
+            .chain(self.accept_retry_at)
+            .min();
         let timeout = async {
             match deadline {
                 Some(deadline) => tokio::time::sleep_until(deadline).await,
@@ -39,7 +73,7 @@ impl Server {
         tokio::select! {
             result = poll_fn(|cx| {
                 let mut ready = false;
-                if self.clients.len() < MAX_CLIENTS {
+                if self.accept_retry_at.is_none() && self.clients.len() < MAX_CLIENTS {
                     match self.readiness.as_ref().unwrap().poll_read_ready(cx) {
                         Poll::Ready(Ok(_)) => ready = true,
                         Poll::Ready(Err(error)) => return Poll::Ready(Err(error)),
@@ -74,24 +108,36 @@ impl Server {
 
         // 从此处到返回没有 await：每次有副作用的操作都立即保存到 Server。
         for _ in self.clients.len()..MAX_CLIENTS {
+            if self
+                .accept_retry_at
+                .is_some_and(|retry| retry > Instant::now())
+            {
+                break;
+            }
+            self.accept_retry_at = None;
             match self
                 .readiness
                 .as_ref()
                 .unwrap()
-                .try_io(Interest::READABLE, |listener| listener.accept())
+                .try_io(Interest::READABLE, &mut accept_client)
             {
-                Ok((stream, _)) => {
+                Ok(stream) => {
                     if let Ok(client) = Client::new(stream) {
                         self.clients.push(client);
                     }
                 }
                 Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
                 Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                Err(error) if matches!(error.raw_os_error(), Some(libc::EMFILE | libc::ENFILE)) => {
+                    self.accept_retry_at = Some(Instant::now() + ACCEPT_RETRY_DELAY);
+                    break;
+                }
                 Err(error) => return Err(error),
             }
         }
-        self.clients
-            .retain_mut(|client| client.poll(&mut handler).unwrap_or(false));
+        self.clients.retain_mut(|client| {
+            client.readiness.is_none() || client.poll(&mut handler).unwrap_or(false)
+        });
         Ok(())
     }
 }

@@ -131,16 +131,34 @@ fn queue_full_start_failure_cleans_up_every_initialized_plugin() {
 }
 
 #[test]
-fn partial_initialize_is_stopped_but_unattempted_plugins_are_not() {
+fn failed_initialization_rolls_back_only_that_plugin() {
     let log = Log::default();
     let mut runtime = Runtime::new(8);
     let mut b = Probe::new("b", &log);
     b.fail_initialize = true;
+    b.fail_stop = true;
+    let mut c = Probe::new("c", &log);
+    c.emit = true;
     runtime.add(Probe::new("a", &log)).unwrap();
     runtime.add(b).unwrap();
-    runtime.add(Probe::new("c", &log)).unwrap();
-    assert!(runtime.start().unwrap_err().contains("init failed"));
-    assert_eq!(&*log.borrow(), &["a init", "b init", "b stop", "a stop"]);
+    assert_eq!(runtime.add(c).unwrap().0, 2);
+    runtime.start().unwrap();
+    assert_eq!(
+        &*log.borrow(),
+        &["a init", "b init", "b stop", "c init", "a start", "c start"]
+    );
+    runtime.advance(Duration::ZERO).unwrap();
+    assert_eq!(
+        &log.borrow()[6..],
+        &[
+            "a got 1 from 2",
+            "c got 1 from 2",
+            "a got 2 from 2",
+            "c got 2 from 2"
+        ]
+    );
+    runtime.stop().unwrap();
+    assert_eq!(&log.borrow()[10..], &["c stop", "a stop"]);
 }
 
 #[test]
