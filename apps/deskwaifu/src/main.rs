@@ -1,13 +1,4 @@
-use deskwaifu_os::{SOCKET_PATH, Server};
 use deskwaifu_runtime::Runtime;
-use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-    thread,
-    time::{Duration, Instant},
-};
 
 // 仅加载可执行文件旁由同一仓库构建、由用户部署的可信插件。
 #[allow(unsafe_code)]
@@ -23,37 +14,13 @@ fn load_plugins(runtime: &mut Runtime) -> Result<(), String> {
     Ok(())
 }
 
-fn run_host() -> Result<(), String> {
-    let mut server = Server::bind(SOCKET_PATH)
-        .map_err(|error| format!("cannot listen on {SOCKET_PATH}: {error}"))?;
-    let running = Arc::new(AtomicBool::new(true));
-    let signal = Arc::clone(&running);
-    ctrlc::set_handler(move || signal.store(false, Ordering::Relaxed))
-        .map_err(|error| format!("cannot register shutdown handler: {error}"))?;
-    let mut runtime = Runtime::new(1024);
-    load_plugins(&mut runtime)?;
-    runtime.start()?;
-    eprintln!("Listening on {SOCKET_PATH}");
-    let mut previous = Instant::now();
-    let result = (|| {
-        while running.load(Ordering::Relaxed) {
-            let now = Instant::now();
-            runtime.advance(now.duration_since(previous))?;
-            previous = now;
-            server
-                .poll(|argv| runtime.dispatch_command(argv))
-                .map_err(|error| format!("IPC listener: {error}"))?;
-            thread::sleep(Duration::from_millis(5));
-        }
-        Ok(())
-    })();
-    let cleanup = runtime.stop();
-    result.and(cleanup)
-}
-
-fn main() -> Result<(), String> {
+// 不启用工作线程池：平台主循环与所有插件回调始终在进程主线程执行。
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> Result<(), String> {
     if std::env::args_os().nth(1).is_some() {
         return Err("deskwaifu does not accept arguments; use deskwaifucli for commands".into());
     }
-    run_host()
+    let mut runtime = Runtime::new(1024);
+    load_plugins(&mut runtime)?;
+    deskwaifu_os::run(runtime).await
 }

@@ -36,6 +36,30 @@ fn sleep_deducts_callback_time_and_saturates_when_overdue() {
 }
 
 #[test]
+fn next_wakeup_tracks_timers_messages_and_idle_state() {
+    let mut idle = Runtime::new(8);
+    assert_eq!(idle.next_wakeup(), None);
+    idle.start().unwrap();
+    assert_eq!(idle.next_wakeup(), None);
+
+    let mut runtime = Runtime::new(8);
+    runtime.add(Timer).unwrap();
+    runtime.start().unwrap();
+    assert_eq!(runtime.next_wakeup(), Some(Duration::from_secs(1)));
+    runtime.advance(Duration::from_millis(400)).unwrap();
+    assert_eq!(runtime.next_wakeup(), Some(Duration::from_millis(600)));
+    runtime.bus.queue.push_back(Delivery {
+        message: Message::new(PluginId(0), 1_u32),
+        targets: vec![],
+    });
+    assert_eq!(runtime.next_wakeup(), Some(Duration::ZERO));
+    runtime.advance(Duration::from_millis(600)).unwrap();
+    assert_eq!(runtime.next_wakeup(), Some(Duration::from_secs(1)));
+    runtime.stop().unwrap();
+    assert_eq!(runtime.next_wakeup(), None);
+}
+
+#[test]
 fn full_queue_still_accepts_unsubscribed_types() {
     let mut bus = Bus {
         active: true,

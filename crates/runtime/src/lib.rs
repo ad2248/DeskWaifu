@@ -289,6 +289,23 @@ impl Runtime {
         Ok(())
     }
 
+    /// 返回距离下次调度所需的逻辑时间，供外部事件循环按需等待。
+    /// 有待派发消息时立即调度；没有消息或周期任务时无需定时唤醒。
+    /// 调用者应从最近一次 advance 的采样时刻计算截止时间，扣除回调耗时。
+    pub fn next_wakeup(&self) -> Option<Duration> {
+        if self.state != State::Running {
+            return None;
+        }
+        if !self.bus.queue.is_empty() {
+            return Some(Duration::ZERO);
+        }
+        self.entries
+            .iter()
+            .filter_map(|entry| entry.next_tick)
+            .min()
+            .map(|due| due.saturating_sub(self.elapsed))
+    }
+
     /// 使用单调时钟实际运行指定时长；调用者随后显式 stop 以检查清理结果。
     pub fn run_for(&mut self, duration: Duration) -> PluginResult {
         if self.state != State::Running {

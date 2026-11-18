@@ -1,5 +1,9 @@
-//! 平台私有 JSON IPC；不依赖插件 SDK 或 runtime。
+//! Unix 平台宿主与私有 JSON IPC；负责监听 socket、运行时调度及退出清理。
 #![cfg(unix)]
+
+mod async_server;
+mod host;
+pub use host::run;
 
 use serde::{Deserialize, Serialize};
 use std::{
@@ -10,8 +14,9 @@ use std::{
         net::{UnixListener, UnixStream},
     },
     path::{Path, PathBuf},
-    time::{Duration, Instant},
+    time::Duration,
 };
+use tokio::time::Instant;
 
 /// 主程序与命令行客户端共用的固定 IPC 地址。
 pub const SOCKET_PATH: &str = "/tmp/deskwaifu.socket";
@@ -81,6 +86,7 @@ fn dispatch(
 
 struct Client {
     stream: UnixStream,
+    readiness: Option<tokio::io::unix::AsyncFd<UnixStream>>,
     input: Vec<u8>,
     output: Vec<u8>,
     written: usize,
@@ -94,6 +100,7 @@ impl Client {
         stream.set_nonblocking(true)?;
         Ok(Self {
             stream,
+            readiness: None,
             input: Vec::new(),
             output: Vec::new(),
             written: 0,
@@ -115,7 +122,13 @@ impl Client {
             if !self.input.contains(&b'\n') && !self.eof {
                 let mut chunk = [0; 4096];
                 let limit = chunk.len().min(MAX_FRAME_BYTES + 1 - self.input.len());
-                match self.stream.read(&mut chunk[..limit]) {
+                let result = match &self.readiness {
+                    Some(fd) => fd.try_io(tokio::io::Interest::READABLE, |mut stream| {
+                        stream.read(&mut chunk[..limit])
+                    }),
+                    None => self.stream.read(&mut chunk[..limit]),
+                };
+                match result {
                     Ok(0) => self.eof = true,
                     Ok(n) => {
                         self.input.extend_from_slice(&chunk[..n]);
@@ -142,7 +155,13 @@ impl Client {
         }
         if !self.output.is_empty() {
             let end = (self.written + 4096).min(self.output.len());
-            match self.stream.write(&self.output[self.written..end]) {
+            let result = match &self.readiness {
+                Some(fd) => fd.try_io(tokio::io::Interest::WRITABLE, |mut stream| {
+                    stream.write(&self.output[self.written..end])
+                }),
+                None => self.stream.write(&self.output[self.written..end]),
+            };
+            match result {
                 Ok(0) => return Ok(false),
                 Ok(n) => {
                     self.written += n;
@@ -161,10 +180,12 @@ impl Client {
     }
 }
 
-/// 非阻塞 socket 监听器，由平台主循环调用 poll；命令回调仍在 runtime 线程运行。
+/// 非阻塞 socket 监听器；支持同步 poll 和事件驱动的异步 poll_ready。
+/// 命令回调始终在调用线程运行。
 /// 不覆盖已有路径（包括失效 socket），Drop 只清理自己绑定的 inode。
 pub struct Server {
     listener: UnixListener,
+    readiness: Option<tokio::io::unix::AsyncFd<UnixListener>>,
     path: PathBuf,
     identity: (u64, u64),
     clients: Vec<Client>,
@@ -177,6 +198,7 @@ impl Server {
         let metadata = fs::symlink_metadata(&path)?;
         let server = Self {
             listener,
+            readiness: None,
             path,
             identity: (metadata.dev(), metadata.ino()),
             clients: Vec::new(),
@@ -206,8 +228,11 @@ impl Server {
                 Err(error) => return Err(error),
             }
         }
-        self.clients
-            .retain_mut(|client| client.poll(&mut handler).unwrap_or(false));
+        self.clients.retain_mut(|client| {
+            // 同步接口不依赖 Tokio reactor 的就绪缓存。
+            client.readiness = None;
+            client.poll(&mut handler).unwrap_or(false)
+        });
         Ok(())
     }
 }
