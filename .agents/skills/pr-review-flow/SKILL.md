@@ -1,13 +1,13 @@
 ---
 name: pr-review-flow
 description: Gitea/Forgejo 端到端 PR 评审工作流。给定 PR URL，审查 diff、核验当前提交的 CI、按需本地测试，通过评审评论批准或驳回，并将非阻塞发现登记为 issue。Trigger when the user provides a pull request URL and asks to review/approve/reject it.
-user-invokable: true
+user-invocable: true
 ---
 
 # PR 评审流程
 
-完成一个 PR 的完整评审工作流。输入：形如
-`https://<host>/<owner>/<repo>/pulls/<n>` 的 PR URL。
+完成一个 PR 的完整评审工作流。使用本次调用提供的 PR URL，格式为
+`https://<host>/<owner>/<repo>/pulls/<n>`。缺少 URL 时先询问。
 
 选择机器上可用的 `gt` 或 `tea`，先查看所安装版本的 `--help`，再配合
 本地 git 完成以下目标；不要假定不同工具或版本的命令语法一致。

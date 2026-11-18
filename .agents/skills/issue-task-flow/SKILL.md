@@ -1,14 +1,13 @@
 ---
 name: issue-task-flow
 description: 根据 Gitea/Forgejo issue 完成任务并闭环交付。Use when the user provides an issue URL or number and asks to implement, fix, investigate, or otherwise handle that issue through verification, issue reply, commit, push, and a PR to main when repository changes are made.
-user-invokable: true
+user-invocable: true
 ---
 
 # Issue 任务闭环
 
 端到端完成一个 issue。Gitea/Forgejo 操作使用机器上可用的 `gt` 或
-`tea`，本地改动使用 `git`。若仓库存在 `AGENTS.md`、`tea.md` 和
-`.opencode/skills/submit-code-and-pr/SKILL.md`，先阅读它们。
+`tea`，本地改动使用 `git`。先阅读适用的 `AGENTS.md` 和存在的 `tea.md`。
 先查看所选 CLI 的帮助，确认当前版本语法。
 
 ## 完成契约
@@ -59,7 +58,9 @@ git fetch origin
 
 - 保留无关的用户或 agent 改动；未经同意绝不重置、丢弃或夹带它们。
 - 不要直接在 `main` 上工作。使用用户明确指定的分支，或基于最新
-  `origin/main` 创建专用分支（如 `fix/issue-<N>-<topic>`）。
+  `origin/main` 创建专用分支（如 `fix/issue-<N>-<topic>`）。在 DSH 中，加载
+  `new-worktree`，按其工作树准备步骤创建和切换会话，或复用已有的专用工作树。
+  完成准备后回到本流程，先登记任务开始，再实施。
 - 若切换分支会危及未提交的工作或与其他 worktree 冲突，先停下来
   询问，不要使用破坏性命令。
 - 确认最终相对 `origin/main` 的 diff 只包含本 issue 的工作。
@@ -117,8 +118,7 @@ git status --short
 
 ## 6. 交付仓库改动
 
-若被跟踪文件有改动，遵循
-`.opencode/skills/submit-code-and-pr/SKILL.md`。重点包括：
+若被跟踪文件有改动，加载 `submit-code-and-pr`。重点包括：
 
 1. 只暂存属于本 issue 的文件。
 2. 写简洁的「约定式提交」；不要 amend 或跳过钩子。
