@@ -251,8 +251,9 @@ fn http_endpoint(mut url: Url, model: &str) -> (Url, bool) {
 }
 
 fn wav(pcm: &[u8]) -> Vec<u8> {
-    let size = pcm.len() as u32;
-    let mut wav = Vec::with_capacity(pcm.len() + 44);
+    let data_len = pcm.len() + TAIL_BYTES;
+    let size = data_len as u32;
+    let mut wav = Vec::with_capacity(data_len + 44);
     wav.extend_from_slice(b"RIFF");
     wav.extend_from_slice(&(size + 36).to_le_bytes());
     wav.extend_from_slice(b"WAVEfmt ");
@@ -266,6 +267,7 @@ fn wav(pcm: &[u8]) -> Vec<u8> {
     wav.extend_from_slice(b"data");
     wav.extend_from_slice(&size.to_le_bytes());
     wav.extend_from_slice(pcm);
+    wav.resize(data_len + 44, 0);
     wav
 }
 

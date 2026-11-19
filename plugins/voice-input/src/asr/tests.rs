@@ -10,10 +10,14 @@ use hickory_resolver::{
 };
 use std::{net::UdpSocket, sync::mpsc, thread};
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::{TcpListener, TcpStream},
+    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
+    net::TcpListener,
 };
 use tokio_tungstenite::{WebSocketStream, accept_async};
+
+#[cfg(target_os = "linux")]
+#[path = "tls_tests.rs"]
+mod tls_tests;
 
 fn config(endpoint: Url, model: &str) -> Config {
     Config {
@@ -24,7 +28,12 @@ fn config(endpoint: Url, model: &str) -> Config {
     }
 }
 
-async fn send_event(socket: &mut WebSocketStream<TcpStream>, id: &str, name: &str, payload: Value) {
+async fn send_event<S: AsyncRead + AsyncWrite + Unpin>(
+    socket: &mut WebSocketStream<S>,
+    id: &str,
+    name: &str,
+    payload: Value,
+) {
     socket
         .send(Message::Text(
             json!({"header": {"task_id": id, "event": name}, "payload": payload})
@@ -35,7 +44,7 @@ async fn send_event(socket: &mut WebSocketStream<TcpStream>, id: &str, name: &st
         .unwrap();
 }
 
-async fn read_run(socket: &mut WebSocketStream<TcpStream>) -> String {
+async fn read_run<S: AsyncRead + AsyncWrite + Unpin>(socket: &mut WebSocketStream<S>) -> String {
     let message = socket.next().await.unwrap().unwrap();
     let request: Value = serde_json::from_str(message.to_text().unwrap()).unwrap();
     assert_eq!(request["header"]["action"], "run-task");
@@ -165,7 +174,7 @@ async fn streaming_rejects_invalid_events_and_times_out() {
     }
 }
 
-async fn read_http_request(stream: &mut TcpStream) -> (String, Value) {
+async fn read_http_request(stream: &mut (impl AsyncRead + Unpin)) -> (String, Value) {
     let mut request = Vec::new();
     let mut buffer = [0; 4096];
     loop {
@@ -251,8 +260,12 @@ async fn http_requests_resolve_before_upload_and_reject_redirects() {
                 .decode(data.strip_prefix("data:audio/wav;base64,").unwrap())
                 .unwrap();
             assert_eq!(&wav[..4], b"RIFF");
+            assert_eq!(&wav[4..8], &((wav.len() - 8) as u32).to_le_bytes());
             assert_eq!(&wav[24..28], &16_000u32.to_le_bytes());
-            assert_eq!(&wav[44..], &pcm);
+            assert_eq!(&wav[36..40], b"data");
+            assert_eq!(&wav[40..44], &((pcm.len() + 8000) as u32).to_le_bytes());
+            assert_eq!(&wav[44..44 + pcm.len()], &pcm);
+            assert_eq!(&wav[44 + pcm.len()..], &[0; 8000]);
             let body = expected_body.to_string();
             stream.write_all(format!("HTTP/1.1 {status}\r\nLocation: http://{addr}/redirected\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
         };
