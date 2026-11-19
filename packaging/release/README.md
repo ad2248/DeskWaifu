@@ -11,12 +11,17 @@ runner image. Only the fetch phase receives allowlisted proxy settings. The
 subsequent makepkg invocation has `CARGO_NET_OFFLINE=true` and no proxy settings;
 compilation never runs as root and no upload credentials reach either phase.
 The package installs `/usr/lib/deskwaifu/deskwaifu` and its jointly built Rust
-plugin `/usr/lib/deskwaifu/plugins/libdeskwaifu_test_plugin.so`, with
-`/usr/bin/deskwaifu` symlinked to `../lib/deskwaifu/deskwaifu`, and the independent
-CLI installed at `/usr/bin/deskwaifucli`. The loader searches
-`plugins/` beside the actual executable, not beside the symlink or in the working
-directory. Runtime dependencies remain `glibc` and `gcc-libs`. C++ plugins, private
-SDKs, OCR models and installed-test packages are no longer packaged.
+plugins under `/usr/lib/deskwaifu/plugins/`. The trusted release tools select a
+payload from the selected source archive's Cargo workspace: `rust-v1` includes
+`libdeskwaifu_test_plugin.so`; `rust-v2` requires that plugin and
+`libdeskwaifu_voice_input.so` when the workspace declares `plugins/voice-input`.
+Installation and verification use the same plugin list and fail if an expected
+artifact is missing. `/usr/bin/deskwaifu` is symlinked to
+`../lib/deskwaifu/deskwaifu`, and the independent CLI is installed at
+`/usr/bin/deskwaifucli`. The loader searches `plugins/` beside the actual
+executable, not beside the symlink or in the working directory. Runtime
+dependencies are `glibc`, `gcc-libs`, `libpipewire` and `wl-clipboard`. C++ plugins,
+private SDKs, OCR models and installed-test packages are no longer packaged.
 
 Host and plugins must be built together from the same code with the same Rust
 toolchain. The plugin entry point uses Rust ABI, not a stable C ABI; there is no

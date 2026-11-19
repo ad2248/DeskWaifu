@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import tarfile
 import tempfile
 import unittest
 
@@ -64,8 +65,11 @@ done
             (profile / "deskwaifucli").write_text("cli")
             for name in ("test_plugin", "voice_input"):
                 (profile / f"plugins/libdeskwaifu_{name}.so").write_text("plugin")
+            with tarfile.open(root / "deskwaifu.tar.gz", "w:gz") as archive:
+                archive.add(ROOT / "Cargo.toml", arcname="deskwaifu/Cargo.toml")
+            PACKAGING.prepare(root, "1.2.3", "a" * 40)
             subprocess.run(["bash", "-euc", 'source "$1"; package', "_",
-                            str(ROOT / "packaging/release/PKGBUILD.in")], check=True,
+                            str(root / "PKGBUILD")], check=True,
                            env=dict(os.environ, srcdir=str(root / "src"), pkgdir=str(root / "pkg")))
             launcher = root / "pkg/usr/bin/deskwaifu"
             self.assertTrue(launcher.is_symlink())
@@ -86,13 +90,13 @@ done
         files = {"usr/bin/deskwaifu", "usr/bin/deskwaifucli", "usr/lib/deskwaifu/deskwaifu",
                  "usr/lib/deskwaifu/plugins/libdeskwaifu_test_plugin.so",
                  "usr/lib/deskwaifu/plugins/libdeskwaifu_voice_input.so"}
-        PACKAGING.verify_content("deskwaifu-bin", info, files, "1.2.3")
+        PACKAGING.verify_content("deskwaifu-bin", info, files, "1.2.3", "rust-v2")
         for missing in files:
             with self.subTest(missing=missing), self.assertRaisesRegex(ValueError, "Missing package files"):
-                PACKAGING.verify_content("deskwaifu-bin", info, files - {missing}, "1.2.3")
+                PACKAGING.verify_content("deskwaifu-bin", info, files - {missing}, "1.2.3", "rust-v2")
         with self.assertRaisesRegex(ValueError, "Unexpected package files"):
             PACKAGING.verify_content("deskwaifu-bin", info,
-                                     files | {"usr/lib/deskwaifu/plugins/legacy.so"}, "1.2.3")
+                                     files | {"usr/lib/deskwaifu/plugins/legacy.so"}, "1.2.3", "rust-v2")
 
 
 if __name__ == "__main__":

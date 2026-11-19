@@ -48,15 +48,17 @@ async fn read_run<S: AsyncRead + AsyncWrite + Unpin>(socket: &mut WebSocketStrea
     let message = socket.next().await.unwrap().unwrap();
     let request: Value = serde_json::from_str(message.to_text().unwrap()).unwrap();
     assert_eq!(request["header"]["action"], "run-task");
-    assert_eq!(
-        request["payload"]["parameters"],
+    let expected = if request["payload"]["model"] == crate::config::DEFAULT_MODEL {
+        json!({"format": "pcm", "sample_rate": 16000, "heartbeat": true})
+    } else {
         json!({"format": "pcm", "sample_rate": 16000})
-    );
+    };
+    assert_eq!(request["payload"]["parameters"], expected);
     request["header"]["task_id"].as_str().unwrap().into()
 }
 
 // 测试目的：确认流式识别按约定分块上传 PCM 和尾静音，并保留最终句的原始空白。
-// 测试方法：用暂停的 Tokio 时钟驱动环回 WebSocket，核对任务握手、帧大小、帧间隔和尾静音，再用心跳、中间和最终结果验证转录。
+// 测试方法：用暂停的 Tokio 时钟驱动环回 WebSocket，核对默认模型的心跳参数、帧大小、帧间隔和尾静音，再用心跳、中间和最终结果验证转录。
 #[tokio::test(start_paused = true)]
 async fn streaming_uploads_pcm_and_silence_and_joins_only_final_sentences() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -122,7 +124,7 @@ async fn streaming_uploads_pcm_and_silence_and_joins_only_final_sentences() {
     };
     let (actual, ()) = tokio::join!(
         streaming(
-            config(url, "test"),
+            config(url, crate::config::DEFAULT_MODEL),
             vec![7; 2400],
             Dns::default(),
             START_TIMEOUT

@@ -203,11 +203,15 @@ async fn streaming(
             Some(WebSocketConfig::default().max_message_size(Some(MAX_TEXT)).max_frame_size(Some(MAX_TEXT))),
             None,
         ).await.map_err(ws_error)?;
+        let mut parameters = json!({"format": "pcm", "sample_rate": 16000});
+        if config.model == crate::config::DEFAULT_MODEL {
+            parameters["heartbeat"] = json!(true);
+        }
         socket.send(Message::Text(json!({
             "header": {"action": "run-task", "task_id": id, "streaming": "duplex"},
             "payload": {
                 "task_group": "audio", "task": "asr", "function": "recognition", "model": config.model,
-                "parameters": {"format": "pcm", "sample_rate": 16000}, "input": {}
+                "parameters": parameters, "input": {}
             }
         }).to_string().into())).await.map_err(ws_error)?;
         loop {
