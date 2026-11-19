@@ -17,6 +17,10 @@ podman run --rm "$image" bash -ceu '
     node --version
     git --version
     bsdtar --version
+    clang --version
+    pkg-config --atleast-version=0.3.44 libpipewire-0.3
+    wl-copy --version
+    wl-paste --version
     command -v fakeroot runuser useradd userdel
     test ! -S /var/run/docker.sock
     scratch=$(mktemp -d)

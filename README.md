@@ -62,6 +62,12 @@ socket 地址固定为 **`/tmp/deskwaifu.socket`**，不读取 `XDG_RUNTIME_DIR`
 
 socket 权限为 0600。已有路径不会被覆盖或自动删除，包括崩溃后遗留的 socket；应确认无存活服务后再自行清理。再次无参数启动时若地址已占用，会报错而不会替换原有监听器。Ctrl+C 正常退出会停止插件并移除当前主程序自己的 socket；强制终止（SIGKILL）不保证清理。固定路径意味着同一系统同一时间只能有一个实例绑定此地址。
 
+### Linux 麦克风与 Wayland 剪贴板
+
+插件通过 `Context::os()` 获取宿主共享的异步系统服务句柄。Linux 使用 PipeWire 会话的默认麦克风，按指定时长采集 16 kHz 单声道 S16LE PCM。剪贴板使用 `wl-clipboard` 的 `wl-copy` 和 `wl-paste` 读写 UTF-8 文本，单次上限为 1 MiB。运行宿主时需保留当前用户的 `XDG_RUNTIME_DIR` 和 `WAYLAND_DISPLAY`。Wayland 无焦点读写已在 Sway 1.10.1 和 wl-clipboard 2.2.1 上验证。
+
+Linux 编译需要 `pkg-config`、PipeWire 开发头文件和可供 bindgen 加载的 libclang（Arch 为 `pkgconf libpipewire clang`，Debian 为 `pkg-config libpipewire-0.3-dev libclang-dev`）。录音需要 PipeWire 守护进程及 WirePlumber 等会话管理器。可用 `wpctl status` 检查默认输入源。
+
 ### 动态插件部署与信任边界
 
 runtime 从**实际可执行文件所在目录**下的 `plugins/*.so` 加载插件，按文件名排序，不依赖当前工作目录；Linux 上 `std::env::current_exe()` 会解析启动软链接。开发布局为 `target/debug/deskwaifu` + `target/debug/plugins/libdeskwaifu_test_plugin.so`（release 同理）。Arch 包安装实际程序到 `/usr/lib/deskwaifu/deskwaifu`，插件到 `/usr/lib/deskwaifu/plugins/`，`/usr/bin/deskwaifu` 为指向实际程序的软链接，独立 CLI 安装到 `/usr/bin/deskwaifucli`。
