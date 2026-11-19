@@ -208,13 +208,10 @@ fn audio_error(error: OsError) -> &'static str {
     }
 }
 
-async fn capture(os: &dyn OsServices, seconds: u64) -> Result<Vec<u8>, &'static str> {
-    let mut stream = os
-        .capture_audio(Duration::from_secs(seconds))
-        .await
-        .map_err(audio_error)?;
+async fn capture(os: &dyn OsServices, duration: Duration) -> Result<Vec<u8>, &'static str> {
+    let mut stream = os.capture_audio(duration).await.map_err(audio_error)?;
     let mut pcm = Vec::new();
-    let max_pcm = ((seconds as usize + 1) * asr::PCM_PER_SECOND).min(MAX_PCM_BYTES);
+    let max_pcm = ((duration.as_secs() as usize + 1) * asr::PCM_PER_SECOND).min(MAX_PCM_BYTES);
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(audio_error)?;
         if chunk.len() & 1 != 0 {
@@ -262,7 +259,7 @@ async fn record_and_recognize(
         return Err("not_configured");
     }
     state.borrow_mut().session().phase = Phase::Recording;
-    let pcm = capture(os, seconds).await?;
+    let pcm = capture(os, asr::recording_duration(&config)).await?;
     state.borrow_mut().session().phase = Phase::Recognizing;
     transcribe(config, pcm).await
 }

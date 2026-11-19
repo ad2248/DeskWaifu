@@ -82,14 +82,17 @@ async fn capture_keeps_tail_and_reports_stream_error() {
     os.audio
         .borrow_mut()
         .extend([Ok(vec![0; 32_000]), Ok(vec![0xFE, 0xCA])]);
-    let pcm = capture(&os, 1).await.unwrap();
+    let pcm = capture(&os, Duration::from_secs(1)).await.unwrap();
     assert_eq!(os.duration.get(), Duration::from_secs(1));
     assert_eq!(pcm.len(), 32_002);
     assert_eq!(&pcm[32_000..], &[0xFE, 0xCA]);
     os.audio
         .borrow_mut()
         .extend([Ok(vec![0; 2]), Err(OsError::Overflow)]);
-    assert_eq!(capture(&os, 1).await.unwrap_err(), "audio_overflow");
+    assert_eq!(
+        capture(&os, Duration::from_secs(1)).await.unwrap_err(),
+        "audio_overflow"
+    );
 }
 
 // 测试目的：确认活跃会话可查询，重复启动会返回 busy 且只提交一项任务。

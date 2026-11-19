@@ -28,7 +28,20 @@ const START_TIMEOUT: Duration = Duration::from_secs(15);
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(120);
 const PACKET_INTERVAL: Duration = Duration::from_millis(100);
 const PACKET_BYTES: usize = PCM_PER_SECOND / 10;
+const TAIL_DURATION: Duration = Duration::from_millis(250);
 const TAIL_BYTES: usize = PCM_PER_SECOND / 4;
+const LEGACY_MODEL: &str = "qwen-audio-3.0-asr-flash";
+const LEGACY_MAX_WAV_SECONDS: usize = 300;
+const LEGACY_MAX_PCM_BYTES: usize = LEGACY_MAX_WAV_SECONDS * PCM_PER_SECOND - TAIL_BYTES;
+
+pub(crate) fn recording_duration(config: &Config) -> Duration {
+    let requested = Duration::from_secs(config.max_recording_seconds);
+    if config.endpoint.scheme() == "https" && config.model == LEGACY_MODEL {
+        requested.min(Duration::from_secs(LEGACY_MAX_WAV_SECONDS as u64) - TAIL_DURATION)
+    } else {
+        requested
+    }
+}
 const NATIVE_PATH: &str = "/api/v1/services/aigc/multimodal-generation/generation";
 
 type Result<T> = std::result::Result<T, &'static str>;
@@ -239,7 +252,7 @@ fn http_endpoint(mut url: Url, model: &str) -> (Url, bool) {
     let path = url.path().trim_end_matches('/');
     let base = path.ends_with("/v1");
     let compatible = base || path.ends_with("/chat/completions");
-    if compatible && model == "qwen-audio-3.0-asr-flash" {
+    if compatible && model == LEGACY_MODEL {
         url.set_path(NATIVE_PATH);
         return (url, false);
     }
@@ -288,6 +301,12 @@ async fn https(
     client: reqwest::ClientBuilder,
 ) -> Result<String> {
     let client = client.build().map_err(|_| "asr_network")?;
+    // 采集可能交付跨过截止时间的最后一个完整设备块。
+    let pcm = if config.model == LEGACY_MODEL {
+        &pcm[..pcm.len().min(LEGACY_MAX_PCM_BYTES)]
+    } else {
+        pcm
+    };
     let data = format!("data:audio/wav;base64,{}", STANDARD.encode(wav(pcm)));
     let messages = json!([{"role": "user", "content": [{"type": "input_audio", "input_audio": {"data": data}}]}]);
     let (mut request, body) = if compatible {

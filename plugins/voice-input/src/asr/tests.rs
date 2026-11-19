@@ -279,6 +279,56 @@ async fn http_requests_resolve_before_upload_and_reject_redirects() {
     }
 }
 
+// 测试目的：验证旧模型的录音与尾静音合计不超过五分钟。
+// 测试方法：按 300 秒配置预留静音时间，并用环回服务解码含多余尾块的上传请求，核对 WAV 帧数和内容。
+#[tokio::test]
+async fn legacy_https_wav_stays_within_five_minutes() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let mut config = config(
+        Url::parse(&format!("https://{addr}/v1")).unwrap(),
+        LEGACY_MODEL,
+    );
+    config.max_recording_seconds = 300;
+    assert_eq!(recording_duration(&config), Duration::from_millis(299_750));
+    let (mut url, compatible) = http_endpoint(config.endpoint.clone(), &config.model);
+    url.set_scheme("http").unwrap();
+    let pcm = vec![7; 9_600_000];
+    let mock = async {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let (_, body) = read_http_request(&mut stream).await;
+        let data = body["input"]["messages"][0]["content"][0]["input_audio"]["data"]
+            .as_str()
+            .unwrap()
+            .strip_prefix("data:audio/wav;base64,")
+            .unwrap();
+        let wav = STANDARD.decode(data).unwrap();
+        assert_eq!(wav.len() - 44, 300 * 16_000 * 2);
+        assert_eq!(&wav[40..44], &9_600_000u32.to_le_bytes());
+        let tail_start = wav.len() - 8000;
+        assert_eq!(&wav[44..tail_start], &pcm[..9_592_000]);
+        assert_eq!(&wav[tail_start..], &[0; 8000]);
+        let response = r#"{"text":"ok"}"#;
+        stream
+            .write_all(
+                format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{response}",
+                    response.len()
+                )
+                .as_bytes(),
+            )
+            .await
+            .unwrap();
+    };
+    let client = https_client(Dns::default(), START_TIMEOUT).no_proxy();
+    let (actual, ()) = timeout(Duration::from_secs(15), async {
+        tokio::join!(https(config, url, compatible, &pcm, client), mock)
+    })
+    .await
+    .unwrap();
+    assert_eq!(actual.as_deref(), Ok("ok"));
+}
+
 const STALLED_HOST: &str = "voice-stalled.example.org.";
 const TEST_WAIT: Duration = Duration::from_secs(3);
 
