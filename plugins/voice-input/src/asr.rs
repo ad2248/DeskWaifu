@@ -26,7 +26,7 @@ pub async fn recognize(config: Config, pcm: Vec<u8>) -> Result<String> {
     if pcm.is_empty() {
         return Err("no_audio");
     }
-    if pcm.len() % 2 != 0 {
+    if !pcm.chunks_exact(2).remainder().is_empty() {
         return Err("invalid_audio");
     }
     if config.endpoint.scheme() == "wss" {

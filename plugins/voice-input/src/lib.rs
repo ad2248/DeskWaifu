@@ -211,7 +211,7 @@ async fn capture(os: &dyn OsServices, seconds: u64) -> Result<Vec<u8>, &'static 
     let max_pcm = ((seconds as usize + 1) * asr::PCM_PER_SECOND).min(MAX_PCM_BYTES);
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(audio_error)?;
-        if chunk.len() % 2 != 0 {
+        if !chunk.chunks_exact(2).remainder().is_empty() {
             return Err("invalid_audio");
         }
         if chunk.len() > max_pcm - pcm.len() {
