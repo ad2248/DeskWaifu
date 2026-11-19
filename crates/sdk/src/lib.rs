@@ -1,6 +1,9 @@
 //! 插件契约。动态插件直接使用 Rust 接口，必须与宿主使用同一工具链及同版代码构建。
 //! 不提供稳定 ABI；只加载可信插件。
-use std::{any::Any, any::TypeId, sync::Arc, time::Duration};
+use std::{any::Any, any::TypeId, rc::Rc, sync::Arc, time::Duration};
+
+mod os;
+pub use os::{AudioStream, ClipboardWriteError, LocalFuture, OsError, OsServices};
 
 /// 动态库导出的固定 Rust 函数名；不是 C ABI，也不承诺跨版本兼容。
 pub const PLUGIN_ENTRY_SYMBOL: &[u8] = b"deskwaifu_plugin_create\0";
@@ -84,6 +87,14 @@ pub trait Host {
     fn subscribe(&mut self, message_type: TypeId) -> PluginResult;
     fn publish(&mut self, message: Message) -> Result<(), PublishError>;
     fn register_command(&mut self, command: Command) -> PluginResult;
+    fn os(&self) -> Rc<dyn OsServices> {
+        unavailable_os_services()
+    }
+}
+
+#[doc(hidden)]
+pub fn unavailable_os_services() -> Rc<dyn OsServices> {
+    Rc::new(os::Unavailable)
 }
 
 pub struct Context<'a> {
@@ -96,6 +107,11 @@ impl<'a> Context<'a> {
     }
     pub fn id(&self) -> PluginId {
         self.host.id()
+    }
+
+    /// 返回可跨 await 持有的系统服务句柄。
+    pub fn os(&self) -> Rc<dyn OsServices> {
+        self.host.os()
     }
 
     /// 仅在 initialize 阶段登记订阅；同一类型重复订阅不会重复投递。

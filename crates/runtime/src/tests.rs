@@ -62,6 +62,7 @@ fn next_wakeup_tracks_timers_messages_and_idle_state() {
 #[test]
 fn full_queue_still_accepts_unsubscribed_types() {
     let mut bus = Bus {
+        os: None,
         active: true,
         capacity: 1,
         subscriptions: vec![

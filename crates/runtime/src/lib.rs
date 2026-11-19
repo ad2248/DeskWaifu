@@ -1,10 +1,11 @@
 //! 单线程、有界 FIFO 的进程内插件运行时，不依赖 Qt 或异步执行器。
 use deskwaifu_sdk::{
-    Command, Context, Host, Message, Plugin, PluginId, PluginResult, PublishError,
+    Command, Context, Host, Message, OsServices, Plugin, PluginId, PluginResult, PublishError,
 };
 use std::{
     any::TypeId,
     collections::{BTreeMap, HashSet, VecDeque},
+    rc::Rc,
     thread,
     time::{Duration, Instant},
 };
@@ -18,6 +19,7 @@ struct Delivery {
     targets: Vec<usize>,
 }
 struct Bus {
+    os: Option<Rc<dyn OsServices>>,
     active: bool,
     capacity: usize,
     subscriptions: Vec<HashSet<TypeId>>,
@@ -33,6 +35,13 @@ struct ScopedHost<'a> {
     commands: &'a mut Commands,
 }
 impl Host for ScopedHost<'_> {
+    fn os(&self) -> Rc<dyn OsServices> {
+        self.bus
+            .os
+            .clone()
+            .unwrap_or_else(deskwaifu_sdk::unavailable_os_services)
+    }
+
     fn id(&self) -> PluginId {
         self.id
     }
@@ -110,6 +119,7 @@ impl Runtime {
         Self {
             entries: Vec::new(),
             bus: Bus {
+                os: None,
                 active: false,
                 capacity,
                 subscriptions: Vec::new(),
@@ -120,6 +130,15 @@ impl Runtime {
             commands: BTreeMap::new(),
             libraries: Vec::new(),
         }
+    }
+
+    /// 在插件初始化之前配置全局系统服务。
+    pub fn set_os_services(&mut self, os: Rc<dyn OsServices>) -> PluginResult {
+        if self.state != State::Created {
+            return Err("system services must be set before start".into());
+        }
+        self.bus.os = Some(os);
+        Ok(())
     }
 
     pub fn add(&mut self, plugin: impl Plugin + 'static) -> Result<PluginId, String> {

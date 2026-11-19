@@ -8,8 +8,9 @@ arch=('x86_64')
 url='https://github.com/ad2248/DeskWaifu'
 # No license grant is inferred from the retired C++ SDK dependencies.
 license=('LicenseRef-Unknown')
-depends=('glibc' 'gcc-libs')
-makedepends=('cargo')
+depends=('glibc' 'gcc-libs' 'libpipewire' 'wl-clipboard')
+makedepends=('cargo' 'clang' 'pkgconf')
+optdepends=('pipewire: microphone capture daemon' 'wireplumber: default microphone selection')
 provides=('deskwaifu')
 conflicts=('deskwaifu')
 options=('!debug' '!lto')

@@ -62,7 +62,7 @@ async fn failed_client_registration_leaves_existing_connection_usable() {
             output: "first".into()
         }
     );
-    let mut rejected = UnixStream::connect(&server.path).unwrap();
+    let rejected = UnixStream::connect(&server.path).unwrap();
     rejected.set_nonblocking(true).unwrap();
     tokio::time::timeout(Duration::from_secs(2), async {
         while server.clients.len() < 2 {
@@ -90,7 +90,16 @@ async fn failed_client_registration_leaves_existing_connection_usable() {
     .unwrap()
     .unwrap();
     assert_eq!(server.clients.len(), 1);
-    assert_eq!(rejected.read(&mut [0]).unwrap(), 0);
+    // 其他测试并行启动子进程时，fork 到 exec 之间可能短暂持有套接字。
+    let mut rejected = tokio::net::UnixStream::from_std(rejected).unwrap();
+    let eof = tokio::time::timeout(
+        Duration::from_secs(2),
+        tokio::io::AsyncReadExt::read(&mut rejected, &mut [0]),
+    )
+    .await
+    .expect("rejected connection must close")
+    .unwrap();
+    assert_eq!(eof, 0);
     assert_eq!(
         response(&mut server, &mut existing, &mut calls).await,
         Response::Ok {

@@ -8,7 +8,7 @@ import shlex
 import subprocess
 
 ROOT = Path(__file__).resolve().parent.parent
-MAIN_DEPENDS = {"glibc", "gcc-libs"}
+MAIN_DEPENDS = {"glibc", "gcc-libs", "libpipewire", "wl-clipboard"}
 PACKAGE_NAMES = ("deskwaifu-bin",)
 
 

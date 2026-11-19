@@ -9,10 +9,14 @@ libc = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 deskwaifu-runtime.workspace = true
-tokio = { version = "1", features = ["macros", "net", "rt", "signal", "time"] }
+deskwaifu-sdk.workspace = true
+futures-core = "0.3"
+tokio = { version = "1", features = ["io-util", "macros", "net", "process", "rt", "signal", "sync", "time"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+pipewire = { version = "0.10.1", features = ["v0_3_44"] }
 
 [dev-dependencies]
-deskwaifu-sdk.workspace = true
 deskwaifu-test-plugin.workspace = true
 tokio = { version = "1", features = ["test-util"] }
 

@@ -2,7 +2,10 @@
 #![cfg(unix)]
 
 mod async_server;
+mod audio_input;
+mod clipboard;
 mod host;
+mod services;
 pub use host::run;
 
 use serde::{Deserialize, Serialize};
