@@ -1,7 +1,7 @@
 ---
 name: create-issue
 description: Create Gitea/Forgejo issues — interactive or with flags for title, description, labels, assignees, milestone, and deadline.
-user-invokable: true
+user-invocable: true
 ---
 
 # Create Issue
