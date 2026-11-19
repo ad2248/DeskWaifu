@@ -47,10 +47,10 @@ def verify_content(name, info, files, version):
         raise ValueError(f"Wrong package identity/version/architecture: {name}")
     if set(info.get("depend", [])) != MAIN_DEPENDS:
         raise ValueError("Unexpected Rust runtime dependencies")
-    # Only the host, its launcher symlink, the independent CLI and the jointly
-    # built Rust test plugin are allowed. Reject old plugins, SDKs and OCR assets.
+    # Require both jointly built plugins and exclude the legacy payload.
     required = {"usr/bin/deskwaifu", "usr/bin/deskwaifucli", "usr/lib/deskwaifu/deskwaifu",
-                "usr/lib/deskwaifu/plugins/libdeskwaifu_test_plugin.so"}
+                "usr/lib/deskwaifu/plugins/libdeskwaifu_test_plugin.so",
+                "usr/lib/deskwaifu/plugins/libdeskwaifu_voice_input.so"}
     allowed = required | {".PKGINFO", ".BUILDINFO", ".MTREE", "usr/", "usr/bin/",
                           "usr/lib/", "usr/lib/deskwaifu/", "usr/lib/deskwaifu/plugins/"}
     files = {path.removeprefix("./") for path in files}

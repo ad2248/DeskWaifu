@@ -12,14 +12,6 @@ impl TestPlugin {
     }
 }
 
-fn test_command(args: &[String]) -> Result<String, String> {
-    Ok(format!(
-        "test command received {} argument(s): {:?}",
-        args.len(),
-        args
-    ))
-}
-
 impl Plugin for TestPlugin {
     fn name(&self) -> &str {
         "test-plugin"
@@ -32,8 +24,23 @@ impl Plugin for TestPlugin {
                 "Run the test command.".into(),
                 "All following input is passed through as string arguments.".into(),
             ],
-            test_command,
         )
+    }
+
+    fn on_command(
+        &mut self,
+        name: &str,
+        args: &[String],
+        _cx: &mut Context<'_>,
+    ) -> Result<String, String> {
+        match name {
+            "test" => Ok(format!(
+                "test command received {} argument(s): {:?}",
+                args.len(),
+                args
+            )),
+            _ => Err(format!("unhandled command: {name}")),
+        }
     }
 
     fn on_message(

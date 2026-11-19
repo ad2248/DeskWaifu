@@ -1,5 +1,5 @@
 [workspace]
-members = ["apps/deskwaifucli", "apps/deskwaifu", "crates/sdk", "crates/runtime", "crates/os", "plugins/test-plugin"]
+members = ["apps/deskwaifucli", "apps/deskwaifu", "crates/sdk", "crates/runtime", "crates/os", "plugins/test-plugin", "plugins/voice-input"]
 resolver = "3"
 
 [workspace.package]

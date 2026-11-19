@@ -66,7 +66,18 @@ jobs:
           pacman -U --noconfirm release-assets/deskwaifu-bin-*.pkg.tar.zst
           test "$(readlink -f /usr/bin/deskwaifu)" = /usr/lib/deskwaifu/deskwaifu
           test -f /usr/lib/deskwaifu/plugins/libdeskwaifu_test_plugin.so
+          test -f /usr/lib/deskwaifu/plugins/libdeskwaifu_voice_input.so
           /usr/bin/deskwaifucli --help
+          test ! -e /tmp/deskwaifu.socket
+          /usr/bin/deskwaifu &
+          host_pid=$!
+          trap 'kill -TERM "$host_pid" 2>/dev/null || true; wait "$host_pid"' EXIT
+          for attempt in {1..100}; do
+            if test -S /tmp/deskwaifu.socket; then break; fi
+            kill -0 "$host_pid"
+            sleep 0.05
+          done
+          /usr/bin/deskwaifucli help | grep -E '^start_voice_input[[:space:]]'
       - name: Clean package artifacts
         if: always()
         run: rm -rf release-assets

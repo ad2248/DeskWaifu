@@ -1,6 +1,6 @@
 //! 插件契约。动态插件直接使用 Rust 接口，必须与宿主使用同一工具链及同版代码构建。
 //! 不提供稳定 ABI；只加载可信插件。
-use std::{any::Any, any::TypeId, rc::Rc, sync::Arc, time::Duration};
+use std::{any::Any, any::TypeId, future::Future, rc::Rc, sync::Arc, time::Duration};
 
 mod os;
 pub use os::{AudioStream, ClipboardWriteError, LocalFuture, OsError, OsServices};
@@ -23,13 +23,11 @@ macro_rules! export_plugin {
 }
 
 pub type PluginResult = Result<(), String>;
-pub type CommandCallback = fn(&[String]) -> Result<String, String>;
 
 #[derive(Clone)]
 pub struct Command {
     pub name: String,
     pub help: Vec<String>,
-    pub callback: CommandCallback,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -87,6 +85,9 @@ pub trait Host {
     fn subscribe(&mut self, message_type: TypeId) -> PluginResult;
     fn publish(&mut self, message: Message) -> Result<(), PublishError>;
     fn register_command(&mut self, command: Command) -> PluginResult;
+    fn spawn_local(&mut self, _future: LocalFuture<'static, ()>) -> PluginResult {
+        Err("local tasks are not available".into())
+    }
     fn os(&self) -> Rc<dyn OsServices> {
         unavailable_os_services()
     }
@@ -125,17 +126,17 @@ impl<'a> Context<'a> {
     }
 
     /// 仅在 initialize 阶段注册命令；名称必须是单个子命令标识。
-    pub fn register_command(
-        &mut self,
-        name: impl Into<String>,
-        help: Vec<String>,
-        callback: crate::CommandCallback,
-    ) -> PluginResult {
+    pub fn register_command(&mut self, name: impl Into<String>, help: Vec<String>) -> PluginResult {
         self.host.register_command(crate::Command {
             name: name.into(),
             help,
-            callback,
         })
+    }
+
+    /// 提交由宿主在当前线程上驱动的任务。任务不会在此调用中立即执行。
+    /// 只在运行阶段接受任务，并在 stop 回调前同步丢弃未完成的任务。
+    pub fn spawn_local(&mut self, future: impl Future<Output = ()> + 'static) -> PluginResult {
+        self.host.spawn_local(Box::pin(future))
     }
 }
 
@@ -153,6 +154,15 @@ pub trait Plugin {
     }
     fn tick(&mut self, _cx: &mut Context<'_>) -> PluginResult {
         Ok(())
+    }
+    /// 处理本实例在 initialize 中注册的命令。args 不包含命令名。
+    fn on_command(
+        &mut self,
+        name: &str,
+        _args: &[String],
+        _cx: &mut Context<'_>,
+    ) -> Result<String, String> {
+        Err(format!("unhandled command: {name}"))
     }
     fn on_message(&mut self, message: &Message, cx: &mut Context<'_>) -> PluginResult;
     fn stop(&mut self, _cx: &mut Context<'_>) -> PluginResult {

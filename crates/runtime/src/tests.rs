@@ -70,6 +70,7 @@ fn full_queue_still_accepts_unsubscribed_types() {
             HashSet::from([TypeId::of::<u64>()]),
         ],
         queue: VecDeque::new(),
+        tasks: FuturesUnordered::new(),
     };
     {
         let mut host = ScopedHost {

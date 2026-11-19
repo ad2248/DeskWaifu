@@ -45,10 +45,11 @@ def archive(path, files):
 def rust_fixture():
     """Offline workspace fixture exercising the real host + CLI + cdylib recipe."""
     return {
-        "deskwaifu/Cargo.toml": ('[workspace]\nmembers = [".", "cli", "plugin"]\nresolver = "2"\n'
+        "deskwaifu/Cargo.toml": ('[workspace]\nmembers = [".", "cli", "plugin", "voice-input"]\nresolver = "2"\n'
                                 '[package]\nname="deskwaifu"\nversion="0.1.0"\nedition="2021"\n'),
         "deskwaifu/Cargo.lock": ('version = 4\n\n[[package]]\nname = "deskwaifu"\nversion = "0.1.0"\n'
                                 '\n[[package]]\nname = "deskwaifu-test-plugin"\nversion = "0.1.0"\n'
+                                '\n[[package]]\nname = "deskwaifu-voice-input"\nversion = "0.1.0"\n'
                                 '\n[[package]]\nname = "deskwaifucli"\nversion = "0.1.0"\n'),
         "deskwaifu/src/main.rs": ('fn main() { assert_eq!(std::env::args().len(), 1); '
                                  'println!("host fixture"); }\n'),
@@ -59,6 +60,9 @@ def rust_fixture():
         "deskwaifu/plugin/Cargo.toml": ('[package]\nname="deskwaifu-test-plugin"\nversion="0.1.0"\n'
                                        'edition="2021"\n[lib]\ncrate-type=["rlib", "cdylib"]\n'),
         "deskwaifu/plugin/src/lib.rs": '#[no_mangle]\npub extern "C" fn fixture() {}\n',
+        "deskwaifu/voice-input/Cargo.toml": ('[package]\nname="deskwaifu-voice-input"\nversion="0.1.0"\n'
+                                       'edition="2021"\n[lib]\ncrate-type=["rlib", "cdylib"]\n'),
+        "deskwaifu/voice-input/src/lib.rs": '#[no_mangle]\npub extern "C" fn fixture() {}\n',
         "deskwaifu/scripts/build.sh": (ROOT / "scripts/build.sh").read_text(),
     }
 
@@ -76,11 +80,14 @@ class PackagingTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "without a version constraint"):
                 packaging.verify_unversioned_dependencies(["deskwaifu-bin" + operator + "1.0"])
 
+    # 测试目的：确认发行包身份、依赖和文件清单符合约定，并要求语音识别插件随包交付。
+    # 测试方法：校验合法包，再替换元数据、加入额外文件或逐项移除必需文件，检查拒绝结果。
     def test_single_rust_payload_and_identity(self):
         info = {"pkgname": ["deskwaifu-bin"], "pkgver": ["1.2.3-1"], "arch": ["x86_64"],
                 "depend": ["glibc", "gcc-libs", "libpipewire", "wl-clipboard"]}
         required = {"usr/bin/deskwaifu", "usr/bin/deskwaifucli", "usr/lib/deskwaifu/deskwaifu",
-                    "usr/lib/deskwaifu/plugins/libdeskwaifu_test_plugin.so"}
+                    "usr/lib/deskwaifu/plugins/libdeskwaifu_test_plugin.so",
+                    "usr/lib/deskwaifu/plugins/libdeskwaifu_voice_input.so"}
         files = required | {"usr/", "usr/bin/", "usr/lib/", "usr/lib/deskwaifu/",
                             "usr/lib/deskwaifu/plugins/", ".PKGINFO", ".BUILDINFO", ".MTREE"}
         packaging.verify_content("deskwaifu-bin", info, files, "1.2.3")
@@ -96,6 +103,8 @@ class PackagingTest(unittest.TestCase):
             with self.subTest(missing=missing), self.assertRaisesRegex(ValueError, "Missing package files"):
                 packaging.verify_content("deskwaifu-bin", info, files - {missing}, "1.2.3")
 
+    # 测试目的：验证真实 Arch 打包能交付宿主、CLI 和两个插件，并检查发行文件的校验和。
+    # 测试方法：用 makepkg 构建离线 Rust 夹具，解包检查安装内容，再篡改包或添加旧包验证拒绝结果。
     @unittest.skipUnless(all(shutil.which(tool) for tool in ("makepkg", "bsdtar", "fakeroot", "cargo"))
                          and os.getuid() != 0, "requires Arch tools, Cargo and nonroot user")
     def test_real_makepkg_rust_package_and_checksums(self):
@@ -126,14 +135,17 @@ class PackagingTest(unittest.TestCase):
         executable = installed / "usr/bin/deskwaifu"
         self.assertTrue(executable.is_symlink())
         self.assertEqual(executable.resolve(), installed / "usr/lib/deskwaifu/deskwaifu")
-        plugin = executable.resolve().parent / "plugins/libdeskwaifu_test_plugin.so"
-        self.assertTrue(plugin.read_bytes().startswith(b"\x7fELF"))
+        for name in ("test_plugin", "voice_input"):
+            plugin = executable.resolve().parent / f"plugins/libdeskwaifu_{name}.so"
+            self.assertTrue(plugin.read_bytes().startswith(b"\x7fELF"))
         self.assertEqual(subprocess.check_output([str(executable)], text=True), "host fixture\n")
         cli = installed / "usr/bin/deskwaifucli"
         self.assertFalse(cli.is_symlink())
         self.assertTrue(cli.read_bytes().startswith(b"\x7fELF"))
         self.assertEqual(subprocess.check_output([str(cli), "--help"], text=True), "cli fixture\n")
 
+    # 测试目的：验证只依赖 Cargo 的环境也能检查发布构建和插件安装布局。
+    # 测试方法：直接执行打包配方的 build 和 package 函数，核对两个动态库的 ELF 标识，并运行安装后的宿主和 CLI 夹具。
     @unittest.skipUnless(shutil.which("cargo"), "requires Cargo")
     def test_real_rust_fixture_build_and_install_without_arch_tools(self):
         with tempfile.TemporaryDirectory(prefix="release-fixture-", dir=TEMP_ROOT) as temporary:
