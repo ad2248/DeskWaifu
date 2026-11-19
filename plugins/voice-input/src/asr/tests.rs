@@ -290,7 +290,10 @@ async fn legacy_https_wav_stays_within_five_minutes() {
         LEGACY_MODEL,
     );
     config.max_recording_seconds = 300;
-    assert_eq!(recording_duration(&config), Duration::from_millis(299_750));
+    assert_eq!(
+        recording_duration(&config).unwrap(),
+        Duration::from_millis(299_750)
+    );
     let (mut url, compatible) = http_endpoint(config.endpoint.clone(), &config.model);
     url.set_scheme("http").unwrap();
     let pcm = vec![7; 9_600_000];
@@ -323,6 +326,63 @@ async fn legacy_https_wav_stays_within_five_minutes() {
     let client = https_client(Dns::default(), START_TIMEOUT).no_proxy();
     let (actual, ()) = timeout(Duration::from_secs(15), async {
         tokio::join!(https(config, url, compatible, &pcm, client), mock)
+    })
+    .await
+    .unwrap();
+    assert_eq!(actual.as_deref(), Ok("ok"));
+}
+
+// 测试目的：验证兼容模型的实际上传大小在 10 MB 以内，并保留尾静音。
+// 测试方法：按 234 秒配置构造带额外设备块的 PCM，经环回 HTTP 上传后检查数据 URI 长度和 WAV 末尾。
+#[tokio::test]
+async fn compatible_https_clips_final_block_to_encoding_budget() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let mut config = config(
+        Url::parse(&format!("https://{addr}/v1")).unwrap(),
+        COMPATIBLE_MODEL,
+    );
+    config.max_recording_seconds = 234;
+    assert_eq!(recording_duration(&config), Ok(Duration::from_secs(234)));
+    let (mut url, compatible) = http_endpoint(config.endpoint.clone(), &config.model);
+    url.set_scheme("http").unwrap();
+    let pcm = vec![7; 235 * PCM_PER_SECOND];
+    let mock = async {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let (_, body) = read_http_request(&mut stream).await;
+        let data = body["messages"][0]["content"][0]["input_audio"]["data"]
+            .as_str()
+            .unwrap();
+        assert!(data.len() <= 10_000_000 && data.len() > 9_999_996);
+        let wav = STANDARD
+            .decode(data.strip_prefix(AUDIO_DATA_PREFIX).unwrap())
+            .unwrap();
+        let tail_start = wav.len() - 8000;
+        assert_eq!(&wav[44..tail_start], &pcm[..tail_start - 44]);
+        assert_eq!(&wav[tail_start..], &[0; 8000]);
+        let response = r#"{"choices":[{"message":{"content":"ok"}}]}"#;
+        stream
+            .write_all(
+                format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{response}",
+                    response.len()
+                )
+                .as_bytes(),
+            )
+            .await
+            .unwrap();
+    };
+    let (actual, ()) = timeout(Duration::from_secs(15), async {
+        tokio::join!(
+            https(
+                config,
+                url,
+                compatible,
+                &pcm,
+                https_client(Dns::default(), START_TIMEOUT).no_proxy()
+            ),
+            mock
+        )
     })
     .await
     .unwrap();

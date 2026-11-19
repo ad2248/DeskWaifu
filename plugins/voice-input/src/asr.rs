@@ -34,13 +34,34 @@ const LEGACY_MODEL: &str = "qwen-audio-3.0-asr-flash";
 const LEGACY_MAX_WAV_SECONDS: usize = 300;
 const LEGACY_MAX_PCM_BYTES: usize = LEGACY_MAX_WAV_SECONDS * PCM_PER_SECOND - TAIL_BYTES;
 
-pub(crate) fn recording_duration(config: &Config) -> Duration {
+const COMPATIBLE_MODEL: &str = "qwen3-asr-flash";
+const AUDIO_DATA_PREFIX: &str = "data:audio/wav;base64,";
+const WAV_HEADER_BYTES: usize = 44;
+const COMPATIBLE_MAX_DATA_BYTES: usize = 10_000_000;
+// Base64 按三个输入字节生成四个输出字节，PCM 必须按完整样本对齐。
+const COMPATIBLE_MAX_PCM_BYTES: usize =
+    (((COMPATIBLE_MAX_DATA_BYTES - AUDIO_DATA_PREFIX.len()) / 4) * 3
+        - WAV_HEADER_BYTES
+        - TAIL_BYTES)
+        & !1;
+
+pub(crate) fn recording_duration(config: &Config) -> Result<Duration> {
     let requested = Duration::from_secs(config.max_recording_seconds);
-    if config.endpoint.scheme() == "https" && config.model == LEGACY_MODEL {
-        requested.min(Duration::from_secs(LEGACY_MAX_WAV_SECONDS as u64) - TAIL_DURATION)
-    } else {
-        requested
+    if config.endpoint.scheme() != "https" {
+        return Ok(requested);
     }
+    if config.model == LEGACY_MODEL {
+        return Ok(
+            requested.min(Duration::from_secs(LEGACY_MAX_WAV_SECONDS as u64) - TAIL_DURATION)
+        );
+    }
+    if config.model == COMPATIBLE_MODEL
+        && http_endpoint(config.endpoint.clone(), &config.model).1
+        && config.max_recording_seconds > (COMPATIBLE_MAX_PCM_BYTES / PCM_PER_SECOND) as u64
+    {
+        return Err("recording_duration_exceeds_model_limit");
+    }
+    Ok(requested)
 }
 const NATIVE_PATH: &str = "/api/v1/services/aigc/multimodal-generation/generation";
 
@@ -266,7 +287,7 @@ fn http_endpoint(mut url: Url, model: &str) -> (Url, bool) {
 fn wav(pcm: &[u8]) -> Vec<u8> {
     let data_len = pcm.len() + TAIL_BYTES;
     let size = data_len as u32;
-    let mut wav = Vec::with_capacity(data_len + 44);
+    let mut wav = Vec::with_capacity(data_len + WAV_HEADER_BYTES);
     wav.extend_from_slice(b"RIFF");
     wav.extend_from_slice(&(size + 36).to_le_bytes());
     wav.extend_from_slice(b"WAVEfmt ");
@@ -280,7 +301,7 @@ fn wav(pcm: &[u8]) -> Vec<u8> {
     wav.extend_from_slice(b"data");
     wav.extend_from_slice(&size.to_le_bytes());
     wav.extend_from_slice(pcm);
-    wav.resize(data_len + 44, 0);
+    wav.resize(data_len + WAV_HEADER_BYTES, 0);
     wav
 }
 
@@ -304,10 +325,12 @@ async fn https(
     // 采集可能交付跨过截止时间的最后一个完整设备块。
     let pcm = if config.model == LEGACY_MODEL {
         &pcm[..pcm.len().min(LEGACY_MAX_PCM_BYTES)]
+    } else if compatible && config.model == COMPATIBLE_MODEL {
+        &pcm[..pcm.len().min(COMPATIBLE_MAX_PCM_BYTES)]
     } else {
         pcm
     };
-    let data = format!("data:audio/wav;base64,{}", STANDARD.encode(wav(pcm)));
+    let data = format!("{AUDIO_DATA_PREFIX}{}", STANDARD.encode(wav(pcm)));
     let messages = json!([{"role": "user", "content": [{"type": "input_audio", "input_audio": {"data": data}}]}]);
     let (mut request, body) = if compatible {
         (

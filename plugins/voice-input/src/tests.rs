@@ -95,6 +95,24 @@ async fn capture_keeps_tail_and_reports_stream_error() {
     );
 }
 
+// 测试目的：确认兼容模式会在打开麦克风之前拒绝超出模型预算的时长。
+// 测试方法：向采集入口传入 235 秒的旧版兼容配置，检查错误码和未被调用的 OS 替身。
+#[tokio::test]
+async fn compatible_model_rejects_oversize_recording_before_capture() {
+    let os = FakeOs::default();
+    let config = Config {
+        endpoint: "https://example.org/compatible-mode/v1".parse().unwrap(),
+        model: "qwen3-asr-flash".into(),
+        max_recording_seconds: 235,
+        authorization: None,
+    };
+    assert_eq!(
+        capture_configured(&os, &config).await,
+        Err("recording_duration_exceeds_model_limit")
+    );
+    assert_eq!(os.duration.get(), Duration::ZERO);
+}
+
 // 测试目的：确认活跃会话可查询，重复启动会返回 busy 且只提交一项任务。
 // 测试方法：用暂存异步任务的宿主替身依次执行启动、状态查询和再次启动，检查返回值和任务数。
 #[test]

@@ -228,6 +228,10 @@ async fn capture(os: &dyn OsServices, duration: Duration) -> Result<Vec<u8>, &'s
     Ok(pcm)
 }
 
+async fn capture_configured(os: &dyn OsServices, config: &Config) -> Result<Vec<u8>, &'static str> {
+    capture(os, asr::recording_duration(config)?).await
+}
+
 async fn copy(os: &dyn OsServices, state: &RefCell<State>, text: String) {
     let result = os.write_clipboard_text(text).await;
     let mut state = state.borrow_mut();
@@ -259,7 +263,7 @@ async fn record_and_recognize(
         return Err("not_configured");
     }
     state.borrow_mut().session().phase = Phase::Recording;
-    let pcm = capture(os, asr::recording_duration(&config)).await?;
+    let pcm = capture_configured(os, &config).await?;
     state.borrow_mut().session().phase = Phase::Recognizing;
     transcribe(config, pcm).await
 }
