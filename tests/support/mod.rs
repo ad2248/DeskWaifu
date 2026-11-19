@@ -12,7 +12,7 @@ pub struct PluginBuild {
 }
 
 impl PluginBuild {
-    pub fn new() -> Self {
+    pub fn new() -> (Self, Vec<u8>) {
         static NEXT: AtomicUsize = AtomicUsize::new(0);
         fs::create_dir_all("/tmp/opencode").unwrap();
         let target = loop {
@@ -33,6 +33,7 @@ impl PluginBuild {
             .current_dir(root)
             .args([
                 "build",
+                "--message-format=json",
                 "--offline",
                 "--locked",
                 "-p",
@@ -48,7 +49,7 @@ impl PluginBuild {
             String::from_utf8_lossy(&output.stderr)
         );
         assert!(build.plugin().is_file());
-        build
+        (build, output.stdout)
     }
 
     pub fn plugin(&self) -> PathBuf {

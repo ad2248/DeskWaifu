@@ -11,22 +11,18 @@ use std::{fs, path::Path, process::Command};
 
 fn compile_fixture(
     build: &support::PluginBuild,
+    rlibs: &[std::path::PathBuf],
     name: &str,
     command: &str,
     fail_init: bool,
 ) -> std::path::PathBuf {
-    let deps = build.target.join("debug/deps");
-    let sdk = fs::read_dir(&deps)
-        .unwrap()
-        .map(|entry| entry.unwrap().path())
+    let sdk = rlibs
+        .iter()
         .find(|path| {
             path.file_name()
                 .unwrap()
                 .to_string_lossy()
                 .starts_with("libdeskwaifu_sdk-")
-                && path
-                    .extension()
-                    .is_some_and(|extension| extension == "rlib")
         })
         .expect("independently built SDK rlib");
     let output = build.target.join(format!("{name}.so"));
@@ -46,13 +42,16 @@ fn compile_fixture(
         )
         .arg("--extern")
         .arg(format!("deskwaifu_sdk={}", sdk.display()))
-        .arg("-L")
-        .arg(format!("dependency={}", deps.display()))
         .arg("-o")
         .arg(&output)
         .env("FIXTURE_NAME", name)
         .env("FIXTURE_COMMAND", command)
         .env("FIXTURE_LOG", build.target.join("lifecycle.log"));
+    for rlib in rlibs {
+        rustc
+            .arg("-L")
+            .arg(format!("dependency={}", rlib.parent().unwrap().display()));
+    }
     if fail_init {
         rustc.args(["--cfg", "fail_init"]);
     }
@@ -82,12 +81,31 @@ fn clear_events(build: &support::PluginBuild) {
 fn dynamic_plugins() {
     // Build the real cdylib once, separately from the host and its target directory.
     // Keep this guard alive until every runtime/library has been dropped.
-    let build = support::PluginBuild::new();
+    let (build, artifacts) = support::PluginBuild::new();
+    // Newer Cargo versions put dependency artifacts in package-specific directories.
+    let mut rlibs = Vec::new();
+    for line in artifacts
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+    {
+        let message: serde_json::Value = serde_json::from_slice(line).unwrap();
+        if message["reason"] == "compiler-artifact" {
+            for filename in message["filenames"].as_array().unwrap() {
+                let path = std::path::PathBuf::from(filename.as_str().unwrap());
+                if path
+                    .extension()
+                    .is_some_and(|extension| extension == "rlib")
+                {
+                    rlibs.push(path);
+                }
+            }
+        }
+    }
     let plugin = build.plugin();
-    let good = compile_fixture(&build, "good", "good", false);
-    let failing = compile_fixture(&build, "failing", "failing", true);
-    let conflicting = compile_fixture(&build, "conflicting", "good", false);
-    let missing_entry = compile_fixture(&build, "missing_entry", "unused", false);
+    let good = compile_fixture(&build, &rlibs, "good", "good", false);
+    let failing = compile_fixture(&build, &rlibs, "failing", "failing", true);
+    let conflicting = compile_fixture(&build, &rlibs, "conflicting", "good", false);
+    let missing_entry = compile_fixture(&build, &rlibs, "missing_entry", "unused", false);
     let invalid = build.target.join("invalid.so");
     fs::write(&invalid, "not a shared library").unwrap();
 

@@ -101,7 +101,7 @@ fn separate_cli_calls_dynamic_plugin_on_fixed_socket() {
     );
     // Deploy a copied executable and an independently built .so. Run from a
     // different working directory to verify lookup is relative to current_exe.
-    let build = support::PluginBuild::new();
+    let (build, _) = support::PluginBuild::new();
     let output = Command::new(env!("CARGO"))
         .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
         .args([

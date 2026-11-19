@@ -140,6 +140,7 @@ version = "0.1.0"
 dependencies = [
  "deskwaifu-sdk",
  "libloading",
+ "serde_json",
 ]
 
 [[package]]
