@@ -42,13 +42,25 @@ fn with_system_roots(scheme: &str, test: &str) {
     // 子进程负责读取临时信任库，避免并行测试共用进程环境变量。
     let trust_dir = tempfile::tempdir().unwrap();
     let ca_file = trust_dir.path().join("ca.pem");
-    let output = Command::new(env::current_exe().unwrap())
+    let mut child = Command::new(env::current_exe().unwrap());
+    // 环回 TLS 测试直接连接本地服务，避免代理环境改变测试路径。
+    for name in [
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "NO_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+        "no_proxy",
+    ] {
+        child.env_remove(name);
+    }
+    let output = child
         .args(["--exact", test, "--nocapture"])
         .env(CHILD_CA_FILE, &ca_file)
         .env("SSL_CERT_FILE", &ca_file)
         .env("SSL_CERT_DIR", trust_dir.path())
-        .env("NO_PROXY", "*")
-        .env("no_proxy", "*")
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);

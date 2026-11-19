@@ -20,6 +20,7 @@ class RustCiTest(unittest.TestCase):
         self.assertIn('cargo build --workspace --locked', build)
         for plugin in ('libdeskwaifu_test_plugin.so', 'libdeskwaifu_voice_input.so'):
             self.assertIn(plugin, build)
+        self.assertLess(ci.index('cargo fetch --locked'), ci.index('CARGO_NET_OFFLINE=true bash scripts/build.sh'))
         self.assertLess(ci.index('bash scripts/build.sh'), ci.index('cargo test --workspace --frozen'))
         self.assertNotIn('runs-on: deskwaifu-arch', ci)
         self.assertNotIn('cmake ', ci)

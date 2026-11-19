@@ -29,8 +29,10 @@ jobs:
           persist-credentials: false
       - name: Format
         run: cargo fmt --all --check
+      - name: Fetch locked dependencies including test dependencies
+        run: cargo fetch --locked
       - name: Build host and stage plugins
-        run: bash scripts/build.sh
+        run: CARGO_NET_OFFLINE=true bash scripts/build.sh
       - name: Lint
         run: cargo clippy --workspace --all-targets --frozen -- -D warnings
       - name: Test
