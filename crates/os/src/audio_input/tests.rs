@@ -154,7 +154,7 @@ async fn pipewire_virtual_microphone() {
     );
     assert!(
         samples
-            .chunks_exact(2)
+            .chunks(2)
             .any(|sample| i16::from_le_bytes([sample[0], sample[1]]).unsigned_abs() > 100)
     );
     assert_eq!(audio.slot.available_permits(), 1);

@@ -78,7 +78,7 @@ class PackagingTest(unittest.TestCase):
 
     def test_single_rust_payload_and_identity(self):
         info = {"pkgname": ["deskwaifu-bin"], "pkgver": ["1.2.3-1"], "arch": ["x86_64"],
-                "depend": sorted(packaging.MAIN_DEPENDS)}
+                "depend": ["glibc", "gcc-libs", "libpipewire", "wl-clipboard"]}
         required = {"usr/bin/deskwaifu", "usr/bin/deskwaifucli", "usr/lib/deskwaifu/deskwaifu",
                     "usr/lib/deskwaifu/plugins/libdeskwaifu_test_plugin.so"}
         files = required | {"usr/", "usr/bin/", "usr/lib/", "usr/lib/deskwaifu/",

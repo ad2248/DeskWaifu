@@ -89,7 +89,7 @@ pub(super) fn record(recording: Rc<RefCell<Recording>>) -> Result<(), OsError> {
                 .data()
                 .and_then(|bytes| bytes.get(offset..offset.saturating_add(size)));
             let result = match pcm {
-                Some(pcm) if size % 2 == 0 && size <= MAX_CHUNK => recording.borrow().push(pcm),
+                Some(pcm) if size & 1 == 0 && size <= MAX_CHUNK => recording.borrow().push(pcm),
                 _ => Err(OsError::Backend),
             };
             if let Err(reason) = result {
