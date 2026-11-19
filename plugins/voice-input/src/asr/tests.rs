@@ -1,4 +1,14 @@
 use super::*;
+use hickory_resolver::{
+    config::{NameServerConfig, ResolveHosts, ResolverConfig},
+    name_server::TokioConnectionProvider,
+    proto::{
+        op::{Message as DnsMessage, MessageType},
+        rr::{RData, Record, rdata::A},
+        xfer::Protocol,
+    },
+};
+use std::{net::UdpSocket, sync::mpsc, thread};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -102,7 +112,12 @@ async fn streaming_uploads_pcm_and_silence_and_joins_only_final_sentences() {
         send_event(&mut socket, &id, "task-finished", json!({})).await;
     };
     let (actual, ()) = tokio::join!(
-        streaming(config(url, "test"), vec![7; 2400], START_TIMEOUT),
+        streaming(
+            config(url, "test"),
+            vec![7; 2400],
+            Dns::default(),
+            START_TIMEOUT
+        ),
         mock
     );
     assert_eq!(actual.unwrap(), " 中文\n尾句 ");
@@ -138,7 +153,12 @@ async fn streaming_rejects_invalid_events_and_times_out() {
             }
         };
         let (actual, ()) = tokio::join!(
-            streaming(config(url, "test"), vec![7; 2], START_TIMEOUT),
+            streaming(
+                config(url, "test"),
+                vec![7; 2],
+                Dns::default(),
+                START_TIMEOUT
+            ),
             mock
         );
         assert_eq!(actual.unwrap_err(), expected);
@@ -236,11 +256,138 @@ async fn http_requests_resolve_before_upload_and_reject_redirects() {
             let body = expected_body.to_string();
             stream.write_all(format!("HTTP/1.1 {status}\r\nLocation: http://{addr}/redirected\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
         };
+        let client = https_client(Dns::default(), START_TIMEOUT).no_proxy();
         let (actual, ()) = timeout(Duration::from_secs(3), async {
-            tokio::join!(https(config, url, compatible, &pcm), mock)
+            tokio::join!(https(config, url, compatible, &pcm, client), mock)
         })
         .await
         .unwrap();
         assert_eq!(actual.as_deref().map_err(|error| *error), expected);
+    }
+}
+
+const STALLED_HOST: &str = "voice-stalled.example.org.";
+const TEST_WAIT: Duration = Duration::from_secs(3);
+
+// 测试目的：确认 HTTPS 保留 HTTP 代理代解析的行为，并将识别服务原主机名传给代理。
+// 测试方法：由环回 DNS 只回答代理域名，检查环回代理收到指向原识别服务的 CONNECT。
+#[tokio::test]
+async fn https_proxy_resolves_locally_and_receives_the_original_target() {
+    const PROXY_HOST: &str = "voice-proxy.example.org.";
+    let (dns_socket, dns) = stalled_dns();
+    dns_socket.set_nonblocking(true).unwrap();
+    let dns_socket = tokio::net::UdpSocket::from_std(dns_socket).unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let proxy = reqwest::Proxy::https(format!(
+        "http://{PROXY_HOST}:{}",
+        listener.local_addr().unwrap().port()
+    ))
+    .unwrap();
+    let client = https_client(dns, START_TIMEOUT).proxy(proxy);
+    let url = Url::parse(&format!("https://{STALLED_HOST}/v1/chat/completions")).unwrap();
+    let config = config(url.clone(), "test");
+    let mock = async {
+        let mut packet = [0; 512];
+        let (len, source) = dns_socket.recv_from(&mut packet).await.unwrap();
+        let mut message = DnsMessage::from_vec(&packet[..len]).unwrap();
+        let name = message.queries()[0].name().clone();
+        assert_eq!(name.to_utf8(), PROXY_HOST);
+        message
+            .set_message_type(MessageType::Response)
+            .add_answer(Record::from_rdata(name, 60, RData::A(A::new(127, 0, 0, 1))));
+        dns_socket
+            .send_to(&message.to_vec().unwrap(), source)
+            .await
+            .unwrap();
+
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let expected = format!("CONNECT {STALLED_HOST}:443 HTTP/1.1\r\n");
+        let mut first_line = vec![0; expected.len()];
+        stream.read_exact(&mut first_line).await.unwrap();
+        assert_eq!(first_line, expected.as_bytes());
+    };
+    let (result, ()) = timeout(TEST_WAIT, async {
+        tokio::join!(https(config, url, true, &[0; 2], client), mock)
+    })
+    .await
+    .unwrap();
+    assert_eq!(result, Err("asr_network"));
+}
+
+fn stalled_dns() -> (UdpSocket, Dns) {
+    let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
+    socket.set_read_timeout(Some(TEST_WAIT)).unwrap();
+    let nameserver = NameServerConfig::new(socket.local_addr().unwrap(), Protocol::Udp);
+    let config = ResolverConfig::from_parts(None, vec![], vec![nameserver]);
+    let mut resolver =
+        TokioResolver::builder_with_config(config, TokioConnectionProvider::default());
+    let options = resolver.options_mut();
+    options.timeout = Duration::from_secs(60);
+    options.ip_strategy = LookupIpStrategy::Ipv4Only;
+    options.use_hosts_file = ResolveHosts::Never;
+    let dns = Dns(Arc::new(OnceCell::with_value(resolver.build())));
+    (socket, dns)
+}
+
+fn wait_for_dns_query(socket: &UdpSocket, host: &str) {
+    let mut packet = [0; 512];
+    let (len, _) = socket
+        .recv_from(&mut packet)
+        .expect("ASR did not reach DNS");
+    let message = DnsMessage::from_vec(&packet[..len]).unwrap();
+    assert_eq!(message.queries()[0].name().to_utf8(), host);
+}
+
+fn dns_worker(scheme: &str, dns: Dns, start_timeout: Duration) -> crate::Worker<Result<String>> {
+    let url = Url::parse(&format!("{scheme}://{STALLED_HOST}/v1")).unwrap();
+    let config = config(url.clone(), "test");
+    crate::recognition_worker(async move {
+        if url.scheme() == "wss" {
+            streaming(config, vec![0; 2], dns, start_timeout).await
+        } else {
+            let client = https_client(dns, start_timeout).no_proxy();
+            https(config, url, true, &[0; 2], client).await
+        }
+    })
+    .unwrap()
+}
+
+fn before_test_deadline<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> T {
+    let (done, result) = mpsc::channel();
+    let thread = thread::spawn(move || done.send(work()).unwrap());
+    let value = result
+        .recv_timeout(TEST_WAIT)
+        .expect("ASR worker did not join before the deadline");
+    thread.join().unwrap();
+    value
+}
+
+// 测试目的：确认宿主丢弃识别任务时，WSS 和 HTTPS 的慢 DNS 不会拖住工作线程退出。
+// 测试方法：等待环回 DNS 收到查询，保持套接字开放且不响应，然后丢弃工作线程句柄并检查 join 及时完成。
+#[test]
+fn worker_cancellation_joins_while_dns_is_pending() {
+    for scheme in ["wss", "https"] {
+        let (socket, dns) = stalled_dns();
+        let worker = dns_worker(scheme, dns, START_TIMEOUT);
+        wait_for_dns_query(&socket, STALLED_HOST);
+        before_test_deadline(move || drop(worker));
+    }
+}
+
+// 测试目的：确认连接期限包含 WSS 和 HTTPS 的 DNS，并且工作线程及时上报 asr_timeout。
+// 测试方法：让环回 DNS 收到查询后保持沉默，设置比 DNS 自身期限短的连接期限，在外层时限内等待工作线程结果。
+#[test]
+fn worker_reports_connection_timeout_while_dns_is_pending() {
+    for scheme in ["wss", "https"] {
+        let (socket, dns) = stalled_dns();
+        let worker = dns_worker(scheme, dns, Duration::from_millis(500));
+        wait_for_dns_query(&socket, STALLED_HOST);
+        let result = before_test_deadline(move || {
+            tokio::runtime::Builder::new_current_thread()
+                .build()
+                .unwrap()
+                .block_on(worker.result())
+        });
+        assert_eq!(result.unwrap(), Err("asr_timeout"), "{scheme}");
     }
 }

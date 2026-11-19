@@ -175,6 +175,14 @@ async fn load_config() -> Result<Config, &'static str> {
 }
 
 async fn transcribe(config: Config, pcm: Vec<u8>) -> Result<String, &'static str> {
+    recognition_worker(asr::recognize(config, pcm))?
+        .result()
+        .await?
+}
+
+fn recognition_worker(
+    recognize: impl Future<Output = Result<String, &'static str>> + Send + 'static,
+) -> Result<Worker<Result<String, &'static str>>, &'static str> {
     Worker::spawn(move |canceled| {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -184,12 +192,10 @@ async fn transcribe(config: Config, pcm: Vec<u8>) -> Result<String, &'static str
             tokio::select! {
                 biased;
                 _ = canceled => Err("asr_canceled"),
-                result = asr::recognize(config, pcm) => result,
+                result = recognize => result,
             }
         })
-    })?
-    .result()
-    .await?
+    })
 }
 
 fn audio_error(error: OsError) -> &'static str {
@@ -211,7 +217,7 @@ async fn capture(os: &dyn OsServices, seconds: u64) -> Result<Vec<u8>, &'static 
     let max_pcm = ((seconds as usize + 1) * asr::PCM_PER_SECOND).min(MAX_PCM_BYTES);
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(audio_error)?;
-        if !chunk.chunks_exact(2).remainder().is_empty() {
+        if chunk.len() & 1 != 0 {
             return Err("invalid_audio");
         }
         if chunk.len() > max_pcm - pcm.len() {

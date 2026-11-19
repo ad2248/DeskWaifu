@@ -1,12 +1,23 @@
 use crate::config::Config;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use futures_util::{SinkExt, StreamExt};
-use reqwest::{Url, header::AUTHORIZATION};
+use hickory_resolver::{
+    ResolveError, TokioResolver, config::LookupIpStrategy, lookup_ip::LookupIp,
+};
+use once_cell::sync::OnceCell;
+use reqwest::{
+    Url,
+    dns::{Addrs, Name, Resolve, Resolving},
+    header::AUTHORIZATION,
+};
 use serde_json::{Value, json};
-use std::time::Duration;
-use tokio::time::{Instant, sleep_until, timeout};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
+use tokio::{
+    net::TcpStream,
+    time::{Instant, sleep_until, timeout},
+};
 use tokio_tungstenite::{
-    connect_async_with_config,
+    client_async_tls_with_config,
     tungstenite::{self, Message, client::IntoClientRequest, protocol::WebSocketConfig},
 };
 use uuid::Uuid;
@@ -22,24 +33,78 @@ const NATIVE_PATH: &str = "/api/v1/services/aigc/multimodal-generation/generatio
 
 type Result<T> = std::result::Result<T, &'static str>;
 
+#[derive(Clone, Default)]
+struct Dns(Arc<OnceCell<TokioResolver>>);
+
+impl Dns {
+    async fn lookup(&self, host: &str) -> std::result::Result<LookupIp, ResolveError> {
+        // 延迟读取系统配置，直连 IP 或代理代解析时无需初始化 DNS。
+        let resolver = self
+            .0
+            .get_or_try_init(|| -> std::result::Result<_, ResolveError> {
+                let mut builder = TokioResolver::builder_tokio()?;
+                builder.options_mut().ip_strategy = LookupIpStrategy::Ipv4AndIpv6;
+                Ok(builder.build())
+            })?;
+        resolver.lookup_ip(host).await
+    }
+
+    async fn connect_websocket_tcp(&self, endpoint: &Url) -> Result<TcpStream> {
+        let port = endpoint.port_or_known_default().ok_or("invalid_config")?;
+        let stream = match endpoint.host().ok_or("invalid_config")? {
+            url::Host::Domain(host) => {
+                let addrs: Vec<_> = self
+                    .lookup(host)
+                    .await
+                    .map_err(|_| "asr_network")?
+                    .iter()
+                    .map(|ip| SocketAddr::new(ip, port))
+                    .collect();
+                TcpStream::connect(addrs.as_slice()).await
+            }
+            url::Host::Ipv4(ip) => TcpStream::connect(SocketAddr::new(ip.into(), port)).await,
+            url::Host::Ipv6(ip) => TcpStream::connect(SocketAddr::new(ip.into(), port)).await,
+        }
+        .map_err(|_| "asr_network")?;
+        stream.set_nodelay(true).map_err(|_| "asr_network")?;
+        Ok(stream)
+    }
+}
+
+impl Resolve for Dns {
+    fn resolve(&self, name: Name) -> Resolving {
+        let dns = self.clone();
+        Box::pin(async move {
+            let lookup = dns.lookup(name.as_str()).await?;
+            let addrs: Addrs = Box::new(lookup.into_iter().map(|ip| SocketAddr::new(ip, 0)));
+            Ok(addrs)
+        })
+    }
+}
+
 pub async fn recognize(config: Config, pcm: Vec<u8>) -> Result<String> {
     if pcm.is_empty() {
         return Err("no_audio");
     }
-    if !pcm.chunks_exact(2).remainder().is_empty() {
+    if pcm.len() & 1 != 0 {
         return Err("invalid_audio");
     }
+    let dns = Dns::default();
     if config.endpoint.scheme() == "wss" {
         let deadline =
             RESPONSE_TIMEOUT + Duration::from_millis((pcm.len() + TAIL_BYTES) as u64 / 32);
-        timeout(deadline, streaming(config, pcm, START_TIMEOUT))
+        timeout(deadline, streaming(config, pcm, dns, START_TIMEOUT))
             .await
             .map_err(|_| "asr_timeout")?
     } else {
         let (url, compatible) = http_endpoint(config.endpoint.clone(), &config.model);
-        timeout(RESPONSE_TIMEOUT, https(config, url, compatible, &pcm))
-            .await
-            .map_err(|_| "asr_timeout")?
+        let client = https_client(dns, START_TIMEOUT);
+        timeout(
+            RESPONSE_TIMEOUT,
+            https(config, url, compatible, &pcm, client),
+        )
+        .await
+        .map_err(|_| "asr_timeout")?
     }
 }
 
@@ -80,7 +145,12 @@ fn checked_text(text: String) -> Result<String> {
     }
 }
 
-async fn streaming(config: Config, mut pcm: Vec<u8>, start_timeout: Duration) -> Result<String> {
+async fn streaming(
+    config: Config,
+    mut pcm: Vec<u8>,
+    dns: Dns,
+    start_timeout: Duration,
+) -> Result<String> {
     let mut request = config
         .endpoint
         .as_str()
@@ -91,10 +161,13 @@ async fn streaming(config: Config, mut pcm: Vec<u8>, start_timeout: Duration) ->
         .insert(AUTHORIZATION, config.authorization.ok_or("not_configured")?);
     let id = Uuid::new_v4().to_string();
     let (mut socket, ()) = timeout(start_timeout, async {
-        let (mut socket, _) = connect_async_with_config(
+        let stream = dns.connect_websocket_tcp(&config.endpoint).await?;
+        // 仅 TCP 使用解析地址，TLS 和 WebSocket 握手仍使用原请求的主机名。
+        let (mut socket, _) = client_async_tls_with_config(
             request,
+            stream,
             Some(WebSocketConfig::default().max_message_size(Some(MAX_TEXT)).max_frame_size(Some(MAX_TEXT))),
-            true,
+            None,
         ).await.map_err(ws_error)?;
         socket.send(Message::Text(json!({
             "header": {"action": "run-task", "task_id": id, "streaming": "duplex"},
@@ -196,13 +269,23 @@ fn wav(pcm: &[u8]) -> Vec<u8> {
     wav
 }
 
-async fn https(config: Config, url: Url, compatible: bool, pcm: &[u8]) -> Result<String> {
-    let client = reqwest::Client::builder()
+fn https_client(dns: Dns, connect_timeout: Duration) -> reqwest::ClientBuilder {
+    reqwest::Client::builder()
+        // 让 reqwest 根据代理配置决定本地解析的主机，保留 CONNECT 和 TLS 的目标名。
+        .dns_resolver2(dns)
         .redirect(reqwest::redirect::Policy::none())
         .retry(reqwest::retry::never())
-        .connect_timeout(START_TIMEOUT)
-        .build()
-        .map_err(|_| "asr_network")?;
+        .connect_timeout(connect_timeout)
+}
+
+async fn https(
+    config: Config,
+    url: Url,
+    compatible: bool,
+    pcm: &[u8],
+    client: reqwest::ClientBuilder,
+) -> Result<String> {
+    let client = client.build().map_err(|_| "asr_network")?;
     let data = format!("data:audio/wav;base64,{}", STANDARD.encode(wav(pcm)));
     let messages = json!([{"role": "user", "content": [{"type": "input_audio", "input_audio": {"data": data}}]}]);
     let (mut request, body) = if compatible {
