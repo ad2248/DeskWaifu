@@ -29,10 +29,13 @@ jobs:
           persist-credentials: false
       - name: Format
         run: cargo fmt --all --check
-      - name: Fetch locked dependencies including test dependencies
-        env:
-          https_proxy: http://100.64.0.11:7912
-        run: cargo fetch --locked
+      - name: Configure bundled Cargo dependencies
+        run: |
+          test -r /opt/deskwaifu-cargo/config.toml || {
+            echo 'CI image is missing Cargo dependencies. Rebuild the runner image for this Cargo.lock.' >&2
+            exit 1
+          }
+          install -Dm644 /opt/deskwaifu-cargo/config.toml "${CARGO_HOME:-$HOME/.cargo}/config.toml"
       - name: Build host and stage plugins
         run: bash scripts/ci-sccache.sh /cache/sccache-rust-test env CARGO_NET_OFFLINE=true bash scripts/build.sh
       - name: Lint
@@ -63,7 +66,7 @@ jobs:
       - name: Build Arch package
         env:
           DESKWAIFU_CI_SCCACHE: '1'
-          https_proxy: http://100.64.0.11:7912
+          DESKWAIFU_CI_OFFLINE: '1'
         run: |
           export RELEASE_COMMIT="$(git rev-parse HEAD)"
           export RELEASE_TAG="0.0.0.r$RELEASE_COMMIT"

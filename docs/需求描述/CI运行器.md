@@ -16,7 +16,7 @@
 
 - test：cargo fmt、clippy、test、release build，以及发布与评审工具的 Python 测试。
 - package：按当前 commit 归档源码，以非 root 用户运行 makepkg，验证单一 `deskwaifu-bin` 安装包及校验和。
-- Cargo 构建使用 `--frozen`。当前只有 workspace 内依赖；引入 crates.io 依赖时需同时设计 vendoring，不能静默解除离线限制。
+- 镜像构建通过 `cargo vendor --locked` 收集依赖。Rust CI 的检查与 Arch 打包只读取镜像内的 Cargo 源。锁文件新增或更新外部依赖时，先用对应代码重建镜像并更换 Runner 镜像 ID。
 - 缓存使用 runner 已挂载的 `/cache`。Rust 检查使用 `/cache/sccache-rust-test`，Arch CI 打包使用 `/cache/sccache-rust-package`，各限 4 GiB。每个目录同时只运行一个 sccache 服务，抢锁失败或缓存不可用时直接编译。构建日志包含缓存命中统计。
 - 正式 Release 使用独立的隔离构建流程，禁用 CI 共享缓存。详见[打包说明](../../packaging/release/README.md)。
 

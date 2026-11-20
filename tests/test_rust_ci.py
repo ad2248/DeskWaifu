@@ -24,7 +24,10 @@ class RustCiTest(unittest.TestCase):
         self.assertIn('cargo build --workspace --locked', build)
         for plugin in ('libdeskwaifu_test_plugin.so', 'libdeskwaifu_voice_input.so'):
             self.assertIn(plugin, build)
-        self.assertLess(ci.index('cargo fetch --locked'), ci.index('CARGO_NET_OFFLINE=true bash scripts/build.sh'))
+        self.assertNotIn('cargo fetch', ci)
+        self.assertIn("DESKWAIFU_CI_OFFLINE: '1'", ci)
+        self.assertLess(ci.index('install -Dm644 /opt/deskwaifu-cargo/config.toml'),
+                        ci.index('CARGO_NET_OFFLINE=true bash scripts/build.sh'))
         self.assertLess(ci.index('bash scripts/build.sh'), ci.index('cargo test --workspace --frozen'))
         self.assertNotIn('runs-on: deskwaifu-arch', ci)
         self.assertNotIn('cmake ', ci)
@@ -44,8 +47,13 @@ class RustCiTest(unittest.TestCase):
 
     def test_image_contains_no_private_sources(self):
         image = (ROOT / 'Containerfile').read_text()
-        for legacy in ('COPY ', 'CubismSdk', 'qt6-', 'onnxruntime'):
+        for legacy in ('CubismSdk', 'qt6-', 'onnxruntime'):
             self.assertNotIn(legacy, image)
+        self.assertEqual([line for line in image.splitlines() if line.startswith('COPY ')], [
+            'COPY Cargo.lock /tmp/workspace-Cargo.lock',
+            'COPY --from=cargo-dependencies /opt/deskwaifu-cargo /opt/deskwaifu-cargo',
+        ])
+        self.assertIn('cargo vendor --locked', image)
         script = (ROOT / 'scripts/rebuild-ci-image.sh').read_text()
         for check in ('cargo fmt', 'cargo clippy', 'cargo test', 'cargo build', 'makepkg --version'):
             self.assertIn(check, script)
