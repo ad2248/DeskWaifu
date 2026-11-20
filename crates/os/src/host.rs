@@ -1,7 +1,11 @@
 //! 平台宿主：监听 socket、驱动插件运行时，并在退出时清理资源。
 use crate::{SOCKET_PATH, Server, services::PlatformServices};
 use deskwaifu_runtime::Runtime;
-use std::{future::Future, rc::Rc};
+use std::{
+    cell::RefCell,
+    future::{Future, poll_fn},
+    rc::Rc,
+};
 use tokio::{
     signal::unix::{SignalKind, signal},
     time::Instant,
@@ -25,10 +29,13 @@ async fn run_loop(
                 None => std::future::pending::<()>().await,
             }
         };
+        // 两个分支只在同步回调或单次 poll 内借用 runtime。
+        let runtime = RefCell::new(&mut *runtime);
         tokio::select! {
             biased;
             _ = &mut shutdown => return Ok(()),
-            result = server.poll_ready(|argv| runtime.dispatch_command(argv)) => {
+            _ = poll_fn(|cx| runtime.borrow_mut().poll_local_task(cx)) => {},
+            result = server.poll_ready(|argv| runtime.borrow_mut().dispatch_command(argv)) => {
                 result.map_err(|error| format!("IPC listener: {error}"))?;
             }
             _ = timer => {},

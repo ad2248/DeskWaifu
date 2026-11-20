@@ -12,7 +12,9 @@
 │   ├── sdk/                 # Plugin、Context、命令注册等共享契约
 │   ├── runtime/             # 生命周期、命令派发、单线程调度与计时
 │   └── os/                  # 平台链接的 Unix socket / JSON IPC 组件（不是插件）
-└── plugins/test-plugin/      # 只依赖 SDK；注册 test 命令，返回收到的参数
+└── plugins/
+    ├── test-plugin/         # 注册 test 命令，返回收到的参数
+    └── voice-input/         # 定时录音、语音识别、复制
 ```
 
 依赖方向为 `deskwaifu → os → runtime → sdk`、`deskwaifu → runtime`、`deskwaifucli → os` 和 `plugin → sdk`；主程序不直接依赖具体插件，通过 runtime 加载独立 `.so`。插件对 runtime 的依赖仅用于测试。runtime 不引用具体领域插件。后续按迁移需要新增 desktop、perception、speech 等 crate；控制面板作为独立 app，Cubism 等 FFI 放在独立 bridge crate，不预先创建空模块。
@@ -30,11 +32,11 @@
 - 启动、tick 或消息处理返回错误时，宿主使所有端点失效并丢弃排队消息，再逆序停止已初始化的插件。停止某个插件失败后仍会清理其余插件。插件 panic 会继续传播。
 - 显式 `stop()` 可取得清理错误，可重复调用；Drop 仅兜底清理并忽略错误。停止后的 runtime 不可重启，插件应在 stop 中等待自己的 worker 结束。
 
-- `Context::register_command(name, help, callback)` 在初始化期间注册子命令，`help` 为字符串数组，回调接收子命令后的 `&[String]` 并返回输出或错误。重复命令和保留的 `help` 被拒绝。内建 `help` 对齐显示所有已注册命令及多行帮助。
+- `Context::register_command(name, help)` 在初始化期间登记命令名与帮助。运行时将命令分派到所属插件实例的 `Plugin::on_command`，参数原样传入。重复命令和保留的 `help` 被拒绝。内建 `help` 对齐显示所有已注册命令及多行帮助。
 
 `apps/deskwaifu` 仅负责启动主线程上的 Tokio `current_thread` 异步上下文、加载插件并调用 `deskwaifu_os::run`。`crates/os` 负责绑定和监听 socket、启动与停止插件，在该主线程上执行异步主循环、插件回调与 IPC 命令派发；按 socket 就绪事件处理 IPC，并根据插件下一次到期时间推进插件时钟，不使用固定 5 ms 轮询；无消息、无周期任务时挂起等待，繁忙时跳过错过的 tick，收到 SIGINT / SIGTERM 后停止插件并清理 socket。插件回调仍为同步接口，不应阻塞主线程。
 
-SDK 与插件 runtime 本身不引入 Qt、GPUI、Tokio 或其他执行器依赖。尚未实现 capability 请求/响应、deadline/取消、工作线程投递、渲染快照交换和完整桌宠后端。
+`Context::spawn_local` 提交异步任务，由宿主在主线程驱动。退出时，运行时先丢弃未完成的任务，再调用插件的 `stop`。SDK 与 runtime 本身不依赖 Tokio。尚未实现 capability 请求/响应、deadline/取消、工作线程投递、渲染快照交换和完整桌宠后端。
 
 ## 运行平台与测试插件
 
@@ -48,7 +50,7 @@ SDK 与插件 runtime 本身不引入 Qt、GPUI、Tokio 或其他执行器依赖
 cargo run -p deskwaifu
 ```
 
-`./scripts/build.sh --release` 会构建并部署到 `target/release/`，之后运行 `target/release/deskwaifu`。脚本执行 `cargo build --workspace --locked`，支持 `CARGO_TARGET_DIR`（默认 `target`），将对应 profile 的 `libdeskwaifu_test_plugin.so` 复制到其 `plugins/` 子目录。更换工具链或更新代码后应重新运行脚本，不要混用不同构建的主程序和插件。
+`./scripts/build.sh --release` 会构建并部署到 `target/release/`，之后运行 `target/release/deskwaifu`。脚本执行 `cargo build --workspace --locked`，支持 `CARGO_TARGET_DIR`（默认 `target`），将对应 profile 的插件复制到其 `plugins/` 子目录。更换工具链或更新代码后应重新运行脚本，不要混用不同构建的主程序和插件。
 
 ```sh
 # 终端二：调用插件子命令
@@ -67,6 +69,8 @@ socket 权限为 0600。已有路径不会被覆盖或自动删除，包括崩�
 插件通过 `Context::os()` 获取宿主共享的异步系统服务句柄。Linux 使用 PipeWire 会话的默认麦克风，按指定时长采集 16 kHz 单声道 S16LE PCM。剪贴板使用 `wl-clipboard` 的 `wl-copy` 和 `wl-paste` 读写 UTF-8 文本，单次上限为 1 MiB。运行宿主时需保留当前用户的 `XDG_RUNTIME_DIR` 和 `WAYLAND_DISPLAY`。Wayland 无焦点读写已在 Sway 1.10.1 和 wl-clipboard 2.2.1 上验证。
 
 Linux 编译需要 `pkg-config`、PipeWire 开发头文件和可供 bindgen 加载的 libclang（Arch 为 `pkgconf libpipewire clang`，Debian 为 `pkg-config libpipewire-0.3-dev libclang-dev`）。录音需要 PipeWire 守护进程及 WirePlumber 等会话管理器。可用 `wpctl status` 检查默认输入源。
+
+使用 `deskwaifucli start_voice_input` 启动定时录音。配置路径、命令和快捷键见[语音输入使用说明](<docs/语音输入.md>)。
 
 ### 动态插件部署与信任边界
 

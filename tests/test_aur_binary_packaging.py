@@ -89,6 +89,36 @@ class RustConsumerTest(unittest.TestCase):
         self.assertNotIn("SKIP", rendered)
         self.assertIn("_tag=0.9.0", rendered)
 
+    # 测试目的：确认 AUR 能验证已有清单格式的单插件发布，但不接受缺少语音插件的新源码发布。
+    # 测试方法：构造带有效校验和的单插件包，模拟读取提交固定的两版 Cargo.toml，再对比验证结果。
+    def test_consumer_selects_payload_from_verified_source_commit(self):
+        tag = "0.3.0"
+        files = ("usr/bin/deskwaifu\nusr/bin/deskwaifucli\nusr/lib/deskwaifu/deskwaifu\n"
+                 "usr/lib/deskwaifu/plugins/libdeskwaifu_test_plugin.so\n")
+        info = f"pkgname = deskwaifu-bin\npkgver = {tag}-1\narch = x86_64\n"
+        info += "".join(f"depend = {dep}\n" for dep in sorted(PRODUCER.MAIN_DEPENDS))
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            name = f"deskwaifu-bin-{tag}-1-x86_64.pkg.tar.zst"
+            (directory / name).write_bytes(b"package")
+            manifest = directory / "release-metadata.json"
+            manifest.write_text(f'{{"tag":"{tag}","commit":"{COMMIT}","pkgver":"{tag}","pkgrel":1}}')
+            (directory / "SHA256SUMS").write_text("".join(
+                f"{PRODUCER.digest(path)}  {path.name}\n" for path in sorted(directory.iterdir())))
+            for voice in (False, True):
+                members = '"plugins/test-plugin"' + (', "plugins/voice-input"' if voice else '')
+                cargo = f"[workspace]\nmembers = [{members}]\n".encode()
+                with self.subTest(voice=voice), patch.object(updater, "download", return_value=cargo) as download, \
+                        patch.object(updater.subprocess, "check_output", side_effect=[info, files]):
+                    if voice:
+                        with self.assertRaisesRegex(ValueError, "Missing package files: .*libdeskwaifu_voice_input.so"):
+                            updater.verify_assets(directory, tag, COMMIT)
+                    else:
+                        self.assertEqual(updater.verify_assets(directory, tag, COMMIT),
+                                         ([PRODUCER.digest(directory / name)], {"deskwaifu-bin": PRODUCER.MAIN_DEPENDS}))
+                    download.assert_called_once_with(
+                        f"https://raw.githubusercontent.com/{updater.REPOSITORY}/{COMMIT}/Cargo.toml")
+
     @unittest.skipUnless(shutil.which("bsdtar"), "bsdtar required")
     def test_consumer_preserves_binary_permissions(self):
         with tempfile.TemporaryDirectory() as temporary:

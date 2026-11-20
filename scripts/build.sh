@@ -17,5 +17,6 @@ fi
 cd "$root"
 target_dir=${CARGO_TARGET_DIR:-target}
 cargo build --workspace --locked --target-dir "$target_dir" "${args[@]}"
-install -Dm755 "$target_dir/$profile/libdeskwaifu_test_plugin.so" \
-    "$target_dir/$profile/plugins/libdeskwaifu_test_plugin.so"
+for plugin in libdeskwaifu_test_plugin.so libdeskwaifu_voice_input.so; do
+    install -Dm755 "$target_dir/$profile/$plugin" "$target_dir/$profile/plugins/$plugin"
+done

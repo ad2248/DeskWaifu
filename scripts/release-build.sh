@@ -35,7 +35,8 @@ mkdir -p "$work/home" "$work/packages"
 git archive --format=tar.gz --prefix=deskwaifu/ "$RELEASE_COMMIT" > "$work/deskwaifu.tar.gz"
 export SOURCE_DATE_EPOCH
 SOURCE_DATE_EPOCH=$(git show -s --format=%ct "$RELEASE_COMMIT")
-python3 "$tools_root/scripts/release-packaging.py" prepare "$work" "$RELEASE_TAG" "$RELEASE_COMMIT"
+# Retain the source-selected payload in this shell, not in the build-user directory.
+payload=$(python3 "$tools_root/scripts/release-packaging.py" prepare "$work" "$RELEASE_TAG" "$RELEASE_COMMIT")
 
 # Never grant the build user write access to the checkout or sudo. Only this new
 # scratch directory is chowned; no broad chmod/chown of the runner workspace.
@@ -84,4 +85,4 @@ runuser -u "$build_user" -- env -i PATH=/usr/bin:/bin HOME="$work/home" SOURCE_D
 output="$root/release-assets"
 mkdir "$output" # Refuse stale artifacts from another tag/run.
 cp "$work/packages/"*.pkg.tar.zst "$output/"
-python3 "$tools_root/scripts/release-packaging.py" verify "$output" "$RELEASE_TAG" "$RELEASE_COMMIT"
+python3 "$tools_root/scripts/release-packaging.py" verify "$output" "$RELEASE_TAG" "$RELEASE_COMMIT" --payload "$payload"

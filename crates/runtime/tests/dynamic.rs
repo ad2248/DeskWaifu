@@ -7,7 +7,12 @@ mod support;
 
 use deskwaifu_runtime::Runtime;
 use deskwaifu_sdk::PluginId;
-use std::{fs, path::Path, process::Command};
+use std::{
+    fs,
+    path::Path,
+    process::Command,
+    task::{Context, Poll, Waker},
+};
 
 fn compile_fixture(
     build: &support::PluginBuild,
@@ -76,6 +81,8 @@ fn clear_events(build: &support::PluginBuild) {
     fs::write(build.target.join("lifecycle.log"), "").unwrap();
 }
 
+// 测试目的：验证动态插件的加载、命令分发、失败回滚与停止时的资源释放顺序。
+// 测试方法：独立编译并加载正常、失败和冲突的插件夹具，核对命令结果及夹具记录的生命周期事件。
 #[test]
 #[allow(unsafe_code)] // Only trusted, same-toolchain fixtures are loaded; malformed files cannot execute.
 fn dynamic_plugins() {
@@ -192,20 +199,30 @@ fn dynamic_plugins() {
     );
     clear_events(&build);
 
-    // Explicit stop keeps the instance, callback and library alive until Runtime drop.
+    // 测试目的：确认显式停止先销毁挂起任务，插件实例和动态库仍由 Runtime 持有。
+    // 测试方法：提交并轮询任务至 Pending，调用两次 stop，分别检查 Runtime 析构前后的事件顺序。
     {
         let mut runtime = Runtime::new(4);
         unsafe { runtime.load_plugin(&good) }.unwrap();
         runtime.start().unwrap();
         assert_eq!(
-            runtime.dispatch_command(&["good".into()]),
+            runtime.dispatch_command(&["good".into(), "spawn".into()]),
             Ok("fixture callback".into())
         );
+        let mut cx = Context::from_waker(Waker::noop());
+        assert_eq!(runtime.poll_local_task(&mut cx), Poll::Pending);
         runtime.stop().unwrap();
         runtime.stop().unwrap();
         assert_eq!(
             events(&build),
-            ["good:create", "good:initialize", "good:start", "good:stop"]
+            [
+                "good:create",
+                "good:initialize",
+                "good:start",
+                "good:task-poll",
+                "good:task-drop",
+                "good:stop"
+            ]
         );
     }
     assert_eq!(
@@ -214,6 +231,8 @@ fn dynamic_plugins() {
             "good:create",
             "good:initialize",
             "good:start",
+            "good:task-poll",
+            "good:task-drop",
             "good:stop",
             "good:destroy",
             "good:unload"
@@ -221,11 +240,15 @@ fn dynamic_plugins() {
     );
     clear_events(&build);
 
-    // Drop also stops a running plugin before destroying it and unloading its code.
+    // 测试目的：确认 Runtime 析构时也会在停止插件和卸载动态库之前清理尚未轮询的任务。
+    // 测试方法：提交任务后直接离开作用域，核对任务销毁、插件停止、实例销毁和动态库卸载的日志顺序。
     {
         let mut runtime = Runtime::new(4);
         unsafe { runtime.load_plugin(&good) }.unwrap();
         runtime.start().unwrap();
+        runtime
+            .dispatch_command(&["good".into(), "spawn".into()])
+            .unwrap();
     }
     assert_eq!(
         events(&build),
@@ -233,6 +256,7 @@ fn dynamic_plugins() {
             "good:create",
             "good:initialize",
             "good:start",
+            "good:task-drop",
             "good:stop",
             "good:destroy",
             "good:unload"

@@ -57,6 +57,8 @@ def verify_assets(directory, tag, commit):
     # Reuse the producer's manifest, checksum and payload contract.
     release_tool("release-upload").load_assets(directory, tag, commit)
     packaging = release_tool("release-packaging")
+    # The public asset manifest is unchanged; select from the exact verified source commit.
+    payload = packaging.select_payload(download(f"https://raw.githubusercontent.com/{REPOSITORY}/{commit}/Cargo.toml"))
     checksums = []
     dependencies = {}
     for name in PACKAGES:
@@ -70,7 +72,7 @@ def verify_assets(directory, tag, commit):
                 continue
             if not entry.startswith("usr/") or ".." in Path(entry).parts:
                 raise ValueError(f"Unsupported binary package path: {entry}")
-        packaging.verify_content(name, info, files, tag)
+        packaging.verify_content(name, info, files, tag, payload)
         checksums.append(hashlib.sha256(path.read_bytes()).hexdigest())
         dependencies[name] = set(info.get("depend", []))
     return checksums, dependencies

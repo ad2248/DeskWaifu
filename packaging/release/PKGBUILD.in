@@ -23,10 +23,12 @@ build() {
 }
 
 package() {
-  install -Dm755 "$srcdir/deskwaifu/target/release/deskwaifu" "$pkgdir/usr/lib/deskwaifu/deskwaifu"
-  install -Dm755 "$srcdir/deskwaifu/target/release/deskwaifucli" "$pkgdir/usr/bin/deskwaifucli"
-  install -Dm755 "$srcdir/deskwaifu/target/release/plugins/libdeskwaifu_test_plugin.so" \
-    "$pkgdir/usr/lib/deskwaifu/plugins/libdeskwaifu_test_plugin.so"
+  install -Dm755 "$srcdir/deskwaifu/target/release/deskwaifu" "$pkgdir/usr/lib/deskwaifu/deskwaifu" || return
+  install -Dm755 "$srcdir/deskwaifu/target/release/deskwaifucli" "$pkgdir/usr/bin/deskwaifucli" || return
+  local plugin
+  for plugin in @PLUGINS@; do
+    install -Dm755 "$srcdir/deskwaifu/target/release/plugins/$plugin" "$pkgdir/usr/lib/deskwaifu/plugins/$plugin" || return
+  done
   install -dm755 "$pkgdir/usr/bin"
   ln -s ../lib/deskwaifu/deskwaifu "$pkgdir/usr/bin/deskwaifu"
 }

@@ -42,13 +42,14 @@ def archive(path, files):
             target.addfile(info, io.BytesIO(data))
 
 
-def rust_fixture():
+def rust_fixture(*, voice=True):
     """Offline workspace fixture exercising the real host + CLI + cdylib recipe."""
-    return {
-        "deskwaifu/Cargo.toml": ('[workspace]\nmembers = [".", "cli", "plugin"]\nresolver = "2"\n'
+    files = {
+        "deskwaifu/Cargo.toml": ('[workspace]\nmembers = [".", "cli", "plugins/test-plugin", "plugins/voice-input"]\nresolver = "2"\n'
                                 '[package]\nname="deskwaifu"\nversion="0.1.0"\nedition="2021"\n'),
         "deskwaifu/Cargo.lock": ('version = 4\n\n[[package]]\nname = "deskwaifu"\nversion = "0.1.0"\n'
                                 '\n[[package]]\nname = "deskwaifu-test-plugin"\nversion = "0.1.0"\n'
+                                '\n[[package]]\nname = "deskwaifu-voice-input"\nversion = "0.1.0"\n'
                                 '\n[[package]]\nname = "deskwaifucli"\nversion = "0.1.0"\n'),
         "deskwaifu/src/main.rs": ('fn main() { assert_eq!(std::env::args().len(), 1); '
                                  'println!("host fixture"); }\n'),
@@ -56,11 +57,22 @@ def rust_fixture():
                                     'edition="2021"\n'),
         "deskwaifu/cli/src/main.rs": ('fn main() { assert_eq!(std::env::args().nth(1).as_deref(), '
                                      'Some("--help")); println!("cli fixture"); }\n'),
-        "deskwaifu/plugin/Cargo.toml": ('[package]\nname="deskwaifu-test-plugin"\nversion="0.1.0"\n'
+        "deskwaifu/plugins/test-plugin/Cargo.toml": ('[package]\nname="deskwaifu-test-plugin"\nversion="0.1.0"\n'
                                        'edition="2021"\n[lib]\ncrate-type=["rlib", "cdylib"]\n'),
-        "deskwaifu/plugin/src/lib.rs": '#[no_mangle]\npub extern "C" fn fixture() {}\n',
+        "deskwaifu/plugins/test-plugin/src/lib.rs": '#[no_mangle]\npub extern "C" fn fixture() {}\n',
+        "deskwaifu/plugins/voice-input/Cargo.toml": ('[package]\nname="deskwaifu-voice-input"\nversion="0.1.0"\n'
+                                       'edition="2021"\n[lib]\ncrate-type=["rlib", "cdylib"]\n'),
+        "deskwaifu/plugins/voice-input/src/lib.rs": '#[no_mangle]\npub extern "C" fn fixture() {}\n',
         "deskwaifu/scripts/build.sh": (ROOT / "scripts/build.sh").read_text(),
     }
+    if not voice:
+        del files["deskwaifu/plugins/voice-input/Cargo.toml"], files["deskwaifu/plugins/voice-input/src/lib.rs"]
+        files["deskwaifu/Cargo.toml"] = files["deskwaifu/Cargo.toml"].replace(', "plugins/voice-input"', "")
+        files["deskwaifu/Cargo.lock"] = files["deskwaifu/Cargo.lock"].replace(
+            '\n[[package]]\nname = "deskwaifu-voice-input"\nversion = "0.1.0"\n', "")
+        files["deskwaifu/scripts/build.sh"] = files["deskwaifu/scripts/build.sh"].replace(
+            " libdeskwaifu_voice_input.so", "")
+    return files
 
 
 class PackagingTest(unittest.TestCase):
@@ -76,39 +88,44 @@ class PackagingTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "without a version constraint"):
                 packaging.verify_unversioned_dependencies(["deskwaifu-bin" + operator + "1.0"])
 
+    # 测试目的：确认发行包身份、依赖和文件清单符合约定，并要求语音识别插件随包交付。
+    # 测试方法：校验合法包，再替换元数据、加入额外文件或逐项移除必需文件，检查拒绝结果。
     def test_single_rust_payload_and_identity(self):
         info = {"pkgname": ["deskwaifu-bin"], "pkgver": ["1.2.3-1"], "arch": ["x86_64"],
                 "depend": ["glibc", "gcc-libs", "libpipewire", "wl-clipboard"]}
         required = {"usr/bin/deskwaifu", "usr/bin/deskwaifucli", "usr/lib/deskwaifu/deskwaifu",
-                    "usr/lib/deskwaifu/plugins/libdeskwaifu_test_plugin.so"}
+                    "usr/lib/deskwaifu/plugins/libdeskwaifu_test_plugin.so",
+                    "usr/lib/deskwaifu/plugins/libdeskwaifu_voice_input.so"}
         files = required | {"usr/", "usr/bin/", "usr/lib/", "usr/lib/deskwaifu/",
                             "usr/lib/deskwaifu/plugins/", ".PKGINFO", ".BUILDINFO", ".MTREE"}
-        packaging.verify_content("deskwaifu-bin", info, files, "1.2.3")
+        packaging.verify_content("deskwaifu-bin", info, files, "1.2.3", "rust-v2")
         for field, value in (("pkgname", ["deskwaifu-ocr-bin"]), ("pkgver", ["2.0-1"]),
                              ("arch", ["any"]), ("depend", ["qt6-base"])):
             with self.subTest(field=field), self.assertRaises(ValueError):
-                packaging.verify_content("deskwaifu-bin", dict(info, **{field: value}), files, "1.2.3")
+                packaging.verify_content("deskwaifu-bin", dict(info, **{field: value}), files, "1.2.3", "rust-v2")
         for extra in ("usr/lib/deskwaifu/plugins/model.so", "usr/share/models/model.onnx",
                       "usr/lib/deskwaifu/tests/run.py", "../escape", "usr/bin/deskwaifu-control"):
             with self.subTest(extra=extra), self.assertRaisesRegex(ValueError, "Unexpected package files"):
-                packaging.verify_content("deskwaifu-bin", info, files | {extra}, "1.2.3")
+                packaging.verify_content("deskwaifu-bin", info, files | {extra}, "1.2.3", "rust-v2")
         for missing in required:
             with self.subTest(missing=missing), self.assertRaisesRegex(ValueError, "Missing package files"):
-                packaging.verify_content("deskwaifu-bin", info, files - {missing}, "1.2.3")
+                packaging.verify_content("deskwaifu-bin", info, files - {missing}, "1.2.3", "rust-v2")
 
+    # 测试目的：验证真实 Arch 打包能交付宿主、CLI 和两个插件，并检查发行文件的校验和。
+    # 测试方法：用 makepkg 构建离线 Rust 夹具，解包检查安装内容，再篡改包或添加旧包验证拒绝结果。
     @unittest.skipUnless(all(shutil.which(tool) for tool in ("makepkg", "bsdtar", "fakeroot", "cargo"))
                          and os.getuid() != 0, "requires Arch tools, Cargo and nonroot user")
     def test_real_makepkg_rust_package_and_checksums(self):
         with tempfile.TemporaryDirectory(prefix="release-rust-", dir=TEMP_ROOT) as temporary:
             work = Path(temporary)
             archive(work / "deskwaifu.tar.gz", rust_fixture())
-            packaging.prepare(work, TAG, COMMIT)
+            payload = packaging.prepare(work, TAG, COMMIT)
             env = dict(os.environ, PKGDEST=str(work / "packages"), SOURCE_DATE_EPOCH="1700000000",
                        CARGO_HOME=str(work / "cargo-home"), CARGO_TARGET_DIR="target")
             result = subprocess.run(["makepkg", "--nodeps", "--noconfirm"], cwd=work, env=env,
                                     text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
             self.assertEqual(result.returncode, 0, result.stdout)
-            packaging.verify(work / "packages", TAG, COMMIT)
+            packaging.verify(work / "packages", TAG, COMMIT, payload)
             self.assertEqual(len(upload.load_assets(work / "packages", TAG, COMMIT)), 3)
             package = next((work / "packages").glob("*.pkg.tar.zst"))
             installed = work / "installed"
@@ -120,35 +137,65 @@ class PackagingTest(unittest.TestCase):
                 upload.load_assets(work / "packages", TAG, COMMIT)
             (work / "packages/deskwaifu-ocr-bin-old.pkg.tar.zst").write_bytes(b"stale")
             with self.assertRaisesRegex(ValueError, "Unexpected or missing"):
-                packaging.verify(work / "packages", TAG, COMMIT)
+                packaging.verify(work / "packages", TAG, COMMIT, payload)
 
-    def assert_installed_fixture(self, installed):
+    def assert_installed_fixture(self, installed, *, voice=True):
         executable = installed / "usr/bin/deskwaifu"
         self.assertTrue(executable.is_symlink())
         self.assertEqual(executable.resolve(), installed / "usr/lib/deskwaifu/deskwaifu")
-        plugin = executable.resolve().parent / "plugins/libdeskwaifu_test_plugin.so"
-        self.assertTrue(plugin.read_bytes().startswith(b"\x7fELF"))
+        plugins = set((executable.resolve().parent / "plugins").iterdir())
+        expected = {"libdeskwaifu_test_plugin.so"}
+        if voice:
+            expected.add("libdeskwaifu_voice_input.so")
+        self.assertEqual({plugin.name for plugin in plugins}, expected)
+        for plugin in plugins:
+            self.assertTrue(plugin.read_bytes().startswith(b"\x7fELF"))
         self.assertEqual(subprocess.check_output([str(executable)], text=True), "host fixture\n")
         cli = installed / "usr/bin/deskwaifucli"
         self.assertFalse(cli.is_symlink())
         self.assertTrue(cli.read_bytes().startswith(b"\x7fELF"))
         self.assertEqual(subprocess.check_output([str(cli), "--help"], text=True), "cli fixture\n")
 
+    # 测试目的：确认当前配方可打包旧版和语音版 Rust 源码，且语音版缺少插件时必须失败。
+    # 测试方法：用两版源码存档生成配方并离线构建，核对安装和校验清单；删除语音版产物后重试打包与校验。
     @unittest.skipUnless(shutil.which("cargo"), "requires Cargo")
     def test_real_rust_fixture_build_and_install_without_arch_tools(self):
-        with tempfile.TemporaryDirectory(prefix="release-fixture-", dir=TEMP_ROOT) as temporary:
-            work = Path(temporary)
-            for name, content in rust_fixture().items():
-                path = work / "src" / name
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(content)
-            env = dict(os.environ, srcdir=str(work / "src"), pkgdir=str(work / "installed"),
-                       CARGO_HOME=str(work / "cargo-home"), CARGO_TARGET_DIR="target")
-            result = subprocess.run(["bash", "-euc", 'source "$1"; build; package', "_",
-                                     str(ROOT / "packaging/release/PKGBUILD.in")], env=env,
-                                    capture_output=True, text=True)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assert_installed_fixture(work / "installed")
+        for voice, expected_payload in ((False, "rust-v1"), (True, "rust-v2")):
+            with self.subTest(voice=voice), tempfile.TemporaryDirectory(dir=TEMP_ROOT) as temporary:
+                work = Path(temporary)
+                fixture = rust_fixture(voice=voice)
+                archive(work / "deskwaifu.tar.gz", fixture)
+                payload = packaging.prepare(work, TAG, COMMIT)
+                for name, content in fixture.items():
+                    path = work / "src" / name
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text(content)
+                installed = work / "installed"
+                env = dict(os.environ, srcdir=str(work / "src"), pkgdir=str(installed),
+                           CARGO_HOME=str(work / "cargo-home"), CARGO_TARGET_DIR="target")
+                recipe = str(work / "PKGBUILD")
+                result = subprocess.run(["bash", "-euc", 'source "$1"; build; package', "_", recipe],
+                                        env=env, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(payload, expected_payload)
+                self.assert_installed_fixture(installed, voice=voice)
+                info = {"pkgname": ["deskwaifu-bin"], "pkgver": [TAG + "-1"], "arch": ["x86_64"],
+                        "depend": sorted(packaging.MAIN_DEPENDS)}
+                files = {str(path.relative_to(installed)) for path in installed.rglob("*") if not path.is_dir()}
+                packaging.verify_content("deskwaifu-bin", info, files, TAG, payload)
+
+                if voice:
+                    plugin = "libdeskwaifu_voice_input.so"
+                    (work / "src/deskwaifu/target/release/plugins" / plugin).unlink()
+                    # package() must propagate install errors even without `set -e`.
+                    result = subprocess.run(["bash", "-uc", 'source "$1"; package', "_", recipe],
+                                            env=dict(env, pkgdir=str(work / "incomplete")),
+                                            capture_output=True, text=True)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn(plugin, result.stderr)
+                    with self.assertRaisesRegex(ValueError, f"Missing package files: .*{plugin}"):
+                        packaging.verify_content("deskwaifu-bin", info,
+                                                 files - {f"usr/lib/deskwaifu/plugins/{plugin}"}, TAG, payload)
 
     def test_rust_release_uses_offline_locked_build_without_private_dependencies(self):
         recipe = (ROOT / "packaging/release/PKGBUILD.in").read_text()
@@ -237,6 +284,8 @@ with open({str(log)!r}, "a") as stream:
         self.assertIn('PACKAGER="DeskWaifu reproducible build"', (ROOT / "Containerfile").read_text())
 
 
+    # 测试目的：确认检出旧标签后仍使用当前工具，且载荷服从旧标签源码而非检出前的分支。
+    # 测试方法：在临时 Git 仓库标记单插件版本，再向分支加入语音插件；用保留的工具渲染旧标签配方并检查结果。
     def test_current_tools_survive_checkout_of_historical_tag(self):
         with tempfile.TemporaryDirectory(prefix="release-historical-tools-", dir=TEMP_ROOT) as temporary:
             root = Path(temporary)
@@ -248,11 +297,13 @@ with open({str(log)!r}, "a") as stream:
             (repo / "scripts").mkdir()
             historical = repo / "scripts/release-packaging.py"
             historical.write_text('raise RuntimeError("historical packaging must not run")\n')
+            (repo / "Cargo.toml").write_text(rust_fixture(voice=False)["deskwaifu/Cargo.toml"])
             git("add", ".")
             git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "historical")
             commit = git("rev-parse", "HEAD")
             git("tag", "0.1.0")
             historical.write_text("# newer source\n")
+            (repo / "Cargo.toml").write_text(rust_fixture()["deskwaifu/Cargo.toml"])
             git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-am", "later")
             env_file = root / "env"
             env = dict(os.environ, RELEASE_EVENT="workflow_dispatch", RELEASE_REF="refs/heads/main",
@@ -267,21 +318,25 @@ with open({str(log)!r}, "a") as stream:
             self.assertIn("historical packaging must not run", historical.read_text())
             acquired = root / "acquired"
             acquired.mkdir()
-            (acquired / "deskwaifu.tar.gz").write_bytes(b"source")
-            subprocess.run([sys.executable, "-B", str(tools / "scripts/release-packaging.py"),
-                            "prepare", str(acquired), "0.1.0", commit], check=True)
-            self.assertIn("pkgver=0.1.0\n", (acquired / "PKGBUILD").read_text())
+            (acquired / "deskwaifu.tar.gz").write_bytes(subprocess.check_output(
+                ["git", "archive", "--format=tar.gz", "--prefix=deskwaifu/", commit], cwd=repo))
+            payload = subprocess.check_output([sys.executable, "-B", str(tools / "scripts/release-packaging.py"),
+                                               "prepare", str(acquired), "0.1.0", commit], text=True).strip()
+            self.assertEqual(payload, "rust-v1")
+            recipe = (acquired / "PKGBUILD").read_text()
+            self.assertIn("pkgver=0.1.0\n", recipe)
+            self.assertNotIn("libdeskwaifu_voice_input.so", recipe)
             self.assertEqual(git("rev-parse", "HEAD"), commit)
 
     def test_arbitrary_tags_are_used_as_pkgver_without_conversion(self):
         for tag in ("0.1.0", "v0.1.0", "nightly", "release/2026-10", "0.1.0-rc.1", "发布",
-                    "0.1.0+build", "@SOURCE_SHA@", "tag'$(touch SHOULD_NOT_EXIST)"):
+                    "0.1.0+build", "@SOURCE_SHA@", "@PLUGINS@", "tag'$(touch SHOULD_NOT_EXIST)"):
             with self.subTest(tag=tag):
                 self.assertEqual(source.select_tag("workflow_dispatch", "refs/heads/main", tag), tag)
                 self.assertEqual(source.select_tag("push", "refs/tags/" + tag, ""), tag)
                 with tempfile.TemporaryDirectory(prefix="release-raw-tag-", dir=TEMP_ROOT) as temporary:
                     work = Path(temporary)
-                    (work / "deskwaifu.tar.gz").write_bytes(b"source")
+                    archive(work / "deskwaifu.tar.gz", rust_fixture())
                     packaging.prepare(work, tag, COMMIT)
                     result = subprocess.check_output(["bash", "-c", '. "$1"; printf "%s" "$pkgver"',
                                                       "_", str(work / "PKGBUILD")], cwd=work, text=True)
@@ -292,7 +347,7 @@ with open({str(log)!r}, "a") as stream:
     def test_arch_incompatible_tags_fail_in_makepkg_without_fallback(self):
         with tempfile.TemporaryDirectory(prefix="release-invalid-pkgver-", dir=TEMP_ROOT) as temporary:
             work = Path(temporary)
-            (work / "deskwaifu.tar.gz").write_bytes(b"source")
+            archive(work / "deskwaifu.tar.gz", rust_fixture())
             for tag in ("release/2026", "v1.2.3-rc.1", "发布"):
                 with self.subTest(tag=tag):
                     packaging.prepare(work, tag, COMMIT)

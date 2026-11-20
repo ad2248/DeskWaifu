@@ -1,11 +1,15 @@
 //! 单线程、有界 FIFO 的进程内插件运行时，不依赖 Qt 或异步执行器。
 use deskwaifu_sdk::{
-    Command, Context, Host, Message, OsServices, Plugin, PluginId, PluginResult, PublishError,
+    Command, Context, Host, LocalFuture, Message, OsServices, Plugin, PluginId, PluginResult,
+    PublishError,
 };
+use futures_util::{Stream, stream::FuturesUnordered};
 use std::{
     any::TypeId,
     collections::{BTreeMap, HashSet, VecDeque},
+    pin::Pin,
     rc::Rc,
+    task::{self, Poll},
     thread,
     time::{Duration, Instant},
 };
@@ -24,9 +28,10 @@ struct Bus {
     capacity: usize,
     subscriptions: Vec<HashSet<TypeId>>,
     queue: VecDeque<Delivery>,
+    tasks: FuturesUnordered<LocalFuture<'static, ()>>,
 }
 
-type Commands = BTreeMap<String, (PluginId, Command)>;
+type Commands = BTreeMap<String, (PluginId, Vec<String>)>;
 
 struct ScopedHost<'a> {
     bus: &'a mut Bus,
@@ -62,8 +67,14 @@ impl Host for ScopedHost<'_> {
         if command.name == "help" || self.commands.contains_key(&command.name) {
             return Err(format!("duplicate or reserved command: {}", command.name));
         }
-        self.commands
-            .insert(command.name.clone(), (self.id, command));
+        self.commands.insert(command.name, (self.id, command.help));
+        Ok(())
+    }
+    fn spawn_local(&mut self, future: LocalFuture<'static, ()>) -> PluginResult {
+        if !self.bus.active {
+            return Err("local tasks require an active plugin context".into());
+        }
+        self.bus.tasks.push(future);
         Ok(())
     }
     fn publish(&mut self, message: Message) -> Result<(), PublishError> {
@@ -109,7 +120,7 @@ pub struct Runtime {
     state: State,
     elapsed: Duration,
     commands: Commands,
-    // 必须最后释放：实例、队列负载、命令回调及其析构代码都可能位于动态库。
+    // 必须最后释放：实例、队列负载和任务的析构代码都可能位于动态库。
     libraries: Vec<libloading::Library>,
 }
 
@@ -124,6 +135,7 @@ impl Runtime {
                 capacity,
                 subscriptions: Vec::new(),
                 queue: VecDeque::new(),
+                tasks: FuturesUnordered::new(),
             },
             state: State::Created,
             elapsed: Duration::ZERO,
@@ -231,7 +243,7 @@ impl Runtime {
     }
 
     /// 执行 CLI 来源的原始 argv（第一个参数为子命令）。
-    pub fn dispatch_command(&self, argv: &[String]) -> Result<String, String> {
+    pub fn dispatch_command(&mut self, argv: &[String]) -> Result<String, String> {
         if self.state != State::Running {
             return Err("runtime is not running".into());
         }
@@ -241,11 +253,30 @@ impl Runtime {
         if name == "help" {
             return Ok(self.help_text());
         }
-        let (_, command) = self
+        let id = self
             .commands
             .get(name)
+            .map(|(owner, _)| *owner)
             .ok_or_else(|| format!("unknown command: {name}"))?;
-        (command.callback)(&argv[1..])
+        let entry = self.entries[id.0].as_mut().expect("registered plugin");
+        let mut host = ScopedHost {
+            bus: &mut self.bus,
+            id,
+            initializing: false,
+            commands: &mut self.commands,
+        };
+        entry
+            .plugin
+            .on_command(name, &argv[1..], &mut Context::new(&mut host))
+    }
+
+    /// 在宿主事件循环上驱动已提交任务，单次报告一个任务完成。
+    /// 无任务可完成时挂起；调用者需在派发回调后重新轮询，以处理新任务。
+    pub fn poll_local_task(&mut self, cx: &mut task::Context<'_>) -> Poll<()> {
+        match Pin::new(&mut self.bus.tasks).poll_next(cx) {
+            Poll::Ready(Some(())) => Poll::Ready(()),
+            Poll::Pending | Poll::Ready(None) => Poll::Pending,
+        }
     }
 
     /// 输出内建 help 与已注册子命令，按最长命令名对齐。
@@ -258,15 +289,15 @@ impl Runtime {
             .unwrap_or(4)
             .max(4);
         let mut lines = vec![format!("{:<width$}  {}", "help", "Show available commands")];
-        for (name, (_, command)) in &self.commands {
-            for (index, text) in command.help.iter().enumerate() {
+        for (name, (_, help)) in &self.commands {
+            for (index, text) in help.iter().enumerate() {
                 lines.push(format!(
                     "{:<width$}  {}",
                     if index == 0 { name.as_str() } else { "" },
                     text
                 ));
             }
-            if command.help.is_empty() {
+            if help.is_empty() {
                 lines.push(format!("{name:<width$}"));
             }
         }
@@ -347,7 +378,8 @@ impl Runtime {
             .map(|due| due.saturating_sub(self.elapsed))
     }
 
-    /// 使用单调时钟实际运行指定时长；调用者随后显式 stop 以检查清理结果。
+    /// 使用单调时钟同步运行周期回调和消息派发；本地异步任务由宿主事件循环驱动。
+    /// 调用者随后显式 stop 以检查清理结果。
     pub fn run_for(&mut self, duration: Duration) -> PluginResult {
         if self.state != State::Running {
             return Err("runtime is not running".into());
@@ -394,13 +426,14 @@ impl Runtime {
         }
     }
 
-    /// 先统一失效、清空队列，再逆序停止剩余已初始化插件。
+    /// 先统一失效、丢弃本地任务并清空队列，再逆序停止剩余已初始化插件。
     pub fn stop(&mut self) -> PluginResult {
         if self.state == State::Stopped {
             return Ok(());
         }
         self.state = State::Stopped;
         self.bus.active = false;
+        self.bus.tasks.clear();
         self.bus.queue.clear();
         self.bus.subscriptions.iter_mut().for_each(HashSet::clear);
         let mut failures = Vec::new();
