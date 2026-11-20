@@ -16,8 +16,9 @@ if ! flock -n "$cache_lock"; then
     exec "$@"
 fi
 
-export SCCACHE_DIR="$cache_dir" SCCACHE_CACHE_SIZE=4G
-if ! sccache --start-server; then
+# Keep the lock outside the entries that sccache can evict.
+export SCCACHE_DIR="$cache_dir/entries" SCCACHE_CACHE_SIZE=4G
+if ! mkdir -p -- "$SCCACHE_DIR" || ! sccache --start-server; then
     echo 'sccache server unavailable, building without compiler cache'
     exec {cache_lock}>&-
     exec "$@"

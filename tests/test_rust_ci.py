@@ -70,6 +70,31 @@ class RustCiTest(unittest.TestCase):
             self.assertIn('build-ran', result.stdout)
             self.assertNotIn('unexpected-sccache-start', result.stdout)
 
+    # 测试目的：缓存淘汰不能删除另一个作业仍持有的目录锁。
+    # 测试方法：模拟服务在启动后淘汰缓存条目，再在第一个作业结束前启动第二个作业。
+    def test_sccache_eviction_cannot_remove_active_lock(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            cache = root / 'cache'
+            sccache = root / 'sccache'
+            sccache.write_text(
+                '#!/bin/sh\n'
+                'if [ "$1" = --start-server ]; then\n'
+                '  echo server-started\n'
+                '  rm -f -- "$SCCACHE_DIR/.lock"\n'
+                'fi\n'
+            )
+            sccache.chmod(0o755)
+            env = dict(os.environ, PATH=f'{root}{os.pathsep}{os.environ["PATH"]}')
+            wrapper = ['bash', str(ROOT / 'scripts/ci-sccache.sh'), str(cache)]
+            result = subprocess.run(
+                [*wrapper, *wrapper, 'echo', 'second-build-ran'],
+                env=env, capture_output=True, text=True, check=True, timeout=5,
+            )
+            self.assertEqual(result.stdout.count('server-started'), 1, result.stdout)
+            self.assertIn('cache busy', result.stdout)
+            self.assertIn('second-build-ran', result.stdout)
+
     def test_workspace_is_root_and_has_no_owned_cpp(self):
         self.assertTrue((ROOT / 'Cargo.lock').is_file())
         for directory in ('apps', 'crates', 'plugins'):
