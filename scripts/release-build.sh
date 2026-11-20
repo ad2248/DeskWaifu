@@ -79,9 +79,19 @@ runuser -u "$build_user" -- env -i PATH=/usr/bin:/bin HOME="$work/home" \
         cargo fetch --locked --manifest-path fetch-source/deskwaifu/Cargo.toml
         rm -rf fetch-source
     ' _ "$work"
+build_command=(makepkg --cleanbuild --noconfirm)
+if [[ ${DESKWAIFU_CI_SCCACHE:-0} == 1 && -z ${RELEASE_TOOLS_DIR:-} ]] && mountpoint -q /cache; then
+    cache_dir=/cache/sccache-rust-package
+    if [[ ! -L "$cache_dir" ]] && install -d -m 0755 -o "$build_user" -- "$cache_dir"; then
+        install -m 0644 "$tools_root/scripts/ci-sccache.sh" "$work/ci-sccache.sh"
+        build_command=(bash "$work/ci-sccache.sh" "$cache_dir" "${build_command[@]}")
+    else
+        echo 'sccache cache directory unavailable, building without compiler cache'
+    fi
+fi
 runuser -u "$build_user" -- env -i PATH=/usr/bin:/bin HOME="$work/home" SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" TZ=UTC LANG=C.UTF-8 \
     PKGDEST="$work/packages" CARGO_HOME="$work/home/.cargo" CARGO_NET_OFFLINE=true \
-    bash -euc 'cd "$1"; makepkg --cleanbuild --noconfirm' _ "$work"
+    bash -euc 'cd "$1"; shift; exec "$@"' _ "$work" "${build_command[@]}"
 output="$root/release-assets"
 mkdir "$output" # Refuse stale artifacts from another tag/run.
 cp "$work/packages/"*.pkg.tar.zst "$output/"

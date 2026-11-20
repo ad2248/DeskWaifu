@@ -18,6 +18,8 @@ podman run --rm "$image" bash -ceu '
     git --version
     bsdtar --version
     clang --version
+    sccache --version
+    command -v flock mountpoint
     pkg-config --atleast-version=0.3.44 libpipewire-0.3
     wl-copy --version
     wl-paste --version
