@@ -6,8 +6,14 @@ RUNNER_HOST=${DESKWAIFU_RUNNER_HOST:-st}
 command -v podman >/dev/null
 hash=$(git -C "$SOURCE_DIR" hash-object Containerfile)
 image="localhost/deskwaifu-rust-ci:arch-$(date -u +%Y%m%d%H%M)-${hash:0:12}"
-podman build --target ci --build-arg "PACMAN_MIRROR=${DESKWAIFU_PACMAN_MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/archlinux}" -t "$image" "$SOURCE_DIR"
-podman run --rm "$image" bash -ceu '
+podman build --target ci \
+    --build-arg "PACMAN_MIRROR=${DESKWAIFU_PACMAN_MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/archlinux}" \
+    --build-arg "CARGO_HTTPS_PROXY=${DESKWAIFU_CARGO_HTTPS_PROXY:-http://100.64.0.11:7912}" \
+    -t "$image" "$SOURCE_DIR"
+podman run --rm --network none -v "$SOURCE_DIR:/source:ro" "$image" bash -ceu '
+    export CARGO_HOME=$(mktemp -d)
+    install -m 0644 /opt/deskwaifu-cargo/config.toml "$CARGO_HOME/config.toml"
+    cargo metadata --frozen --manifest-path /source/Cargo.toml --format-version 1 >/dev/null
     rustc --version
     cargo --version
     cargo fmt --version

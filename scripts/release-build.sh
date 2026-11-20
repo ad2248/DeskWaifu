@@ -65,20 +65,30 @@ for trusted in "$root" "$tools_root"; do
         trusted=$parent
     done
 done
-# Only this dependency-acquisition phase may use the network. Fetch executes no
-# compilation/build scripts, runs without root or upload credentials, and fills
-# the same fresh CARGO_HOME that makepkg uses. Forward only proxy configuration.
-runuser -u "$build_user" -- env -i PATH=/usr/bin:/bin HOME="$work/home" \
-    CARGO_HOME="$work/home/.cargo" \
-    http_proxy="${http_proxy:-${HTTP_PROXY:-}}" https_proxy="${https_proxy:-${HTTPS_PROXY:-}}" \
-    ALL_PROXY="${ALL_PROXY:-${all_proxy:-}}" no_proxy="${no_proxy:-${NO_PROXY:-}}" \
-    bash -euc '
-        cd "$1"
-        mkdir fetch-source
-        tar -xzf deskwaifu.tar.gz -C fetch-source
-        cargo fetch --locked --manifest-path fetch-source/deskwaifu/Cargo.toml
-        rm -rf fetch-source
-    ' _ "$work"
+# CI uses the sources bundled in the runner image. Older release tags can
+# still acquire their own locked dependencies before the offline build.
+if [[ ${DESKWAIFU_CI_OFFLINE:-0} == 1 ]]; then
+    runuser -u "$build_user" -- test -r /opt/deskwaifu-cargo/config.toml || {
+        echo 'CI image is missing Cargo dependencies. Rebuild the runner image for this Cargo.lock.' >&2
+        exit 1
+    }
+    install -d -o "$build_user" "$work/home/.cargo"
+    install -m 0644 /opt/deskwaifu-cargo/config.toml "$work/home/.cargo/config.toml"
+else
+    # Only this dependency-acquisition phase may use the network. Fetch executes
+    # no build scripts and uses the same CARGO_HOME as the offline build.
+    runuser -u "$build_user" -- env -i PATH=/usr/bin:/bin HOME="$work/home" \
+        CARGO_HOME="$work/home/.cargo" \
+        http_proxy="${http_proxy:-${HTTP_PROXY:-}}" https_proxy="${https_proxy:-${HTTPS_PROXY:-}}" \
+        ALL_PROXY="${ALL_PROXY:-${all_proxy:-}}" no_proxy="${no_proxy:-${NO_PROXY:-}}" \
+        bash -euc '
+            cd "$1"
+            mkdir fetch-source
+            tar -xzf deskwaifu.tar.gz -C fetch-source
+            cargo fetch --locked --manifest-path fetch-source/deskwaifu/Cargo.toml
+            rm -rf fetch-source
+        ' _ "$work"
+fi
 build_command=(makepkg --cleanbuild --noconfirm)
 if [[ ${DESKWAIFU_CI_SCCACHE:-0} == 1 && -z ${RELEASE_TOOLS_DIR:-} ]] && mountpoint -q /cache; then
     cache_dir=/cache/sccache-rust-package

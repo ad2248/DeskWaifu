@@ -215,7 +215,7 @@ class PackagingTest(unittest.TestCase):
 
     def test_release_fetch_is_unprivileged_and_shares_offline_build_cache(self):
         script = (ROOT / "scripts/release-build.sh").read_text()
-        phase = script[script.index('# Only this dependency-acquisition phase'):script.index('output="$root/release-assets"')]
+        phase = script[script.index('# CI uses the sources bundled'):script.index('output="$root/release-assets"')]
         with tempfile.TemporaryDirectory(prefix="release-fetch-", dir=TEMP_ROOT) as temporary:
             work = Path(temporary)
             tools = work / "tools"
