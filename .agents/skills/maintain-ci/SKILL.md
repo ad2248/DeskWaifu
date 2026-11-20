@@ -18,5 +18,5 @@ description: 维护 DeskWaifu 的 Gitea Rust CI、Arch 打包和 Podman Runner�
 
 ## 验收
 
-1. 用固定镜像执行受影响的步骤，再核对 Gitea 上同一提交的作业结果。分别报告本地与线上结果。 [本机 CI 验证](<../local-ci-tests/SKILL.md>)
-2. 改动缓存时，在共享缓存卷的两个独立容器内对同一提交跑冷、热构建，比较命中数、耗时和包 SHA-256，并验证安装与 CLI。线上重跑同一提交的打包作业确认命中。
+1. 用固定镜像复用工作流步骤。Rust 检查先按 `test` 作业通过代理运行 `cargo fetch --locked`，再离线构建和测试。分别报告本地与线上同一提交的结果。 [本机 CI 验证](<../local-ci-tests/SKILL.md>)
+2. 验收打包缓存时，按 `package` 作业设置 `DESKWAIFU_CI_SCCACHE=1`，将同一个起初为空的卷挂到两个独立容器的 `/cache`，对同一提交跑冷、热构建。热跑须有实际命中。比较耗时和包 SHA-256，验证安装与 CLI，再在线上重跑打包确认命中。
