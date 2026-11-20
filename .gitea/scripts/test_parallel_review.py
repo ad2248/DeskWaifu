@@ -77,6 +77,7 @@ class ParallelReviewTest(unittest.TestCase):
                         "workdir": temp, "approval_file": str(approval),
                         "marker": "<!-- opencode-review:abc1234 -->",
                         "tested_sha": "abc1234",
+                        "acceptance_status": "0",
                     },
                 )
                 payload = json.loads((work / "payload.json").read_text())

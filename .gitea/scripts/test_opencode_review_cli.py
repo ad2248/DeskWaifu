@@ -64,8 +64,12 @@ class ReviewCliTest(unittest.TestCase):
             git("config", "user.name", "Review test")
             scripts = repo / ".gitea/scripts"
             scripts.mkdir(parents=True)
-            for name in ("opencode-review.sh", "opencode-review-action.sh", "extract-opencode-review.py"):
+            for name in ("opencode-review.sh", "opencode-review-action.sh",
+                         "extract-opencode-review.py", "resolve-review-acceptance.py"):
                 shutil.copy(SOURCE.with_name(name), scripts / name)
+            plan = repo / "计划/语音 输入.md"
+            plan.parent.mkdir()
+            plan.write_text("本期：宿主可并发查询状态。\n后续：控制面板。\n", encoding="utf-8")
             (repo / "source.txt").write_text("common ancestor\n")
             git("add", ".")
             git("commit", "-m", "fixture")
@@ -73,6 +77,7 @@ class ReviewCliTest(unittest.TestCase):
             git("checkout", "-b", "pr-source")
             (scripts / "opencode-review.sh").write_text("exit 99\n")
             (repo / "source.txt").write_text("PR head\n")
+            plan.write_text("PR 更新了本期验收要求。\n", encoding="utf-8")
             (repo / "large.txt").write_text("added PR line\n" * 40_000)
             git("add", ".")
             git("commit", "-m", "PR changes")
@@ -94,13 +99,16 @@ class ReviewCliTest(unittest.TestCase):
             tea = root / "tea"
             tea.write_text(
                 "#!/usr/bin/env python3\n"
-                "import os, pathlib, sys\n"
+                "import json, os, pathlib, sys\n"
                 "capture = pathlib.Path(os.environ['CAPTURE'])\n"
                 "if '-X' in sys.argv:\n"
                 "    payload = pathlib.Path(sys.argv[sys.argv.index('-d') + 1][1:])\n"
                 "    (capture / 'payload.json').write_text(payload.read_text())\n"
                 "elif sys.argv[2].endswith('/reviews'):\n"
                 "    print('[]')\n"
+                "elif sys.argv[2].endswith('/issues/42'):\n"
+                "    print(json.dumps({'number': 42, 'updated_at': '2026-11-20T00:00:00Z',\n"
+                "                      'title': 'Expected behavior', 'body': 'Issue acceptance criteria'}))\n"
                 "else:\n"
                 "    print((capture / 'pr.json').read_text())\n"
             )
@@ -119,16 +127,27 @@ class ReviewCliTest(unittest.TestCase):
                 "    if arg == '--file':\n"
                 "        path = pathlib.Path(sys.argv[i + 1])\n"
                 "        (capture / path.name).write_text(path.read_text())\n"
+                "pathlib.Path(os.environ['REVIEW_APPROVAL_FILE']).write_text('mock approval')\n"
                 "review = '## 结论\\n审查完成\\n## 阻塞问题\\n未发现阻塞问题\\n## 非阻塞建议\\n无'\n"
                 "print(json.dumps({'type': 'text', 'part': {'text': review}}))\n"
             )
             executable.chmod(0o755)
-            subprocess.run(["bash", ".gitea/scripts/opencode-review.sh"], cwd=repo, check=True,
-                           capture_output=True, text=True, env=os.environ | {
-                               "PATH": f"{root}:{os.environ['PATH']}", "CAPTURE": str(capture),
-                               "OPENCODE_BIN": str(executable), "REVIEW_PR_NUMBER": "7", "REVIEW_HEAD_SHA": head,
-                           })
-            context = (capture / "context.md").read_text()
+            def review(body):
+                pr["body"] = body
+                (capture / "pr.json").write_text(json.dumps(pr))
+                subprocess.run(["bash", ".gitea/scripts/opencode-review.sh"], cwd=repo, check=True,
+                               capture_output=True, text=True, env=os.environ | {
+                                   "PATH": f"{root}:{os.environ['PATH']}", "CAPTURE": str(capture),
+                                   "OPENCODE_BIN": str(executable), "REVIEW_PR_NUMBER": "7", "REVIEW_HEAD_SHA": head,
+                               })
+                return ((capture / "context.md").read_text(),
+                        json.loads((capture / "payload.json").read_text()))
+
+            # 测试目的：没有方案或 Issue 的缺陷修复仍可评审并批准。
+            # 测试方法：只传入预期行为，检查上下文及绑定当前 head 的批准事件。
+            context, payload = review("PR description: 修复空输入导致的退出。")
+            self.assertIn("来源为 PR 描述", context)
+            self.assertEqual(payload["event"], "APPROVED")
             self.assertIn(f"- Base: `release/review` (`{base}`)", context)
             self.assertIn(f"- Merge base: `{ancestor}`", context)
             self.assertIn(f"- Head: `pr-source` (`{head}`)", context)
@@ -153,7 +172,33 @@ class ReviewCliTest(unittest.TestCase):
             self.assertIn("/diff.patch", prompt)
             self.assertEqual(git("rev-parse", "HEAD"), base)
             self.assertEqual((repo / "source.txt").read_text(), "common ancestor\n")
-            self.assertEqual(json.loads((capture / "payload.json").read_text())["commit_id"], head)
+            self.assertEqual(payload["commit_id"], head)
+
+            # 测试目的：评审材料使用指定提交的方案，并引导模型区分交付项和延期项。
+            # 测试方法：两个提交分别保存不同内容，检查传入模型的上下文和审查规则。
+            context, payload = review("验收依据: base:计划/语音 输入.md\n\n本次范围：首期。")
+            self.assertIn(f"（base 提交 {base}）", context)
+            self.assertIn("本期：宿主可并发查询状态。\n后续：控制面板。", context)
+            self.assertNotIn("PR 更新了本期验收要求", context)
+            self.assertIn("方案中的后续阶段不列为本次阻塞", prompt)
+            self.assertIn("关键验收项的结论和实现或测试位置", prompt)
+            self.assertEqual(payload["event"], "APPROVED")
+            context, _ = review("验收依据: head:计划/语音 输入.md")
+            self.assertIn(f"（head 提交 {head}）", context)
+            self.assertIn("PR 更新了本期验收要求。", context)
+
+            # 测试目的：无方案时可使用关联 Issue，无法解析的显式引用会阻止批准。
+            # 测试方法：模拟 Issue API 和模型批准，核对解析结果以及 Gitea 发布事件。
+            context, _ = review("验收依据: #42")
+            self.assertIn("本仓库 Issue #42", context)
+            self.assertIn("Issue acceptance criteria", context)
+            for ref in ("base:计划/不存在.md", "#43", "main:计划/语音 输入.md"):
+                with self.subTest(ref=ref):
+                    context, payload = review(f"验收依据: {ref}")
+                    self.assertIn("验收依据无法解析", context)
+                    self.assertEqual(payload["commit_id"], head)
+                    self.assertEqual(payload["event"], "COMMENT")
+                    self.assertIn("审查脚本已暂停自动批准", payload["body"])
 
     def test_run_uses_isolated_directory_and_supported_flags(self):
         for standalone in (False, True):
