@@ -251,6 +251,8 @@ else:
     assert (home / "fetched").exists()
     assert os.environ["CARGO_NET_OFFLINE"] == "true"
     assert "https_proxy" not in os.environ
+    assert "RUSTC_WRAPPER" not in os.environ
+    assert "SCCACHE_DIR" not in os.environ
 assert "RELEASE_UPLOAD" not in os.environ
 assert "GITEA_TOKEN" not in os.environ
 with open({str(log)!r}, "a") as stream:
@@ -260,6 +262,8 @@ with open({str(log)!r}, "a") as stream:
             env = dict(os.environ, PATH=str(tools) + os.pathsep + os.environ["PATH"],
                        build_user="fixture-user", work=str(work), SOURCE_DATE_EPOCH="1700000000",
                        RELEASE_UPLOAD="must-not-leak", GITEA_TOKEN="must-not-leak",
+                       RUSTC_WRAPPER="sccache", SCCACHE_DIR="/cache/sccache-rust-package",
+                       DESKWAIFU_CI_SCCACHE="1", RELEASE_TOOLS_DIR=str(work),
                        https_proxy="http://proxy.invalid:1234")
             result = subprocess.run(["bash", "-euc", phase], env=env, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

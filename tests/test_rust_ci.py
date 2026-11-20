@@ -1,5 +1,9 @@
 """Keep the Rust-only build and runner boundaries explicit."""
 from pathlib import Path
+import fcntl
+import os
+import subprocess
+import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -46,6 +50,25 @@ class RustCiTest(unittest.TestCase):
         for check in ('cargo fmt', 'cargo clippy', 'cargo test', 'cargo build', 'makepkg --version'):
             self.assertIn(check, script)
         self.assertIn('deskwaifu-rust:docker://', script)
+
+    # 测试目的：防止两个并行作业启动访问同一磁盘缓存的 sccache 服务。
+    # 测试方法：先持有目录锁，再执行缓存入口并确认构建照常运行且没有启动服务。
+    def test_busy_sccache_runs_build_without_starting_server(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sccache = root / 'sccache'
+            sccache.write_text('#!/bin/sh\necho unexpected-sccache-start\nexit 1\n')
+            sccache.chmod(0o755)
+            env = dict(os.environ, PATH=f'{root}{os.pathsep}{os.environ["PATH"]}')
+            with (root / '.lock').open('a') as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX)
+                result = subprocess.run(
+                    ['bash', str(ROOT / 'scripts/ci-sccache.sh'), str(root), 'echo', 'build-ran'],
+                    env=env, capture_output=True, text=True, check=True, timeout=5,
+                )
+            self.assertIn('cache busy', result.stdout)
+            self.assertIn('build-ran', result.stdout)
+            self.assertNotIn('unexpected-sccache-start', result.stdout)
 
     def test_workspace_is_root_and_has_no_owned_cpp(self):
         self.assertTrue((ROOT / 'Cargo.lock').is_file())
