@@ -12,7 +12,6 @@ use std::{cell::RefCell, rc::Rc, thread, time::Duration};
 use uuid::Uuid;
 
 const MAX_IPC_FRAME: usize = 64 * 1024;
-const SETTINGS_REFRESH_INTERVAL: Duration = Duration::from_secs(2);
 // 平台服务交付在截止点前收到的完整设备块。
 // 允许最后一个设备块跨越采集截止点，同时限制最大录音的内存占用。
 const MAX_PCM_BYTES: usize = 301 * asr::PCM_PER_SECOND;
@@ -26,8 +25,6 @@ struct VoiceInput {
 struct State {
     session: Option<Session>,
     settings: Settings,
-    settings_epoch: u64,
-    refreshing: bool,
 }
 
 struct Settings {
@@ -169,11 +166,6 @@ impl<T> Drop for Worker<T> {
     }
 }
 
-async fn load_config() -> Result<Config, &'static str> {
-    let path = config::path();
-    Worker::spawn(move |_| Config::load(path))?.result().await?
-}
-
 async fn transcribe(config: Config, pcm: Vec<u8>) -> Result<String, &'static str> {
     recognition_worker(asr::recognize(config, pcm))?
         .result()
@@ -253,10 +245,9 @@ async fn copy(os: &dyn OsServices, state: &RefCell<State>, text: String) {
 async fn record_and_recognize(
     os: &dyn OsServices,
     state: &RefCell<State>,
+    config: Result<Config, &'static str>,
 ) -> Result<String, &'static str> {
-    let result = load_config().await;
-    state.borrow_mut().settings = Settings::update(&result);
-    let config = result?;
+    let config = config?;
     let seconds = config.max_recording_seconds;
     state.borrow_mut().session().seconds = Some(seconds);
     if config.authorization.is_none() {
@@ -268,8 +259,12 @@ async fn record_and_recognize(
     transcribe(config, pcm).await
 }
 
-async fn run_session(os: Rc<dyn OsServices>, state: Rc<RefCell<State>>) {
-    match record_and_recognize(os.as_ref(), &state).await {
+async fn run_session(
+    os: Rc<dyn OsServices>,
+    state: Rc<RefCell<State>>,
+    config: Result<Config, &'static str>,
+) {
+    match record_and_recognize(os.as_ref(), &state, config).await {
         Ok(text) => {
             {
                 let mut state = state.borrow_mut();
@@ -307,7 +302,7 @@ fn result_json(session: &Session) -> Result<String, String> {
 }
 
 impl Plugin for VoiceInput {
-    fn name(&self) -> &str {
+    fn plugin_id(&self) -> &str {
         "voice_input"
     }
 
@@ -333,33 +328,30 @@ impl Plugin for VoiceInput {
         ] {
             cx.register_command(name, vec![help.into()])?;
         }
-        Ok(())
+        cx.register_panel_tab(deskwaifu_sdk::PanelTab {
+            id: "recording".into(),
+            title: "语音输入".into(),
+            order: 20,
+            query: None,
+            sections: vec![deskwaifu_sdk::PanelSection {
+                title: "录音与识别".into(),
+                actions: [
+                    ("录音", "start_voice_input"),
+                    ("状态", "get_voice_input_status"),
+                    ("设置", "get_voice_input_settings"),
+                ]
+                .into_iter()
+                .map(|(label, command)| deskwaifu_sdk::PanelAction {
+                    label: label.into(),
+                    args: vec![command.into()],
+                })
+                .collect(),
+            }],
+        })
     }
 
     fn start(&mut self, cx: &mut Context<'_>) -> PluginResult {
-        self.tick(cx)
-    }
-
-    fn tick_interval(&self) -> Option<Duration> {
-        Some(SETTINGS_REFRESH_INTERVAL)
-    }
-
-    fn tick(&mut self, cx: &mut Context<'_>) -> PluginResult {
-        let mut snapshot = self.state.borrow_mut();
-        if snapshot.refreshing {
-            return Ok(());
-        }
-        let epoch = snapshot.settings_epoch;
-        let shared = self.state.clone();
-        cx.spawn_local(async move {
-            let config = load_config().await;
-            let mut state = shared.borrow_mut();
-            state.refreshing = false;
-            if state.settings_epoch == epoch {
-                state.settings = Settings::update(&config);
-            }
-        })?;
-        snapshot.refreshing = true;
+        self.state.borrow_mut().settings = Settings::update(&Config::from_section(cx.config()));
         Ok(())
     }
 
@@ -388,8 +380,9 @@ impl Plugin for VoiceInput {
                 {
                     return Err("busy".into());
                 }
-                cx.spawn_local(run_session(cx.os(), self.state.clone()))?;
-                state.settings_epoch = state.settings_epoch.wrapping_add(1);
+                let config = Config::from_section(cx.config());
+                state.settings = Settings::update(&config);
+                cx.spawn_local(run_session(cx.os(), self.state.clone(), config))?;
                 state.session = Some(Session {
                     id: Uuid::new_v4().to_string(),
                     phase: Phase::Preparing,

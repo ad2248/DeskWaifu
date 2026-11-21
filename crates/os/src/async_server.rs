@@ -21,10 +21,22 @@ impl Server {
     #[allow(deprecated)]
     pub async fn poll_ready(
         &mut self,
-        handler: impl FnMut(&[String]) -> Result<String, String>,
+        mut handler: impl FnMut(&[String]) -> Result<String, String>,
+    ) -> io::Result<()> {
+        self.poll_ready_connections(|_, argv| handler(argv), |_| {})
+            .await
+    }
+
+    /// 异步驱动 IPC，并为每个关闭的连接调用一次 disconnect。
+    #[allow(deprecated)]
+    pub async fn poll_ready_connections(
+        &mut self,
+        handler: impl FnMut(ConnectionId, &[String]) -> Result<String, String>,
+        disconnect: impl FnMut(ConnectionId),
     ) -> io::Result<()> {
         self.poll_ready_with(
             handler,
+            disconnect,
             |stream| AsyncFd::new(stream.try_clone()?),
             |listener| listener.accept().map(|(stream, _)| stream),
         )
@@ -34,28 +46,35 @@ impl Server {
     #[allow(deprecated)]
     async fn poll_ready_with(
         &mut self,
-        mut handler: impl FnMut(&[String]) -> Result<String, String>,
+        mut handler: impl FnMut(ConnectionId, &[String]) -> Result<String, String>,
+        mut disconnect: impl FnMut(ConnectionId),
         mut register_client: impl FnMut(&UnixStream) -> io::Result<AsyncFd<UnixStream>>,
         mut accept_client: impl FnMut(&UnixListener) -> io::Result<UnixStream>,
     ) -> io::Result<()> {
         if self.readiness.is_none() {
             self.readiness = Some(AsyncFd::new(self.listener.try_clone()?)?);
         }
-        self.clients.retain_mut(|client| {
-            if client.readiness.is_some() {
-                return true;
-            }
-            match register_client(&client.stream) {
-                Ok(readiness) => {
-                    client.readiness = Some(readiness);
-                    true
+        if self.retain_clients(
+            |client| {
+                if client.readiness.is_some() {
+                    return true;
                 }
-                Err(error) => {
-                    eprintln!("IPC client registration: {error}");
-                    false
+                match register_client(&client.stream) {
+                    Ok(readiness) => {
+                        client.readiness = Some(readiness);
+                        true
+                    }
+                    Err(error) => {
+                        eprintln!("IPC client registration: {error}");
+                        false
+                    }
                 }
-            }
-        });
+            },
+            &mut disconnect,
+        ) {
+            // 已处理断开事件，不再等待其他连接可读写。
+            return Ok(());
+        }
 
         self.accept_retry_at = self.accept_retry_at.filter(|retry| *retry > Instant::now());
         let deadline = self
@@ -70,6 +89,7 @@ impl Server {
                 None => std::future::pending().await,
             }
         };
+        let mut failed = Vec::new();
         tokio::select! {
             result = poll_fn(|cx| {
                 let mut ready = false;
@@ -97,7 +117,10 @@ impl Server {
                     };
                     match state {
                         Poll::Ready(Ok(_)) => ready = true,
-                        Poll::Ready(Err(error)) => return Poll::Ready(Err(error)),
+                        Poll::Ready(Err(_)) => {
+                            failed.push(client.id);
+                            ready = true;
+                        }
                         Poll::Pending => {}
                     }
                 }
@@ -121,11 +144,7 @@ impl Server {
                 .unwrap()
                 .try_io(Interest::READABLE, &mut accept_client)
             {
-                Ok(stream) => {
-                    if let Ok(client) = Client::new(stream) {
-                        self.clients.push(client);
-                    }
-                }
+                Ok(stream) => self.add_client(stream, &mut disconnect)?,
                 Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
                 Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
                 Err(error) if matches!(error.raw_os_error(), Some(libc::EMFILE | libc::ENFILE)) => {
@@ -135,9 +154,13 @@ impl Server {
                 Err(error) => return Err(error),
             }
         }
-        self.clients.retain_mut(|client| {
-            client.readiness.is_none() || client.poll(&mut handler).unwrap_or(false)
-        });
+        self.retain_clients(
+            |client| {
+                !failed.contains(&client.id)
+                    && (client.readiness.is_none() || client.poll(&mut handler).unwrap_or(false))
+            },
+            &mut disconnect,
+        );
         Ok(())
     }
 }

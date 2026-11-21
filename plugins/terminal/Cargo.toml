@@ -1,0 +1,33 @@
+[package]
+name = "deskwaifu-terminal"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[features]
+default = []
+native = ["dep:layer-shell-probe", "layer-shell-probe/native", "dep:rustix"]
+kwin-cursor = ["native", "rustix/fs", "rustix/process"]
+
+[[bin]]
+name = "deskwaifu-cursor-guard"
+path = "src/kwin_cursor/guard_main.rs"
+required-features = ["kwin-cursor"]
+
+[dependencies]
+deskwaifu-sdk.workspace = true
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+layer-shell-probe = { path = "../../crates/layer-shell-probe", optional = true }
+rustix = { version = "1", features = ["event", "net"], optional = true }
+
+[dev-dependencies]
+deskwaifu-runtime.workspace = true
+
+[lints]
+workspace = true

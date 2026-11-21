@@ -6,6 +6,7 @@ publish.workspace = true
 
 [dependencies]
 futures-core = "0.3"
+serde_json = "1"
 
 [lints]
 workspace = true

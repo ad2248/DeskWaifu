@@ -1,9 +1,7 @@
 use super::*;
 use deskwaifu_sdk::{AudioStream, Command, Host, LocalFuture, PluginId, PublishError};
 use futures_util::stream;
-use std::{
-    any::TypeId, cell::Cell, collections::VecDeque, fs, os::unix::fs::PermissionsExt, path::PathBuf,
-};
+use std::{any::TypeId, cell::Cell, collections::VecDeque};
 
 #[derive(Default)]
 struct FakeOs {
@@ -196,40 +194,18 @@ fn result_ipc_budget_counts_outer_escaping() {
     assert!(session.text.as_ref().unwrap().ends_with('x'));
 }
 
-struct ConfigFile(PathBuf);
-
-impl Drop for ConfigFile {
-    fn drop(&mut self) {
-        let _ = fs::remove_file(&self.0);
-    }
-}
-
-// 测试目的：确认配置加载检查权限和录音时长，修复后可重新加载，公开设置只报告密钥配置状态。
-// 测试方法：依次加载不存在的文件、权限为 0644 的文件、时长越界的 0600 文件和修复后的文件，核对错误码及公开快照。
 #[test]
-fn config_requires_private_permissions_and_can_be_reloaded() {
-    let file = ConfigFile(
-        std::env::temp_dir().join(format!("deskwaifu-voice-config-{}.json", Uuid::new_v4())),
+fn shared_config_section_validates_settings_without_exposing_credentials() {
+    // 直接传入宿主提供的节点，检查默认值、错误时长和凭据脱敏。
+    assert!(Config::from_section(None).unwrap().authorization.is_none());
+    assert_eq!(
+        Config::from_section(Some(json!({"max_recording_seconds":301}))).err(),
+        Some("invalid_config")
     );
-    let read = || Config::load(Some(file.0.clone()));
-    let mode = |mode| fs::set_permissions(&file.0, fs::Permissions::from_mode(mode)).unwrap();
-    assert!(read().unwrap().authorization.is_none());
-    fs::write(
-        &file.0,
-        r#"{"api_key":"synthetic-key","max_recording_seconds":301}"#,
-    )
-    .unwrap();
-    mode(0o644);
-    assert_eq!(read().err(), Some("config_permissions"));
-    mode(0o600);
-    assert_eq!(read().err(), Some("invalid_config"));
-    fs::write(
-        &file.0,
-        r#"{"api_key":"synthetic-key","max_recording_seconds":2}"#,
-    )
-    .unwrap();
-    let result = read();
-    let view = Settings::update(&result).json();
+    let valid = Config::from_section(Some(
+        json!({"api_key":"synthetic-key", "max_recording_seconds":2}),
+    ));
+    let view = Settings::update(&valid).json();
     assert_eq!(view["api_key_configured"], true);
     assert_eq!(view["max_recording_seconds"], 2);
     assert!(!view.to_string().contains("synthetic-key"));

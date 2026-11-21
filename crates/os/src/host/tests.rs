@@ -1,7 +1,7 @@
 use super::*;
 use deskwaifu_sdk::{
-    AudioStream, ClipboardWriteError, Context, LocalFuture, Message, OsError, OsServices, Plugin,
-    PluginResult,
+    AudioStream, ClipboardWriteError, ConnectionId, Context, LocalFuture, Message, OsError,
+    OsServices, Plugin, PluginResult,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -32,7 +32,7 @@ impl Probe {
 }
 
 impl Plugin for Probe {
-    fn name(&self) -> &str {
+    fn plugin_id(&self) -> &str {
         "probe"
     }
 
@@ -178,7 +178,7 @@ struct ClipboardProbe {
 }
 
 impl Plugin for ClipboardProbe {
-    fn name(&self) -> &str {
+    fn plugin_id(&self) -> &str {
         "clipboard-probe"
     }
 
@@ -284,4 +284,155 @@ async fn commands_remain_responsive_while_local_os_future_is_pending() {
     .unwrap();
     result.unwrap();
     runtime.stop().unwrap();
+}
+
+struct ConnectionOwner {
+    owner: Option<ConnectionId>,
+    disconnected: Rc<RefCell<Vec<ConnectionId>>>,
+    released: Rc<tokio::sync::Notify>,
+    fail_tick: Rc<Cell<bool>>,
+}
+
+impl Plugin for ConnectionOwner {
+    fn plugin_id(&self) -> &str {
+        "connection-owner"
+    }
+
+    fn initialize(&mut self, cx: &mut Context<'_>) -> PluginResult {
+        assert_eq!(cx.connection_id(), None);
+        cx.register_command("claim", vec![])
+    }
+
+    fn on_command(
+        &mut self,
+        _: &str,
+        _: &[String],
+        cx: &mut Context<'_>,
+    ) -> Result<String, String> {
+        let id = cx.connection_id().ok_or("connection required")?;
+        if self.owner.is_some_and(|owner| owner != id) {
+            return Err("owned by another connection".into());
+        }
+        self.owner = Some(id);
+        Ok(id.0.to_string())
+    }
+
+    fn on_disconnect(&mut self, id: ConnectionId, cx: &mut Context<'_>) {
+        assert_eq!(cx.connection_id(), None);
+        if self.owner == Some(id) {
+            self.owner = None;
+            self.released.notify_one();
+        }
+        self.disconnected.borrow_mut().push(id);
+    }
+
+    fn on_message(&mut self, _: &Message, _: &mut Context<'_>) -> PluginResult {
+        Ok(())
+    }
+
+    fn tick_interval(&self) -> Option<Duration> {
+        Some(Duration::from_millis(5))
+    }
+
+    fn tick(&mut self, _: &mut Context<'_>) -> PluginResult {
+        if self.fail_tick.get() {
+            return Err("tick failed".into());
+        }
+        Ok(())
+    }
+
+    fn stop(&mut self, _: &mut Context<'_>) -> PluginResult {
+        assert_eq!(self.owner, None, "disconnect must run before stop");
+        Ok(())
+    }
+}
+
+// 通过两个真实 socket 验证持久连接的身份、EOF 后的所有权交接和退出时的清理。
+#[tokio::test]
+async fn connection_owner_is_released_on_eof_and_host_exit() {
+    use crate::Response;
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    use tokio::net::UnixStream;
+    use tokio::sync::Notify;
+
+    async fn claim(peer: &mut BufReader<UnixStream>) -> Response {
+        peer.write_all(b"{\"source\":\"cli\",\"payload\":[\"claim\"]}\n")
+            .await
+            .unwrap();
+        let mut response = String::new();
+        peer.read_line(&mut response).await.unwrap();
+        serde_json::from_str(&response).unwrap()
+    }
+
+    for fatal in [false, true] {
+        let shutdown = Notify::new();
+        let released = Rc::new(Notify::new());
+        let disconnected = Rc::new(RefCell::new(Vec::new()));
+        let fail_tick = Rc::new(Cell::new(false));
+        let mut runtime = Runtime::new(16);
+        runtime
+            .add(ConnectionOwner {
+                owner: None,
+                disconnected: disconnected.clone(),
+                released: released.clone(),
+                fail_tick: fail_tick.clone(),
+            })
+            .unwrap();
+        runtime.start().unwrap();
+        assert_eq!(
+            runtime.dispatch_command(&["claim".into()]),
+            Err("connection required".into())
+        );
+        let mut server = server();
+        let path = server.path.clone();
+        let client = async {
+            let mut first = BufReader::new(UnixStream::connect(&path).await.unwrap());
+            let mut second = BufReader::new(UnixStream::connect(&path).await.unwrap());
+            let Response::Ok { output: first_id } = claim(&mut first).await else {
+                panic!("first connection must claim ownership");
+            };
+            assert_eq!(
+                claim(&mut first).await,
+                Response::Ok {
+                    output: first_id.clone()
+                }
+            );
+            assert_eq!(
+                claim(&mut second).await,
+                Response::Error {
+                    error: "owned by another connection".into()
+                }
+            );
+            drop(first);
+            released.notified().await;
+            let Response::Ok { output: second_id } = claim(&mut second).await else {
+                panic!("second connection must claim ownership after EOF");
+            };
+            assert_ne!(first_id, second_id);
+            if fatal {
+                fail_tick.set(true);
+            } else {
+                shutdown.notify_one();
+            }
+            // 保持第二个客户端存活，直到宿主主动关闭该连接。
+            released.notified().await;
+            [first_id, second_id].map(|id| ConnectionId(id.parse().unwrap()))
+        };
+        let (result, ids) = tokio::time::timeout(Duration::from_secs(2), async {
+            tokio::join!(
+                run_loop(&mut runtime, &mut server, shutdown.notified()),
+                client
+            )
+        })
+        .await
+        .unwrap();
+        assert_eq!(*disconnected.borrow(), ids);
+        assert!(server.clients.is_empty());
+        if fatal {
+            assert_eq!(result.unwrap_err(), "connection-owner tick: tick failed");
+        } else {
+            result.unwrap();
+        }
+        runtime.stop().unwrap();
+    }
 }

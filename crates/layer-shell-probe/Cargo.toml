@@ -1,0 +1,19 @@
+[package]
+name = "layer-shell-probe"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[features]
+native = ["dep:cubism-bridge", "cubism-bridge/native", "dep:serde"]
+
+[target.'cfg(target_os = "linux")'.dependencies]
+cubism-bridge = { path = "../cubism-bridge", optional = true }
+rustix = { version = "1", features = ["event"] }
+serde = { version = "1", features = ["derive"], optional = true }
+smithay-client-toolkit = { version = "0.20", default-features = false }
+wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["client", "staging"] }
+
+[lints]
+workspace = true

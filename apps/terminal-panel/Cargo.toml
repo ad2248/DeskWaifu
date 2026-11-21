@@ -1,0 +1,16 @@
+[package]
+name = "deskwaifu-terminal-panel"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Standalone Wayland prototype. Remove when integrating into the root workspace.
+[workspace]
+
+[dependencies]
+gpui-kit = "=0.10.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[lints.rust]
+unsafe_code = "deny"

@@ -72,16 +72,19 @@ async fn failed_client_registration_leaves_existing_connection_usable() {
     .await
     .unwrap();
 
+    let rejected_id = server.clients[1].id;
+    let mut disconnected = Vec::new();
     existing
         .write_all(b"{\"source\":\"cli\",\"payload\":[\"still alive\"]}\n")
         .unwrap();
     tokio::time::timeout(
         Duration::from_secs(2),
         server.poll_ready_with(
-            |args| {
+            |_, args| {
                 calls += 1;
                 Ok(args.join(" "))
             },
+            |id| disconnected.push(id),
             |_| Err(io::Error::from_raw_os_error(libc::EMFILE)),
             |listener| listener.accept().map(|(stream, _)| stream),
         ),
@@ -90,6 +93,7 @@ async fn failed_client_registration_leaves_existing_connection_usable() {
     .unwrap()
     .unwrap();
     assert_eq!(server.clients.len(), 1);
+    assert_eq!(disconnected, [rejected_id]);
     // 其他测试并行启动子进程时，fork 到 exec 之间可能短暂持有套接字。
     let mut rejected = tokio::net::UnixStream::from_std(rejected).unwrap();
     let eof = tokio::time::timeout(
@@ -116,7 +120,8 @@ async fn descriptor_exhaustion_delays_accept_until_retry_deadline() {
     let _peer = UnixStream::connect(&server.path).unwrap();
     server
         .poll_ready_with(
-            |_| panic!("no request to dispatch"),
+            |_, _| panic!("no request to dispatch"),
+            |_| panic!("no connection to close"),
             |stream| AsyncFd::new(stream.try_clone()?),
             |_| Err(io::Error::from_raw_os_error(libc::EMFILE)),
         )
@@ -218,13 +223,19 @@ async fn partial_connection_expires_on_tokio_deadline_without_periodic_wakes() {
     let mut calls = 0;
     step(&mut server, &mut calls).await;
     let active = server.clients[0].active;
+    let id = server.clients[0].id;
+    let mut disconnected = Vec::new();
     while !server.clients.is_empty() {
         server
-            .poll_ready(|_| panic!("partial frame must not dispatch"))
+            .poll_ready_connections(
+                |_, _| panic!("partial frame must not dispatch"),
+                |id| disconnected.push(id),
+            )
             .await
             .unwrap();
     }
     assert!(active.elapsed() >= CLIENT_TIMEOUT);
+    assert_eq!(disconnected, [id]);
     assert_eq!(calls, 0);
 }
 
@@ -249,6 +260,38 @@ async fn pipelined_large_frames_and_responses_survive_step_boundaries() {
         }
     );
     assert_eq!(calls, 2);
+}
+
+// 确认客户端停止读响应时，写入失败会关闭连接并通知命令所属的连接标识。
+#[tokio::test]
+async fn failed_response_write_notifies_disconnect() {
+    let mut server = server();
+    let mut peer = UnixStream::connect(&server.path).unwrap();
+    peer.shutdown(std::net::Shutdown::Read).unwrap();
+    peer.write_all(b"{\"source\":\"cli\",\"payload\":[\"request\"]}\n")
+        .unwrap();
+
+    let mut dispatched = Vec::new();
+    let mut disconnected = Vec::new();
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while disconnected.is_empty() {
+            server
+                .poll_ready_connections(
+                    |id, _| {
+                        dispatched.push(id);
+                        Ok("response".into())
+                    },
+                    |id| disconnected.push(id),
+                )
+                .await
+                .unwrap();
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(dispatched.len(), 1);
+    assert_eq!(disconnected, dispatched);
+    assert!(server.clients.is_empty());
 }
 
 #[tokio::test]

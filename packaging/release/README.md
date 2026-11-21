@@ -48,6 +48,12 @@ The Rust workspace currently declares no license. The package therefore records
 `LicenseRef-Unknown`, not the retired SDK's license; establish a project license
 before public redistribution.
 
+## Private Arch build with Live2D
+
+The native plugin requires a local Cubism Native SDK 5-r.5, GLEW sources, a C++ toolchain, CMake and GLVND development headers. For a private package, use the release template with a private package name, add `libglvnd` to `depends` and `cmake` to `makedepends`, and add `libdeskwaifu_terminal.so` to the jointly built plugin list. Invoke `CARGO_TARGET_DIR=target CARGO_NET_OFFLINE=true bash scripts/build.sh --release --native-live2d` in `build()`. Pass `CUBISM_SDK_DIR` and `CUBISM_GLEW_DIR` to the unprivileged build environment, and provide the locked Cargo sources in its offline cache. The SDK and models remain local inputs. Check the applicable Live2D terms before distributing the compiled package.
+
+This variant was built and installed in a private Arch container with its network disabled and vendored Cargo sources. The second local package also uses `--kwin-cursor`, depends on `systemd-libs`, and installs `deskwaifu-cursor-guard` beside the host. The installed CLI started and `ldd -r` resolved the terminal plugin and guard dependencies. The GPUI panel has its own build described in [terminal-panel](<../../apps/terminal-panel/README.md>).
+
 ## AUR
 
 The existing AUR submodule is deliberately unchanged until a new Rust release

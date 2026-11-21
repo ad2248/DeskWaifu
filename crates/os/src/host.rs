@@ -16,11 +16,23 @@ async fn run_loop(
     server: &mut Server,
     shutdown: impl Future<Output = ()>,
 ) -> Result<(), String> {
+    let result = serve(runtime, server, shutdown).await;
+    server.disconnect_all(|id| runtime.disconnect_connection(id));
+    result
+}
+
+async fn serve(
+    runtime: &mut Runtime,
+    server: &mut Server,
+    shutdown: impl Future<Output = ()>,
+) -> Result<(), String> {
     let mut previous = Instant::now();
     tokio::pin!(shutdown);
     loop {
         let now = Instant::now();
-        runtime.advance(now.duration_since(previous))?;
+        runtime.advance_with_shutdown(now.duration_since(previous), |runtime| {
+            server.disconnect_all(|id| runtime.disconnect_connection(id));
+        })?;
         previous = now;
         let wakeup = runtime.next_wakeup();
         let timer = async {
@@ -35,7 +47,10 @@ async fn run_loop(
             biased;
             _ = &mut shutdown => return Ok(()),
             _ = poll_fn(|cx| runtime.borrow_mut().poll_local_task(cx)) => {},
-            result = server.poll_ready(|argv| runtime.borrow_mut().dispatch_command(argv)) => {
+            result = server.poll_ready_connections(
+                |id, argv| runtime.borrow_mut().dispatch_connection_command(id, argv),
+                |id| runtime.borrow_mut().disconnect_connection(id),
+            ) => {
                 result.map_err(|error| format!("IPC listener: {error}"))?;
             }
             _ = timer => {},

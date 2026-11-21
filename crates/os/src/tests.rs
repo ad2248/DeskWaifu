@@ -4,7 +4,7 @@ use super::*;
 fn idle_partial_and_blocked_output_connections_expire() {
     for with_output in [false, true] {
         let (stream, _peer) = UnixStream::pair().unwrap();
-        let mut client = Client::new(stream).unwrap();
+        let mut client = Client::new(ConnectionId(0), stream).unwrap();
         client.input.extend_from_slice(b"{\"source\":");
         if with_output {
             client.output = encode(&Response::Ok {
@@ -14,7 +14,7 @@ fn idle_partial_and_blocked_output_connections_expire() {
         client.active = Instant::now() - CLIENT_TIMEOUT;
         assert!(
             !client
-                .poll(&mut |_| panic!("expired connection must not dispatch"))
+                .poll(&mut |_, _| panic!("expired connection must not dispatch"))
                 .unwrap()
         );
     }

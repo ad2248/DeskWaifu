@@ -13,7 +13,7 @@ impl TestPlugin {
 }
 
 impl Plugin for TestPlugin {
-    fn name(&self) -> &str {
+    fn plugin_id(&self) -> &str {
         "test-plugin"
     }
 

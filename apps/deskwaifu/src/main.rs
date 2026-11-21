@@ -21,6 +21,16 @@ async fn main() -> Result<(), String> {
         return Err("deskwaifu does not accept arguments; use deskwaifucli for commands".into());
     }
     let mut runtime = Runtime::new(1024);
+    let absolute_env = |name| {
+        std::env::var_os(name)
+            .map(std::path::PathBuf::from)
+            .filter(|path| path.is_absolute())
+    };
+    if let Some(root) = absolute_env("XDG_CONFIG_HOME")
+        .or_else(|| absolute_env("HOME").map(|home| home.join(".config")))
+    {
+        runtime.load_config(root.join("deskwaifu/config.jsonc"))?;
+    }
     load_plugins(&mut runtime)?;
     deskwaifu_os::run(runtime).await
 }
