@@ -9,8 +9,8 @@ mkdir -p target/live2d
 
 env -u DISPLAY -u WAYLAND_DISPLAY LIBGL_ALWAYS_SOFTWARE=1 \
   cargo run --locked -p cubism-bridge --features native --example offscreen -- \
-  "$CUBISM_SDK_DIR/Samples/Resources/Mark/Mark.model3.json" \
-  target/live2d/mark.png Idle 1 40
+  "$CUBISM_SDK_DIR/Samples/Resources/Haru/Haru.model3.json" \
+  target/live2d/haru.png Idle 1 40
 
 env -u DISPLAY -u WAYLAND_DISPLAY LIBGL_ALWAYS_SOFTWARE=1 \
   cargo test --locked -p cubism-bridge --features native --test offscreen -- --ignored
@@ -41,13 +41,13 @@ env -u LIBGL_ALWAYS_SOFTWARE CUBISM_TEST_PCI="$FIRST_PCI" CUBISM_TEST_SECOND_PCI
 ```sh
 export CUBISM_LAYER_SHELL_XML=/path/to/wlr-layer-shell-unstable-v1.xml
 cargo build --locked --release -p cubism-bridge --features wayland-window --example window_bench
-model="$CUBISM_SDK_DIR/Samples/Resources/Mark/Mark.model3.json"
+model="$CUBISM_SDK_DIR/Samples/Resources/Haru/Haru.model3.json"
 bench=target/release/examples/window_bench
 # 通过私有 Wayland 会话的 XDG_RUNTIME_DIR 和 WAYLAND_DISPLAY 运行。
 export LIBGL_ALWAYS_SOFTWARE=1 LP_NUM_THREADS=4
-"$bench" egl "$model" 640 30 target/live2d/mark-egl.png
-"$bench" shm "$model" 640 30 target/live2d/mark-shm.png
-cmp target/live2d/mark-egl.png target/live2d/mark-shm.png
+"$bench" egl "$model" 640 30 target/live2d/haru-egl.png
+"$bench" shm "$model" 640 30 target/live2d/haru-shm.png
+cmp target/live2d/haru-egl.png target/live2d/haru-shm.png
 TIMEFORMAT='cpu_percent=%P user_s=%U sys_s=%S total_s=%R'
 for size in 640 1600; do
   for path in egl shm shm egl egl shm; do
@@ -60,7 +60,7 @@ done
 
 ### 私有 Sway 测量
 
-Sway 1.10.1 headless + pixman，Mesa llvmpipe（LLVM 19.1.7），Cubism Mark `Idle` 组索引 1。每组选取三次各 150 帧的中位数，帧及 IPC 的 p95 先在单次运行内计算。
+以下历史测量使用 Cubism Mark `Idle` 组索引 1。环境为 Sway 1.10.1 headless + pixman，Mesa llvmpipe（LLVM 19.1.7）。每组选取三次各 150 帧的中位数，帧及 IPC 的 p95 先在单次运行内计算。
 
 | 尺寸 | 路径 | 帧处理 p95 | 帧间隔 p50 | Worker IPC RTT p95 | 应用 CPU | GL 回读字节/帧 |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |

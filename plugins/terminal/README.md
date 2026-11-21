@@ -11,7 +11,7 @@ cargo build --locked -p deskwaifu-terminal --features native
 ```sh
 deskwaifucli terminal catalog ./models
 deskwaifucli terminal status
-deskwaifucli terminal load "$CUBISM_SDK_DIR/Samples/Resources/Mark/Mark.model3.json"
+deskwaifucli terminal load "$CUBISM_SDK_DIR/Samples/Resources/Haru/Haru.model3.json"
 deskwaifucli terminal motions
 deskwaifucli terminal motion Idle 1
 deskwaifucli terminal expressions

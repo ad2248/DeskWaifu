@@ -13,10 +13,10 @@ target/debug/layer-shell-probe --help
 
 ```sh
 cargo run --locked -p layer-shell-probe --features native -- \
-  --model "$CUBISM_SDK_DIR/Samples/Resources/Mark/Mark.model3.json" --motion Idle:1
+  --model "$CUBISM_SDK_DIR/Samples/Resources/Haru/Haru.model3.json" --motion Idle:1
 ```
 
-探针以 640×480 离屏渲染，通过 CPU 回读缩放到 `wl_shm` 缓冲，并从同一帧的 alpha 得到逻辑输入区域。省略 `--motion` 时显示初始帧。私有 Sway 的两张连续合成截图有像素差异。模型中央 `(160,112)` 的点击由覆盖层接收，透明角 `(20,20)` 的点击由下层窗口接收。覆盖层隐藏后，模型中央的点击也由下层窗口接收。
+探针以 640×480 离屏渲染，通过 CPU 回读缩放到 `wl_shm` 缓冲，并从同一帧的 alpha 得到逻辑输入区域。省略 `--motion` 时显示初始帧。此前使用 Mark 在私有 Sway 中验证时，两张连续合成截图有像素差异。模型中央 `(160,112)` 的点击由覆盖层接收，透明角 `(20,20)` 的点击由下层窗口接收。覆盖层隐藏后，模型中央的点击也由下层窗口接收。
 
 This content uses sample data owned and copyrighted by Live2D Inc.
 

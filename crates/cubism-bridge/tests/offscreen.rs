@@ -47,7 +47,7 @@ fn renders_sample_and_survives_failed_reload() {
 
     let _serial = NATIVE_TEST.lock().unwrap();
     let sdk = env::var_os("CUBISM_SDK_DIR").expect("set CUBISM_SDK_DIR");
-    let json = Path::new(&sdk).join("Samples/Resources/Mark/Mark.model3.json");
+    let json = Path::new(&sdk).join("Samples/Resources/Haru/Haru.model3.json");
     // 通过同线程重建运行时验证全局 Framework 及 EGL 能完整析构。
     for _ in 0..2 {
         let runtime = Runtime::new(256, 256).unwrap();
@@ -79,14 +79,11 @@ fn renders_sample_and_survives_failed_reload() {
             .filter(|(a, b)| a != b)
             .count();
         assert!(changed > 200, "only {changed} pixels changed");
-        assert!(model.motion_groups().unwrap().contains(&("Idle".into(), 6)));
-        assert!(model.expressions().unwrap().is_empty());
+        assert!(model.motion_groups().unwrap().contains(&("Idle".into(), 2)));
         drop(model);
 
-        // 用 Haru 的官方表情验证枚举、无效名称和表情更新的实际像素变化。
-        let mut haru = runtime
-            .load(&Path::new(&sdk).join("Samples/Resources/Haru/Haru.model3.json"))
-            .unwrap();
+        // 重新加载 Haru，从无动作的初始状态验证表情像素。
+        let mut haru = runtime.load(&json).unwrap();
         assert!(haru.expressions().unwrap().contains(&"F01".to_owned()));
         assert!(haru.play_expression("missing").is_err());
         haru.render(0.0, &mut still).unwrap();
@@ -171,13 +168,18 @@ fn look_and_lip_sync_compose_with_animation_and_reset() {
     haru.set_look(None).unwrap();
     assert_eq!(changed(&animated, &frame(&mut haru, 0.0)), 0);
 
-    // Mark 的 model3 声明了空 LipSync 组，验证不会回退到任意参数。
-    let mut mark = runtime
-        .load(&resources.join("Mark/Mark.model3.json"))
-        .unwrap();
-    let unchanged = frame(&mut mark, 0.0);
-    mark.set_lip_sync(Some(1.0)).unwrap();
-    assert_eq!(changed(&unchanged, &frame(&mut mark, 0.0)), 0);
+    // Haru 本身有可驱动的嘴部参数。将 LipSync 组置空后，验证不会回退到该参数。
+    let fixture = HaruFixture::new();
+    let empty_lip_sync_path = fixture.model(
+        "empty-lip-sync.model3.json",
+        "",
+        r#", "Groups":[{"Target":"Parameter","Name":"LipSync","Ids":[]}]"#,
+    );
+    let mut empty_lip_sync = runtime.load(&empty_lip_sync_path).unwrap();
+    assert!(empty_lip_sync.expressions().unwrap().is_empty());
+    let unchanged = frame(&mut empty_lip_sync, 0.0);
+    empty_lip_sync.set_lip_sync(Some(1.0)).unwrap();
+    assert_eq!(unchanged, frame(&mut empty_lip_sync, 0.0));
 }
 
 struct HaruFixture(std::path::PathBuf);
@@ -450,7 +452,7 @@ fn verify_hardware_device(pci: &str, renderer_env: &str) {
     let node = expected.render_node.as_deref().unwrap();
     let by_path = PathBuf::from(format!("/dev/dri/by-path/pci-{pci}-render"));
     let model_path = PathBuf::from(std::env::var_os("CUBISM_SDK_DIR").unwrap())
-        .join("Samples/Resources/Mark/Mark.model3.json");
+        .join("Samples/Resources/Haru/Haru.model3.json");
     let pci_uppercase = pci.to_ascii_uppercase();
     let mut selectors = vec![
         DeviceSelector::Pci(&pci_uppercase),
