@@ -8,6 +8,7 @@ mod host;
 mod services;
 pub use host::run;
 
+use deskwaifu_sdk::ConnectionId;
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
@@ -88,6 +89,7 @@ fn dispatch(
 }
 
 struct Client {
+    id: ConnectionId,
     stream: UnixStream,
     readiness: Option<tokio::io::unix::AsyncFd<UnixStream>>,
     input: Vec<u8>,
@@ -99,9 +101,10 @@ struct Client {
 }
 
 impl Client {
-    fn new(stream: UnixStream) -> io::Result<Self> {
+    fn new(id: ConnectionId, stream: UnixStream) -> io::Result<Self> {
         stream.set_nonblocking(true)?;
         Ok(Self {
+            id,
             stream,
             readiness: None,
             input: Vec::new(),
@@ -116,7 +119,7 @@ impl Client {
     // 每轮最多读取 4 KiB、执行一个请求、写入 4 KiB，避免单连接饿死其他客户端。
     fn poll(
         &mut self,
-        handler: &mut impl FnMut(&[String]) -> Result<String, String>,
+        handler: &mut impl FnMut(ConnectionId, &[String]) -> Result<String, String>,
     ) -> io::Result<bool> {
         if self.active.elapsed() >= CLIENT_TIMEOUT {
             return Ok(false);
@@ -143,7 +146,9 @@ impl Client {
                 }
             }
             if let Some(end) = self.input.iter().position(|byte| *byte == b'\n') {
-                self.output = encode(&dispatch(&self.input[..end], handler));
+                self.output = encode(&dispatch(&self.input[..end], &mut |argv| {
+                    handler(self.id, argv)
+                }));
                 self.input.drain(..=end);
             } else if self.input.len() > MAX_FRAME_BYTES {
                 self.output = encode(&Response::error("request exceeds 64 KiB"));
@@ -193,6 +198,7 @@ pub struct Server {
     path: PathBuf,
     identity: (u64, u64),
     clients: Vec<Client>,
+    next_connection_id: u64,
 }
 
 impl Server {
@@ -207,6 +213,7 @@ impl Server {
             path,
             identity: (metadata.dev(), metadata.ino()),
             clients: Vec::new(),
+            next_connection_id: 0,
         };
         fs::set_permissions(&server.path, fs::Permissions::from_mode(0o600))?;
         server.listener.set_nonblocking(true)?;
@@ -217,28 +224,81 @@ impl Server {
         &mut self,
         mut handler: impl FnMut(&[String]) -> Result<String, String>,
     ) -> io::Result<()> {
+        self.poll_connections(|_, argv| handler(argv), |_| {})
+    }
+
+    /// 同步驱动 IPC，并为每个关闭的连接调用一次 disconnect。
+    pub fn poll_connections(
+        &mut self,
+        mut handler: impl FnMut(ConnectionId, &[String]) -> Result<String, String>,
+        mut disconnect: impl FnMut(ConnectionId),
+    ) -> io::Result<()> {
         // 超过连接上限时不继续 accept；内核 backlog 提供背压。
         for _ in 0..MAX_CLIENTS {
             if self.clients.len() >= MAX_CLIENTS {
                 break;
             }
             match self.listener.accept() {
-                Ok((stream, _)) => {
-                    if let Ok(client) = Client::new(stream) {
-                        self.clients.push(client);
-                    }
-                }
+                Ok((stream, _)) => self.add_client(stream, &mut disconnect)?,
                 Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
                 Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
                 Err(error) => return Err(error),
             }
         }
-        self.clients.retain_mut(|client| {
-            // 同步接口不依赖 Tokio reactor 的就绪缓存。
-            client.readiness = None;
-            client.poll(&mut handler).unwrap_or(false)
-        });
+        self.retain_clients(
+            |client| {
+                // 同步接口不依赖 Tokio reactor 的就绪缓存。
+                client.readiness = None;
+                client.poll(&mut handler).unwrap_or(false)
+            },
+            &mut disconnect,
+        );
         Ok(())
+    }
+
+    fn add_client(
+        &mut self,
+        stream: UnixStream,
+        disconnect: &mut impl FnMut(ConnectionId),
+    ) -> io::Result<()> {
+        let id = ConnectionId(self.next_connection_id);
+        self.next_connection_id = self
+            .next_connection_id
+            .checked_add(1)
+            .ok_or_else(|| io::Error::other("IPC connection identity exhausted"))?;
+        match Client::new(id, stream) {
+            Ok(client) => self.clients.push(client),
+            Err(_) => disconnect(id),
+        }
+        Ok(())
+    }
+
+    fn retain_clients(
+        &mut self,
+        mut retain: impl FnMut(&mut Client) -> bool,
+        disconnect: &mut impl FnMut(ConnectionId),
+    ) -> bool {
+        let mut closed = Vec::new();
+        self.clients.retain_mut(|client| {
+            if retain(client) {
+                true
+            } else {
+                closed.push(client.id);
+                false
+            }
+        });
+        let any_closed = !closed.is_empty();
+        closed.into_iter().for_each(disconnect);
+        any_closed
+    }
+
+    /// 主动关闭现有连接并逐一通知；监听器仍可接受新连接。
+    pub fn disconnect_all(&mut self, mut disconnect: impl FnMut(ConnectionId)) {
+        for client in self.clients.drain(..) {
+            let id = client.id;
+            drop(client);
+            disconnect(id);
+        }
     }
 }
 

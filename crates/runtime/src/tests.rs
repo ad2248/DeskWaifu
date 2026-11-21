@@ -1,7 +1,82 @@
 use super::*;
+
+#[test]
+fn plugin_ids_reject_uuid_and_invalid_names() {
+    // 验证英文标识可以使用下划线，而 UUID 和带空格的标识会在初始化前被拒绝。
+    struct Named(&'static str);
+    impl Plugin for Named {
+        fn plugin_id(&self) -> &str {
+            self.0
+        }
+        fn initialize(&mut self, _: &mut Context<'_>) -> PluginResult {
+            Ok(())
+        }
+        fn on_message(&mut self, _: &Message, _: &mut Context<'_>) -> PluginResult {
+            Ok(())
+        }
+    }
+    let mut runtime = Runtime::new(8);
+    runtime.add(Named("voice_input")).unwrap();
+    for id in [
+        "voice_input",
+        "a7225741-8c45-4e9c-8e10-560eabd69626",
+        "Voice Input",
+        "",
+    ] {
+        assert!(runtime.add(Named(id)).is_err(), "{id:?}");
+    }
+}
+#[test]
+fn plugins_can_read_and_write_only_their_own_section() {
+    // 两个插件通过同一接口分别读写，重读文件验证节点独立且持久化。
+    struct SettingsPlugin(&'static str);
+    impl Plugin for SettingsPlugin {
+        fn plugin_id(&self) -> &str {
+            self.0
+        }
+        fn initialize(&mut self, cx: &mut Context<'_>) -> PluginResult {
+            cx.register_command(self.0, vec![])
+        }
+        fn on_message(&mut self, _: &Message, _: &mut Context<'_>) -> PluginResult {
+            Ok(())
+        }
+        fn on_command(
+            &mut self,
+            _: &str,
+            args: &[String],
+            cx: &mut Context<'_>,
+        ) -> Result<String, String> {
+            if let Some(value) = args.first() {
+                cx.replace_config(serde_json::json!({"value": value}))?;
+            }
+            Ok(cx.config().unwrap_or_default().to_string())
+        }
+    }
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("config.jsonc");
+    let mut runtime = Runtime::new(8);
+    runtime.load_config(path.clone()).unwrap();
+    runtime.add(SettingsPlugin("terminal")).unwrap();
+    runtime.add(SettingsPlugin("voice_input")).unwrap();
+    runtime.start().unwrap();
+    runtime
+        .dispatch_command(&["terminal".into(), "pet".into()])
+        .unwrap();
+    runtime
+        .dispatch_command(&["voice_input".into(), "audio".into()])
+        .unwrap();
+    assert_eq!(
+        runtime.dispatch_command(&["terminal".into()]).unwrap(),
+        r#"{"value":"pet"}"#
+    );
+    let stored = ConfigStore::load(path).unwrap();
+    assert_eq!(stored.section("terminal").unwrap()["value"], "pet");
+    assert_eq!(stored.section("voice_input").unwrap()["value"], "audio");
+}
+
 struct Timer;
 impl Plugin for Timer {
-    fn name(&self) -> &str {
+    fn plugin_id(&self) -> &str {
         "timer"
     }
     fn initialize(&mut self, _: &mut Context<'_>) -> PluginResult {
@@ -71,6 +146,9 @@ fn full_queue_still_accepts_unsubscribed_types() {
         ],
         queue: VecDeque::new(),
         tasks: FuturesUnordered::new(),
+        panel_tabs: Vec::new(),
+        plugin_ids: Vec::new(),
+        config: None,
     };
     {
         let mut host = ScopedHost {

@@ -30,8 +30,39 @@ pub struct Command {
     pub help: Vec<String>,
 }
 
+/// 由插件注册、由独立控制面板呈现的标签页描述。
+pub struct PanelTab {
+    pub id: String,
+    pub title: String,
+    pub order: i32,
+    pub query: Option<PanelQuery>,
+    pub sections: Vec<PanelSection>,
+}
+
+pub struct PanelQuery {
+    /// 本插件的查询命令及其固定参数。
+    pub args: Vec<String>,
+    /// 若存在提示文字，面板可在查询命令末尾追加一个文本参数。
+    pub input_placeholder: Option<String>,
+}
+
+pub struct PanelSection {
+    pub title: String,
+    pub actions: Vec<PanelAction>,
+}
+
+pub struct PanelAction {
+    pub label: String,
+    /// 完整命令参数，第一个元素是本插件注册的命令。
+    pub args: Vec<String>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct PluginId(pub usize);
+
+/// 宿主为已接受的 IPC 连接分配的标识，在同一服务实例中不复用。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct ConnectionId(pub u64);
 
 /// 消息负载共享所有权；运行时只负责路由，不解释领域内容。
 #[derive(Clone)]
@@ -85,6 +116,15 @@ pub trait Host {
     fn subscribe(&mut self, message_type: TypeId) -> PluginResult;
     fn publish(&mut self, message: Message) -> Result<(), PublishError>;
     fn register_command(&mut self, command: Command) -> PluginResult;
+    fn register_panel_tab(&mut self, _tab: PanelTab) -> PluginResult {
+        Err("panel tabs are not supported by this host".into())
+    }
+    fn config(&self) -> Option<serde_json::Value> {
+        None
+    }
+    fn replace_config(&mut self, _value: serde_json::Value) -> PluginResult {
+        Err("configuration storage is unavailable".into())
+    }
     fn spawn_local(&mut self, _future: LocalFuture<'static, ()>) -> PluginResult {
         Err("local tasks are not available".into())
     }
@@ -100,12 +140,27 @@ pub fn unavailable_os_services() -> Rc<dyn OsServices> {
 
 pub struct Context<'a> {
     host: &'a mut dyn Host,
+    connection_id: Option<ConnectionId>,
 }
 
 impl<'a> Context<'a> {
     pub fn new(host: &'a mut dyn Host) -> Self {
-        Self { host }
+        Self::with_connection(host, None)
     }
+
+    #[doc(hidden)]
+    pub fn with_connection(host: &'a mut dyn Host, connection_id: Option<ConnectionId>) -> Self {
+        Self {
+            host,
+            connection_id,
+        }
+    }
+
+    /// 返回当前 IPC 命令的连接标识；直接派发及其他回调返回 None。
+    pub fn connection_id(&self) -> Option<ConnectionId> {
+        self.connection_id
+    }
+
     pub fn id(&self) -> PluginId {
         self.host.id()
     }
@@ -133,6 +188,21 @@ impl<'a> Context<'a> {
         })
     }
 
+    /// 仅在 initialize 阶段注册。标签页 ID 在当前插件内唯一。
+    pub fn register_panel_tab(&mut self, tab: PanelTab) -> PluginResult {
+        self.host.register_panel_tab(tab)
+    }
+
+    /// 返回本插件自己的一级配置节点。缺省时由插件自行提供默认值。
+    pub fn config(&self) -> Option<serde_json::Value> {
+        self.host.config()
+    }
+
+    /// 持久化替换本插件配置节点。失败时保留之前保存的值。
+    pub fn replace_config(&mut self, value: serde_json::Value) -> PluginResult {
+        self.host.replace_config(value)
+    }
+
     /// 提交由宿主在当前线程上驱动的任务。任务不会在此调用中立即执行。
     /// 只在运行阶段接受任务，并在 stop 回调前同步丢弃未完成的任务。
     pub fn spawn_local(&mut self, future: impl Future<Output = ()> + 'static) -> PluginResult {
@@ -143,7 +213,8 @@ impl<'a> Context<'a> {
 /// 所有回调由宿主在同一线程串行调用；不要在回调中阻塞。
 /// stop 必须清理部分初始化状态，并等待插件拥有的工作线程退出。
 pub trait Plugin {
-    fn name(&self) -> &str;
+    /// 不随运行或版本变化的英文标识，例如 `terminal` 或 `voice_input`。
+    fn plugin_id(&self) -> &str;
     fn initialize(&mut self, cx: &mut Context<'_>) -> PluginResult;
     fn start(&mut self, _cx: &mut Context<'_>) -> PluginResult {
         Ok(())
@@ -164,6 +235,8 @@ pub trait Plugin {
     ) -> Result<String, String> {
         Err(format!("unhandled command: {name}"))
     }
+    /// 连接关闭后释放该连接持有的资源。未执行过命令的连接也可能收到通知。
+    fn on_disconnect(&mut self, _connection_id: ConnectionId, _cx: &mut Context<'_>) {}
     fn on_message(&mut self, message: &Message, cx: &mut Context<'_>) -> PluginResult;
     fn stop(&mut self, _cx: &mut Context<'_>) -> PluginResult {
         Ok(())

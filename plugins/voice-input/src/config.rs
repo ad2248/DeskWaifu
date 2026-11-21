@@ -1,18 +1,9 @@
 use reqwest::{Url, header::HeaderValue};
 use serde::Deserialize;
-use std::{
-    env,
-    fs::OpenOptions,
-    io::Read,
-    os::unix::fs::{OpenOptionsExt, PermissionsExt},
-    path::PathBuf,
-};
-
 pub const DEFAULT_ENDPOINT: &str =
     "wss://llm-y3exskfcgxgxzn23.cn-beijing.maas.aliyuncs.com/api-ws/v1/inference";
 pub const DEFAULT_MODEL: &str = "qwen-audio-3.1-asr-flash-streaming";
 pub const DEFAULT_SECONDS: u64 = 60;
-const CONFIG_LIMIT: u64 = 16 * 1024;
 
 pub struct Config {
     pub endpoint: Url,
@@ -41,45 +32,16 @@ impl Default for FileConfig {
     }
 }
 
-pub fn path() -> Option<PathBuf> {
-    env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .filter(|path| path.is_absolute())
-        .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))
-        .map(|path| path.join("deskwaifu/voice_input.json"))
-}
-
 impl Config {
-    pub fn load(path: Option<PathBuf>) -> Result<Self, &'static str> {
-        let path = path.ok_or("config_unavailable")?;
-        let file = match OpenOptions::new()
-            .read(true)
-            .custom_flags(libc::O_NONBLOCK)
-            .open(path)
-        {
-            Ok(file) => file,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                return FileConfig::default().try_into();
+    pub fn from_section(section: Option<serde_json::Value>) -> Result<Self, &'static str> {
+        let file = match section {
+            Some(value) if value.is_object() => {
+                serde_json::from_value(value).map_err(|_| "invalid_config")?
             }
-            Err(_) => return Err("config_unavailable"),
+            Some(_) => return Err("invalid_config"),
+            None => FileConfig::default(),
         };
-        let metadata = file.metadata().map_err(|_| "config_unavailable")?;
-        if !metadata.is_file() {
-            return Err("invalid_config");
-        }
-        if metadata.permissions().mode() & 0o777 != 0o600 {
-            return Err("config_permissions");
-        }
-        let mut bytes = Vec::new();
-        file.take(CONFIG_LIMIT + 1)
-            .read_to_end(&mut bytes)
-            .map_err(|_| "config_unavailable")?;
-        if bytes.len() as u64 > CONFIG_LIMIT {
-            return Err("invalid_config");
-        }
-        serde_json::from_slice::<FileConfig>(&bytes)
-            .map_err(|_| "invalid_config")?
-            .try_into()
+        file.try_into()
     }
 }
 

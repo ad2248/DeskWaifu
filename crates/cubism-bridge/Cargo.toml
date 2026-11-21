@@ -1,0 +1,23 @@
+[package]
+name = "cubism-bridge"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+native = ["dep:png"]
+wayland-window = ["native"]
+
+[dependencies]
+png = { version = "0.18", optional = true }
+
+[[example]]
+name = "offscreen"
+required-features = ["native"]
+
+[[example]]
+name = "window_bench"
+required-features = ["wayland-window"]

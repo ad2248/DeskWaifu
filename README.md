@@ -52,6 +52,8 @@ cargo run -p deskwaifu
 
 `./scripts/build.sh --release` 会构建并部署到 `target/release/`，之后运行 `target/release/deskwaifu`。脚本执行 `cargo build --workspace --locked`，支持 `CARGO_TARGET_DIR`（默认 `target`），将对应 profile 的插件复制到其 `plugins/` 子目录。更换工具链或更新代码后应重新运行脚本，不要混用不同构建的主程序和插件。
 
+构建原生 Live2D 桌宠时，设置 `CUBISM_SDK_DIR` 和 `CUBISM_GLEW_DIR` 后运行 `./scripts/build.sh --release --native-live2d`。默认启动路径为 `target/live2d-native/release/deskwaifu`。模型目录与启动模型可在共享配置中指定。 [terminal 用法](<plugins/terminal/README.md>)
+
 ```sh
 # 终端二：调用插件子命令
 cargo run -p deskwaifucli -- test

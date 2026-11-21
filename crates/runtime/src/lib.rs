@@ -1,8 +1,11 @@
 //! 单线程、有界 FIFO 的进程内插件运行时，不依赖 Qt 或异步执行器。
 use deskwaifu_sdk::{
-    Command, Context, Host, LocalFuture, Message, OsServices, Plugin, PluginId, PluginResult,
-    PublishError,
+    Command, ConnectionId, Context, Host, LocalFuture, Message, OsServices, PanelTab, Plugin,
+    PluginId, PluginResult, PublishError,
 };
+mod config;
+use config::ConfigStore;
+
 use futures_util::{Stream, stream::FuturesUnordered};
 use std::{
     any::TypeId,
@@ -29,6 +32,9 @@ struct Bus {
     subscriptions: Vec<HashSet<TypeId>>,
     queue: VecDeque<Delivery>,
     tasks: FuturesUnordered<LocalFuture<'static, ()>>,
+    panel_tabs: Vec<(PluginId, PanelTab)>,
+    plugin_ids: Vec<String>,
+    config: Option<ConfigStore>,
 }
 
 type Commands = BTreeMap<String, (PluginId, Vec<String>)>;
@@ -64,11 +70,73 @@ impl Host for ScopedHost<'_> {
         if command.name.is_empty() || command.name.chars().any(char::is_whitespace) {
             return Err("command name must be a non-empty token".into());
         }
-        if command.name == "help" || self.commands.contains_key(&command.name) {
+        if matches!(command.name.as_str(), "help" | "panel-tabs")
+            || self.commands.contains_key(&command.name)
+        {
             return Err(format!("duplicate or reserved command: {}", command.name));
         }
         self.commands.insert(command.name, (self.id, command.help));
         Ok(())
+    }
+    fn register_panel_tab(&mut self, tab: PanelTab) -> PluginResult {
+        if !self.initializing {
+            return Err("panel tabs require initialization".into());
+        }
+        if tab.id.is_empty()
+            || tab.id.len() > 64
+            || !tab
+                .id
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+            || !panel_text(&tab.title)
+            || tab.query.as_ref().is_some_and(|query| {
+                !panel_args(&query.args)
+                    || query
+                        .input_placeholder
+                        .as_deref()
+                        .is_some_and(|text| !panel_text(text))
+            })
+            || tab.sections.len() > 8
+            || tab.sections.iter().any(|section| {
+                !panel_text(&section.title)
+                    || section.actions.len() > 8
+                    || section
+                        .actions
+                        .iter()
+                        .any(|action| !panel_text(&action.label) || !panel_args(&action.args))
+            })
+        {
+            return Err("invalid panel tab description".into());
+        }
+        if self.bus.panel_tabs.len() >= 64
+            || self
+                .bus
+                .panel_tabs
+                .iter()
+                .any(|(owner, existing)| *owner == self.id && existing.id == tab.id)
+        {
+            return Err("duplicate panel tab or registration limit reached".into());
+        }
+        self.bus.panel_tabs.push((self.id, tab));
+        Ok(())
+    }
+    fn config(&self) -> Option<serde_json::Value> {
+        self.bus
+            .config
+            .as_ref()?
+            .section(&self.bus.plugin_ids[self.id.0])
+            .cloned()
+    }
+
+    fn replace_config(&mut self, value: serde_json::Value) -> PluginResult {
+        if !self.bus.active {
+            return Err("configuration writes require an active plugin context".into());
+        }
+        self.bus
+            .config
+            .as_mut()
+            .ok_or("configuration storage is unavailable")?
+            .replace(&self.bus.plugin_ids[self.id.0], value)
     }
     fn spawn_local(&mut self, future: LocalFuture<'static, ()>) -> PluginResult {
         if !self.bus.active {
@@ -98,6 +166,18 @@ impl Host for ScopedHost<'_> {
         self.bus.queue.push_back(Delivery { message, targets });
         Ok(())
     }
+}
+
+fn panel_args(args: &[String]) -> bool {
+    !args.is_empty()
+        && args.len() <= 8
+        && args
+            .iter()
+            .all(|arg| arg.len() <= 256 && !arg.contains('\0'))
+}
+
+fn panel_text(value: &str) -> bool {
+    !value.trim().is_empty() && value.len() <= 128 && !value.chars().any(char::is_control)
 }
 
 struct Entry {
@@ -136,6 +216,9 @@ impl Runtime {
                 subscriptions: Vec::new(),
                 queue: VecDeque::new(),
                 tasks: FuturesUnordered::new(),
+                panel_tabs: Vec::new(),
+                plugin_ids: Vec::new(),
+                config: None,
             },
             state: State::Created,
             elapsed: Duration::ZERO,
@@ -153,6 +236,15 @@ impl Runtime {
         Ok(())
     }
 
+    /// 从指定 JSONC 加载所有插件配置，须在 start 前调用。
+    pub fn load_config(&mut self, path: std::path::PathBuf) -> PluginResult {
+        if self.state != State::Created {
+            return Err("configuration must be loaded before start".into());
+        }
+        self.bus.config = Some(ConfigStore::load(path)?);
+        Ok(())
+    }
+
     pub fn add(&mut self, plugin: impl Plugin + 'static) -> Result<PluginId, String> {
         self.add_boxed(Box::new(plugin))
     }
@@ -161,14 +253,28 @@ impl Runtime {
         if self.state != State::Created {
             return Err("plugins must be added before start".into());
         }
-        if self
-            .entries
-            .iter()
-            .flatten()
-            .any(|entry| entry.plugin.name() == plugin.name())
+        let key = plugin.plugin_id();
+        let mut bytes = key.bytes();
+        if key.len() > 64
+            || !bytes.next().is_some_and(|byte| byte.is_ascii_lowercase())
+            || !bytes.all(|byte| {
+                byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'_' | b'-')
+            })
+            || (key.len() == 36
+                && key.bytes().enumerate().all(|(index, byte)| {
+                    if matches!(index, 8 | 13 | 18 | 23) {
+                        byte == b'-'
+                    } else {
+                        byte.is_ascii_hexdigit()
+                    }
+                }))
         {
-            return Err(format!("duplicate plugin: {}", plugin.name()));
+            return Err("plugin ID must be a readable lowercase English identifier".into());
         }
+        if self.bus.plugin_ids.iter().any(|id| id == key) {
+            return Err(format!("duplicate plugin: {key}"));
+        }
+        self.bus.plugin_ids.push(key.to_owned());
         let id = PluginId(self.entries.len());
         self.entries.push(Some(Entry {
             plugin,
@@ -213,11 +319,12 @@ impl Runtime {
                     Ok(())
                 });
             if let Err(error) = initialized {
-                let name = entry.plugin.name().to_owned();
+                let name = entry.plugin.plugin_id().to_owned();
                 eprintln!("{name} initialize: {error}; skipping plugin");
                 host.initializing = false;
                 host.bus.subscriptions[id].clear();
                 host.commands.retain(|_, (owner, _)| *owner != host.id);
+                host.bus.panel_tabs.retain(|(owner, _)| *owner != host.id);
                 if let Err(error) = entry.plugin.stop(&mut Context::new(&mut host)) {
                     eprintln!("{name} stop after failed initialization: {error}");
                 }
@@ -237,13 +344,30 @@ impl Runtime {
             entry
                 .plugin
                 .start(&mut Context::new(&mut host))
-                .map_err(|e| format!("{} start: {e}", entry.plugin.name()))?;
+                .map_err(|e| format!("{} start: {e}", entry.plugin.plugin_id()))?;
         }
         Ok(())
     }
 
-    /// 执行 CLI 来源的原始 argv（第一个参数为子命令）。
+    /// 执行没有 IPC 连接的原始 argv（第一个参数为子命令）。
     pub fn dispatch_command(&mut self, argv: &[String]) -> Result<String, String> {
+        self.dispatch_command_inner(None, argv)
+    }
+
+    /// 派发来自指定 IPC 连接的命令。
+    pub fn dispatch_connection_command(
+        &mut self,
+        connection_id: ConnectionId,
+        argv: &[String],
+    ) -> Result<String, String> {
+        self.dispatch_command_inner(Some(connection_id), argv)
+    }
+
+    fn dispatch_command_inner(
+        &mut self,
+        connection_id: Option<ConnectionId>,
+        argv: &[String],
+    ) -> Result<String, String> {
         if self.state != State::Running {
             return Err("runtime is not running".into());
         }
@@ -252,6 +376,12 @@ impl Runtime {
         };
         if name == "help" {
             return Ok(self.help_text());
+        }
+        if name == "panel-tabs" {
+            if argv.len() != 1 {
+                return Err("panel-tabs does not accept arguments".into());
+            }
+            return self.panel_tabs_json();
         }
         let id = self
             .commands
@@ -265,9 +395,79 @@ impl Runtime {
             initializing: false,
             commands: &mut self.commands,
         };
-        entry
-            .plugin
-            .on_command(name, &argv[1..], &mut Context::new(&mut host))
+        entry.plugin.on_command(
+            name,
+            &argv[1..],
+            &mut Context::with_connection(&mut host, connection_id),
+        )
+    }
+
+    /// 通知所有运行中的插件释放指定连接拥有的状态。
+    pub fn disconnect_connection(&mut self, connection_id: ConnectionId) {
+        if self.state != State::Running {
+            return;
+        }
+        for (id, entry) in self.entries.iter_mut().enumerate() {
+            let Some(entry) = entry else { continue };
+            let mut host = ScopedHost {
+                bus: &mut self.bus,
+                id: PluginId(id),
+                initializing: false,
+                commands: &mut self.commands,
+            };
+            entry
+                .plugin
+                .on_disconnect(connection_id, &mut Context::new(&mut host));
+        }
+    }
+
+    fn panel_tabs_json(&self) -> Result<String, String> {
+        use serde_json::json;
+        let mut tabs = self
+            .bus
+            .panel_tabs
+            .iter()
+            .filter_map(|(owner, tab)| {
+                self.entries[owner.0].as_ref()?;
+                Some((self.bus.plugin_ids[owner.0].as_str(), owner, tab))
+            })
+            .collect::<Vec<_>>();
+        tabs.sort_by_key(|(plugin, _, tab)| (tab.order, *plugin, tab.id.as_str()));
+        let tabs = tabs
+            .into_iter()
+            .map(|(plugin, owner, tab)| {
+                let sections = tab
+                    .sections
+                    .iter()
+                    .map(|section| {
+                        let actions = section
+                            .actions
+                            .iter()
+                            .filter(|action| {
+                                self.commands
+                                    .get(&action.args[0])
+                                    .is_some_and(|(registered, _)| registered == owner)
+                            })
+                            .map(|action| json!({"label": action.label, "args": action.args}))
+                            .collect::<Vec<_>>();
+                        json!({"title": section.title, "actions": actions})
+                    })
+                    .collect::<Vec<_>>();
+                let query = tab.query.as_ref().filter(|query| {
+                    self.commands.get(&query.args[0]).is_some_and(|(registered, _)| registered == owner)
+                }).map(|query| json!({"args": query.args, "input_placeholder": query.input_placeholder}));
+                json!({"plugin": plugin, "id": tab.id, "title": tab.title, "sections": sections, "query": query})
+            })
+            .collect::<Vec<_>>();
+        let payload = json!({"tabs": tabs}).to_string();
+        let escaped = payload
+            .bytes()
+            .filter(|byte| matches!(byte, b'"' | b'\\'))
+            .count();
+        if payload.len() + escaped + r#"{"status":"ok","output":""}"#.len() > 64 * 1024 {
+            return Err("panel tabs exceed the IPC frame limit".into());
+        }
+        Ok(payload)
     }
 
     /// 在宿主事件循环上驱动已提交任务，单次报告一个任务完成。
@@ -307,10 +507,22 @@ impl Runtime {
     /// 推进逻辑时钟并串行执行到期任务，供测试无需真实等待地驱动运行时。
     /// 每次最多派发 capacity 个广播，避免回调持续发消息导致永不返回。
     pub fn advance(&mut self, delta: Duration) -> PluginResult {
+        self.advance_with_shutdown(delta, |_| {})
+    }
+
+    /// 推进时钟；若运行中的插件发生错误，在 stop 前允许宿主清理外部资源。
+    pub fn advance_with_shutdown(
+        &mut self,
+        delta: Duration,
+        before_stop: impl FnOnce(&mut Self),
+    ) -> PluginResult {
         if self.state != State::Running {
             return Err("runtime is not running".into());
         }
         let result = self.advance_inner(delta);
+        if result.is_err() {
+            before_stop(self);
+        }
         self.finish_operation(result)
     }
 
@@ -336,7 +548,7 @@ impl Runtime {
                 entry
                     .plugin
                     .tick(&mut Context::new(&mut host))
-                    .map_err(|e| format!("{} tick: {e}", entry.plugin.name()))?;
+                    .map_err(|e| format!("{} tick: {e}", entry.plugin.plugin_id()))?;
             }
         }
         for _ in 0..self.bus.capacity {
@@ -354,7 +566,7 @@ impl Runtime {
                 entry
                     .plugin
                     .on_message(&delivery.message, &mut Context::new(&mut host))
-                    .map_err(|e| format!("{} message: {e}", entry.plugin.name()))?;
+                    .map_err(|e| format!("{} message: {e}", entry.plugin.plugin_id()))?;
             }
         }
         Ok(())
@@ -435,6 +647,7 @@ impl Runtime {
         self.bus.active = false;
         self.bus.tasks.clear();
         self.bus.queue.clear();
+        self.bus.panel_tabs.clear();
         self.bus.subscriptions.iter_mut().for_each(HashSet::clear);
         let mut failures = Vec::new();
         for (id, entry) in self.entries.iter_mut().enumerate().rev() {
@@ -449,7 +662,7 @@ impl Runtime {
                     commands: &mut self.commands,
                 };
                 if let Err(error) = entry.plugin.stop(&mut Context::new(&mut host)) {
-                    failures.push(format!("{} stop: {error}", entry.plugin.name()));
+                    failures.push(format!("{} stop: {error}", entry.plugin.plugin_id()));
                 }
             }
         }

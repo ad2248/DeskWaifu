@@ -32,7 +32,7 @@ impl Probe {
     }
 }
 impl Plugin for Probe {
-    fn name(&self) -> &str {
+    fn plugin_id(&self) -> &str {
         self.name
     }
     fn initialize(&mut self, cx: &mut Context<'_>) -> PluginResult {

@@ -9,8 +9,10 @@ libloading = "0.8"
 deskwaifu-sdk.workspace = true
 futures-util = { version = "0.3", default-features = false, features = ["alloc"] }
 
-[dev-dependencies]
 serde_json = "1"
+jsonc-parser = "0.26.3"
+libc = "0.2"
+tempfile = "3"
 
 [lints]
 workspace = true

@@ -33,7 +33,7 @@ fn create() -> Lifecycle {
 deskwaifu_sdk::export_plugin!(create());
 
 impl Plugin for Lifecycle {
-    fn name(&self) -> &str {
+    fn plugin_id(&self) -> &str {
         env!("FIXTURE_NAME")
     }
 
