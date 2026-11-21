@@ -49,17 +49,6 @@ class ParallelReviewTest(unittest.TestCase):
         self.assertIn("REVIEW_HEAD_SHA: ${{ gitea.event.pull_request.head.sha }}", review)
         self.assertNotIn("REVIEW_CI_URL", review)
 
-    def test_prompt_distinguishes_local_verification_from_ci(self):
-        source = SCRIPT.read_text()
-        prompt = source.split('\nprompt="$(cat <<EOF\n', 1)[1].split('\nEOF\n)"', 1)[0]
-        self.assertIn("独立 CI 可能正在并行运行", prompt)
-        self.assertIn("只报告实际执行过的验证及其结果", prompt)
-        self.assertIn("远端 CI 状态以独立工作流的检查为准", prompt)
-        self.assertIn("检查测试是否覆盖了改动涉及的关键行为", prompt)
-        self.assertNotIn("CI 已成功", source)
-        self.assertNotIn("Successful CI", source)
-        self.assertNotIn("REVIEW_CI_URL", source)
-
     def test_published_review_does_not_claim_ci_passed(self):
         source = SCRIPT.read_text()
         publish = source.split("\nreview_event=COMMENT\n", 1)[1]

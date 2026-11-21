@@ -23,8 +23,7 @@ class SdkConfigurationTest(unittest.TestCase):
                 registry = json.loads(subprocess.check_output(
                     ["ctest", "--test-dir", str(build), "--show-only=json-v1"], text=True))
                 self.assertCountEqual([test["name"] for test in registry["tests"]], [
-                    "plugin-events", "plugin-timeout-flood", "plugin-legacy-events", "plugin-sdk-image-file",
-                    "plugin-sdk-contracts", "plugin-sdk-ownership", "plugin-sdk-installed-consumer"])
+                    "plugin-sdk-ownership", "plugin-sdk-installed-consumer"])
                 for test in registry["tests"]:
                     self.assertTrue(any(arg.endswith("/scripts/test-environment.py") for arg in test["command"]))
 

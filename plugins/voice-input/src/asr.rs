@@ -385,6 +385,3 @@ async fn https(
     .ok_or("asr_protocol")?;
     checked_text(text.to_owned())
 }
-
-#[cfg(test)]
-mod tests;

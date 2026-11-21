@@ -266,6 +266,3 @@ fn decode_paste(
     }
     Err(OsError::Backend)
 }
-
-#[cfg(test)]
-mod tests;

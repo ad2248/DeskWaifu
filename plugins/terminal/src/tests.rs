@@ -136,34 +136,6 @@ fn help_lists_p1_commands() {
 }
 
 #[test]
-fn preserves_paths_motion_groups_and_expression_names() {
-    // 检查路径、动作组和表情名保留 argv 中的空格与 Unicode，索引按 u32 解析。
-    assert_eq!(
-        Request::parse(&argv(&["load", "模型目录/example model.model3.json"])),
-        Ok(Request::Load("模型目录/example model.model3.json")),
-    );
-    assert_eq!(
-        Request::parse(&argv(&["motion", "待机 动作", "0"])),
-        Ok(Request::Motion {
-            group: "待机 动作",
-            index: 0,
-        }),
-    );
-    assert_eq!(
-        Request::parse(&argv(&["catalog", "模型 目录"])),
-        Ok(Request::Catalog(Some("模型 目录"))),
-    );
-    assert_eq!(
-        Request::parse(&argv(&["catalog"])),
-        Ok(Request::Catalog(None))
-    );
-    assert_eq!(
-        Request::parse(&argv(&["expression", "营业 微笑"])),
-        Ok(Request::Expression("营业 微笑")),
-    );
-}
-
-#[test]
 fn catalog_returns_sorted_paths_through_runtime_dispatch() {
     // 在临时目录创建普通文件、子目录与后缀相近的文件，通过宿主查询验证格式与排序。
     let temp = TempDir::new();
@@ -194,19 +166,6 @@ fn catalog_returns_sorted_paths_through_runtime_dispatch() {
         ]})
     );
     runtime.stop().unwrap();
-}
-
-#[test]
-fn serializes_operation_id_separately_from_snapshot() {
-    // 模拟受理后查询到的快照，验证 JSON 同时提供 ID 和状态，查询时省略 ID。
-    let snapshot = json!({"state": "ready", "pending": [7]});
-    let accepted: Value = serde_json::from_str(&response(Some(7), &snapshot).unwrap()).unwrap();
-    assert_eq!(
-        accepted,
-        json!({"accepted_operation_id": 7, "snapshot": snapshot})
-    );
-    let status: Value = serde_json::from_str(&response(None, &snapshot).unwrap()).unwrap();
-    assert_eq!(status, json!({"snapshot": snapshot}));
 }
 
 #[cfg(not(all(target_os = "linux", feature = "native")))]

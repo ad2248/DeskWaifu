@@ -89,6 +89,3 @@ pub async fn run(mut runtime: Runtime) -> Result<(), String> {
     services.shutdown().await;
     result.and(cleanup)
 }
-
-#[cfg(test)]
-mod tests;

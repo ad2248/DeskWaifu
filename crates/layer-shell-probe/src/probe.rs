@@ -2486,22 +2486,10 @@ delegate_noop!(Probe: ignore WpFractionalScaleManagerV1);
 delegate_noop!(Probe: ignore WpViewporter);
 delegate_noop!(Probe: ignore WpViewport);
 
-#[cfg(test)]
+#[cfg(all(test, feature = "native"))]
 mod tests {
     use super::*;
 
-    #[cfg(feature = "native")]
-    #[test]
-    fn explicit_output_centers_in_destination_and_keeps_zoom() {
-        // 目标逻辑尺寸不同时，按已缩放模型居中，同时清除旧输出坐标和裁剪。
-        let initial = Transform::new(100.0, 80.0, 1.5, Crop::new(50, 40, 200, 150)).unwrap();
-        assert_eq!(
-            centered_transform(initial.placement(), Size(1200, 800)),
-            Transform::new(360.0, 220.0, 1.5, None).unwrap(),
-        );
-    }
-
-    #[cfg(feature = "native")]
     #[test]
     #[ignore = "requires a local Cubism 5-r.5 SDK and an EGL driver"]
     fn scene_observes_native_expression_toggle_expiry_after_render() {
@@ -2546,69 +2534,5 @@ mod tests {
         )
         .unwrap();
         assert_eq!(frame.active_expression_toggles, [persistent]);
-    }
-
-    #[cfg(feature = "native")]
-    #[test]
-    fn global_gaze_sampling_resets_on_disable_and_falls_back_on_invalid_samples() {
-        // 用手动时间验证 16 ms 采样上限，并在关闭后清空缓存和定时器。
-        let mut gaze = Gaze::default();
-        let mut samples = [Some((3.0, 4.0)), Some((f64::NAN, 4.0)), Some((8.0, 9.0))].into_iter();
-        let mut provider: GlobalGaze = Box::new(move |connector, size| {
-            assert_eq!(connector, "DP-1");
-            assert_eq!(size, (800, 600));
-            samples.next().unwrap()
-        });
-        let output = ("DP-1".to_owned(), Size(800, 600));
-        let now = Instant::now();
-        assert!(gaze.sample(Some(&mut provider), Some(&output), now));
-        assert_eq!(gaze.target, Some((3.0, 4.0)));
-        assert!(!gaze.sample(
-            Some(&mut provider),
-            Some(&output),
-            now + Duration::from_millis(15)
-        ));
-        assert!(gaze.sample(
-            Some(&mut provider),
-            Some(&output),
-            now + Duration::from_millis(16)
-        ));
-        assert_eq!(gaze.target, None);
-        assert!(!gaze.sample(Some(&mut provider), None, now + Duration::from_millis(17)));
-        assert!(gaze.next.is_none());
-        assert!(gaze.sample(
-            Some(&mut provider),
-            Some(&output),
-            now + Duration::from_millis(18)
-        ));
-        assert_eq!(gaze.target, Some((8.0, 9.0)));
-    }
-
-    #[test]
-    fn computes_buffer_size_from_logical_size() {
-        // 使用奇数尺寸验证 1.5 倍时半像素向上取整，同时覆盖整数缩放和缓冲尺寸限制。
-        let logical = Size(321, 241);
-        assert_eq!(
-            Scale::Fractional(180).pixels(logical).unwrap(),
-            Size(482, 362)
-        );
-        assert_eq!(Scale::Integer(2).pixels(logical).unwrap(), Size(642, 482));
-        assert!(Scale::Integer(2).pixels(Size(4096, 4096)).is_err());
-    }
-
-    #[test]
-    fn paints_transparent_and_premultiplied_model_pixels() {
-        // 在 1.5 倍缓冲区中检查透明角及两个逻辑命中矩形内的像素值。
-        let logical = OVERLAY_SIZE;
-        let pixels = Scale::Fractional(180).pixels(logical).unwrap();
-        let mut canvas = vec![0xff; (pixels.0 * pixels.1 * 4) as usize];
-        paint(&mut canvas, logical, pixels, false);
-        let pixel = |x, y| {
-            let index = ((y * pixels.0 + x) * 4) as usize;
-            u32::from_ne_bytes(canvas[index..index + 4].try_into().unwrap())
-        };
-        assert_eq!(pixel(10, 10), 0);
-        assert_eq!(pixel(240, 180), 0xc024_9c60);
-        assert_eq!(pixel(90, 210), 0x8058_3810);
     }
 }

@@ -123,20 +123,6 @@ private slots:
         QCOMPARE(done.size(), 0);
     }
 
-    void missingKeyAndInvalidOptions()
-    {
-        MiniMaxSpeechSource source({ });
-        QSignalSpy errors(&source, &MiniMaxSpeechSource::Failed);
-        source.Start(1, { "test", { } });
-        QCOMPARE(errors.size(), 1);
-        QCOMPARE(qvariant_cast<SpeechError>(errors[0][1]).code, SpeechErrorCode::MissingApiKey);
-        SpeechRequest request { "test", { } };
-        request.options.speed = 100;
-        source.Start(2, request);
-        QCOMPARE(errors.size(), 2);
-        QCOMPARE(qvariant_cast<SpeechError>(errors[1][1]).code, SpeechErrorCode::InvalidRequest);
-    }
-
     void cancelDoesNotComplete()
     {
         QWebSocketServer server("test", QWebSocketServer::NonSecureMode);

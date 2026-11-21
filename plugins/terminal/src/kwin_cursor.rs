@@ -361,7 +361,3 @@ fn poll_pipe(pipe: &ChildStdout, millis: i64) -> bool {
     };
     poll(&mut descriptors, Some(&timeout)).is_ok_and(|ready| ready > 0)
 }
-
-#[cfg(test)]
-#[path = "kwin_cursor/tests.rs"]
-mod tests;

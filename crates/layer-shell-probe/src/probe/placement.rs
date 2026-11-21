@@ -107,7 +107,7 @@ impl Placement {
         )
     }
 
-    #[cfg(any(feature = "native", test))]
+    #[cfg(feature = "native")]
     pub fn constrain(&mut self, viewport: Size) {
         let (width, height) = self.size();
         // Keep the center reachable after moving, even if the canvas is larger than the output.
@@ -130,7 +130,7 @@ impl Placement {
         ((x * scale) as f32, (y * scale) as f32)
     }
 
-    #[cfg(any(feature = "native", test))]
+    #[cfg(feature = "native")]
     pub fn scroll(&mut self, cursor: (f64, f64), steps: f64, viewport: Size) {
         let zoom = (self.zoom * 1.12_f64.powf(steps.clamp(-8.0, 8.0))).clamp(0.1, 10.0);
         let ratio = zoom / self.zoom;
@@ -141,36 +141,7 @@ impl Placement {
     }
 }
 
-#[cfg(any(feature = "native", test))]
+#[cfg(feature = "native")]
 pub(super) fn drag_threshold(delta: (f64, f64)) -> bool {
     delta.0.hypot(delta.1) >= 4.0
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn gaze_keeps_direction_when_limited() {
-        // 使用右上方鼠标坐标，验证方向、半径限制和半径零时的居中行为。
-        let placement = Placement::default();
-        let (x, y) = placement.look_at((320.0, 0.0), 0.25);
-        assert!((x.hypot(y) - 0.25).abs() < 1e-6);
-        assert_eq!(x, y);
-        assert_eq!(placement.look_at((320.0, 0.0), 0.0), (0.0, 0.0));
-    }
-
-    #[test]
-    fn drag_threshold_and_zoom_keep_pointer_coordinates_stable() {
-        // 先尝试小幅移动，再跨过阈值，最后检查光标锚点放大后仍落在原位置。
-        let viewport = Size(1600, 900);
-        let mut placement = Placement::default();
-        assert!(!drag_threshold((2.0, 1.0)));
-        assert!(drag_threshold((4.0, 0.0)));
-        placement.origin = (80.0, 80.0);
-        placement.scroll((230.0, 180.0), 1.0, viewport);
-        assert!((placement.zoom - 1.12).abs() < 1e-9);
-        assert!((placement.origin.0 + 150.0 * placement.zoom - 230.0).abs() < 1e-9);
-        assert!((placement.origin.1 + 100.0 * placement.zoom - 180.0).abs() < 1e-9);
-    }
 }

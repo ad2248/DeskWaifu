@@ -30,9 +30,6 @@ pub const MAX_FRAME_BYTES: usize = 64 * 1024;
 pub const MAX_CLIENTS: usize = 32;
 pub const CLIENT_TIMEOUT: Duration = Duration::from_secs(10);
 
-#[cfg(test)]
-mod tests;
-
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Request {

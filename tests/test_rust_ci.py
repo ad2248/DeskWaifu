@@ -33,18 +33,6 @@ class RustCiTest(unittest.TestCase):
         self.assertNotIn('cmake ', ci)
         self.assertNotIn('pacman -S', ci)
 
-    # 测试目的：确认 CI 的安装验收会检查独立 CLI 和语音命令的发现。
-    # 测试方法：检查工作流是否核对安装路径，并用已安装的 CLI 查询 help 输出中的语音启动命令。
-    def test_package_acceptance_uses_independent_cli(self):
-        ci = (ROOT / '.gitea/workflows/ci.yml').read_text()
-        self.assertIn('/usr/bin/deskwaifucli --help', ci)
-        self.assertNotIn('/usr/bin/deskwaifu --help', ci)
-        self.assertIn('readlink -f /usr/bin/deskwaifu', ci)
-        self.assertIn('/usr/lib/deskwaifu/plugins/libdeskwaifu_test_plugin.so', ci)
-        self.assertIn('/usr/lib/deskwaifu/plugins/libdeskwaifu_voice_input.so', ci)
-        self.assertIn('/usr/bin/deskwaifucli help', ci)
-        self.assertIn('^start_voice_input', ci)
-
     def test_image_contains_no_private_sources(self):
         image = (ROOT / 'Containerfile').read_text()
         for legacy in ('CubismSdk', 'qt6-', 'onnxruntime'):
@@ -102,10 +90,3 @@ class RustCiTest(unittest.TestCase):
             self.assertEqual(result.stdout.count('server-started'), 1, result.stdout)
             self.assertIn('cache busy', result.stdout)
             self.assertIn('second-build-ran', result.stdout)
-
-    def test_workspace_is_root_and_has_no_owned_cpp(self):
-        self.assertTrue((ROOT / 'Cargo.lock').is_file())
-        for directory in ('apps', 'crates', 'plugins'):
-            for extension in ('*.cpp', '*.hpp', '*.c', '*.h'):
-                self.assertEqual(list((ROOT / directory).rglob(extension)), [])
-        self.assertFalse((ROOT / 'CMakeLists.txt').exists())

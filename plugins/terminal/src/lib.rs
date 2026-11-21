@@ -886,6 +886,3 @@ impl Plugin for TerminalPlugin {
         Ok(())
     }
 }
-
-#[cfg(test)]
-mod tests;

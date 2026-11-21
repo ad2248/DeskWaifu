@@ -60,11 +60,11 @@
 
 | 插件 | 测试源码 | 主要 CTest 目标 |
 | --- | --- | --- |
-| desktop | `plugins/desktop/tests/` | `model-catalog`、`model-hit-test`、`qt-window-input`、`interaction-processor`、`transform-editor` 等 |
+| desktop | `plugins/desktop/tests/` | `model-catalog`、`model-region-render`、`interaction-processor`、`transform-editor` 等 |
 | perception | `plugins/perception/tests/` | `perception-adapters`、`ocr-client`、`ocr-build`、`screenshot-service` |
 | ipc | `plugins/ipc/tests/` | `ipc-transport`、`ipc-bounded-transport`、`command-processor`、`ctl` |
 | reading_clip | `plugins/reading_clip/tests/` | `reading-pipeline` |
-| speech | `plugins/speech/tests/` | `SpeechPlayer`、`MiniMaxSpeechSource`、`AudioPlayer`、`SpeechSettings`、`speech-contract-*` |
+| speech | `plugins/speech/tests/` | `MiniMaxSpeechSource`、`AudioPlayer`、`SpeechSettings`、`speech-contract-*` |
 | system | `plugins/system/tests/` | `deskwaifu-launcher`；跨插件重启联动见 `platform/tests` 的 `deskwaifu-respawner` |
 | interaction | `plugins/interaction/tests/` | `hotkey-panel` |
 | model | 无插件内测试 | 页面：`platform/tests/gui` 的 `gui-tabs`；模型命令与资源：`plugins/desktop/tests/` |

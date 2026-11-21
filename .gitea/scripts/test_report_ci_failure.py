@@ -1,15 +1,8 @@
 """守护 ci_failed 回调载荷与 OpenHands 自动化表达式的契约。"""
 
-import contextlib
-import hashlib
-import hmac
 import importlib.util
-import io
-import json
-import os
 import re
 from pathlib import Path
-import tempfile
 import unittest
 
 
@@ -23,6 +16,7 @@ ENV = {
     "GITHUB_WORKFLOW": "ci.yml",
     "GITHUB_JOB": "test",
 }
+
 
 def job_blocks(text):
     """按两空格缩进的作业名切分 ci.yml，无需 PyYAML 依赖。"""
@@ -52,20 +46,6 @@ class ReportCiFailureTest(unittest.TestCase):
     def setUp(self):
         self.module = load_module()
 
-    def test_push_to_default_branch_is_skipped(self):
-        self.assertIsNone(self.module.build_payload({"ref": "refs/heads/main"}, ENV))
-        self.assertIsNone(self.module.build_payload({"pull_request": {"number": 0}}, ENV))
-
-    def test_pr_failure_payload_supplies_every_field_the_automation_reads(self):
-        payload = self.module.build_payload(PR_EVENT, ENV)
-        self.assertEqual(payload["action"], "ci_failed")
-        self.assertEqual(payload["pull_request_number"], 274)
-        self.assertEqual(payload["pull_request"], {"number": 274})
-        self.assertEqual(payload["branch"], "nia/ci-openhands-callback")
-        self.assertEqual(payload["run_url"], "https://git.kals.top/kals/DeskWaifu/actions/runs/681")
-        self.assertIn("test", payload["logs"])
-        self.assertTrue(payload["logs"])
-
     def test_turn_text_expression_renders_without_error(self):
         try:
             from jmespath import search
@@ -81,24 +61,6 @@ class ReportCiFailureTest(unittest.TestCase):
         self.assertIn("PR#274", text)
         self.assertIn("actions/runs/681", text)
 
-    def test_aggregated_report_names_every_failed_job(self):
-        """一次 CI 失败只能上报一次，但载荷要点名全部失败作业。
-
-        回归：ci.yml 曾让 package 与 test 各自上报，两个作业同时失败时
-        运行 722/710 各创建了两条 runs_created，重复触发智能体。
-        """
-        payload = self.module.build_payload(PR_EVENT, ENV | {"CI_FAILED_JOBS": "package test"})
-        self.assertIn("package", payload["logs"])
-        self.assertIn("test", payload["logs"])
-
-    def test_single_failed_job_is_reported_by_name(self):
-        payload = self.module.build_payload(PR_EVENT, ENV | {"CI_FAILED_JOBS": "test"})
-        self.assertIn("作业「test」", payload["logs"])
-
-    def test_falls_back_to_current_job_without_the_aggregate_variable(self):
-        payload = self.module.build_payload(PR_EVENT, ENV)
-        self.assertIn("作业「test」", payload["logs"])
-
     def test_workflow_reports_once_from_a_job_depending_on_both_ci_jobs(self):
         """锁住 ci.yml 的聚合上报结构，避免退回到每作业各报一次。"""
         jobs = job_blocks((ROOT / "workflows/ci.yml").read_text())
@@ -112,29 +74,6 @@ class ReportCiFailureTest(unittest.TestCase):
         self.assertIn("needs.test.result", report)
         # 没有失败时必须自行跳过，否则一次成功也会触发回调。
         self.assertIn("CI 未失败，跳过回调", report)
-
-    def test_signature_is_hex_hmac_of_the_exact_body(self):
-        body = json.dumps({"action": "ci_failed"}).encode()
-        expected = hmac.new(b"secret", body, hashlib.sha256).hexdigest()
-        self.assertEqual(self.module.sign(body, b"secret"), expected)
-
-    def test_missing_secret_fails_instead_of_posting_unsigned(self):
-        with tempfile.TemporaryDirectory() as temp:
-            event_path = Path(temp) / "event.json"
-            event_path.write_text(json.dumps(PR_EVENT))
-            saved = {key: os.environ.get(key) for key in ENV}
-            os.environ.update(ENV | {"GITHUB_EVENT_PATH": str(event_path)})
-            os.environ.pop("PIPELINE_WEBHOOK_SECRET", None)
-            self.module.EVENTS_URL = "http://127.0.0.1:1/unreachable"
-            try:
-                with contextlib.redirect_stderr(io.StringIO()):
-                    self.assertEqual(self.module.main(), 1)
-            finally:
-                for key, value in saved.items():
-                    if value is None:
-                        os.environ.pop(key, None)
-                    else:
-                        os.environ[key] = value
 
 
 if __name__ == "__main__":

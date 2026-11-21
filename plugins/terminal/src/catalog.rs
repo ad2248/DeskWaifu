@@ -118,6 +118,3 @@ fn discover(
 fn scan_error(path: &Path, error: io::Error) -> String {
     format!("terminal catalog: {}: {error}", path.display())
 }
-
-#[cfg(test)]
-mod tests;

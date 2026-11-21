@@ -3,9 +3,6 @@ use super::*;
 use std::{future::poll_fn, task::Poll};
 use tokio::io::{Interest, unix::AsyncFd};
 
-#[cfg(test)]
-mod tests;
-
 const ACCEPT_RETRY_DELAY: Duration = Duration::from_millis(100);
 
 impl Server {

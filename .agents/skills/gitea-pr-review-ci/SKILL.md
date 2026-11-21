@@ -48,8 +48,7 @@ python3 -B -m unittest discover -s .gitea/scripts -p 'test_*.py' -v
 | 文件 | 覆盖范围 |
 | --- | --- |
 | [.gitea/scripts/test_parallel_review.py](../../../.gitea/scripts/test_parallel_review.py) | 并行触发、可信目标分支检出、审查正文与 CI 状态的区分、过期 head 拦截。 |
-| [.gitea/scripts/test_opencode_review_cli.py](../../../.gitea/scripts/test_opencode_review_cli.py) | OpenCode 版本与配置兼容、可执行文件选择、临时目录、目标分支基线和完整 PR diff。 |
-| [.gitea/scripts/test_extract_opencode_review.py](../../../.gitea/scripts/test_extract_opencode_review.py) | 最后一条消息的提取和片段拼接、旧版兼容、无文本报错、批准动作和 Gitea 事件枚举。 |
-| [.gitea/scripts/test_report_ci_failure.py](../../../.gitea/scripts/test_report_ci_failure.py) | PR 失败载荷、多个失败作业汇总、非 PR 跳过、签名和密钥缺失时的失败。 |
+| [.gitea/scripts/test_opencode_review_cli.py](../../../.gitea/scripts/test_opencode_review_cli.py) | OpenCode 版本与配置兼容、可执行文件选择、临时目录、目标分支基线、完整 PR diff 和批准动作。 |
+| [.gitea/scripts/test_report_ci_failure.py](../../../.gitea/scripts/test_report_ci_failure.py) | CI 失败汇总作业的结构和 OpenHands 使用 JMESPath 读取回调载荷的契约。 |
 
 修复缺陷时将对应案例加入测试。Rust CI 的完整本地验证见 [本地 CI 测试说明](../../../.opencode/skills/local-ci-tests/SKILL.md)。线上验收使用测试 PR，查看两个工作流的触发情况、当前 head 的 Review 与 CI 状态，并验证推送新提交后的合并条件。

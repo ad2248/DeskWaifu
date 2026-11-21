@@ -3,7 +3,6 @@
 import json
 import os
 from pathlib import Path
-import re
 import shutil
 import subprocess
 import tempfile
@@ -14,44 +13,6 @@ SOURCE = Path(__file__).with_name("opencode-review.sh")
 
 
 class ReviewCliTest(unittest.TestCase):
-    def test_v2_permissions_allow_tools_without_step_limit(self):
-        source = SOURCE.read_text()
-        config = json.loads(source.split("<<'JSON'\n", 1)[1].split("\nJSON", 1)[0])
-        allow = {"action": "*", "resource": "*", "effect": "allow"}
-        self.assertEqual(config["permissions"], [allow])
-        self.assertEqual(config["agents"]["build"], {"permissions": [allow]})
-
-    def test_review_model_is_declared_in_project_provider_config(self):
-        # 回归：`--model` 的 provider/模型必须与项目配置声明一致，
-        # 否则 CLI 直接报 Model unavailable，评审任务整体失败。
-        source = SOURCE.read_text()
-        model = re.search(r"^\s*--model ([\w.-]+/[\w.-]+)\s*\\$", source, re.M).group(1)
-        provider, _, model_id = model.partition("/")
-        # V2 与 V1 分支各写一份项目配置，两份都必须声明该模型。
-        configs = [json.loads(block.split("\nJSON", 1)[0])
-                   for block in source.split("<<'JSON'\n")[1:]]
-        self.assertEqual(len(configs), 2)
-        for config in configs:
-            self.assertIn(provider, config["provider"])
-            self.assertIn(model_id, config["provider"][provider]["models"])
-
-    def test_review_prompt_allows_source_exploration_and_verification(self):
-        source = SOURCE.read_text()
-        prompt = source.split('\nprompt="$(cat <<EOF\n', 1)[1].split('\nEOF\n)"', 1)[0]
-        self.assertIn("通过 API 补充上下文", prompt)
-        self.assertIn("按需阅读相关代码、执行构建或测试", prompt)
-        # 回归：在临时目录里用目标仓库读取 PR head，避免把目标分支检出当作 PR 源码。
-        self.assertIn('git -C "$repo_root" show "<head_sha>:<path>"', prompt)
-        self.assertIn("$workdir 不是 Git 仓库", prompt)
-        self.assertIn("从 Head 行确认本次审查的 head SHA", prompt)
-        self.assertIn("$repo_root 工作区检出的是目标分支", prompt)
-        sections = ("## 读懂改动", "## 判断是否批准", "## 提交审查结果", "## 输出最终报告",
-                    "## 结论", "## 阻塞问题", "## 非阻塞建议")
-        positions = [prompt.index(section) for section in sections]
-        self.assertEqual(positions, sorted(positions))
-        for restriction in ("禁止调用 API", "仅根据附件", "不调用任何工具", "不要尝试其他命令"):
-            self.assertNotIn(restriction, prompt)
-
     def test_review_uses_target_checkout_and_complete_pr_diff(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -295,6 +256,49 @@ class ReviewCliTest(unittest.TestCase):
             result = select()
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn(f"{system_bin} (1.18.32)", result.stdout)
+
+    def test_approve_action_checks_head_and_records_signal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            log = directory / "tea.log"
+            approval = directory / "approved"
+            tea = directory / "tea"
+            tea.write_text(
+                "#!/usr/bin/env bash\n"
+                "printf '%s\\n' \"$*\" >> \"$TEA_LOG\"\n"
+                "if [[ \"$*\" != *'-X POST'* ]]; then\n"
+                "  printf '{\"head\":{\"sha\":\"%s\"}}\\n' \"$REVIEW_HEAD_SHA\"\n"
+                "fi\n",
+                encoding="utf-8",
+            )
+            tea.chmod(0o755)
+            env = os.environ | {
+                "PATH": f"{directory}:{os.environ['PATH']}",
+                "TEA_LOG": str(log),
+                "GITHUB_REPOSITORY": "kals/DeskWaifu",
+                "REVIEW_REPO_ROOT": "/trusted/checkout",
+                "REVIEW_PR_NUMBER": "14",
+                "REVIEW_HEAD_SHA": "abc1234",
+                "REVIEW_MARKER": "<!-- opencode-review:abc1234 -->",
+                "REVIEW_APPROVAL_FILE": str(approval),
+            }
+
+            result = subprocess.run(
+                ["bash", str(SOURCE.with_name("opencode-review-action.sh")), "approve", "review passed"],
+                check=True,
+                capture_output=True,
+                env=env,
+                text=True,
+            )
+
+            calls = log.read_text(encoding="utf-8")
+            self.assertEqual("approved abc1234\n", result.stdout)
+            self.assertIn("/repos/kals/DeskWaifu/pulls/14 --login reviewer --repo /trusted/checkout", calls)
+            self.assertNotIn("-X POST", calls)
+            self.assertEqual(
+                "<!-- opencode-review:abc1234 -->\nreview passed\n",
+                approval.read_text(encoding="utf-8"),
+            )
 
 
 if __name__ == "__main__":

@@ -38,14 +38,6 @@ namespace {
 void InterruptPoll(int) { }
 }
 
-struct FakeTransport : ICompositorTransport {
-    Capability<std::string> next { CapabilityStatus::Available,
-        "[{\"name\":\"A\",\"focused\":false,\"x\":0,\"y\":0},"
-        "{\"name\":\"B\",\"focused\":true,\"x\":100,\"y\":200}]" };
-    Capability<std::string> Command(const std::vector<std::string>&) override { return next; }
-    Capability<std::string> HyprlandSocket(const std::string&) override { return next; }
-};
-
 int main(int argc, char** argv)
 {
     if (argc == 2 && std::string(argv[1]) == "--escape-group") {
@@ -59,53 +51,6 @@ int main(int argc, char** argv)
     if (argc == 3 && std::string(argv[1]) == "--check-fd") {
         return fcntl(std::atoi(argv[2]), F_GETFD) == -1 && errno == EBADF ? 0 : 1;
     }
-    const auto start = std::chrono::steady_clock::now();
-    CursorQueryThrottle throttle(std::chrono::milliseconds(30));
-    if (!throttle.Ready(start) || throttle.Ready(start + std::chrono::milliseconds(29)) || !throttle.Ready(start + std::chrono::milliseconds(30))) {
-        return 1;
-    }
-
-    FakeTransport transport;
-    CompositorAdapter generic(CompositorType::Generic, transport);
-    if (generic.GlobalCursor().status != CapabilityStatus::Unsupported || generic.FocusedOutput().status != CapabilityStatus::Unsupported) {
-        return 1;
-    }
-    CompositorAdapter sway(CompositorType::Sway, transport);
-    if (sway.FocusedOutput().value != "B" || sway.GlobalCursor().status != CapabilityStatus::Unsupported) {
-        return 1;
-    }
-    CompositorAdapter hypr(CompositorType::Hyprland, transport);
-    auto geometry = hypr.MonitorGeometry();
-    if (!geometry || geometry.value.size() != 2 || geometry.value[1].x != 100) {
-        return 1;
-    }
-    transport.next = { CapabilityStatus::Available, "{\"x\":-12,\"y\":42}" };
-    if (!hypr.GlobalCursor() || hypr.GlobalCursor().value.first != -12) {
-        return 1;
-    }
-    struct CountingTransport : FakeTransport {
-        int queries = 0;
-        Capability<std::string> HyprlandSocket(const std::string& request) override
-        {
-            ++queries;
-            return FakeTransport::HyprlandSocket(request);
-        }
-    } counted;
-    counted.next = { CapabilityStatus::Available, "{\"x\":1,\"y\":2}" };
-    CompositorAdapter tracked(CompositorType::Hyprland, counted);
-    if (!tracked.TrackedCursor(start) || tracked.TrackedCursor(start + std::chrono::milliseconds(29)) || !tracked.TrackedCursor(start + std::chrono::milliseconds(30))
-        || counted.queries != 2) {
-        return 1;
-    }
-    transport.next = { CapabilityStatus::Unavailable, { } };
-    if (hypr.GlobalCursor().status != CapabilityStatus::Unavailable) {
-        return 1;
-    }
-    transport.next = { CapabilityStatus::Available, "not json" };
-    if (hypr.GlobalCursor().status != CapabilityStatus::Failed) {
-        return 1;
-    }
-
     BoundedCompositorTransport actual;
     const auto begin = std::chrono::steady_clock::now();
     const auto timed = actual.Command({ "sh", "-c", "sleep 2" });

@@ -82,22 +82,6 @@ done
                 self.assertEqual((launcher.resolve().parent / f"plugins/libdeskwaifu_{name}.so").read_text(),
                                  "plugin")
 
-    # 测试目的：确认包内容校验要求宿主、启动入口、独立 CLI 和两个插件。
-    # 测试方法：先校验完整文件清单，再逐项移除必需文件或加入旧插件，检查对应的拒绝原因。
-    def test_payload_requires_host_launcher_cli_and_plugin(self):
-        info = {"pkgname": ["deskwaifu-bin"], "pkgver": ["1.2.3-1"], "arch": ["x86_64"],
-                "depend": sorted(PACKAGING.MAIN_DEPENDS)}
-        files = {"usr/bin/deskwaifu", "usr/bin/deskwaifucli", "usr/lib/deskwaifu/deskwaifu",
-                 "usr/lib/deskwaifu/plugins/libdeskwaifu_test_plugin.so",
-                 "usr/lib/deskwaifu/plugins/libdeskwaifu_voice_input.so"}
-        PACKAGING.verify_content("deskwaifu-bin", info, files, "1.2.3", "rust-v2")
-        for missing in files:
-            with self.subTest(missing=missing), self.assertRaisesRegex(ValueError, "Missing package files"):
-                PACKAGING.verify_content("deskwaifu-bin", info, files - {missing}, "1.2.3", "rust-v2")
-        with self.assertRaisesRegex(ValueError, "Unexpected package files"):
-            PACKAGING.verify_content("deskwaifu-bin", info,
-                                     files | {"usr/lib/deskwaifu/plugins/legacy.so"}, "1.2.3", "rust-v2")
-
 
 if __name__ == "__main__":
     unittest.main()

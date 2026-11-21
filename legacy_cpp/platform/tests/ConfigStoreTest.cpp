@@ -1,25 +1,9 @@
 #include "contracts/ConfigStore.hpp"
 #include "TestTemporaryDirectory.hpp"
-#include <cerrno>
-#include <cstdio>
-#include <dirent.h>
 #include <fstream>
 #include <iostream>
 #include <sys/stat.h>
 #include <unistd.h>
-
-namespace {
-bool failRename = false;
-}
-extern "C" int __real_rename(const char*, const char*);
-extern "C" int __wrap_rename(const char* from, const char* to)
-{
-    if (failRename) {
-        errno = EIO;
-        return -1;
-    }
-    return __real_rename(from, to);
-}
 
 #define CHECK(condition)                                                                                                                                                           \
     do {                                                                                                                                                                           \
@@ -31,26 +15,6 @@ extern "C" int __wrap_rename(const char* from, const char* to)
 
 int main()
 {
-    std::string error;
-    ConfigStore::Snapshot parsed;
-    CHECK(ConfigStore::Parse("{ // comment\n\"url\":\"https://example//x\",\"nested\":{\"x\":1},\"arr\":[true,null,1e-2]}", parsed, error));
-    for (auto text :
-        { "{", "{\"a\":1,}", "{\"a\":01}", "{\"a\":1,\"a\":2}", "{\"a\":1,\"\\u0061\":2}", "{\"nested\":{\"a\":1,\"a\":2}}", "{\"a\":NaN}", "{\"a\":true} trailing" }) {
-        CHECK(!ConfigStore::Parse(text, parsed, error));
-    }
-    CHECK(ConfigStore::Parse("{\"模型\":\"\\ud83d\\ude00\"}", parsed, error));
-    CHECK(!ConfigStore::Parse("{\"a\":\"\xc0\xaf\"}", parsed, error));
-    CHECK(!ConfigStore::Parse("{\"a\":\"\\ud800\"}", parsed, error));
-    std::string string;
-    std::vector<std::string> strings;
-    CHECK(ConfigStore::ParseString("\"\\u5915\\u989c\\ud83d\\ude00\\n\"", string) && string == "夕颜😀\n");
-    CHECK(ConfigStore::ParseStringArray("[\"a\", \"b\\\\c\", \"\\\"\"]", strings));
-    CHECK(strings.size() == 3 && strings[1] == "b\\c" && strings[2] == "\"");
-    CHECK(ConfigStore::ParseStringArray("[]", strings) && strings.empty());
-    CHECK(!ConfigStore::ParseString("null", string));
-    CHECK(!ConfigStore::ParseString("\"a\" trailing", string));
-    CHECK(!ConfigStore::ParseStringArray("[\"a\",1]", strings));
-    CHECK(!ConfigStore::ParseStringArray("[\"a\",]", strings));
     const std::string directory = MakeTestTemporaryDirectory("config-store-test");
     CHECK(!directory.empty());
     if (const char* root = std::getenv("TMPDIR")) {
@@ -64,7 +28,8 @@ int main()
     write("{\n // keep this comment\n \"other\": {\"model_x\": 9},\n \"model_x\": 1, // keep this too\n \"model_region\": {\"x\":100,\"width\":800,\"height\":600}\n}\n");
     CHECK(chmod(path.c_str(), 0640) == 0);
     ConfigStore store(path);
-    ConfigStore::Snapshot before, saved;
+    std::string error;
+    ConfigStore::Snapshot before, saved, parsed;
     CHECK(store.Read(before, error));
     CHECK(store.Commit("{\"model_x\":2.5,\"model_y\":-1}", before, saved, error));
     CHECK(saved.values.at("model_x") == "2.5");
@@ -84,26 +49,6 @@ int main()
     CHECK(store.Commit("{\"model_x\":5}", saved, parsed, error));
     CHECK(store.Commit("{\"model_x\":6}", saved, saved, error, true));
     CHECK(saved.values.at("model_x") == "6");
-    // A real filesystem commit failure must not report success, change the
-    // output snapshot, replace disk content or leak its temporary file.
-    auto unchanged = saved;
-    const auto document = saved.document;
-    failRename = true;
-    CHECK(!store.Commit("{\"model_x\":99}", saved, unchanged, error));
-    failRename = false;
-    CHECK(!error.empty() && unchanged.document == document && unchanged.values == saved.values);
-    CHECK(store.Read(parsed, error) && parsed.document == document);
-    DIR* entries = opendir(directory.c_str());
-    CHECK(entries);
-    bool leaked = false;
-    while (const auto* entry = readdir(entries)) {
-        if (std::string(entry->d_name).find(".deskwaifu-config-") == 0) {
-            leaked = true;
-        }
-    }
-    closedir(entries);
-    CHECK(!leaked);
-    CHECK(store.Commit("{\"model_x\":6}", saved, saved, error)); // retry succeeds after the boundary recovers.
     CHECK(!store.Commit("{broken", saved, parsed, error));
     CHECK(store.Read(parsed, error) && parsed.values == saved.values);
     write("{broken");

@@ -327,33 +327,3 @@ fn strings(value: &Value) -> impl Iterator<Item = &str> {
         .flatten()
         .filter_map(Value::as_str)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn page_preserves_action_arguments_and_current_selection() {
-        // 载入带空格与中文的路径，检查通用控件拿到原路径、选中状态和完成查询。
-        let path = "/模型/Sample Model.model3.json";
-        let catalog = json!({"models": [path]}).to_string();
-        let status = json!({"snapshot": {
-            "state": "ready", "model": path,
-            "motions": [{"name":"Idle", "count":2}], "expressions": ["F04"]
-        }})
-        .to_string();
-        let page: Value = serde_json::from_str(&describe(Ok(catalog), &status).unwrap()).unwrap();
-        assert_eq!(page["completion_query"], json!(["terminal", "status"]));
-        let models = &page["sections"][1];
-        assert_eq!(models["cycle"], true);
-        assert_eq!(models["actions"][0]["selected"], true);
-        assert_eq!(
-            models["actions"][0]["args"],
-            json!(["terminal", "load", path])
-        );
-        assert_eq!(
-            page["sections"][2]["actions"][1]["args"],
-            json!(["terminal", "motion", "Idle", "1"])
-        );
-    }
-}

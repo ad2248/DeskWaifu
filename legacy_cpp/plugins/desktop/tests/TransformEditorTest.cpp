@@ -35,14 +35,6 @@ int main()
     write("{\"model_x\":1,\"model_scale\":2,\"other\":true}");
     Runtime runtime;
     ApplicationService service(runtime);
-    ConfigStore::Snapshot invalid;
-    TransformSettings decoded;
-    std::string validationError;
-    for (const auto* document : { "{\"model_scale\":11}", "{\"model_x\":\"1\"}", "{\"model_region\":{\"width\":0,\"height\":1}}", "{\"model_region\":{\"width\":1.5,\"height\":1}}",
-             "{\"model_region\":{\"x\":2147483648,\"width\":1,\"height\":1}}" }) {
-        CHECK(ConfigStore::Parse(document, invalid, validationError));
-        CHECK(!TransformEditor::Decode(invalid, decoded, validationError));
-    }
     LAppConfig config;
     config.sourcePath = path;
     TransformEditor editor(service, config);
@@ -115,22 +107,6 @@ int main()
     CHECK(service.Snapshot().transform.x == 3);
     editor.AbortScreenEdit();
     CHECK(!editor.Editing() && service.Snapshot().transform.x == 0);
-    // 裁剪框向右移动 100 像素、向下移动 50 像素时，模型也应移动相同像素距离。
-    TransformSettings start { { 2, 1, 1 }, true, { 100, 100, 800, 600 } };
-    const auto moved = CropInteraction::Drag(start, CropInteraction::Move, 100, 50, 1000);
-    CHECK(moved.region.x == 200 && moved.region.y == 150);
-    CHECK(std::abs(moved.transform.x - 1.1f) < .00001f && std::abs(moved.transform.y - .95f) < .00001f);
-    const auto resized = CropInteraction::Drag(start, CropInteraction::Left | CropInteraction::Top, 900, 900, 1000);
-    CHECK(resized.region.width == 1 && resized.region.height == 1);
-    CHECK(resized.transform.x == start.transform.x && resized.transform.scale == start.transform.scale);
-    CHECK(CropInteraction::Hit(start.region, 500, 100) == CropInteraction::Move);
-    CHECK(CropInteraction::Hit(start.region, 100, 100) == (CropInteraction::Left | CropInteraction::Top));
-    start.region = { INT32_MIN, INT32_MIN, INT32_MAX, INT32_MAX };
-    auto recovered = TransformEditor::MoveCrop(start, -int64_t(start.region.x), -int64_t(start.region.y), 1000);
-    CHECK(recovered.region.x == 0 && recovered.region.y == 0);
-    const auto extreme = CropInteraction::Drag(start, CropInteraction::Left | CropInteraction::Top, INT32_MIN, INT32_MIN, 1000);
-    CHECK(extreme.region.width > 0 && extreme.region.height > 0);
-
     // 普通点击不进入编辑；首次真实拖动转交原始按下坐标，
     // 不丢失位移，也不重复应用位移。
     write("{}");

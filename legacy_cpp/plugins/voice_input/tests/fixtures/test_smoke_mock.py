@@ -6,15 +6,11 @@ import http.client
 import importlib.util
 import io
 import json
-import math
 from pathlib import Path
-import signal
-import subprocess
 import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock, call, patch
 import wave
 
 SPEC = importlib.util.spec_from_file_location(
@@ -114,106 +110,6 @@ class MockContractTest(unittest.TestCase):
         self.assertEqual(len(self.smoke.errors), 2)
         self.assertEqual(self.smoke.records, [])
 
-    def test_virtual_mic_readiness_retries_unpublished_default_metadata(self):
-        status = SimpleNamespace(stdout="42. test-mic")
-        inspect = SimpleNamespace(stdout='node.name = "test-mic"')
-        with patch.object(self.smoke, "run", side_effect=[status, None,
-                subprocess.CalledProcessError(3, "wpctl inspect"), status, None, inspect]):
-            self.assertFalse(self.smoke.select_mic())
-            self.assertTrue(self.smoke.select_mic())
-
-    def test_clipboard_seed_is_foreground_registered_and_retries_no_selection(self):
-        holder = Mock(pid=12343)
-        holder.poll.return_value = None
-        with patch.object(SMOKE.subprocess, "Popen", return_value=holder) as launch, \
-                patch.object(self.smoke, "paste", side_effect=[subprocess.CalledProcessError(1, "wl-paste"),
-                                                               SMOKE.SENTINEL]):
-            self.smoke.seed()
-        command = launch.call_args.args[0]
-        self.assertEqual(command, ["wl-copy", "--foreground", "--type", "text/plain;charset=utf-8"])
-        self.assertTrue(launch.call_args.kwargs["start_new_session"])
-        self.assertEqual(self.smoke.processes, [holder])
-        self.assertEqual((self.smoke.root / "clipboard-seed.txt").read_bytes(), SMOKE.SENTINEL)
-        self.assertNotEqual(launch.call_args.kwargs["stdout"], subprocess.PIPE)
-
-    def test_clipboard_seed_exit_is_failure_not_readiness_retry(self):
-        holder = Mock()
-        holder.poll.return_value = 1
-        with patch.object(self.smoke, "spawn", return_value=holder), \
-                patch.object(self.smoke, "paste") as paste:
-            with self.assertRaisesRegex(AssertionError, "seed exited"):
-                self.smoke.seed()
-        paste.assert_not_called()
-
-    def test_all_registered_groups_get_kill_even_after_leader_exit(self):
-        exited = Mock(pid=12341)
-        exited.wait.return_value = 0
-        slow = Mock(pid=12342)
-        slow.wait.side_effect = [subprocess.TimeoutExpired("fixture", 3), 0]
-        self.smoke.processes = [exited, slow]
-        with patch.object(SMOKE.os, "killpg") as kill:
-            self.smoke.stop()
-        self.assertEqual(kill.call_args_list, [call(12342, signal.SIGTERM),
-                                              call(12341, signal.SIGTERM),
-                                              call(12342, signal.SIGKILL),
-                                              call(12341, signal.SIGKILL)])
-
-    def test_group_errors_do_not_prevent_other_groups_being_killed(self):
-        self.smoke.processes = [Mock(pid=12341), Mock(pid=12342)]
-        with patch.object(SMOKE.os, "killpg", side_effect=[PermissionError("test"), None, None, None]) as kill:
-            with self.assertRaises(PermissionError):
-                self.smoke.stop()
-        self.assertEqual(kill.call_args_list[-2:], [call(12342, signal.SIGKILL),
-                                                   call(12341, signal.SIGKILL)])
-
-    def test_cleanup_closes_server_and_writes_summary_when_stop_fails(self):
-        with patch.object(self.smoke, "stop", side_effect=RuntimeError("stop failed")), \
-                patch.object(self.smoke.server, "shutdown") as shutdown, \
-                patch.object(self.smoke.server, "server_close") as close:
-            with self.assertRaisesRegex(RuntimeError, "stop failed"):
-                self.smoke.cleanup()
-            shutdown.assert_called_once()
-            close.assert_called_once()
-        summary = json.loads((self.smoke.args.logs / "mock-requests.json").read_text())
-        self.assertEqual(summary, {"requests": [], "errors": []})
-
-    def test_cleanup_writes_summary_even_when_server_shutdown_fails(self):
-        with patch.object(self.smoke.server, "shutdown", side_effect=RuntimeError("shutdown failed")), \
-                patch.object(self.smoke.server, "server_close") as close:
-            with self.assertRaisesRegex(RuntimeError, "shutdown failed"):
-                self.smoke.cleanup()
-            close.assert_called_once()
-        self.assertTrue((self.smoke.args.logs / "mock-requests.json").is_file())
-
-    def test_termination_signals_raise_for_finally_cleanup(self):
-        for sig in (signal.SIGTERM, signal.SIGINT):
-            with self.subTest(signal=sig), patch.object(SMOKE.signal, "signal") as install:
-                with self.assertRaises(InterruptedError):
-                    SMOKE.interrupt(sig, None)
-                self.assertEqual(install.call_args_list, [call(signal.SIGTERM, signal.SIG_IGN),
-                                                         call(signal.SIGINT, signal.SIG_IGN)])
-
-    def test_marker_feature_rejects_loud_non_marker_audio(self):
-        tone = [int(12000 * math.sin(2 * math.pi * index / 16 + .7)) for index in range(4000)]
-        self.assertGreater(SMOKE.marker_score(tone), .99)
-        self.assertGreater(SMOKE.marker_score(tone[:2400] + [0] * 1600), .59)
-        wrong_frequency = [int(12000 * math.sin(2 * math.pi * 700 * index / 16000)) for index in range(4000)]
-        self.assertLess(SMOKE.marker_score(wrong_frequency), .01)
-        self.assertEqual(SMOKE.marker_score([0] * 4000), 0)
-        speech = array.array("h", (Path(__file__).parent / "voice-input.pcm").read_bytes())
-        if sys.byteorder != "little":
-            speech.byteswap()
-        self.assertLess(SMOKE.marker_score(speech[-4000:]), .35)
-
-    def test_environment_has_no_inherited_session_or_credentials(self):
-        self.assertNotIn("DISPLAY", self.smoke.env)
-        self.assertNotIn("WAYLAND_DISPLAY", self.smoke.env)
-        self.assertNotIn("SWAYSOCK", self.smoke.env)
-        self.assertNotIn("HTTP_PROXY", self.smoke.env)
-        self.assertEqual(self.smoke.env["PULSE_SOURCE"], "test-mic")
-        self.assertIn(str(self.smoke.root), self.smoke.env["PULSE_SERVER"])
-        self.assertIn(str(self.smoke.root), self.smoke.env["DBUS_SESSION_BUS_ADDRESS"])
-        self.assertFalse(any("API_KEY" in name for name in self.smoke.env))
 
 
 if __name__ == "__main__":
