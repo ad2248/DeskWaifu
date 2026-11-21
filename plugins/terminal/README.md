@@ -3,10 +3,11 @@
 `terminal` 负责 Live2D 模型展示、交互和设置。当前验证路径使用 SCTK layer-shell 和 `wl_shm`。请按 [Cubism 构建说明](<../../crates/cubism-bridge/README.md>) 设置 SDK 和 GLEW 路径，然后构建原生插件。
 
 ```sh
-cargo build --locked -p deskwaifu-terminal --features native
+cargo build --workspace --locked
+./scripts/deploy-plugins.sh
 ```
 
-将 `libdeskwaifu_terminal.so` 部署为宿主的 `plugins/terminal.so` 后，可用现有 CLI 操作。
+启动宿主后，可用独立 CLI 操作。Arch 包会直接安装插件，不需要运行部署辅助脚本。
 
 ```sh
 deskwaifucli terminal catalog ./models
@@ -56,10 +57,10 @@ deskwaifucli terminal show
 
 `terminal gpu` 查看当前渲染设备与下次启动配置。`terminal gpu 0000:04:00.0`、`terminal gpu /dev/dri/renderD128` 或 `terminal gpu auto` 保存下次启动的选择。指定设备不可用时，宿主仍可查询状态和重新选择设备。
 
-启用 KWin 全局视线需要构建时使用 `./scripts/build.sh --kwin-cursor`，并安装 `libsystemd` 开发库。将生成的 `deskwaifu-cursor-guard` 放在宿主旁，设置 `mouse_look_radius` 后可在 KDE 会话中启用。样本不可用时使用覆盖层局部指针。
+默认构建包含 KWin 全局视线支持，需要 `libsystemd` 开发库。设置 `mouse_look_radius` 后可在 KDE 会话中启用，无需安装额外的可执行文件。样本不可用时使用覆盖层局部指针。插件停止时通过 D-Bus 卸载临时脚本；若宿主被强制终止，已运行的脚本会自行卸载。如果宿主恰好在脚本加载后、运行前被强制终止，脚本可能保留到 KWin 会话结束。
 
 左键短按触发模型的点击动作，中键循环皮肤，右键循环模型。左键拖动进入屏幕编辑，顶部手柄同时移动模型与裁剪框，边角调整裁剪范围。按 Esc 取消，双击框边或点框外应用。保存失败时草稿保留，可再次操作重试。
 
 面板使用同一 IPC 连接执行 `terminal edit begin`、`terminal edit update X Y Z [CX CY CW CH]`，再选择 `terminal edit apply` 或 `terminal edit cancel`。应用将位置、缩放、裁剪写入 `terminal.transform`。取消或连接断开恢复编辑前的状态，保存失败保留当前草稿。每个 CLI 调用独立连接，适合单次预览。
 
-投递成功时返回 `accepted_operation_id`。使用 `terminal status` 查询 `snapshot.pending` 和最近 32 条 `snapshot.completed`，其中 `error` 为 `null` 表示操作成功。`snapshot.visible` 表示覆盖层已经提交可见帧。切换加载失败时保留旧模型和会话代号。切换成功后，排队中属于旧模型的动作和表情会返回会话已变更。脚本可在加载完成后再查询并提交新模型的动作。默认构建无需 SDK，渲染状态返回 `unavailable`。
+投递成功时返回 `accepted_operation_id`。使用 `terminal status` 查询 `snapshot.pending` 和最近 32 条 `snapshot.completed`，其中 `error` 为 `null` 表示操作成功。`snapshot.visible` 表示覆盖层已经提交可见帧。切换加载失败时保留旧模型和会话代号。切换成功后，排队中属于旧模型的动作和表情会返回会话已变更。脚本可在加载完成后再查询并提交新模型的动作。单独以 `cargo build -p deskwaifu-terminal --no-default-features` 构建时无需 SDK，渲染状态返回 `unavailable`。

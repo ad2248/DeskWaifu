@@ -17,9 +17,7 @@ case "$tested_sha" in
   *) echo "invalid head SHA" >&2; exit 2 ;;
 esac
 
-# 主机运行器的 PATH 很精简，可能选中旧版系统 OpenCode，
-# 而非用户安装的版本及其当前模型。
-# 显式覆盖值始终优先；其他安装方式仍可通过 PATH 查找。
+# 依次使用显式路径、用户安装目录和 PATH 查找 OpenCode。
 opencode_bin="${OPENCODE_BIN:-}"
 if test -z "$opencode_bin"; then
   if test -x "${HOME}/.opencode/bin/opencode"; then

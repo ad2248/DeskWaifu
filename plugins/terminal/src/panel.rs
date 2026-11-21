@@ -114,10 +114,11 @@ fn shortcut_section(snapshot: &Value) -> (Section, Vec<Value>) {
     };
     let mut chords = std::collections::HashMap::new();
     for shortcut in &shortcuts {
-        if shortcut.enabled && shortcut.unsupported_reason.is_none() {
-            if let Some(key) = panel_key(&shortcut.keys) {
-                *chords.entry(key).or_insert(0usize) += 1;
-            }
+        if shortcut.enabled
+            && shortcut.unsupported_reason.is_none()
+            && let Some(key) = panel_key(&shortcut.keys)
+        {
+            *chords.entry(key).or_insert(0usize) += 1;
         }
     }
     for shortcut in shortcuts {

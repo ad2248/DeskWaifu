@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "apps/deskwaifucli", "apps/deskwaifu", "crates/sdk", "crates/runtime", "crates/os",
+    "apps/deskwaifucli", "apps/deskwaifu", "apps/terminal-panel", "crates/sdk", "crates/runtime", "crates/os",
     "crates/cubism-bridge", "crates/layer-shell-probe", "plugins/terminal", "plugins/test-plugin", "plugins/voice-input",
 ]
 resolver = "3"

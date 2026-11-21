@@ -76,7 +76,7 @@ use crate::worker::{
 #[cfg(feature = "native")]
 enum Edit {
     Connection { owner: u64, original: Transform },
-    Screen(ScreenEdit<wl_pointer::WlPointer>),
+    Screen(Box<ScreenEdit<wl_pointer::WlPointer>>),
 }
 
 #[cfg_attr(not(feature = "native"), allow(dead_code))]
@@ -251,7 +251,9 @@ fn paint(canvas: &mut [u8], logical: Size, pixels: Size, underlay: bool) {
     let [main, side] = model_rects(logical);
     let contains = |Rect(rx, ry, rw, rh), x, y| x >= rx && x < rx + rw && y >= ry && y < ry + rh;
     for (index, bytes) in canvas[..(pixels.0 * pixels.1 * 4) as usize]
-        .chunks_exact_mut(4)
+        .as_chunks_mut::<4>()
+        .0
+        .iter_mut()
         .enumerate()
     {
         let x = (((index as u32 % pixels.0) * 2 + 1) * logical.0 / (pixels.0 * 2)) as i32;
@@ -771,14 +773,14 @@ fn run_session(
                     _ => {}
                 }
             }
-            if let Some((id, error)) = control.take_screen_save_result() {
-                if let Some(Edit::Screen(edit)) = probe.edit.as_mut() {
-                    match edit.finish_save(id, error) {
-                        SaveOutcome::Applied => probe.finish_screen_edit(true)?,
-                        SaveOutcome::Canceled => probe.finish_screen_edit(false)?,
-                        SaveOutcome::Retry => probe.redraw(),
-                        SaveOutcome::Stale => {}
-                    }
+            if let Some((id, error)) = control.take_screen_save_result()
+                && let Some(Edit::Screen(edit)) = probe.edit.as_mut()
+            {
+                match edit.finish_save(id, error) {
+                    SaveOutcome::Applied => probe.finish_screen_edit(true)?,
+                    SaveOutcome::Canceled => probe.finish_screen_edit(false)?,
+                    SaveOutcome::Retry => probe.redraw(),
+                    SaveOutcome::Stale => {}
                 }
             }
             let scene = frame.as_mut().expect("managed scene");
@@ -828,10 +830,9 @@ fn run_session(
                         }
                     }
                 }
-                if skin {
-                    if let Err(error) = probe.apply_command(&qh, scene, control, Command::Skin) {
-                        eprintln!("terminal model skin: {error}");
-                    }
+                if skin && let Err(error) = probe.apply_command(&qh, scene, control, Command::Skin)
+                {
+                    eprintln!("terminal model skin: {error}");
                 }
             }
             if std::mem::take(&mut probe.cycle_model) && probe.edit.is_none() {
@@ -865,10 +866,8 @@ fn run_session(
             if let Some(drag) = probe.released_model_drag.take() {
                 probe.start_output_transfer(&qh, control, drag);
             }
-            if !queue_busy {
-                if let Some(owner) = control.take_canceled_edit() {
-                    let _ = probe.end_edit(owner, false, control);
-                }
+            if !queue_busy && let Some(owner) = control.take_canceled_edit() {
+                let _ = probe.end_edit(owner, false, control);
             }
         }
         if probe.closed || !probe.tick(&qh)? {
@@ -1450,12 +1449,11 @@ impl Probe {
     #[cfg(feature = "native")]
     fn advance_output_selection(&mut self, control: &Control) -> Option<(u64, Option<String>)> {
         let reply = control.take_output_save_result();
-        if let Some((0, error)) = &reply {
-            if self.startup_output_save.take().is_some() {
-                if let Some(error) = error {
-                    eprintln!("terminal startup output fallback save: {error}");
-                }
-            }
+        if let Some((0, error)) = &reply
+            && self.startup_output_save.take().is_some()
+            && let Some(error) = error
+        {
+            eprintln!("terminal startup output fallback save: {error}");
         }
         let selection = self.output_selection.as_mut()?;
         if let Some(save) = &selection.save {
@@ -1839,20 +1837,19 @@ impl Probe {
 impl Probe {
     fn current(&mut self, raw: &wl_surface::WlSurface) -> Option<&mut Surface> {
         #[cfg(feature = "native")]
-        if let Some(transfer) = &mut self.output_transfer {
-            if transfer.candidate.role.wl_surface() == raw {
-                return Some(&mut transfer.candidate);
-            }
+        if let Some(transfer) = &mut self.output_transfer
+            && transfer.candidate.role.wl_surface() == raw
+        {
+            return Some(&mut transfer.candidate);
         }
         #[cfg(feature = "native")]
         if let Some(candidate) = self
             .output_selection
             .as_mut()
             .and_then(|selection| selection.candidate.as_mut())
+            && candidate.role.wl_surface() == raw
         {
-            if candidate.role.wl_surface() == raw {
-                return Some(candidate);
-            }
+            return Some(candidate);
         }
         self.surface
             .as_mut()
@@ -1993,14 +1990,13 @@ impl OutputHandler for Probe {
             self.output_transfer = None;
         }
         #[cfg(feature = "native")]
-        if let Some(selection) = &mut self.output_selection {
-            if selection
+        if let Some(selection) = &mut self.output_selection
+            && selection
                 .candidate
                 .as_ref()
                 .is_some_and(|candidate| candidate.output.as_ref() == Some(&output))
-            {
-                selection.candidate = None;
-            }
+        {
+            selection.candidate = None;
         }
         if !self.options.underlay
             && self
@@ -2025,15 +2021,14 @@ impl LayerShellHandler for Probe {
             return;
         }
         #[cfg(feature = "native")]
-        if let Some(selection) = &mut self.output_selection {
-            if selection
+        if let Some(selection) = &mut self.output_selection
+            && selection
                 .candidate
                 .as_ref()
                 .is_some_and(|candidate| candidate.role.wl_surface() == layer.wl_surface())
-            {
-                selection.candidate = None;
-                return;
-            }
+        {
+            selection.candidate = None;
+            return;
         }
         if let Some(surface) = self.current(layer.wl_surface()) {
             println!("surface-closed generation={}", surface.generation);
@@ -2291,14 +2286,13 @@ impl Probe {
                     let preview = edit
                         .motion(pointer, cursor, viewport)
                         .expect("drag crossed threshold");
-                    if let PointerEventKind::Release { time, .. } = event.kind {
-                        if let Release::ModelDrag(drag) =
+                    if let PointerEventKind::Release { time, .. } = event.kind
+                        && let Release::ModelDrag(drag) =
                             edit.release(pointer, cursor, time, viewport)
-                        {
-                            self.released_model_drag = Some(drag);
-                        }
+                    {
+                        self.released_model_drag = Some(drag);
                     }
-                    self.edit = Some(Edit::Screen(edit));
+                    self.edit = Some(Edit::Screen(Box::new(edit)));
                     self.preview_transform(preview);
                 } else if release {
                     self.drag = None;
@@ -2425,10 +2419,9 @@ impl Dispatch<wl_keyboard::WlKeyboard, ()> for Probe {
                     && key_state == wayland_client::WEnum::Value(wl_keyboard::KeyState::Pressed)
                     && state.output_transfer.is_none()
                     && matches!(&state.edit, Some(Edit::Screen(edit)) if edit.pending.is_none())
+                    && let Err(error) = state.finish_screen_edit(false)
                 {
-                    if let Err(error) = state.finish_screen_edit(false) {
-                        eprintln!("terminal screen edit cancel: {error}");
-                    }
+                    eprintln!("terminal screen edit cancel: {error}");
                 }
                 println!("keyboard-key code={key} state={key_state:?}")
             }

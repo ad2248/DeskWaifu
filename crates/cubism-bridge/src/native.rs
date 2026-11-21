@@ -80,7 +80,7 @@ impl fmt::Display for Error {
 }
 impl std::error::Error for Error {}
 
-/// The legacy action area selected by a model tap.
+/// The hit result of a model tap.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TapHit {
     Miss,
@@ -293,7 +293,7 @@ impl Runtime {
             .into_owned()
     }
 
-    /// Load a model and its assets synchronously. The PoC is intended for trusted model packages.
+    /// Synchronously load a model and its assets from a trusted model package.
     pub fn load(&self, model_json: &Path) -> Result<Model<'_>, Error> {
         let path = model_json.as_os_str().as_bytes();
         let mut raw = ptr::null_mut();
@@ -432,12 +432,13 @@ impl Model<'_> {
         check(unsafe { dw_switch_skin(self.raw.as_ptr()) })
     }
 
-    /// Clear look and apply the legacy tap action using the latest drawable geometry.
+    /// Clear the look target and handle a tap using the latest drawable geometry.
     /// Coordinates are finite and in `0..=1`, measured from the top-left of the
     /// actual render buffer. The caller is responsible for clipping to its input region.
     /// Head cycles expressions. Body starts a random `TapBody` motion when its
     /// priority permits and also cycles expressions. Missing groups or expressions
-    /// are a no-op. Models with no declared hit areas split at `y = 0.5`.
+    /// are a no-op. Only fully opaque models are eligible for a hit. If a model
+    /// declares no hit areas, taps with `y < 0.5` hit Head and the rest hit Body.
     pub fn tap(&mut self, x: f32, y: f32) -> Result<TapHit, Error> {
         if !(0.0..=1.0).contains(&x) || !(0.0..=1.0).contains(&y) {
             return Err(Error("tap coordinates must be finite and in 0..=1".into()));

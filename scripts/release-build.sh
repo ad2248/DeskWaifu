@@ -65,8 +65,28 @@ for trusted in "$root" "$tools_root"; do
         trusted=$parent
     done
 done
-# CI uses the sources bundled in the runner image. Older release tags can
-# still acquire their own locked dependencies before the offline build.
+# Public release builds must be authorized before fetching or compiling v3.
+if [[ $payload == rust-v3 && ${DESKWAIFU_PUBLIC_RELEASE:-0} == 1 &&
+      ${DESKWAIFU_CUBISM_REDISTRIBUTION_APPROVED:-0} != 1 ]]; then
+    echo 'Publishing rust-v3 requires confirmed Cubism redistribution authorization' >&2
+    exit 1
+fi
+# Only the rust-v3 payload requires local Cubism and GLEW inputs.
+# Only forward these allowlisted directories to makepkg, never to cargo fetch.
+sdk_env=()
+if [[ $payload == rust-v3 ]]; then
+    for key in CUBISM_SDK_DIR CUBISM_GLEW_DIR; do
+        input=${!key:-}
+        if [[ $input != /* ]] || ! runuser -u "$build_user" -- env -i PATH=/usr/bin:/bin \
+                bash -c '[[ -d $1 && -r $1 && -x $1 ]]' _ "$input"; then
+            echo "Set $key to an absolute directory readable by the package build user" >&2
+            exit 1
+        fi
+        sdk_env+=("$key=$input")
+    done
+fi
+# Offline CI uses the runner image's Cargo sources. Otherwise fetch the selected
+# archive's locked dependencies before entering the offline package build.
 if [[ ${DESKWAIFU_CI_OFFLINE:-0} == 1 ]]; then
     runuser -u "$build_user" -- test -r /opt/deskwaifu-cargo/config.toml || {
         echo 'CI image is missing Cargo dependencies. Rebuild the runner image for this Cargo.lock.' >&2
@@ -100,7 +120,7 @@ if [[ ${DESKWAIFU_CI_SCCACHE:-0} == 1 && -z ${RELEASE_TOOLS_DIR:-} ]] && mountpo
     fi
 fi
 runuser -u "$build_user" -- env -i PATH=/usr/bin:/bin HOME="$work/home" SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" TZ=UTC LANG=C.UTF-8 \
-    PKGDEST="$work/packages" CARGO_HOME="$work/home/.cargo" CARGO_NET_OFFLINE=true \
+    PKGDEST="$work/packages" CARGO_HOME="$work/home/.cargo" CARGO_NET_OFFLINE=true "${sdk_env[@]}" \
     bash -euc 'cd "$1"; shift; exec "$@"' _ "$work" "${build_command[@]}"
 output="$root/release-assets"
 mkdir "$output" # Refuse stale artifacts from another tag/run.

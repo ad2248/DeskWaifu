@@ -1,4 +1,4 @@
-//! Narrow, thread-confined sd-bus bindings shared with the crash guard.
+//! Narrow, thread-confined sd-bus bindings for KWin cursor sampling.
 #![allow(unsafe_code)]
 
 use std::ffi::{CStr, c_char, c_int, c_void};
@@ -14,7 +14,6 @@ struct RawMessage(c_void);
 unsafe extern "C" {
     fn sd_bus_open_user(bus: *mut *mut RawBus) -> c_int;
     fn sd_bus_close_unref(bus: *mut RawBus) -> *mut RawBus;
-    fn sd_bus_is_open(bus: *mut RawBus) -> c_int;
     fn sd_bus_set_method_call_timeout(bus: *mut RawBus, timeout: u64) -> c_int;
     fn sd_bus_get_unique_name(bus: *mut RawBus, name: *mut *const c_char) -> c_int;
     fn sd_bus_call_method(
@@ -79,12 +78,6 @@ impl Bus {
         Ok(bus)
     }
 
-    #[allow(dead_code)] // Used by the companion binary.
-    pub(super) fn is_open(&self) -> bool {
-        // SAFETY: this wrapper owns the connection, even if the transport closed.
-        unsafe { sd_bus_is_open(self.0.as_ptr()) > 0 }
-    }
-
     pub(super) fn own_name(&self) -> io::Result<&CStr> {
         let mut ptr = std::ptr::null();
         // SAFETY: bus is live and the returned string remains valid for this connection.
@@ -106,12 +99,6 @@ impl Bus {
         .read_string()
     }
 
-    #[allow(dead_code)] // Used by the companion binary.
-    pub(super) fn has_owner(&self, name: &CStr) -> io::Result<bool> {
-        self.call(DAEMON, DAEMON_PATH, DAEMON, c"NameHasOwner", &[name])?
-            .read_bool()
-    }
-
     pub(super) fn load(&self, owner: &CStr, file: &CStr, script: &CStr) -> io::Result<i32> {
         self.call(
             owner,
@@ -128,7 +115,6 @@ impl Bus {
             .map(drop)
     }
 
-    #[allow(dead_code)] // Used by the companion binary.
     pub(super) fn unload(&self, owner: &CStr, script: &CStr) -> io::Result<()> {
         self.call(owner, SCRIPTING_PATH, SCRIPTING, c"unloadScript", &[script])
             .map(drop)
@@ -269,20 +255,12 @@ impl Message {
     }
 
     fn read_i32(&mut self) -> io::Result<i32> {
-        self.read_int(b'i')
-    }
-
-    fn read_bool(&mut self) -> io::Result<bool> {
-        self.read_int(b'b').map(|v| v != 0)
-    }
-
-    fn read_int(&mut self, kind: u8) -> io::Result<i32> {
         let mut value: i32 = 0;
-        // SAFETY: the only callers pass 'i' or 'b', both read into an int on Linux.
+        // SAFETY: the signature 'i' expects an out-pointer to an i32.
         let result = unsafe {
             sd_bus_message_read_basic(
                 self.0.as_ptr(),
-                kind as c_char,
+                b'i' as c_char,
                 (&mut value as *mut i32).cast(),
             )
         };

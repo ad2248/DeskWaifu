@@ -63,6 +63,9 @@ jobs:
 
       - name: Acquire verified sources and build unprivileged Arch packages
         if: ${{ github.event.inputs.notes_only != 'true' }}
+        env:
+          DESKWAIFU_PUBLIC_RELEASE: '1'
+          DESKWAIFU_CUBISM_REDISTRIBUTION_APPROVED: ${{ vars.DESKWAIFU_CUBISM_REDISTRIBUTION_APPROVED }}
         run: bash "$RELEASE_TOOLS_DIR/scripts/release-build.sh"
 
       - name: Upload verified packages to GitHub release

@@ -1,6 +1,6 @@
-# Cubism / EGL 原型
+# Cubism / EGL 渲染桥
 
-使用本地 Cubism Native SDK 5-r.5 与生成过的 GLEW 源码（已验证 GLEW 2.3.1）。Linux x86_64 构建需要 CMake、C/C++ 编译器及 EGL、OpenGL 开发库。默认构建不启用原生功能，无需 SDK 或图形库。
+使用本地 Cubism Native SDK 5-r.5 与生成过的 GLEW 源码（已验证 GLEW 2.3.1）。Linux x86_64 构建需要 CMake、C/C++ 编译器及 EGL、OpenGL 开发库。从根 workspace 构建时，`terminal` 默认启用原生功能；单独构建 `cubism-bridge` 且不启用 `native` 才不需要 SDK 或图形库。
 
 ```sh
 export CUBISM_SDK_DIR=/path/to/CubismSdkForNative-5-r.5
@@ -32,7 +32,7 @@ env -u LIBGL_ALWAYS_SOFTWARE CUBISM_TEST_PCI="$FIRST_PCI" CUBISM_TEST_SECOND_PCI
   explicit_device_selection -- --ignored --nocapture
 ```
 
-## P1 Wayland 呈现对照
+## Wayland 呈现对照
 
 `window_bench` 在同一个固定 1× layer-shell 客户端中切换两条呈现路径。`egl` 在同一 `wl_display` 上创建带 alpha 的 window surface，将模型 FBO blit 到 EGL back buffer，并从每轴缩小约 8 倍的 FBO 读取轮廓采样。`shm` 使用离屏 EGL 完整读回，再转换为预乘 `WL_SHM_FORMAT_ARGB8888` 写入已释放的缓冲区。两条路径都在同一次 commit 应用对应帧的输入区域，并使用 compositor frame callback 节流。
 
@@ -57,33 +57,3 @@ done
 ```
 
 可选 PNG 验证 EGL back buffer 的真实像素与离屏输出。写图和 20 帧热身不计入帧时间和 IPC 采样。`frame_work` 计量绘制、回读、输入区域和提交，`present` 是其中的输入区域加 swap 或 SHM 转换加 commit，`frame_interval` 含 compositor 回调等待。独立线程每次收到回复后等待 2ms，再用本地 Unix datagram 发下一次请求，由呈现线程在帧间回应。CPU 采用 Bash `time`，包含初始化和热身。`readback_bytes_per_frame` 仅统计应用请求从 GL 读回的字节，驱动内部传输另计。
-
-### 私有 Sway 测量
-
-以下历史测量使用 Cubism Mark `Idle` 组索引 1。环境为 Sway 1.10.1 headless + pixman，Mesa llvmpipe（LLVM 19.1.7）。每组选取三次各 150 帧的中位数，帧及 IPC 的 p95 先在单次运行内计算。
-
-| 尺寸 | 路径 | 帧处理 p95 | 帧间隔 p50 | Worker IPC RTT p95 | 应用 CPU | GL 回读字节/帧 |
-| --- | --- | ---: | ---: | ---: | ---: | ---: |
-| 640² | EGL | 10.125 ms | 17.065 ms | 8.538 ms | 151.5% | 25,600 |
-| 640² | `wl_shm` | 8.633 ms | 17.065 ms | 6.429 ms | 118.6% | 1,638,400 |
-| 1600² | EGL | 37.497 ms | 39.501 ms | 36.490 ms | 264.8% | 160,000 |
-| 1600² | `wl_shm` | 28.859 ms | 34.294 ms | 28.012 ms | 221.5% | 10,240,000 |
-
-十二次运行均无 IPC 超时。640² 两个首帧 PNG 逐字节一致，包含 369,102 个全透明、5,218 个半透明、35,280 个全不透明像素。`grim` 捕获两个实际合成结果，模型区域改变了约 40,400 个像素，透明角落保留背景色。Wayland trace 显示同一个 surface 的 `set_input_region`、EGL attach 和 `commit` 顺序相邻，也显示软件 EGL 自身通过 Wayland `wl_shm` 分配交换缓冲。
-
-软件路径下，EGL 将应用显式回读量缩小到 1/64。软件 EGL 的交换缓冲和同步使帧处理、CPU 占用以及 worker socket 延迟都更高。
-
-### Intel DG1 硬件测量
-
-同一 Sway 版本、客户端、模型和重复次数，改用 headless + GLES2，在 `/dev/dri/renderD128` 上启动 Sway，并取消 `LIBGL_ALWAYS_SOFTWARE`。两条客户端路径和合成器均报告 Mesa Intel Iris Xe DG1。EGL 的 Wayland trace 显示 DMA-BUF-backed buffers（`zwp_linux_buffer_params_v1.create_immed`）。
-
-| 尺寸 | 路径 | 帧处理 p95 | 帧间隔 p50 | Worker IPC RTT p95 | 应用 CPU |
-| --- | --- | ---: | ---: | ---: | ---: |
-| 640² | EGL | 1.789 ms | 16.263 ms | 0.996 ms | 27.6% |
-| 640² | `wl_shm` | 3.336 ms | 16.267 ms | 1.426 ms | 31.5% |
-| 1600² | EGL | 3.197 ms | 16.254 ms | 1.247 ms | 29.1% |
-| 1600² | `wl_shm` | 16.130 ms | 17.771 ms | 14.436 ms | 60.2% |
-
-硬件每帧 GL 回读字节数与软件测试相同。十二次运行均无 IPC 超时。同一设备的两个 640² PNG 逐字节一致，包含 369,096 个全透明、5,295 个半透明、35,209 个全不透明像素。
-
-呈现选择取决于驱动实际使用的交换路径。DG1 支持在 DMA-BUF 可用时推进硬件 EGL 集成，`wl_shm` 可覆盖软件渲染和接入失败。当前原型固定 1× 和窗口尺寸，IPC 测量覆盖呈现 worker 的帧间响应。正式插件集成仍需验证实际宿主 IPC、输出重建与 EGL context 丢失。

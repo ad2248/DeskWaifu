@@ -5,22 +5,16 @@ mod bus;
 
 use std::ffi::{CStr, CString};
 use std::fs::File;
-use std::io::{self, Read, Write};
+use std::io::{self, Write};
 use std::os::fd::AsRawFd;
-use std::os::unix::ffi::OsStrExt;
-use std::path::{Path, PathBuf};
-use std::process::{ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-
-use rustix::event::{PollFd, PollFlags, Timespec, poll};
 
 const STALE: Duration = Duration::from_secs(1);
 const LOST: Duration = Duration::from_secs(3);
 const RETRY: Duration = Duration::from_secs(2);
 const OWNER_INTERVAL: Duration = Duration::from_millis(250);
-const GUARD_NAME: &str = "deskwaifu-cursor-guard";
 
 pub(crate) struct KWinCursor {
     shared: Arc<Mutex<Target>>,
@@ -29,20 +23,14 @@ pub(crate) struct KWinCursor {
 }
 
 impl KWinCursor {
-    /// Starts the optional provider with the installed sibling cleanup helper.
+    /// Only the worker talks to KWin.
     pub(crate) fn start() -> io::Result<Self> {
-        Self::start_with_guard(&std::env::current_exe()?.with_file_name(GUARD_NAME))
-    }
-
-    /// Use an explicitly selected packaged helper. Only the worker talks to KWin.
-    pub(crate) fn start_with_guard(guard: &Path) -> io::Result<Self> {
-        let path = guard.to_owned();
         let (stop, receiver) = mpsc::channel();
         let shared = Arc::new(Mutex::new(Target::default()));
         let samples = Arc::clone(&shared);
         let worker = thread::Builder::new()
             .name("dw-kwin-cursor".into())
-            .spawn(move || work(path, &samples, &receiver))?;
+            .spawn(move || work(&samples, &receiver))?;
         Ok(Self {
             shared,
             stop: Some(stop),
@@ -137,16 +125,16 @@ fn stopping(stop: &mpsc::Receiver<()>, wait: Duration) -> bool {
     stop.recv_timeout(wait) != Err(mpsc::RecvTimeoutError::Timeout)
 }
 
-fn work(path: PathBuf, shared: &Mutex<Target>, stop: &mpsc::Receiver<()>) {
+fn work(shared: &Mutex<Target>, stop: &mpsc::Receiver<()>) {
     while !stopping(stop, Duration::ZERO) {
-        let _ = attempt(&path, shared, stop);
+        let _ = attempt(shared, stop);
         if stopping(stop, RETRY) {
             break;
         }
     }
 }
 
-fn attempt(helper: &Path, shared: &Mutex<Target>, stop: &mpsc::Receiver<()>) -> io::Result<()> {
+fn attempt(shared: &Mutex<Target>, stop: &mpsc::Receiver<()>) -> io::Result<()> {
     let bus = bus::Bus::open()?;
     let owner = bus.owner()?;
     let client = bus.own_name()?.to_owned();
@@ -171,11 +159,10 @@ fn attempt(helper: &Path, shared: &Mutex<Target>, stop: &mpsc::Receiver<()>) -> 
         std::process::id(),
         script.as_raw_fd()
     ))?;
-    let mut guard = Guard::start(helper, &owner, &client, &script_name)?;
+    if stopping(stop, Duration::ZERO) {
+        return Ok(());
+    }
     let result = (|| {
-        if stopping(stop, Duration::ZERO) {
-            return Ok(());
-        }
         let id = bus.load(&owner, &script_file, &script_name)?;
         if id < 0 {
             return Err(io::Error::other("KWin rejected cursor script"));
@@ -185,13 +172,9 @@ fn attempt(helper: &Path, shared: &Mutex<Target>, stop: &mpsc::Receiver<()>) -> 
         receive(&bus, &owner, shared, stop)
     })();
     shared.lock().unwrap().sample = None;
-    // Release the unique name before waking the guard, even when load timed out.
-    drop(bus);
-    guard.control.take();
-    // While running, avoid registering another script until cleanup of this one
-    // finishes. Host shutdown waits at most one poll interval, then the detached
-    // guard can finish independently.
-    while !guard.finished() && !stopping(stop, Duration::ZERO) {}
+    // Use the same connection and KWin owner even if loading or running timed out.
+    // If the connection is already gone, a running script cleans itself up.
+    let _ = bus.unload(&owner, &script_name);
     result
 }
 
@@ -212,10 +195,11 @@ fn receive(
         }
         for _ in 0..32 {
             let (progress, message) = bus.process()?;
-            if let Some(message) = message {
-                if message.is_sample() && receive_sample(message, owner, shared) {
-                    last_sample = Instant::now();
-                }
+            if let Some(message) = message
+                && message.is_sample()
+                && receive_sample(message, owner, shared)
+            {
+                last_sample = Instant::now();
             }
             if !progress {
                 break;
@@ -287,10 +271,10 @@ fn receive_sample(mut message: bus::Message, owner: &CStr, shared: &Mutex<Target
     let age = sample_age(SystemTime::now(), timestamp);
     let target_reply = {
         let mut target = shared.lock().unwrap();
-        if let Some(age) = age {
-            if let Some(observed) = sample.observed.checked_sub(age) {
-                target.put(Sample { observed, ..sample }, &output, &generation);
-            }
+        if let Some(age) = age
+            && let Some(observed) = sample.observed.checked_sub(age)
+        {
+            target.put(Sample { observed, ..sample }, &output, &generation);
         }
         CString::new(format!("{}\n{}", target.generation, target.output))
     };
@@ -312,52 +296,4 @@ fn sample_age(now: SystemTime, timestamp: u64) -> Option<Duration> {
     let sent = UNIX_EPOCH.checked_add(Duration::from_millis(timestamp))?;
     let age = now.duration_since(sent).ok()?;
     (age < STALE).then_some(age)
-}
-
-struct Guard {
-    control: Option<ChildStdin>,
-    status: ChildStdout,
-}
-
-impl Guard {
-    fn start(path: &Path, owner: &CStr, client: &CStr, script: &CStr) -> io::Result<Self> {
-        let mut launcher = Command::new(path)
-            .arg("launch")
-            .args(
-                [owner, client, script].map(|value| std::ffi::OsStr::from_bytes(value.to_bytes())),
-            )
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()?;
-        let mut guard = Self {
-            control: launcher.stdin.take(),
-            status: launcher.stdout.take().unwrap(),
-        };
-        let mut ack = [0];
-        let ready = poll_pipe(&guard.status, 1_000)
-            && guard.status.read_exact(&mut ack).is_ok()
-            && ack == *b"R";
-        if !ready {
-            let _ = launcher.kill();
-        }
-        let success = launcher.wait()?.success();
-        if !ready || !success {
-            return Err(io::Error::other("KWin cleanup guard is not ready"));
-        }
-        Ok(guard)
-    }
-
-    fn finished(&self) -> bool {
-        poll_pipe(&self.status, 250)
-    }
-}
-
-fn poll_pipe(pipe: &ChildStdout, millis: i64) -> bool {
-    let mut descriptors = [PollFd::new(pipe, PollFlags::IN)];
-    let timeout = Timespec {
-        tv_sec: millis / 1_000,
-        tv_nsec: (millis % 1_000) * 1_000_000,
-    };
-    poll(&mut descriptors, Some(&timeout)).is_ok_and(|ready| ready > 0)
 }

@@ -345,7 +345,7 @@ struct DwModel final : csm::CubismUserModel {
         const auto count = settings->GetExpressionCount();
         if (count == 0) return;
         expression_at(next_expression);
-        // The legacy "random expression" command actually cycles the list.
+        // Play expressions in model-file order, wrapping after the last entry.
         next_expression = (next_expression + 1) % count;
     }
 
@@ -391,7 +391,7 @@ struct DwModel final : csm::CubismUserModel {
             return;
         }
 
-        // Legacy starts from group zero, advances, then plays the new group's first motion.
+        // The skin index starts at zero. Advance it and play the selected group's first motion.
         const auto next = (skin_index + 1) % count;
         const auto group = settings->GetMotionGroupName(next);
         if (settings->GetMotionCount(group) == 0) {
@@ -428,7 +428,7 @@ struct DwModel final : csm::CubismUserModel {
     DwTapHit hit_area(float x, float y) const {
         if (_model->GetModelOpacity() < 1.0f) return DW_TAP_MISS;
         const auto count = settings->GetHitAreasCount();
-        // Legacy splits the viewport before applying model layout for this fallback.
+        // Without hit areas, use the viewport halves independently of model layout.
         if (count == 0) return y < 0.5f ? DW_TAP_HEAD : DW_TAP_BODY;
 
         auto mvp = render_projection();
@@ -496,7 +496,7 @@ struct DwModel final : csm::CubismUserModel {
         if (_pose) _pose->UpdateParameters(_model, dt);
         // Keep toggles outside the saved motion baseline and the ordinary expression queue.
         apply_expression_toggles(dt);
-        // An external mouth opening is an explicit override, as in the legacy update.
+        // Apply the external mouth opening after motion, expression, and other effects.
         if (lip_opening) {
             for (int i = 0; i < lip_ids.GetSize(); ++i) _model->SetParameterValue(lip_ids[i], *lip_opening);
         }

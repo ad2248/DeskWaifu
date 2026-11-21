@@ -10,28 +10,53 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class RustCiTest(unittest.TestCase):
-    # 测试目的：确认 CI 保持锁定、离线构建约定，并在测试前部署两个插件。
-    # 测试方法：检查工作流和构建脚本中的命令、选项、插件名及步骤顺序。
+    # 测试目的：确认 CI 直接构建整个锁定的工作区，并运行原生离屏测试。
+    # 测试方法：检查工作流中两个构建配置、离线依赖安装顺序和渲染命令。
     def test_required_checks_are_offline_and_locked(self):
         ci = (ROOT / '.gitea/workflows/ci.yml').read_text()
         for command in ('cargo fmt --all --check',
                         'cargo clippy --workspace --all-targets --frozen -- -D warnings',
                         'cargo test --workspace --frozen',
-                        'bash scripts/build.sh',
-                        'CARGO_NET_OFFLINE=true bash scripts/build.sh --release'):
+                        'env -u DISPLAY -u WAYLAND_DISPLAY -u CUBISM_TEST_PCI -u CUBISM_TEST_SECOND_PCI',
+                        'LIBGL_ALWAYS_SOFTWARE=1 cargo test --frozen -p cubism-bridge '
+                        '--features native --test offscreen -- --ignored'):
             self.assertIn(command, ci)
-        build = (ROOT / 'scripts/build.sh').read_text()
-        self.assertIn('cargo build --workspace --locked', build)
-        for plugin in ('libdeskwaifu_test_plugin.so', 'libdeskwaifu_voice_input.so'):
-            self.assertIn(plugin, build)
+        builds = [line.strip() for line in ci.splitlines() if 'cargo build ' in line]
+        build = 'run: bash scripts/ci-sccache.sh /cache/sccache-rust-test cargo build --workspace --frozen'
+        self.assertEqual(builds, [build, f'{build} --release'])
+        self.assertNotIn('scripts/build.sh', ci)
+        self.assertNotIn('scripts/deploy-plugins.sh', ci)
         self.assertNotIn('cargo fetch', ci)
         self.assertIn("DESKWAIFU_CI_OFFLINE: '1'", ci)
-        self.assertLess(ci.index('install -Dm644 /opt/deskwaifu-cargo/config.toml'),
-                        ci.index('CARGO_NET_OFFLINE=true bash scripts/build.sh'))
-        self.assertLess(ci.index('bash scripts/build.sh'), ci.index('cargo test --workspace --frozen'))
+        self.assertLess(ci.index('install -Dm644 /opt/deskwaifu-cargo/config.toml'), ci.index(build))
+        self.assertLess(ci.index(build), ci.index('cargo test --workspace --frozen'))
         self.assertNotIn('runs-on: deskwaifu-arch', ci)
         self.assertNotIn('cmake ', ci)
         self.assertNotIn('pacman -S', ci)
+
+    def test_installed_package_checks_panel_and_plugins(self):
+        ci = (ROOT / '.gitea/workflows/ci.yml').read_text()
+        install = ci.index('pacman -U --noconfirm release-assets/deskwaifu-bin-*.pkg.tar.zst')
+        checks = ci.index('- name: Clean package artifacts', install)
+        smoke = ci[install:checks]
+        self.assertIn('test -x /usr/bin/deskwaifu-terminal-panel', smoke)
+        for plugin in ('libdeskwaifu_test_plugin.so', 'libdeskwaifu_voice_input.so', 'libdeskwaifu_terminal.so'):
+            self.assertIn(f'test -f /usr/lib/deskwaifu/plugins/{plugin}', smoke)
+        self.assertIn('/usr/bin/deskwaifucli help', smoke)
+        self.assertIn('^terminal[[:space:]]', smoke)
+
+    def test_image_builds_workspace_with_native_dependencies(self):
+        image = (ROOT / 'Containerfile').read_text()
+        pacman_packages = image.split('pacman -Syu --noconfirm ', 1)[1].split('&& pacman -Scc', 1)[0].split()
+        for package in ('cmake', 'libglvnd', 'mesa', 'systemd-libs', 'wayland', 'freetype2', 'fontconfig',
+                        'libxkbcommon', 'libxkbcommon-x11', 'libxcb', 'libx11', 'vulkan-icd-loader'):
+            self.assertIn(package, pacman_packages)
+        script = (ROOT / 'scripts/rebuild-ci-image.sh').read_text()
+        self.assertIn('--network none', script)
+        self.assertIn('cargo build --workspace --frozen\n', script)
+        self.assertIn('test -x "$CARGO_TARGET_DIR/debug/deskwaifu-terminal-panel"', script)
+        self.assertIn('$CARGO_TARGET_DIR/debug/libdeskwaifu_terminal.so', script)
+        self.assertIn('readelf -d "$terminal_plugin"', script)
 
     def test_image_bundles_only_selected_live2d_assets(self):
         image = (ROOT / 'Containerfile').read_text()

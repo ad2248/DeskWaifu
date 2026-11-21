@@ -69,7 +69,7 @@ impl Panel {
                             .iter()
                             .position(|tab| old == Some((&tab.plugin, &tab.id)));
                         let input = index
-                            .and_then(|_| this.input.as_ref())
+                            .and(this.input.as_ref())
                             .map(|input| input.read(cx).value().to_string());
                         this.tabs = response.tabs;
                         this.page_bindings.resize_with(this.tabs.len(), || None);

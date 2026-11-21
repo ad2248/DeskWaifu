@@ -1,11 +1,8 @@
 [package]
 name = "deskwaifu-terminal-panel"
-version = "0.1.0"
-edition = "2024"
-publish = false
-
-# Standalone Wayland prototype. Remove when integrating into the root workspace.
-[workspace]
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
 
 [dependencies]
 gpui-kit = "=0.10.0"

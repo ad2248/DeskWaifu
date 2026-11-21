@@ -110,8 +110,8 @@ mod linux {
         runtime: Option<&OsStr>,
         sway_socket: Option<&OsStr>,
     ) -> Result<Target, FocusedOutputError> {
-        // Use the same precedence as the legacy adapter. Do not probe unrelated
-        // sessions or infer Sway from I3SOCK (which can identify i3 on X11).
+        // HYPRLAND_INSTANCE_SIGNATURE takes precedence over SWAYSOCK. I3SOCK
+        // is ignored because it can identify i3 on X11.
         if let Some(signature) = hypr_signature {
             if Path::new(signature).file_name() != Some(signature) {
                 return Err(Unavailable("invalid HYPRLAND_INSTANCE_SIGNATURE".into()));

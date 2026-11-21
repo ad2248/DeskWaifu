@@ -95,7 +95,7 @@ class MigrationTest(unittest.TestCase):
         }})
 
     def test_negative_emotion_timeout_disables_expiry(self):
-        # 旧版把任意负值视为关闭，迁移到新版的标准哨兵值。
+        # 负数输入统一输出终端配置的禁用值 -1。
         result = self.invoke('{"emotion_timeout":-3}')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout), {"terminal": {"emotion_timeout": -1}})

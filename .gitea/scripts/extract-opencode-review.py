@@ -22,7 +22,7 @@ def extract_review(source: Path) -> str:
             text = part.get("text") or ""
             if not text:
                 continue
-            # 缺少 messageID 的旧版输出把每个 text part 当作独立消息，仍然取最后一段。
+            # 每个缺少 messageID 的文本片段视为一条独立消息。
             key = part.get("messageID") or f"part-{len(order)}"
             if key not in messages:
                 messages[key] = []

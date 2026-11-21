@@ -204,7 +204,7 @@ async fn read_http_request(stream: &mut (impl AsyncRead + Unpin)) -> (String, Va
     }
 }
 
-// 测试目的：确认两种旧版 ASR 请求使用正确的路径、请求体和响应字段，并拒绝重定向。
+// 测试目的：验证 HTTPS 原生和兼容模式的 ASR 请求路径、请求体、响应字段及重定向拒绝。
 // 测试方法：先解析 HTTPS 路径并检查域名，再在环回 HTTP 服务上检查请求头、JSON 和 WAV 内容，分别返回两种成功响应和 307。
 #[tokio::test]
 async fn http_requests_resolve_before_upload_and_reject_redirects() {
@@ -281,10 +281,10 @@ async fn http_requests_resolve_before_upload_and_reject_redirects() {
     }
 }
 
-// 测试目的：验证旧模型的录音与尾静音合计不超过五分钟。
+// 测试目的：验证 qwen-audio-3.0-asr-flash 的录音与尾静音合计不超过五分钟。
 // 测试方法：按 300 秒配置预留静音时间，并用环回服务解码含多余尾块的上传请求，核对 WAV 帧数和内容。
 #[tokio::test]
-async fn legacy_https_wav_stays_within_five_minutes() {
+async fn qwen_audio_native_wav_including_tail_stays_within_five_minutes() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let mut config = config(

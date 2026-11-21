@@ -27,6 +27,7 @@ podman run --rm --network none -v "$SOURCE_DIR:/source:ro" "$image" bash -ceu '
     sccache --version
     command -v flock mountpoint
     pkg-config --atleast-version=0.3.44 libpipewire-0.3
+    pkg-config --exists libsystemd wayland-client freetype2 fontconfig xkbcommon xkbcommon-x11 xcb x11 vulkan
     wl-copy --version
     wl-paste --version
     command -v fakeroot runuser useradd userdel
@@ -34,7 +35,14 @@ podman run --rm --network none -v "$SOURCE_DIR:/source:ro" "$image" bash -ceu '
     cmake --version
     export CARGO_TARGET_DIR=$(mktemp -d)
     cd /source
-    cargo build --frozen -p deskwaifu-terminal --features native
+    cargo build --workspace --frozen
+    test -x "$CARGO_TARGET_DIR/debug/deskwaifu-terminal-panel"
+    terminal_plugin="$CARGO_TARGET_DIR/debug/libdeskwaifu_terminal.so"
+    test -f "$terminal_plugin"
+    # Verify the default plugin links both the native renderer and KWin sd-bus bridge.
+    terminal_libraries=$(LC_ALL=C readelf -d "$terminal_plugin")
+    grep -E "\(NEEDED\).*\[libEGL\.so\.1\]" <<< "$terminal_libraries"
+    grep -E "\(NEEDED\).*\[libsystemd\.so\.0\]" <<< "$terminal_libraries"
     env -u DISPLAY -u WAYLAND_DISPLAY -u CUBISM_TEST_PCI -u CUBISM_TEST_SECOND_PCI \
         LIBGL_ALWAYS_SOFTWARE=1 cargo test --frozen -p cubism-bridge --features native --test offscreen -- --ignored
     for model in Haru Hiyori Mao; do

@@ -804,10 +804,10 @@ impl Plugin for TerminalPlugin {
 
     #[cfg(all(target_os = "linux", feature = "native"))]
     fn start(&mut self, _: &mut Context<'_>) -> PluginResult {
-        if let Some(path) = self.startup_model.take() {
-            if let Err(error) = self.dispatch_overlay(Request::Load(&path)) {
-                eprintln!("terminal startup model: {error}");
-            }
+        if let Some(path) = self.startup_model.take()
+            && let Err(error) = self.dispatch_overlay(Request::Load(&path))
+        {
+            eprintln!("terminal startup model: {error}");
         }
         Ok(())
     }

@@ -21,9 +21,9 @@ description: 维护 DeskWaifu 的 Gitea PR 自动审查与并行 Rust CI。用�
 | --- | --- |
 | [.gitea/scripts/opencode-review.sh](../../../.gitea/scripts/opencode-review.sh) | 审查入口。校验 PR 状态和 head SHA，用按 SHA 生成的 `<!-- opencode-review:… -->` 标记跳过已有审查。抓取 PR head 并校验 SHA，在临时目录准备 `context.md` 和从 merge-base 到 PR head 的完整 `diff.patch`。适配 OpenCode CLI 版本，调用模型、提取评审正文、复核 head，再发布绑定 `commit_id` 的审查。 |
 | [.gitea/scripts/opencode-review-action.sh](../../../.gitea/scripts/opencode-review-action.sh) | 供审查智能体调用。`head` 校验当前 head，`issues` 列出开放 issue，`create-issue` 核对 head 后登记建议，`approve` 核对 head 后写入本地批准信号。最终 Review 由主脚本提交。 |
-| [.gitea/scripts/extract-opencode-review.py](../../../.gitea/scripts/extract-opencode-review.py) | 解析 OpenCode 的 JSONL 输出，按 `messageID` 聚合文本片段，将最后一条文本消息原样写入 `review.md`。旧版输出缺少消息 ID 时，逐片段处理。无文本或 JSON 无效时报错。 |
+| [.gitea/scripts/extract-opencode-review.py](../../../.gitea/scripts/extract-opencode-review.py) | 解析 OpenCode 的 JSONL 输出，按 `messageID` 聚合文本片段，将最后一条文本消息原样写入 `review.md`。缺少消息 ID 的文本片段各自视为一条消息。无文本或 JSON 无效时报错。 |
 | [.gitea/scripts/report-ci-failure.py](../../../.gitea/scripts/report-ci-failure.py) | Rust CI 的失败回调。只处理 PR 事件，从 `CI_FAILED_JOBS` 读取实际失败作业，携带 PR 编号及日志链接，使用 `PIPELINE_WEBHOOK_SECRET` 生成 HMAC-SHA256 签名后向 OpenHands 发送 `ci_failed`。 |
-| [scripts/build.sh](../../../scripts/build.sh) | Rust CI 的构建入口，负责构建 host 和暂存插件，也接收 `--release` 供发布模式构建使用。 |
+| [scripts/ci-sccache.sh](../../../scripts/ci-sccache.sh) | 为 Rust CI 的 Cargo 工作区构建和测试提供独立缓存锁。 |
 | [scripts/release-build.sh](../../../scripts/release-build.sh) | Arch 包的构建入口，由 Rust CI 的 `package` 作业和发版工作流共用。 |
 | [scripts/rebuild-ci-image.sh](../../../scripts/rebuild-ci-image.sh) | 构建并验收 Rust CI runner 镜像。维护镜像依赖时参见 [CI 镜像依赖说明](../../../.opencode/skills/ci-image-dependencies/SKILL.md)。 |
 

@@ -362,7 +362,10 @@ pub(super) fn paint_frame(
         let y = scaled(t, pixels.1, logical.1)..scaled(b, pixels.1, logical.1);
         for y in y {
             let line = y * pixels.0 as usize;
-            for pixel in canvas[(line + x.start) * 4..(line + x.end) * 4].chunks_exact_mut(4) {
+            for pixel in canvas[(line + x.start) * 4..(line + x.end) * 4]
+                .as_chunks_mut::<4>()
+                .0
+            {
                 pixel.copy_from_slice(&color.to_ne_bytes());
             }
         }

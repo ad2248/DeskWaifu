@@ -24,11 +24,10 @@ pub fn unpremultiply_rgba(pixels: &mut [[u8; 4]]) {
     for [r, g, b, a] in pixels {
         let alpha = u32::from(*a);
         for channel in [r, g, b] {
-            *channel = if alpha == 0 {
-                0
-            } else {
-                ((u32::from(*channel) * 255 + alpha / 2) / alpha).min(255) as u8
-            };
+            *channel = (u32::from(*channel) * 255 + alpha / 2)
+                .checked_div(alpha)
+                .unwrap_or(0)
+                .min(255) as u8;
         }
     }
 }

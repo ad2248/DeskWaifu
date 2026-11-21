@@ -11,12 +11,28 @@ import tomllib
 
 ROOT = Path(__file__).resolve().parent.parent
 MAIN_DEPENDS = {"glibc", "gcc-libs", "libpipewire", "wl-clipboard"}
+V3_DEPENDS = MAIN_DEPENDS | {
+    "libglvnd", "systemd-libs", "wayland", "fontconfig", "freetype2", "libxkbcommon",
+    "libxkbcommon-x11", "libxcb", "libx11", "vulkan-icd-loader",
+}
+MAIN_MAKEDEPENDS = ("cargo", "clang", "pkgconf")
+MAIN_OPTDEPENDS = ("pipewire: microphone capture daemon", "wireplumber: default microphone selection")
 PACKAGE_NAMES = ("deskwaifu-bin",)
 TEST_PLUGINS = ("libdeskwaifu_test_plugin.so",)
+VOICE_PLUGINS = (*TEST_PLUGINS, "libdeskwaifu_voice_input.so")
 PLUGINS_BY_PAYLOAD = {
     "rust-v1": TEST_PLUGINS,
-    "rust-v2": (*TEST_PLUGINS, "libdeskwaifu_voice_input.so"),
+    "rust-v2": VOICE_PLUGINS,
+    "rust-v3": (*VOICE_PLUGINS, "libdeskwaifu_terminal.so"),
 }
+
+
+def runtime_dependencies(payload):
+    return V3_DEPENDS if payload == "rust-v3" else MAIN_DEPENDS
+
+
+def bin_artifacts(payload):
+    return ("deskwaifucli", "deskwaifu-terminal-panel") if payload == "rust-v3" else ("deskwaifucli",)
 
 
 def digest(path):
@@ -29,6 +45,8 @@ def select_payload(manifest):
     members = tomllib.loads(manifest.decode()).get("workspace", {}).get("members", [])
     if "plugins/test-plugin" not in members:
         raise ValueError("Selected source lacks the supported DeskWaifu Rust workspace")
+    if "apps/terminal-panel" in members:
+        return "rust-v3"
     return "rust-v2" if "plugins/voice-input" in members else "rust-v1"
 
 
@@ -42,10 +60,23 @@ def prepare(directory, tag, commit):
                 break
         else:
             raise ValueError("Selected source archive lacks deskwaifu/Cargo.toml")
+    makedepends = MAIN_MAKEDEPENDS
+    optdepends = MAIN_OPTDEPENDS
+    if payload == "rust-v3":
+        makedepends += ("cmake",)
+        optdepends += ("vulkan-driver: Vulkan rendering for the terminal panel",)
     template = (ROOT / "packaging/release/PKGBUILD.in").read_text()
+    replacements = {
+        "@SOURCE_SHA@": digest(source),
+        "@DEPENDS@": shlex.join(sorted(runtime_dependencies(payload))),
+        "@MAKEDEPENDS@": shlex.join(makedepends),
+        "@OPTDEPENDS@": shlex.join(optdepends),
+        "@BINARIES@": shlex.join(bin_artifacts(payload)),
+        "@PLUGINS@": shlex.join(PLUGINS_BY_PAYLOAD[payload]),
+    }
+    for key, value in replacements.items():
+        template = template.replace(key, value)
     # Substitute the untrusted tag last so tag text cannot become a placeholder.
-    template = template.replace("@SOURCE_SHA@", digest(source))
-    template = template.replace("@PLUGINS@", shlex.join(PLUGINS_BY_PAYLOAD[payload]))
     template = template.replace("@PKGVER@", shlex.quote(tag))
     (directory / "PKGBUILD").write_text(template)
     return payload
@@ -71,9 +102,10 @@ def verify_content(name, info, files, version, payload):
     if (name not in PACKAGE_NAMES or info.get("pkgname") != [name] or
             info.get("pkgver") != [version + "-1"] or info.get("arch") != ["x86_64"]):
         raise ValueError(f"Wrong package identity/version/architecture: {name}")
-    if set(info.get("depend", [])) != MAIN_DEPENDS:
+    if set(info.get("depend", [])) != runtime_dependencies(payload):
         raise ValueError("Unexpected Rust runtime dependencies")
-    required = {"usr/bin/deskwaifu", "usr/bin/deskwaifucli", "usr/lib/deskwaifu/deskwaifu"}
+    required = {"usr/bin/deskwaifu", "usr/lib/deskwaifu/deskwaifu"}
+    required.update(f"usr/bin/{binary}" for binary in bin_artifacts(payload))
     required.update(f"usr/lib/deskwaifu/plugins/{plugin}" for plugin in PLUGINS_BY_PAYLOAD[payload])
     allowed = required | {".PKGINFO", ".BUILDINFO", ".MTREE", "usr/", "usr/bin/",
                           "usr/lib/", "usr/lib/deskwaifu/", "usr/lib/deskwaifu/plugins/"}

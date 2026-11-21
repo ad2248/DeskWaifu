@@ -36,14 +36,19 @@ jobs:
             exit 1
           }
           install -Dm644 /opt/deskwaifu-cargo/config.toml "${CARGO_HOME:-$HOME/.cargo}/config.toml"
-      - name: Build host and stage plugins
-        run: bash scripts/ci-sccache.sh /cache/sccache-rust-test env CARGO_NET_OFFLINE=true bash scripts/build.sh
+      - name: Build workspace (debug)
+        run: bash scripts/ci-sccache.sh /cache/sccache-rust-test cargo build --workspace --frozen
       - name: Lint
         run: cargo clippy --workspace --all-targets --frozen -- -D warnings
       - name: Test
         run: bash scripts/ci-sccache.sh /cache/sccache-rust-test cargo test --workspace --frozen
-      - name: Release build
-        run: bash scripts/ci-sccache.sh /cache/sccache-rust-test env CARGO_NET_OFFLINE=true bash scripts/build.sh --release
+      - name: Test Live2D offscreen rendering
+        run: |
+          bash scripts/ci-sccache.sh /cache/sccache-rust-test \
+            env -u DISPLAY -u WAYLAND_DISPLAY -u CUBISM_TEST_PCI -u CUBISM_TEST_SECOND_PCI \
+            LIBGL_ALWAYS_SOFTWARE=1 cargo test --frozen -p cubism-bridge --features native --test offscreen -- --ignored
+      - name: Build workspace (release)
+        run: bash scripts/ci-sccache.sh /cache/sccache-rust-test cargo build --workspace --frozen --release
       - name: Test release tooling
         run: python3 -B -m unittest discover -s tests -p 'test_*.py' -v
       - name: Test plugin deployment tooling
@@ -71,12 +76,14 @@ jobs:
           export RELEASE_COMMIT="$(git rev-parse HEAD)"
           export RELEASE_TAG="0.0.0.r$RELEASE_COMMIT"
           bash scripts/release-build.sh
-      - name: Install package and check CLI
+      - name: Install package and check artifacts and CLI
         run: |
           pacman -U --noconfirm release-assets/deskwaifu-bin-*.pkg.tar.zst
           test "$(readlink -f /usr/bin/deskwaifu)" = /usr/lib/deskwaifu/deskwaifu
+          test -x /usr/bin/deskwaifu-terminal-panel
           test -f /usr/lib/deskwaifu/plugins/libdeskwaifu_test_plugin.so
           test -f /usr/lib/deskwaifu/plugins/libdeskwaifu_voice_input.so
+          test -f /usr/lib/deskwaifu/plugins/libdeskwaifu_terminal.so
           /usr/bin/deskwaifucli --help
           test ! -e /tmp/deskwaifu.socket
           /usr/bin/deskwaifu &
@@ -87,15 +94,16 @@ jobs:
             kill -0 "$host_pid"
             sleep 0.05
           done
-          /usr/bin/deskwaifucli help | grep -E '^start_voice_input[[:space:]]'
+          help_output=$(/usr/bin/deskwaifucli help)
+          grep -E '^start_voice_input[[:space:]]' <<< "$help_output"
+          grep -E '^terminal[[:space:]]' <<< "$help_output"
       - name: Clean package artifacts
         if: always()
         run: rm -rf release-assets
 
   report:
     name: Report CI failure to OpenHands
-    # 两个作业可能同时失败。若各自上报，同一次 CI 失败会创建两个智能体运行
-    # （见运行 722/710：一次失败产生两条 runs_created），此处集中上报一次。
+    # 汇总两个作业的结果，每次运行最多发送一次失败回调。
     needs: [package, test]
     # 用 always() 而不是 failure()：漏报一次失败就没人在 PR 上修，
     # 代价高于多跑一个几秒的空作业。是否真的失败由下面的步骤自己判断。

@@ -58,9 +58,15 @@ fn renders_sample_and_survives_failed_reload() {
         let mut still = vec![0; rgba_len(256, 256).unwrap()];
         model.render(0.0, &mut still).unwrap();
         // 检查透明背景和不透明主体，再对比动作前后的实际像素。
-        assert!(still.chunks_exact(4).any(|p| p[3] == 0));
+        assert!(still.as_chunks::<4>().0.iter().any(|p| p[3] == 0));
         // 要求纹理产生彩色像素，防止缺少 mipmap 时只画出黑色轮廓也能通过。
-        assert!(still.chunks_exact(4).any(|p| p[3] == 255 && p[0] != p[1]));
+        assert!(
+            still
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .any(|p| p[3] == 255 && p[0] != p[1])
+        );
         assert!(model.render(f32::NAN, &mut still).is_err());
         assert!(model.render(0.0, &mut []).is_err());
         assert!(
@@ -74,8 +80,10 @@ fn renders_sample_and_survives_failed_reload() {
             model.render(1.0 / 60.0, &mut animated).unwrap();
         }
         let changed = still
-            .chunks_exact(4)
-            .zip(animated.chunks_exact(4))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(animated.as_chunks::<4>().0)
             .filter(|(a, b)| a != b)
             .count();
         assert!(changed > 200, "only {changed} pixels changed");
@@ -117,8 +125,10 @@ fn look_and_lip_sync_compose_with_animation_and_reset() {
         pixels
     };
     let changed = |left: &[u8], right: &[u8]| {
-        left.chunks_exact(4)
-            .zip(right.chunks_exact(4))
+        left.as_chunks::<4>()
+            .0
+            .iter()
+            .zip(right.as_chunks::<4>().0)
             .filter(|(a, b)| a != b)
             .count()
     };
@@ -315,7 +325,7 @@ fn skin_cycles_groups_resets_previous_curves_and_falls_back_to_expressions() {
 
 #[test]
 #[ignore = "requires a local Cubism 5-r.5 SDK and an EGL driver"]
-fn tap_maps_top_down_hit_areas_and_preserves_legacy_fallback() {
+fn tap_maps_top_down_hit_areas_and_falls_back_to_viewport_halves() {
     use cubism_bridge::{Runtime, TapHit};
 
     let _serial = NATIVE_TEST.lock().unwrap();
@@ -380,7 +390,7 @@ fn tap_maps_top_down_hit_areas_and_preserves_legacy_fallback() {
     let mut model = runtime.load(&custom).unwrap();
     assert_eq!(model.tap(0.5, 0.25).unwrap(), TapHit::Miss);
 
-    // 旧版不允许模型在透明动画期间命中，回退分区也遵守此规则。
+    // 模型不完全不透明时不命中，包括使用视口上下分区的模型。
     fixture.motion("opacity.motion3.json", "Model", "Opacity", 0.5);
     let faded = fixture.model(
         "faded.model3.json",
@@ -463,7 +473,7 @@ fn verify_hardware_device(pci: &str, renderer_env: &str) {
     }
     for selector in selectors {
         let runtime = Runtime::new_on_device(96, 96, selector);
-        // Mesa 曾在同时强制软件渲染和选硬件设备时崩溃。开启该变量应清楚报错。
+        // 强制软件渲染时，显式选择硬件设备必须返回错误。
         if std::env::var("LIBGL_ALWAYS_SOFTWARE").as_deref() == Ok("1") {
             let Err(error) = runtime else {
                 panic!("software override unexpectedly accepted the hardware selector");
@@ -487,7 +497,13 @@ fn verify_hardware_device(pci: &str, renderer_env: &str) {
         let mut model = runtime.load(&model_path).unwrap();
         let mut pixels = vec![0; rgba_len(96, 96).unwrap()];
         model.render(0.0, &mut pixels).unwrap();
-        assert!(pixels.chunks_exact(4).any(|p| p[3] == 255 && p[0] != p[1]));
+        assert!(
+            pixels
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .any(|p| p[3] == 255 && p[0] != p[1])
+        );
     }
 }
 
