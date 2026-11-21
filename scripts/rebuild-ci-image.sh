@@ -31,6 +31,19 @@ podman run --rm --network none -v "$SOURCE_DIR:/source:ro" "$image" bash -ceu '
     wl-paste --version
     command -v fakeroot runuser useradd userdel
     test ! -S /var/run/docker.sock
+    cmake --version
+    export CARGO_TARGET_DIR=$(mktemp -d)
+    cd /source
+    cargo build --frozen -p deskwaifu-terminal --features native
+    env -u DISPLAY -u WAYLAND_DISPLAY -u CUBISM_TEST_PCI -u CUBISM_TEST_SECOND_PCI \
+        LIBGL_ALWAYS_SOFTWARE=1 cargo test --frozen -p cubism-bridge --features native --test offscreen -- --ignored
+    for model in Haru Hiyori Mao; do
+        env -u DISPLAY -u WAYLAND_DISPLAY LIBGL_ALWAYS_SOFTWARE=1 \
+            cargo run --frozen -p cubism-bridge --features native --example offscreen -- \
+            "$CUBISM_SDK_DIR/Samples/Resources/$model/$model.model3.json" "$CARGO_TARGET_DIR/$model.png"
+        test -s "$CARGO_TARGET_DIR/$model.png"
+    done
+    unset CARGO_TARGET_DIR
     scratch=$(mktemp -d)
     cd "$scratch"
     cargo new --bin --vcs none check-image

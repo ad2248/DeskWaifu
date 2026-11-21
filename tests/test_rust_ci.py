@@ -33,14 +33,17 @@ class RustCiTest(unittest.TestCase):
         self.assertNotIn('cmake ', ci)
         self.assertNotIn('pacman -S', ci)
 
-    def test_image_contains_no_private_sources(self):
+    def test_image_bundles_only_selected_live2d_assets(self):
         image = (ROOT / 'Containerfile').read_text()
-        for legacy in ('CubismSdk', 'qt6-', 'onnxruntime'):
-            self.assertNotIn(legacy, image)
-        self.assertEqual([line for line in image.splitlines() if line.startswith('COPY ')], [
-            'COPY Cargo.lock /tmp/workspace-Cargo.lock',
-            'COPY --from=cargo-dependencies /opt/deskwaifu-cargo /opt/deskwaifu-cargo',
-        ])
+        self.assertNotIn('qt6-', image)
+        self.assertNotIn('onnxruntime', image)
+        self.assertIn('COPY Cargo.lock /tmp/workspace-Cargo.lock', image)
+        self.assertIn('COPY --from=cargo-dependencies /opt/deskwaifu-cargo /opt/deskwaifu-cargo', image)
+        resources = 'COPY CubismSdkForNative-5-r.5/Samples/Resources/'
+        models = [line.removeprefix(resources).split('/', 1)[0]
+                  for line in image.splitlines() if line.startswith(resources)]
+        self.assertCountEqual(models, ['Haru', 'Hiyori', 'Mao'])
+        self.assertNotIn('COPY CubismSdkForNative-5-r.5/ ', image)
         self.assertIn('cargo vendor --locked', image)
         script = (ROOT / 'scripts/rebuild-ci-image.sh').read_text()
         for check in ('cargo fmt', 'cargo clippy', 'cargo test', 'cargo build', 'makepkg --version'):

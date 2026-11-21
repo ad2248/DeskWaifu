@@ -1,8 +1,8 @@
-# Rust CI / Arch packaging image. No proprietary SDK or application sources.
+# Private Rust CI / Arch packaging image with Cubism Native test assets.
 FROM archlinux:base-devel AS toolchain
 ARG PACMAN_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/archlinux
 RUN printf 'Server = %s/$repo/os/$arch\nServer = https://geo.mirror.pkgbuild.com/$repo/os/$arch\n' "$PACMAN_MIRROR" > /etc/pacman.d/mirrorlist \
-    && pacman -Syu --noconfirm rust git python nodejs libarchive libpipewire clang wl-clipboard sccache \
+    && pacman -Syu --noconfirm rust git python nodejs libarchive libpipewire clang wl-clipboard sccache cmake libglvnd mesa \
     && pacman -Scc --noconfirm
 RUN printf '\nPACKAGER="DeskWaifu reproducible build"\n' >> /etc/makepkg.conf
 ENV LANG=C.UTF-8
@@ -18,3 +18,14 @@ RUN --mount=type=bind,source=.,target=/source \
 
 FROM toolchain AS ci
 COPY --from=cargo-dependencies /opt/deskwaifu-cargo /opt/deskwaifu-cargo
+ENV CUBISM_SDK_DIR=/opt/deskwaifu-deps/CubismSdkForNative-5-r.5 \
+    CUBISM_GLEW_DIR=/opt/deskwaifu-deps/glew
+COPY CubismSdkForNative-5-r.5/Core/ ${CUBISM_SDK_DIR}/Core/
+COPY CubismSdkForNative-5-r.5/Framework/ ${CUBISM_SDK_DIR}/Framework/
+COPY CubismSdkForNative-5-r.5/LICENSE.md CubismSdkForNative-5-r.5/NOTICE*.md ${CUBISM_SDK_DIR}/
+COPY CubismSdkForNative-5-r.5/Samples/Resources/Haru/ ${CUBISM_SDK_DIR}/Samples/Resources/Haru/
+COPY CubismSdkForNative-5-r.5/Samples/Resources/Hiyori/ ${CUBISM_SDK_DIR}/Samples/Resources/Hiyori/
+COPY CubismSdkForNative-5-r.5/Samples/Resources/Mao/ ${CUBISM_SDK_DIR}/Samples/Resources/Mao/
+COPY thirdParty/glew/include/ ${CUBISM_GLEW_DIR}/include/
+COPY thirdParty/glew/src/glew.c ${CUBISM_GLEW_DIR}/src/glew.c
+COPY thirdParty/glew/LICENSE.txt ${CUBISM_GLEW_DIR}/LICENSE.txt

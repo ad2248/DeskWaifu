@@ -123,6 +123,6 @@ runtime 测试使用手动推进的逻辑时钟；IPC 测试使用真实 Unix so
 
 ## Arch 安装包与 CI
 
-CI 使用专用 `deskwaifu-rust` runner，执行格式检查、Clippy、测试、release 编译和 Arch 打包。`Containerfile` 不包含 Qt 或专有 Cubism SDK。运行 `bash scripts/rebuild-ci-image.sh` 构建、验收并私下传输镜像，按输出的镜像 ID 更新 runner。发布构建保持非 root makepkg，产出单个 `deskwaifu-bin` 包；详情见 [打包说明](packaging/release/README.md)。
+CI 使用专用 `deskwaifu-rust` runner，执行格式检查、Clippy、测试、release 编译和 Arch 打包。私有 CI 镜像内置 Cubism Native SDK 5-r.5、GLEW 及 Haru、Hiyori、Mao 模型。运行 `bash scripts/rebuild-ci-image.sh` 构建镜像、离线验收 Live2D 并通过 SSH 私下传输，按输出的镜像 ID 更新 runner。发布构建保持非 root makepkg，产出单个基础版 `deskwaifu-bin` 包。详情见 [打包说明](packaging/release/README.md)。
 
 `docs/`、`计划/`、`research/` 保留为历史设计参考，其中 C++/Qt 路径与功能不代表当前实现。第三方源码和 AUR 子模块暂留，但不参与当前 Rust 编译。
