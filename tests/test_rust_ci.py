@@ -16,11 +16,12 @@ class RustCiTest(unittest.TestCase):
         ci = (ROOT / '.gitea/workflows/ci.yml').read_text()
         for command in ('cargo fmt --all --check',
                         'cargo clippy --workspace --all-targets --frozen -- -D warnings',
-                        'cargo test --workspace --frozen',
-                        'env -u DISPLAY -u WAYLAND_DISPLAY -u CUBISM_TEST_PCI -u CUBISM_TEST_SECOND_PCI',
-                        'LIBGL_ALWAYS_SOFTWARE=1 cargo test --frozen -p cubism-bridge '
-                        '--features native --test offscreen -- --ignored'):
+                        'env -u DISPLAY -u WAYLAND_DISPLAY -u CUBISM_TEST_PCI -u CUBISM_TEST_SECOND_PCI'):
             self.assertIn(command, ci)
+        commands = [line.strip() for line in ci.splitlines() if 'cargo test ' in line]
+        self.assertEqual(commands, ['LIBGL_ALWAYS_SOFTWARE=1 cargo test --workspace --frozen'])
+        offscreen = (ROOT / 'crates/cubism-bridge/tests/offscreen.rs').read_text()
+        self.assertNotIn('#[ignore', offscreen)
         builds = [line.strip() for line in ci.splitlines() if 'cargo build ' in line]
         build = 'run: bash scripts/ci-sccache.sh /cache/sccache-rust-test cargo build --workspace --frozen'
         self.assertEqual(builds, [build, f'{build} --release'])

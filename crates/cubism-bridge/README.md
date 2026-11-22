@@ -13,7 +13,7 @@ env -u DISPLAY -u WAYLAND_DISPLAY LIBGL_ALWAYS_SOFTWARE=1 \
   target/live2d/haru.png Idle 1 40
 
 env -u DISPLAY -u WAYLAND_DISPLAY LIBGL_ALWAYS_SOFTWARE=1 \
-  cargo test --locked -p cubism-bridge --features native --test offscreen -- --ignored
+  cargo test --locked -p cubism-bridge --features native --test offscreen
 ```
 
 示例把第 40 帧保存为 640×640 RGBA PNG。省略动作参数时输出初始帧。`Model::render` 输出自上而下的预乘 RGBA8，PNG 导出时还原为直通 alpha。GLSL 在构建时从 SDK 嵌入，运行时只读取所选模型及其资源。使用和分发 SDK 与样例前请核对其适用条款。This content uses sample data owned and copyrighted by Live2D Inc.
@@ -29,7 +29,7 @@ env -u DISPLAY -u WAYLAND_DISPLAY LIBGL_ALWAYS_SOFTWARE=1 \
 ```sh
 env -u LIBGL_ALWAYS_SOFTWARE CUBISM_TEST_PCI="$FIRST_PCI" CUBISM_TEST_SECOND_PCI="$SECOND_PCI" \
   cargo test --locked -p cubism-bridge --features native --test offscreen \
-  explicit_device_selection -- --ignored --nocapture
+  explicit_device_selection --nocapture
 ```
 
 ## Wayland 呈现对照

@@ -41,12 +41,10 @@ jobs:
       - name: Lint
         run: cargo clippy --workspace --all-targets --frozen -- -D warnings
       - name: Test
-        run: bash scripts/ci-sccache.sh /cache/sccache-rust-test cargo test --workspace --frozen
-      - name: Test Live2D offscreen rendering
         run: |
           bash scripts/ci-sccache.sh /cache/sccache-rust-test \
             env -u DISPLAY -u WAYLAND_DISPLAY -u CUBISM_TEST_PCI -u CUBISM_TEST_SECOND_PCI \
-            LIBGL_ALWAYS_SOFTWARE=1 cargo test --frozen -p cubism-bridge --features native --test offscreen -- --ignored
+            LIBGL_ALWAYS_SOFTWARE=1 cargo test --workspace --frozen
       - name: Build workspace (release)
         run: bash scripts/ci-sccache.sh /cache/sccache-rust-test cargo build --workspace --frozen --release
       - name: Test release tooling

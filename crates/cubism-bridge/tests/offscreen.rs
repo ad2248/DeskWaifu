@@ -6,7 +6,6 @@ use std::sync::Mutex;
 static NATIVE_TEST: Mutex<()> = Mutex::new(());
 
 #[test]
-#[ignore = "requires a local Cubism 5-r.5 SDK and an EGL driver"]
 fn toggle_layer_survives_ordinary_expression_timeout() {
     use cubism_bridge::{Runtime, rgba_len};
     use std::{env, path::Path};
@@ -40,7 +39,6 @@ fn toggle_layer_survives_ordinary_expression_timeout() {
 }
 
 #[test]
-#[ignore = "requires a local Cubism 5-r.5 SDK and an EGL driver"]
 fn renders_sample_and_survives_failed_reload() {
     use cubism_bridge::{Runtime, rgba_len};
     use std::{env, path::Path};
@@ -107,7 +105,6 @@ fn renders_sample_and_survives_failed_reload() {
 }
 
 #[test]
-#[ignore = "requires a local Cubism 5-r.5 SDK and an EGL driver"]
 fn look_and_lip_sync_compose_with_animation_and_reset() {
     use cubism_bridge::{Model, Runtime, rgba_len};
     use std::path::PathBuf;
@@ -270,7 +267,6 @@ fn settle(model: &mut cubism_bridge::Model<'_>) -> Vec<u8> {
 }
 
 #[test]
-#[ignore = "requires a local Cubism 5-r.5 SDK and an EGL driver"]
 fn skin_cycles_groups_resets_previous_curves_and_falls_back_to_expressions() {
     use cubism_bridge::Runtime;
 
@@ -324,7 +320,6 @@ fn skin_cycles_groups_resets_previous_curves_and_falls_back_to_expressions() {
 }
 
 #[test]
-#[ignore = "requires a local Cubism 5-r.5 SDK and an EGL driver"]
 fn tap_maps_top_down_hit_areas_and_falls_back_to_viewport_halves() {
     use cubism_bridge::{Runtime, TapHit};
 
@@ -405,7 +400,6 @@ fn tap_maps_top_down_hit_areas_and_falls_back_to_viewport_halves() {
 }
 
 #[test]
-#[ignore = "requires a local Cubism 5-r.5 SDK and an EGL driver"]
 fn explicit_device_selection_reports_active_gpu_and_rejects_unknown_devices() {
     use cubism_bridge::{DeviceSelector, Runtime};
     use std::path::Path;
@@ -508,7 +502,6 @@ fn verify_hardware_device(pci: &str, renderer_env: &str) {
 }
 
 #[test]
-#[ignore = "requires a local Cubism 5-r.5 SDK and an EGL driver"]
 fn expression_toggles_fade_expire_and_reset_independently() {
     use cubism_bridge::Runtime;
     use std::path::Path;

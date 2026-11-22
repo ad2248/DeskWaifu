@@ -44,7 +44,7 @@ podman run --rm --network none -v "$SOURCE_DIR:/source:ro" "$image" bash -ceu '
     grep -E "\(NEEDED\).*\[libEGL\.so\.1\]" <<< "$terminal_libraries"
     grep -E "\(NEEDED\).*\[libsystemd\.so\.0\]" <<< "$terminal_libraries"
     env -u DISPLAY -u WAYLAND_DISPLAY -u CUBISM_TEST_PCI -u CUBISM_TEST_SECOND_PCI \
-        LIBGL_ALWAYS_SOFTWARE=1 cargo test --frozen -p cubism-bridge --features native --test offscreen -- --ignored
+        LIBGL_ALWAYS_SOFTWARE=1 cargo test --frozen -p cubism-bridge --features native --test offscreen
     for model in Haru Hiyori Mao; do
         env -u DISPLAY -u WAYLAND_DISPLAY LIBGL_ALWAYS_SOFTWARE=1 \
             cargo run --frozen -p cubism-bridge --features native --example offscreen -- \
