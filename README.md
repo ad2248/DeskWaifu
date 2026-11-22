@@ -103,7 +103,7 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 python3 -B -m unittest discover -s scripts -p 'test_*.py' -v
 ```
 
-runtime 测试使用手动推进的逻辑时钟；IPC 测试使用真实 Unix socket 验证原始参数、分帧、异常隔离与资源清理，应用测试启动真实服务进程并通过 CLI 调用。
+runtime 测试使用手动推进的逻辑时钟。宿主冒烟测试启动真实服务进程，通过 CLI 调用动态插件。
 
 ## Arch 安装包与 CI
 
