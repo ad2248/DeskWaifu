@@ -49,7 +49,7 @@ wait_for() {
     return 1
 }
 
-kwin_wayland --virtual --width 1280 --height 720 --socket wayland-ci --no-lockscreen \
+QT_FORCE_STDERR_LOGGING=1 kwin_wayland --virtual --width 1280 --height 800 --socket wayland-ci --no-lockscreen \
     > "$XDG_RUNTIME_DIR/kwin.log" 2>&1 &
 kwin_pid=$!
 export WAYLAND_DISPLAY=wayland-ci
@@ -64,7 +64,7 @@ plasmashell --no-respawn > "$XDG_RUNTIME_DIR/plasma.log" 2>&1 &
 plasma_pid=$!
 wait_for "$plasma_pid" 'Plasma Shell' plasma_ready
 busctl --user --auto-start=no --timeout=2 call org.kde.KWin /KWin org.freedesktop.DBus.Peer Ping
-printf 'KWin and Plasma Shell ready on %s (1280x720)\n' "$WAYLAND_DISPLAY"
+printf 'KWin and Plasma Shell ready on %s (1280x800)\n' "$WAYLAND_DISPLAY"
 
 if (($#)); then "$@"; fi
 kill -0 "$kwin_pid" "$plasma_pid"
