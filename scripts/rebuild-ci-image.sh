@@ -51,6 +51,7 @@ podman run --rm --network none -v "$SOURCE_DIR:/source:ro" "$image" bash -ceu '
             "$CUBISM_SDK_DIR/Samples/Resources/$model/$model.model3.json" "$CARGO_TARGET_DIR/$model.png"
         test -s "$CARGO_TARGET_DIR/$model.png"
     done
+    bash scripts/with-headless-plasma.sh true
     unset CARGO_TARGET_DIR
     scratch=$(mktemp -d)
     cd "$scratch"

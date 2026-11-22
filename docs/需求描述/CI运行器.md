@@ -10,6 +10,10 @@ CI 作业在固定的私有 Arch 镜像中构建 Cargo workspace。
 - 在 `st:~/.config/deskwaifu-ci-runner/config.yaml` 中将 `deskwaifu-rust` 标签指向通过验收的固定镜像，仅更新该标签。
 - 保持 `force_pull: false`、`docker_host: "-"`、`privileged: false`，不暴露宿主 Docker socket。
 
+## 无头 Plasma 会话
+
+CI 镜像提供 KWin、Plasma Shell、桌面组件和 Mesa 软件渲染。CI 检查和镜像验收均通过启动脚本启动 1280×720 的虚拟输出，等待 Wayland socket 及 KWin、Plasma Shell 的 D-Bus 服务就绪。脚本为每次运行创建私有 D-Bus 会话和 XDG 目录。界面用例可以用 `bash scripts/with-headless-plasma.sh <命令>` 在这个会话中运行。 [会话启动脚本](<../../scripts/with-headless-plasma.sh>)
+
 ## 门禁
 
 [Rust CI 工作流](../../.gitea/workflows/ci.yml) 定义 Rust test 与 Arch package 并行任务，统一汇总失败。评审工作流独立运行。

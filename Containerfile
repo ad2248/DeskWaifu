@@ -1,10 +1,13 @@
 # Private Rust CI / Arch packaging image with Cubism Native test assets.
 FROM archlinux:base-devel AS toolchain
 ARG PACMAN_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/archlinux
+# The virtual KWin backend runs without elevated scheduling privileges.
 RUN printf 'Server = %s/$repo/os/$arch\nServer = https://geo.mirror.pkgbuild.com/$repo/os/$arch\n' "$PACMAN_MIRROR" > /etc/pacman.d/mirrorlist \
     && pacman -Syu --noconfirm rust git python nodejs libarchive libpipewire clang wl-clipboard sccache \
         cmake libglvnd mesa systemd-libs \
         wayland freetype2 fontconfig libxkbcommon libxkbcommon-x11 libxcb libx11 vulkan-icd-loader \
+        dbus kwin plasma-workspace plasma-desktop noto-fonts vulkan-swrast \
+    && setcap -r /usr/bin/kwin_wayland \
     && pacman -Scc --noconfirm
 RUN printf '\nPACKAGER="DeskWaifu reproducible build"\n' >> /etc/makepkg.conf
 ENV LANG=C.UTF-8

@@ -45,6 +45,8 @@ jobs:
           bash scripts/ci-sccache.sh /cache/sccache-rust-test \
             env -u DISPLAY -u WAYLAND_DISPLAY -u CUBISM_TEST_PCI -u CUBISM_TEST_SECOND_PCI \
             LIBGL_ALWAYS_SOFTWARE=1 cargo test --workspace --frozen
+      - name: Verify headless Plasma session
+        run: bash scripts/with-headless-plasma.sh true
       - name: Build workspace (release)
         run: bash scripts/ci-sccache.sh /cache/sccache-rust-test cargo build --workspace --frozen --release
       - name: Test release tooling
