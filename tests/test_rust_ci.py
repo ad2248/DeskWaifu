@@ -24,7 +24,8 @@ class RustCiTest(unittest.TestCase):
         self.assertNotIn('#[ignore', offscreen)
         builds = [line.strip() for line in ci.splitlines() if 'cargo build ' in line]
         build = 'run: bash scripts/ci-sccache.sh /cache/sccache-rust-test cargo build --workspace --frozen'
-        self.assertEqual(builds, [build, f'{build} --release'])
+        gui_build = 'CARGO_TARGET_DIR="$PWD/target" cargo build --frozen -p deskwaifu-terminal-panel'
+        self.assertEqual(builds, [build, f'{build} --release', gui_build])
         self.assertNotIn('scripts/build.sh', ci)
         self.assertNotIn('scripts/deploy-plugins.sh', ci)
         self.assertNotIn('cargo fetch', ci)
