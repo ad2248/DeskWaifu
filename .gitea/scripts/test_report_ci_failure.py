@@ -61,17 +61,18 @@ class ReportCiFailureTest(unittest.TestCase):
         self.assertIn("PR#274", text)
         self.assertIn("actions/runs/681", text)
 
-    def test_workflow_reports_once_from_a_job_depending_on_both_ci_jobs(self):
-        """锁住 ci.yml 的聚合上报结构，避免退回到每作业各报一次。"""
+    def test_workflow_reports_once_from_a_job_depending_on_all_ci_jobs(self):
+        """验证 CI 作业集中上报，避免每个作业各报一次。"""
         jobs = job_blocks((ROOT / "workflows/ci.yml").read_text())
         reporters = [name for name, body in jobs.items() if "report-ci-failure.py" in body]
         self.assertEqual(reporters, ["report"], "上报必须集中在一个作业里，否则会重复创建智能体运行")
         report = jobs["report"]
-        self.assertIn("needs: [package, test]", report)
+        dependencies = re.search(r"^    needs: \[([^\]]+)\]$", report, re.MULTILINE)
+        self.assertIsNotNone(dependencies)
+        self.assertEqual(set(dependencies[1].split(", ")), jobs.keys() - {"report"})
         self.assertIn("if: always()", report)
-        # 聚合步骤必须把各作业结果传出去，否则日志区只剩作业名 report。
-        self.assertIn("needs.package.result", report)
-        self.assertIn("needs.test.result", report)
+        for name in jobs.keys() - {"report"}:
+            self.assertIn(f"needs.{name}.result", report)
         # 没有失败时必须自行跳过，否则一次成功也会触发回调。
         self.assertIn("CI 未失败，跳过回调", report)
 

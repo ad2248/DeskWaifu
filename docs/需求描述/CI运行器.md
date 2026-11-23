@@ -12,11 +12,13 @@ CI 作业在固定的私有 Arch 镜像中构建 Cargo workspace。
 
 ## 无头 Plasma 会话
 
-CI 镜像提供 KWin、Plasma Shell、桌面组件和 Mesa 软件渲染。CI 检查和镜像验收均通过启动脚本启动 1280×800 的虚拟输出，等待 Wayland socket 及 KWin、Plasma Shell 的 D-Bus 服务就绪。脚本为每次运行创建私有 D-Bus 会话和 XDG 目录。界面用例可以用 `bash scripts/with-headless-plasma.sh <命令>` 在这个会话中运行。 [会话启动脚本](<../../scripts/with-headless-plasma.sh>)
+CI 镜像提供 KWin、Plasma Shell、桌面组件和 Mesa 软件渲染。GUI CI 和 Rust 镜像验收均通过启动脚本启动 1280×800 的虚拟输出，等待 Wayland socket 及 KWin、Plasma Shell 的 D-Bus 服务就绪。脚本为每次运行创建私有 D-Bus 会话和 XDG 目录。界面用例可以用 `bash scripts/with-headless-plasma.sh <命令>` 在这个会话中运行。 [会话启动脚本](<../../scripts/with-headless-plasma.sh>)
+
+`gui` 作业使用专用 `deskwaifu-gui` 标签，绑定 [Containerfile](<../../Containerfile>) 的 `gui-ci` 目标构建出的固定镜像 ID。该镜像额外提供 `python-gobject`、FFmpeg/x265、CJK 字体和 Zstandard。GUI Runner 的容器仅映射供 KWin 截图使用的 DRM 渲染节点，例如 `--device=/dev/dri/renderD128`；运行器账户须能读写该设备。保持 rootless、非特权且不挂载宿主容器 socket 或用户桌面，普通 `deskwaifu-rust` Runner 不映射该设备。
 
 ## 门禁
 
-[Rust CI 工作流](../../.gitea/workflows/ci.yml) 定义 Rust test 与 Arch package 并行任务，统一汇总失败。评审工作流独立运行。
+[Rust CI 工作流](../../.gitea/workflows/ci.yml) 并行运行 Rust 检查、Arch 打包和 GUI 验收，统一汇总失败。评审工作流独立运行。
 
 - `test` 直接以 `cargo build --workspace --frozen` 构建 debug 和 release（加 `--release`），包含 GPUI 控制面板和默认启用 `kwin-cursor`、`native` 的 `terminal` 插件。另运行 cargo fmt、Clippy、Rust 测试及 Python 工具测试。Cubism 离屏测试使用 Mesa 软件渲染，清除图形会话和硬件 PCI 选择变量。
 - `package` 按当前 commit 归档源码，以非 root 用户运行 makepkg，验证单一 `deskwaifu-bin` 安装包及校验和。安装后核对 `deskwaifu-terminal-panel` 和全部插件动态库，由 CLI 验证宿主加载语音输入及 `terminal` 插件。

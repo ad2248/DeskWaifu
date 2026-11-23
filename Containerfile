@@ -21,6 +21,11 @@ RUN --mount=type=bind,source=.,target=/source \
     cd /source && cmp Cargo.lock /tmp/workspace-Cargo.lock && \
     HTTPS_PROXY="$CARGO_HTTPS_PROXY" cargo vendor --locked /opt/deskwaifu-cargo/vendor > /opt/deskwaifu-cargo/config.toml
 
+FROM toolchain AS gui-ci
+COPY --from=cargo-dependencies /opt/deskwaifu-cargo /opt/deskwaifu-cargo
+RUN pacman -S --noconfirm --needed python-gobject ffmpeg noto-fonts-cjk zstd \
+    && pacman -Scc --noconfirm
+
 FROM toolchain AS ci
 COPY --from=cargo-dependencies /opt/deskwaifu-cargo /opt/deskwaifu-cargo
 ENV CUBISM_SDK_DIR=/opt/deskwaifu-deps/CubismSdkForNative-5-r.5 \
