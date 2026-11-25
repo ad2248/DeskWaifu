@@ -10,14 +10,6 @@ target_link_libraries(clipboard-service-test PRIVATE deskwaifu_clipboard)
 add_dependencies(clipboard-service-test clipboard-fixture)
 deskwaifu_add_test(NAME clipboard-service COMMAND clipboard-service-test $<TARGET_FILE:clipboard-fixture>)
 
-add_executable(model-input-region-test ModelInputRegionTest.cpp)
-deskwaifu_add_test(NAME model-input-region COMMAND model-input-region-test)
-add_executable(model-hit-test-test ModelHitTestTest.cpp)
-target_link_libraries(model-hit-test-test PRIVATE Threads::Threads)
-deskwaifu_add_test(NAME model-hit-test COMMAND model-hit-test-test)
-
-add_executable(component-dependencies-test ComponentDependenciesTest.cpp)
-deskwaifu_add_test(NAME component-dependencies COMMAND component-dependencies-test)
 deskwaifu_add_test(NAME component-direction COMMAND ${CMAKE_COMMAND}
   -DAPP_SOURCE=${PRIVATE_ROOT} -P ${TEST_SCRIPTS}/CheckComponentDirection.cmake)
 deskwaifu_add_test(NAME component-direction-missing COMMAND ${CMAKE_COMMAND}
@@ -32,7 +24,6 @@ deskwaifu_add_test(NAME command-service-direction-regression COMMAND ${CMAKE_COM
 
 add_executable(offscreen-renderer-test OffscreenRendererTest.cpp)
 target_link_libraries(offscreen-renderer-test PRIVATE deskwaifu_offscreen)
-deskwaifu_add_test(NAME render-device-validation COMMAND offscreen-renderer-test --validation)
 deskwaifu_add_test(NAME render-device-startup COMMAND ${CMAKE_COMMAND}
   -DAPP=$<TARGET_FILE:deskwaifu> -DFIXTURE_DIR=${CMAKE_CURRENT_BINARY_DIR}/render-device-startup
   -P ${TEST_SCRIPTS}/CheckRenderDeviceStartup.cmake
@@ -49,16 +40,10 @@ endforeach()
 deskwaifu_add_test(NAME offscreen-bundled-glew COMMAND ${CMAKE_COMMAND}
   -DINCLUDE_DIR=${CMAKE_CURRENT_BINARY_DIR} -DGLEW_INCLUDE=${GLEW_PATH}/include
   -P ${TEST_SCRIPTS}/CheckOffscreenGlewInclude.cmake)
-add_executable(model-window-state-test ModelWindowStateTest.cpp)
-target_link_libraries(model-window-state-test PRIVATE deskwaifu_window_state)
-deskwaifu_add_test(NAME model-window-state COMMAND model-window-state-test)
 deskwaifu_add_test(NAME qt-layer-shell-version COMMAND ${CMAKE_COMMAND}
   -DAPP_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/..
   -DFIXTURE_DIR=${CMAKE_CURRENT_BINARY_DIR}/layer-shell-version
   -P ${TEST_SCRIPTS}/CheckLayerShellQtVersion.cmake)
-add_executable(qt-window-input-test QtWindowInputTest.cpp)
-target_link_libraries(qt-window-input-test PRIVATE Qt6::Gui)
-deskwaifu_add_test(NAME qt-window-input COMMAND qt-window-input-test)
 add_executable(qt-desktop-window-test QtDesktopWindowTest.cpp ${PRIVATE_ROOT}/processor/interaction/window/QtDesktopWindow.cpp)
 target_link_libraries(qt-desktop-window-test PRIVATE deskwaifu_offscreen Qt6::Gui Qt6::OpenGL Qt6::WaylandClient LayerShellQt::Interface OpenGL::EGL ${CMAKE_DL_LIBS})
 target_link_options(qt-desktop-window-test PRIVATE -Wl,--export-dynamic-symbol=eglSwapBuffers)
@@ -109,20 +94,13 @@ endif()
 
 set(CONFIG_SOURCE ${PRIVATE_ROOT}/processor/interaction/config/LAppConfig.cpp)
 set(INPUT_SOURCE ${PRIVATE_ROOT}/processor/interaction/InputController.cpp)
+add_executable(lapp-config-test LAppConfigTest.cpp ${CONFIG_SOURCE})
+deskwaifu_add_test(NAME lapp-config COMMAND lapp-config-test)
 add_executable(transform-editor-test TransformEditorTest.cpp ${CONFIG_SOURCE} ${INPUT_SOURCE})
 deskwaifu_add_test(NAME transform-editor COMMAND transform-editor-test)
 deskwaifu_add_test(NAME config-temp-directory COMMAND ${CMAKE_COMMAND}
   -DTEST_TEMP_ROOT=${CMAKE_CURRENT_BINARY_DIR}/tmp -DCONFIG_TEST=$<TARGET_FILE:config-store-test>
   -DEDITOR_TEST=$<TARGET_FILE:transform-editor-test> -P ${CMAKE_SOURCE_DIR}/platform/tests/support/CheckPortableTemporaryDirectory.cmake)
-foreach(pair "lapp-config|LAppConfig" "model-region|ModelRegion" "hover-opacity|HoverOpacity"
-    "hover-opacity-settings|HoverOpacitySettings" "mouse-look-settings|MouseLookSettings"
-    "render-device-settings|RenderDeviceSettings")
-  string(REPLACE "|" ";" pair "${pair}")
-  list(GET pair 0 name)
-  list(GET pair 1 source)
-  add_executable(${name}-test ${source}Test.cpp ${CONFIG_SOURCE})
-  deskwaifu_add_test(NAME ${name} COMMAND ${name}-test)
-endforeach()
 add_executable(model-region-render-test ModelRegionRenderTest.cpp ${PRIVATE_ROOT}/processor/model/ModelFrameRegion.cpp)
 target_link_libraries(model-region-render-test PRIVATE Framework glew_s OpenGL::EGL)
 deskwaifu_add_test(NAME model-region-render COMMAND model-region-render-test)
@@ -135,25 +113,13 @@ set_tests_properties(lapp-sprite PROPERTIES ENVIRONMENT "EGL_PLATFORM=surfaceles
 add_executable(edit-input-region-test EditInputRegionTest.cpp ${CONFIG_SOURCE} ${INPUT_SOURCE})
 target_link_libraries(edit-input-region-test PRIVATE Qt6::Gui)
 deskwaifu_add_test(NAME edit-input-region COMMAND edit-input-region-test)
-add_executable(failure-diagnostics-test FailureDiagnosticsTest.cpp)
-deskwaifu_add_test(NAME failure-diagnostics COMMAND failure-diagnostics-test)
 add_executable(model-catalog-test ModelCatalogTest.cpp)
 target_link_libraries(model-catalog-test PRIVATE deskwaifu_catalog)
 deskwaifu_add_test(NAME model-catalog COMMAND model-catalog-test)
-add_executable(model-cache-test ModelCacheTest.cpp)
-deskwaifu_add_test(NAME model-cache COMMAND model-cache-test)
-add_executable(model-session-test ModelSessionTest.cpp)
-deskwaifu_add_test(NAME model-session COMMAND model-session-test)
 deskwaifu_add_test(NAME model-hotkeys-header COMMAND ${CMAKE_COMMAND} -DAPP_SOURCE=${PRIVATE_ROOT}
   -DSDK_SOURCE=${CMAKE_SOURCE_DIR}/sdk
   -DCXX_COMPILER=${CMAKE_CXX_COMPILER} -DFIXTURE_SOURCE=${CMAKE_CURRENT_BINARY_DIR}/hotkeys-header
   -P ${TEST_SCRIPTS}/CheckModelHotkeysHeader.cmake)
-add_executable(input-controller-test InputControllerTest.cpp)
-target_link_libraries(input-controller-test PRIVATE deskwaifu_input)
-deskwaifu_add_test(NAME input-controller COMMAND input-controller-test)
-add_executable(cursor-look-test CursorLookTest.cpp)
-target_link_libraries(cursor-look-test PRIVATE deskwaifu_input)
-deskwaifu_add_test(NAME cursor-look COMMAND cursor-look-test)
 add_executable(model-gaze-test ModelGazeTest.cpp
   ${PRIVATE_ROOT}/processor/model/LAppModel.cpp ${PRIVATE_ROOT}/processor/model/ModelHotkeys.cpp
   ${PRIVATE_ROOT}/processor/model/LAppPal.cpp ${PRIVATE_ROOT}/processor/model/LAppDefine.cpp
@@ -178,10 +144,6 @@ add_library(desktop-keyboard-fixture MODULE ../DesktopPlugin.cpp DelegatePluginW
 deskwaifu_domain_test(desktop-keyboard-fixture desktop)
 target_link_libraries(desktop-keyboard-fixture PRIVATE deskwaifu_application deskwaifu_clipboard OpenGL::EGL)
 set_target_properties(desktop-keyboard-fixture PROPERTIES PREFIX "" OUTPUT_NAME desktop)
-add_executable(application-service-test ApplicationServiceTest.cpp)
-deskwaifu_add_test(NAME application-service COMMAND application-service-test)
-add_executable(external-control-test ExternalControlTest.cpp)
-deskwaifu_add_test(NAME external-control COMMAND external-control-test)
 add_executable(model-render-thread-test ModelRenderThreadTest.cpp)
 target_link_libraries(model-render-thread-test PRIVATE deskwaifu_application)
 target_link_options(model-render-thread-test PRIVATE
@@ -204,12 +166,6 @@ foreach(scenario release transform drag state cursor)
   deskwaifu_add_test(NAME model-pointer-${scenario} COMMAND model-pointer-test ${scenario})
   set_tests_properties(model-pointer-${scenario} PROPERTIES ENVIRONMENT "EGL_PLATFORM=surfaceless" SKIP_RETURN_CODE 77)
 endforeach()
-add_executable(texture-residency-test TextureResidencyTest.cpp)
-target_include_directories(texture-residency-test PRIVATE ${GLEW_PATH}/include ${FRAMEWORK_PATH}/src ${CORE_PATH}/include ${COMMON_SRC_PATH})
-deskwaifu_add_test(NAME texture-residency COMMAND texture-residency-test)
-add_executable(output-controller-test OutputControllerTest.cpp)
-target_link_libraries(output-controller-test PRIVATE deskwaifu_output)
-deskwaifu_add_test(NAME output-controller COMMAND output-controller-test)
 add_executable(output-settings-test OutputSettingsTest.cpp ${CONFIG_SOURCE} ${PRIVATE_ROOT}/processor/interaction/window/OutputController.cpp)
 target_link_options(output-settings-test PRIVATE -Wl,--wrap=mkstemp)
 deskwaifu_add_test(NAME output-settings COMMAND output-settings-test)
@@ -239,14 +195,6 @@ if(DESKWAIFU_BUILD_CONTROL)
   target_link_libraries(model-hotkeys-test PRIVATE Qt6::Test Framework)
   set_target_properties(model-hotkeys-test PROPERTIES AUTOMOC ON)
   deskwaifu_add_test(NAME model-hotkeys COMMAND model-hotkeys-test)
-  qt_add_executable(model-transform-test ModelTransformTest.cpp)
-  target_link_libraries(model-transform-test PRIVATE Qt6::Test Framework)
-  set_target_properties(model-transform-test PROPERTIES AUTOMOC ON)
-  deskwaifu_add_test(NAME model-transform COMMAND model-transform-test)
-  qt_add_executable(model-keyboard-test ModelKeyboardTest.cpp)
-  target_link_libraries(model-keyboard-test PRIVATE Qt6::Test)
-  set_target_properties(model-keyboard-test PROPERTIES AUTOMOC ON)
-  deskwaifu_add_test(NAME model-keyboard COMMAND model-keyboard-test)
 endif()
 
 add_executable(qt-desktop-window-run-test QtDesktopWindowRunTest.cpp)

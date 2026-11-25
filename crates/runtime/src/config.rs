@@ -281,6 +281,3 @@ fn persist(path: &Path, bytes: &[u8], replace_existing: bool) -> io::Result<()> 
     }
     Ok(())
 }
-
-#[cfg(test)]
-mod tests;

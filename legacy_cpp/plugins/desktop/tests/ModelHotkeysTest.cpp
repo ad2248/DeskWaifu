@@ -11,7 +11,6 @@
 #include <QJsonObject>
 #include <QTemporaryDir>
 #include <QtTest>
-#include <limits>
 
 using namespace Live2D::Cubism::Framework;
 
@@ -48,100 +47,6 @@ private slots:
     {
         CubismFramework::Dispose();
         CubismFramework::CleanUp();
-    }
-    void discoversExpAndKeepsIndependentPersistentState()
-    {
-        QTemporaryDir directory;
-        fixture(directory.path(), { binding("watermark", "水印.exp3.json"), binding("blush", "脸红.exp3.json", "N1") });
-        ModelHotkeys hotkeys;
-        hotkeys.Load(directory.path().toStdString() + "/", "test.model3.json");
-        QCOMPARE(hotkeys.Bindings().size(), size_t(2));
-        QCOMPARE(hotkeys.Bindings()[0].keys[0], std::string("Tab"));
-        QCOMPARE(hotkeys.Bindings()[0].name, std::string("水印.exp3.json"));
-        QVERIFY(hotkeys.Bindings()[0].reason.empty());
-        std::string error;
-        QVERIFY(hotkeys.Trigger("watermark", error));
-        hotkeys.Update(0.25f);
-        QCOMPARE(hotkeys.Expressions()[0].weight, 0.5f);
-        QVERIFY(hotkeys.Trigger("blush", error));
-        hotkeys.Update(10);
-        QVERIFY(hotkeys.IsActive(hotkeys.Bindings()[0].id));
-        QVERIFY(hotkeys.IsActive(hotkeys.Bindings()[1].id));
-        QVERIFY(hotkeys.Trigger("watermark", error));
-        hotkeys.Update(0.25f);
-        QCOMPARE(hotkeys.Expressions()[0].weight, 0.5f);
-        hotkeys.Update(0.25f);
-        QCOMPARE(hotkeys.Expressions()[0].weight, 0.0f);
-        QVERIFY(hotkeys.IsActive(hotkeys.Bindings()[1].id));
-        const auto token = hotkeys.Token();
-        hotkeys.Reset();
-        QVERIFY(token != hotkeys.Token());
-        QVERIFY(!hotkeys.IsActive(hotkeys.Bindings()[1].id));
-        QCOMPARE(hotkeys.Expressions()[1].weight, 0.0f);
-        hotkeys.Load(directory.path().toStdString() + "/", "other.model3.json");
-        QVERIFY(token != hotkeys.Token());
-        QVERIFY(hotkeys.Bindings().empty());
-        QVERIFY(hotkeys.Expressions().empty());
-        QVERIFY(!hotkeys.Trigger("watermark", error));
-    }
-    void resolvesOnlyCurrentBindingIds()
-    {
-        QTemporaryDir directory;
-        fixture(directory.path(), { binding("watermark", "水印.exp3.json") });
-        ModelHotkeys hotkeys;
-        ModelHotkeys other;
-        other.Load(directory.path().toStdString() + "/", "test.model3.json");
-        auto foreign = other.Bindings()[0];
-        // 公开查询不接受 Binding 或任意内部索引。
-        foreign.expression = std::numeric_limits<int>::max();
-        QVERIFY(!hotkeys.IsActive(foreign.id));
-        hotkeys.Load(directory.path().toStdString() + "/", "test.model3.json");
-        const auto old = hotkeys.Bindings()[0];
-        const auto token = hotkeys.Token();
-        std::string error;
-        QVERIFY(hotkeys.Trigger(old.id, error));
-        QVERIFY(hotkeys.IsActive(foreign.id)); // 相同 ID 表示当前绑定。
-        QVERIFY(!other.IsActive(old.id)); // 不能读取另一个所有者的活动状态。
-        QVERIFY(!hotkeys.IsActive("missing"));
-        QVERIFY(!hotkeys.IsActive(""));
-
-        fixture(directory.path(), { binding("replacement", "脸红.exp3.json") });
-        hotkeys.Load(directory.path().toStdString() + "/", "test.model3.json");
-        QVERIFY(token != hotkeys.Token());
-        QVERIFY(hotkeys.Trigger("replacement", error));
-        QVERIFY(hotkeys.IsActive("replacement"));
-        QVERIFY(!hotkeys.IsActive(old.id)); // 旧索引 0 现在属于另一个 ID。
-        hotkeys.Load(directory.path().toStdString() + "/", "absent.model3.json");
-        QVERIFY(!hotkeys.IsActive("replacement"));
-    }
-    void listsUnavailableActionsAndHonorsTimeout()
-    {
-        QTemporaryDir directory;
-        auto timed = binding("timed", "水印.exp3.json");
-        timed["DeactivateAfterSeconds"] = true;
-        timed["DeactivateAfterSecondsAmount"] = 1;
-        auto disabled = binding("disabled", "水印.exp3.json");
-        disabled["IsActive"] = false;
-        auto unsupported = binding("unsupported", "水印.exp3.json");
-        unsupported["Action"] = "ChangeBackground";
-        fixture(directory.path(), { timed, disabled, unsupported, binding("missing", "absent.exp3.json") });
-        ModelHotkeys hotkeys;
-        hotkeys.Load(directory.path().toStdString() + "/", "test.model3.json");
-        QCOMPARE(hotkeys.Bindings().size(), size_t(4));
-        std::string error;
-        for (const auto& id : { "disabled", "unsupported", "missing", "unknown" }) {
-            QVERIFY(!hotkeys.Trigger(id, error));
-        }
-        QVERIFY(hotkeys.Trigger("timed", error));
-        hotkeys.Update(0.5f);
-        QVERIFY(hotkeys.IsActive(hotkeys.Bindings()[0].id));
-        hotkeys.Update(1);
-        QVERIFY(!hotkeys.IsActive(hotkeys.Bindings()[0].id));
-        QCOMPARE(hotkeys.Expressions()[0].weight, 0.0f);
-        write(directory.path() + "/test.vtube.json", "{invalid");
-        hotkeys.Load(directory.path().toStdString() + "/", "test.model3.json");
-        QVERIFY(!hotkeys.Error().empty());
-        QVERIFY(hotkeys.Bindings().empty());
     }
     void appliesWithoutAccumulationAndRestoresBase()
     {

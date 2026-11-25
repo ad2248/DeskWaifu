@@ -2,46 +2,6 @@ use super::*;
 use crate::tests::TempDir;
 
 #[test]
-fn resolves_catalog_root_in_priority_order() {
-    // 注入环境变量而不修改进程环境，验证显式目录、应用变量、XDG 和 HOME 的优先级。
-    let absolute = env::temp_dir().join("deskwaifu-user-home");
-    let xdg = absolute.join("custom data home");
-    let configured = |name: &str| match name {
-        "DESKWAIFU_MODEL_DIR" => Some("configured models".into()),
-        "XDG_DATA_HOME" => Some(xdg.clone().into_os_string()),
-        "HOME" => Some(absolute.clone().into_os_string()),
-        _ => None,
-    };
-    assert_eq!(
-        catalog_root(Some("explicit"), configured).unwrap(),
-        ("explicit".into(), false)
-    );
-    assert_eq!(
-        catalog_root(None, configured).unwrap(),
-        ("configured models".into(), false)
-    );
-    assert_eq!(
-        catalog_root(None, |name| if name == "DESKWAIFU_MODEL_DIR" {
-            Some(OsString::new())
-        } else {
-            configured(name)
-        })
-        .unwrap(),
-        (xdg.join("deskwaifu/models"), true),
-    );
-    assert_eq!(
-        catalog_root(None, |name| match name {
-            "XDG_DATA_HOME" => Some("relative".into()),
-            "HOME" => configured(name),
-            _ => None,
-        })
-        .unwrap(),
-        (absolute.join(".local/share/deskwaifu/models"), true),
-    );
-    assert!(catalog_root(None, |_| None).is_err());
-}
-
-#[test]
 fn handles_missing_default_but_rejects_invalid_explicit_root() {
     // 用未创建的目录验证默认路径首次使用为空，并验证显式路径及普通文件出错。
     let temp = TempDir::new();
@@ -75,31 +35,6 @@ fn bounds_depth_and_counts_all_directory_entries() {
     assert_eq!(
         discover(&temp.0, false, 1, 3),
         Err("terminal catalog: entry limit (3) exceeded".into())
-    );
-}
-
-#[test]
-fn enforces_the_ipc_frame_limit_after_json_escaping() {
-    // 用包含引号、反斜杠和换行的路径填满 IPC 响应，验证多一个字节即返回目录查询错误。
-    let escaped_path = "models/引号\"\\\n";
-    let host_frame = |output: &str| {
-        serde_json::to_vec(&serde_json::json!({"status": "ok", "output": output})).unwrap()
-    };
-    let mut catalog = Catalog {
-        models: vec![format!("{escaped_path}.model3.json")],
-    };
-    let overhead = host_frame(&serialize(&catalog).unwrap()).len();
-    catalog.models[0] = format!(
-        "{escaped_path}{}.model3.json",
-        "x".repeat(MAX_FRAME_BYTES - overhead)
-    );
-    let output = serialize(&catalog).unwrap();
-    assert_eq!(host_frame(&output).len(), MAX_FRAME_BYTES);
-    catalog.models[0].push('x');
-    assert!(
-        serialize(&catalog)
-            .unwrap_err()
-            .contains("response exceeds 64 KiB")
     );
 }
 

@@ -44,13 +44,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     } else {
         model.render(0.0, &mut pixels)?;
     }
-    if !pixels.chunks_exact(4).any(|pixel| pixel[3] != 0) {
+    if !pixels.as_chunks::<4>().0.iter().any(|pixel| pixel[3] != 0) {
         return Err("Cubism produced an entirely transparent frame".into());
     }
-    for pixel in pixels.chunks_exact_mut(4) {
-        let pixel: &mut [u8; 4] = pixel.try_into().expect("RGBA pixel");
-        unpremultiply_rgba(std::slice::from_mut(pixel));
-    }
+    unpremultiply_rgba(pixels.as_chunks_mut::<4>().0);
     let mut encoder = png::Encoder::new(BufWriter::new(File::create(output)?), WIDTH, HEIGHT);
     encoder.set_color(png::ColorType::Rgba);
     encoder.set_depth(png::BitDepth::Eight);

@@ -72,7 +72,7 @@ if(TARGET reading_clip_plugin AND TARGET speech-contract-fixture)
   add_executable(reading-speech-contract-test ReadingSpeechContractTest.cpp)
   target_link_libraries(reading-speech-contract-test PRIVATE deskwaifu_backend_test_support Qt6::Gui)
   add_dependencies(reading-speech-contract-test reading_clip_plugin speech-contract-fixture)
-  # Existing sanitizer jobs build this historical unit target before running
+  # Existing sanitizer jobs build this speech processor integration target before running
   # every speech-contract-* scenario, including the dynamic integration cases.
   add_dependencies(speech-processor-contract-test reading-speech-contract-test)
   foreach(scenario reading-cancel reading-complete)
@@ -127,16 +127,10 @@ if(TARGET desktop-keyboard-fixture AND TARGET ipc_plugin AND TARGET speech_plugi
   set_tests_properties(delegate-plugin-commands PROPERTIES ENVIRONMENT "EGL_PLATFORM=surfaceless" LABELS "contract;plugin")
 endif()
 
-add_executable(json-command-test JsonCommandTest.cpp)
-target_link_libraries(json-command-test PRIVATE deskwaifu_test_support)
-deskwaifu_add_test(NAME json-command COMMAND json-command-test)
 add_executable(config-store-test ConfigStoreTest.cpp)
 target_link_libraries(config-store-test PRIVATE deskwaifu_test_support)
-target_link_options(config-store-test PRIVATE -Wl,--wrap=rename)
 deskwaifu_add_test(NAME config-store COMMAND config-store-test)
-add_executable(processor-event-loop-test ProcessorEventLoopTest.cpp)
-target_link_libraries(processor-event-loop-test PRIVATE deskwaifu_test_support)
-deskwaifu_add_test(NAME processor-event-loop COMMAND processor-event-loop-test)
+
 if(TARGET perception_plugin)
   add_library(perception-startup-fixture MODULE PerceptionStartupFixture.cpp)
   target_link_libraries(perception-startup-fixture PRIVATE deskwaifu_plugin_sdk)

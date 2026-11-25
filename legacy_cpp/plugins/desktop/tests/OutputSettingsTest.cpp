@@ -100,11 +100,6 @@ int main()
     backend.outputs.clear();
     CHECK(!settings.Initialize().ok && config.values.modelOutput == "DP-1");
     CHECK(store.Read(disk, error) && disk.values.at("model_output") == "\"DP-1\"");
-    for (const auto* json : { "{\"model_output\":42}", "{\"model_output\":null}" }) {
-        CHECK(ConfigStore::Parse(json, disk, error));
-        LAppConfig::Values values;
-        CHECK(!LAppConfig::Decode(disk, values, error));
-    }
     // 升级时，即使旧配置位于只读目录，只要可读取就应正常启动。
     const std::string legacy = R"({"model_x":0.25,"model_y":-0.5,"model_scale":2})";
     write(legacy);

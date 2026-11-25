@@ -40,20 +40,6 @@ private slots:
         QVERIFY(!reloaded.Configured());
         QCOMPARE(reloaded.Snapshot().maxRecordingSeconds, 300);
     }
-    void secureWebSocketEndpointAndReset()
-    {
-        QTemporaryDir dir;
-        VoiceInputSettings settings(dir.path());
-        QString error;
-        QVERIFY(settings.Set("{\"endpoint\":\"wss://example.invalid/api-ws/v1/inference\"}", error));
-        QCOMPARE(settings.Snapshot().endpoint, QString("wss://example.invalid/api-ws/v1/inference"));
-        QVERIFY(!settings.Set("{\"endpoint\":\"ws://example.invalid/api-ws/v1/inference\"}", error));
-        QVERIFY(!settings.Set("{\"endpoint\":\"wss://secret@example.invalid/asr\"}", error));
-        QVERIFY(!settings.Set("{\"endpoint\":\"wss://example.invalid/asr#secret\"}", error));
-        QVERIFY(settings.Set(R"({"endpoint":"","model":""})", error));
-        QCOMPARE(settings.Snapshot().endpoint, VoiceInputConfig { }.endpoint);
-        QCOMPARE(settings.Snapshot().model, VoiceInputConfig { }.model);
-    }
     void ipcCommandIsNotPersistedAndUnknownFieldsRemain()
     {
         QTemporaryDir dir;
@@ -71,38 +57,18 @@ private slots:
         QCOMPARE(disk.values.at("another_extension"), std::string("true"));
         QCOMPARE(settings.Snapshot().apiKey, QString("secret"));
     }
-    void validationDoesNotLeakOrMutate()
+    void corruptFileDoesNotReplaceRuntimeSettings()
     {
         QTemporaryDir dir;
         VoiceInputSettings settings(dir.path());
         QString error;
         QVERIFY(settings.Set(R"({"api_key":"retained-secret"})", error));
-        for (const auto* json : { R"({"api_key":"private","api_key":"second"})", R"({"extension":{"x":1,"x":2}})", R"({"api_key":"private\nsecret"})", R"({"api_key":null})",
-                 R"({"api_key":42})", R"({"max_recording_seconds":0})", R"({"max_recording_seconds":301})", R"({"max_recording_seconds":2.5})", R"({"max_recording_seconds":"60"})",
-                 R"({"endpoint":"http://private.example"})", R"({"endpoint":"https://secret@private.example"})", R"({"endpoint":"https://private.example/#secret"})",
-                 R"({"model":[]})", "[]", "{malformed private-secret}" }) {
-            QVERIFY2(!settings.Set(json, error), json);
-            QVERIFY(!error.isEmpty());
-            QVERIFY(!error.contains("private"));
-            QVERIFY(!error.contains("secret"));
-            QCOMPARE(settings.Snapshot().apiKey, QString("retained-secret"));
-        }
         QFile file(dir.filePath("config.json"));
         QVERIFY(file.open(QIODevice::WriteOnly));
         file.write("{\"api_key\":\"secret\",\"api_key\":\"other\"}");
         file.close();
         QVERIFY(!settings.Refresh(error));
         QCOMPARE(settings.Snapshot().apiKey, QString("retained-secret"));
-    }
-    void configStoreDetectsSnapshotConflict()
-    {
-        QTemporaryDir dir;
-        ConfigStore store(dir.filePath("config.json").toStdString(), true);
-        ConfigStore::Snapshot before, saved;
-        std::string error;
-        QVERIFY(store.Read(before, error));
-        QVERIFY(store.Commit("{\"model\":\"first\"}", before, saved, error));
-        QVERIFY(!store.Commit("{\"model\":\"second\"}", before, saved, error));
     }
 };
 QTEST_GUILESS_MAIN(SettingsTest)

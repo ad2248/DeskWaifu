@@ -23,12 +23,8 @@ python3 -m unittest discover -s plugins/voice_input/tests/fixtures -p test_smoke
 
 They cover successful native requests, exact returned whitespace, intentional
 503s, silent input, missing/nonzero 250 ms WAV padding, bad API paths/dummy keys,
-wrong models, invalid WAVs, the session/credential environment whitelist, and
-phase-independent 1 kHz marker detection versus other loud audio. Cleanup tests
-mock process-group signaling: even exited leaders and TERM-ignoring descendants
-must receive the final SIGKILL pass; errors must not prevent other groups being
-signaled, the mock server being closed, or the summary being saved. Signal-handler
-tests cover SIGTERM and SIGINT taking the exception/finally cleanup path.
+wrong models, and invalid WAVs. These cases submit requests over the local HTTP
+connection and verify the response and any recorded audio.
 
 Required commands: `dbus-daemon`, `sway`, `swaymsg`, `pipewire`, `pipewire-pulse`,
 `wireplumber` (0.5 configuration syntax), `pw-loopback`, `pw-play`, `wpctl`,
@@ -86,7 +82,7 @@ configuration directories.
   Qt reads are drained through the real Stop path. This is not a sample-exact
   latency measurement or proof that every marker sample survives: playback
   drain and capture buffering/resampling can alter marker placement.
-  Unit tests in `AudioTest.cpp` separately exercise precise stop/drain boundaries.
+  `AudioTest.cpp` separately exercises stop and drain across the capture and PCM normalization components.
   Semantic ASR correctness is not claimed for the deterministic mock.
 - The seeded clipboard is held by a registered, independently grouped
   `wl-copy --foreground` process reading a private prewritten file. Its output

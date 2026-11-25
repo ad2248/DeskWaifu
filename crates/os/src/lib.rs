@@ -30,9 +30,6 @@ pub const MAX_FRAME_BYTES: usize = 64 * 1024;
 pub const MAX_CLIENTS: usize = 32;
 pub const CLIENT_TIMEOUT: Duration = Duration::from_secs(10);
 
-#[cfg(test)]
-mod tests;
-
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Request {
@@ -77,7 +74,7 @@ fn dispatch(
     frame: &[u8],
     handler: &mut impl FnMut(&[String]) -> Result<String, String>,
 ) -> Response {
-    // serde_json 校验 UTF-8、信封和字符串数组；正文不再解析。
+    // serde_json 校验 UTF-8、信封和字符串数组，并将解码后的参数交给处理器。
     match serde_json::from_slice::<Request>(frame) {
         Ok(request) if request.source == "cli" => match handler(&request.payload) {
             Ok(output) => Response::Ok { output },

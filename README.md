@@ -1,23 +1,16 @@
-# DeskWaifu Rust 重写
+# DeskWaifu
 
-项目现已切换为根目录 Rust workspace，旧 C++/Qt 实现归档于 [`legacy_cpp/`](legacy_cpp/ARCHIVE.md)，不参与当前构建；不兼容旧插件 ABI。目前实现了独立 Rust `.so` 插件加载、插件生命周期、周期任务、插件命令注册和平台 JSON socket IPC。命令通路不使用消息广播；SDK/runtime 中原有类型化发布订阅接口暂时保留。
+DeskWaifu 是面向 Linux Wayland 的桌宠应用。Rust workspace 提供宿主、命令行客户端、GPUI 控制面板和动态插件，支持 Live2D 模型显示与交互，以及定时录音、语音识别和结果复制。
 
 ## 目录与依赖方向
 
-```text
-./
-├── apps/deskwaifu/           # 常驻平台宿主，不接受任何参数
-├── apps/deskwaifucli/        # 独立 IPC 命令行客户端，仅依赖 os
-├── crates/
-│   ├── sdk/                 # Plugin、Context、命令注册等共享契约
-│   ├── runtime/             # 生命周期、命令派发、单线程调度与计时
-│   └── os/                  # 平台链接的 Unix socket / JSON IPC 组件（不是插件）
-└── plugins/
-    ├── test-plugin/         # 注册 test 命令，返回收到的参数
-    └── voice-input/         # 定时录音、语音识别、复制
-```
+| 目录 | 职责 |
+| --- | --- |
+| [apps](<apps/>) | 宿主、IPC 客户端和 GPUI 控制面板 |
+| [crates](<crates/>) | 插件 SDK、运行时、平台服务、Cubism 和 Wayland 适配 |
+| [plugins](<plugins/>) | `terminal`、`voice-input` 和 `test-plugin` |
 
-依赖方向为 `deskwaifu → os → runtime → sdk`、`deskwaifu → runtime`、`deskwaifucli → os` 和 `plugin → sdk`；主程序不直接依赖具体插件，通过 runtime 加载独立 `.so`。插件对 runtime 的依赖仅用于测试。runtime 不引用具体领域插件。后续按迁移需要新增 desktop、perception、speech 等 crate；控制面板作为独立 app，Cubism 等 FFI 放在独立 bridge crate，不预先创建空模块。
+宿主通过 runtime 加载独立的 `.so`，不直接依赖具体业务插件。控制面板和 CLI 通过 Unix socket 调用宿主，插件进程内通信使用 SDK 的类型化发布订阅。详见[程序架构](<关键设计/程序架构.md>)和[文档索引](<docs/README.md>)。
 
 ## SDK 与 runtime 的当前契约
 
@@ -34,25 +27,24 @@
 
 - `Context::register_command(name, help)` 在初始化期间登记命令名与帮助。运行时将命令分派到所属插件实例的 `Plugin::on_command`，参数原样传入。重复命令和保留的 `help` 被拒绝。内建 `help` 对齐显示所有已注册命令及多行帮助。
 
-`apps/deskwaifu` 仅负责启动主线程上的 Tokio `current_thread` 异步上下文、加载插件并调用 `deskwaifu_os::run`。`crates/os` 负责绑定和监听 socket、启动与停止插件，在该主线程上执行异步主循环、插件回调与 IPC 命令派发；按 socket 就绪事件处理 IPC，并根据插件下一次到期时间推进插件时钟，不使用固定 5 ms 轮询；无消息、无周期任务时挂起等待，繁忙时跳过错过的 tick，收到 SIGINT / SIGTERM 后停止插件并清理 socket。插件回调仍为同步接口，不应阻塞主线程。
+`apps/deskwaifu` 仅负责启动主线程上的 Tokio `current_thread` 异步上下文、加载插件并调用 `deskwaifu_os::run`。`crates/os` 负责绑定和监听 socket、启动与停止插件，在该主线程上执行异步主循环、插件回调与 IPC 命令派发；按 socket 就绪事件处理 IPC，并根据插件下一次到期时间推进插件时钟；无消息、无周期任务时挂起等待，繁忙时跳过错过的 tick，收到 SIGINT / SIGTERM 后停止插件并清理 socket。插件回调仍为同步接口，不应阻塞主线程。
 
-`Context::spawn_local` 提交异步任务，由宿主在主线程驱动。退出时，运行时先丢弃未完成的任务，再调用插件的 `stop`。SDK 与 runtime 本身不依赖 Tokio。尚未实现 capability 请求/响应、deadline/取消、工作线程投递、渲染快照交换和完整桌宠后端。
+`Context::spawn_local` 提交异步任务，由宿主在主线程驱动。退出时，运行时先丢弃未完成的任务，再调用插件的 `stop`。SDK 与 runtime 本身不依赖 Tokio。
 
 ## 运行平台与测试插件
 
 直接运行 `deskwaifu` 启动常驻主程序（当前 IPC 仅支持 Unix 系统）；在另一个终端运行独立程序 `deskwaifucli test` 调用测试插件，`deskwaifucli help` 查看所有已注册子命令。主程序完全不接受任何参数，包括 `--help`；CLI 的 `--help` 无需启动主程序。
 
-先在源码目录构建主程序、独立 CLI 与插件，并部署插件到宿主构建产物旁；仅 `cargo run` 不会自动构建或复制插件：
+从仓库根目录直接用 Cargo 构建宿主、CLI、三种插件和 GPUI 控制面板。完整构建需要近期 Rust、PipeWire/Clang、Cubism SDK/GLEW、CMake、OpenGL/EGL、libsystemd 和面板开发库。先按 [Cubism 构建说明](<crates/cubism-bridge/README.md#L3>) 设置 `CUBISM_SDK_DIR` 和 `CUBISM_GLEW_DIR`。
 
 ```sh
-./scripts/build.sh
-# 终端一：启动主程序（也可直接运行 target/debug/deskwaifu）
-cargo run -p deskwaifu
+cargo build --workspace --locked
+./scripts/deploy-plugins.sh
+# 终端一：启动主程序
+./target/debug/deskwaifu
 ```
 
-`./scripts/build.sh --release` 会构建并部署到 `target/release/`，之后运行 `target/release/deskwaifu`。脚本执行 `cargo build --workspace --locked`，支持 `CARGO_TARGET_DIR`（默认 `target`），将对应 profile 的插件复制到其 `plugins/` 子目录。更换工具链或更新代码后应重新运行脚本，不要混用不同构建的主程序和插件。
-
-构建原生 Live2D 桌宠时，设置 `CUBISM_SDK_DIR` 和 `CUBISM_GLEW_DIR` 后运行 `./scripts/build.sh --release --native-live2d`。默认启动路径为 `target/live2d-native/release/deskwaifu`。模型目录与启动模型可在共享配置中指定。 [terminal 用法](<plugins/terminal/README.md>)
+用 `cargo build --workspace --locked --release` 构建 Release，再运行 `./scripts/deploy-plugins.sh --release`。部署辅助脚本不调用 Cargo，只把已有的 `.so` 复制到对应 profile 的 `plugins/`；使用自定义路径时，部署步骤也要设置相同的 `CARGO_TARGET_DIR`。不要混用不同构建的主程序和插件。面板可运行 `./target/debug/deskwaifu-terminal-panel`；模型目录和启动模型通过共享配置指定。 [terminal 用法](<plugins/terminal/README.md>)
 
 ```sh
 # 终端二：调用插件子命令
@@ -105,24 +97,14 @@ IPC 不经过插件广播总线。`crates/os` 的平台宿主拥有 socket 和 r
 
 ```sh
 cargo fmt --all --check
-./scripts/build.sh
+cargo build --workspace --locked
 cargo test --workspace --locked
 cargo clippy --workspace --all-targets --locked -- -D warnings
 python3 -B -m unittest discover -s scripts -p 'test_*.py' -v
 ```
 
-runtime 测试使用手动推进的逻辑时钟；IPC 测试使用真实 Unix socket 验证原始参数、分帧、异常隔离与资源清理，应用测试启动真实服务进程并通过 CLI 调用。
-
-## 后续迁移约束
-
-- capability 请求需要单独表达请求 ID、截止时间、取消和不可用等结果；取消不等同于底层工作已停止。
-- 控制命令使用有界队列；渲染状态和帧采用 latest-value 快照，不能积压旧帧。
-- OCR 等阻塞 FFI 由专用 worker 拥有；逻辑超时不能提前释放仍在执行的资源。
-- 控制面板与后端通过 IPC 解耦，UI 与 transport 类型不能渗入领域契约。
-- 先验证窗口/layer-shell、Cubism 渲染和真实 FFI 的需求，再选择 UI 与执行器。当前动态插件的 Rust trait object 仅限同工具链、同代码联合构建的可信部署；若需独立发布或第三方兼容，必须另行设计稳定 C ABI 或进程协议。
+runtime 测试使用手动推进的逻辑时钟。宿主冒烟测试启动真实服务进程，通过 CLI 调用动态插件。
 
 ## Arch 安装包与 CI
 
-CI 使用专用 `deskwaifu-rust` runner，执行格式检查、Clippy、测试、release 编译和 Arch 打包。`Containerfile` 不包含 Qt 或专有 Cubism SDK。运行 `bash scripts/rebuild-ci-image.sh` 构建、验收并私下传输镜像，按输出的镜像 ID 更新 runner。发布构建保持非 root makepkg，产出单个 `deskwaifu-bin` 包；详情见 [打包说明](packaging/release/README.md)。
-
-`docs/`、`计划/`、`research/` 保留为历史设计参考，其中 C++/Qt 路径与功能不代表当前实现。第三方源码和 AUR 子模块暂留，但不参与当前 Rust 编译。
+CI 使用专用 `deskwaifu-rust` runner 编译并打出 Arch 包，`deskwaifu-gui` runner 安装该包后运行验收用例；两个作业串行，包经宿主机 `/transfer` 目录传递，不接受 artifact 中转。私有 CI 镜像内置 Cubism Native SDK 5-r.5、GLEW 及 Haru、Hiyori、Mao 模型。运行 `bash scripts/rebuild-ci-image.sh` 构建镜像、离线验收 Live2D 并通过 SSH 私下传输，按输出的镜像 ID 更新 runner。发布构建保持非 root makepkg，直接安装 Cargo 产物，生成包含原生 `terminal` 和控制面板的 `deskwaifu-bin` 包。详情见 [打包说明](packaging/release/README.md)。

@@ -71,8 +71,8 @@ def main():
             raise ValueError("Missing tag-push commit identity")
         if git("rev-parse", "--verify", f"{event_sha}^{{commit}}") != commit:
             raise ValueError("Release tag moved since the push event")
-    # Keep the workflow's trusted tooling when the selected historical source
-    # contains older release scripts. Only application source changes below.
+    # Snapshot the workflow's trusted tooling outside the checkout. The selected
+    # tag supplies the source archive for that tooling to package.
     tools = Path(tempfile.mkdtemp(prefix="deskwaifu-release-tools-", dir=os.environ.get("RUNNER_TEMP")))
     tool_source = Path(__file__).resolve().parents[1]
     for relative in ("scripts/release-source.py", "scripts/release-build.sh", "scripts/release-packaging.py",

@@ -35,8 +35,8 @@ speech/
 ## 验证
 
 ```bash
-cmake --build build --target SpeechPlayer-test MiniMaxSpeechSource-test AudioPlayer-test processor-pipeline-test -j 4
-ctest --test-dir build -R '^(SpeechPlayer|MiniMaxSpeechSource|AudioPlayer|processor-pipeline)$' --output-on-failure
+cmake --build build --target speech-processor-contract-test MiniMaxSpeechSource-test AudioPlayer-test processor-pipeline-test -j 4
+ctest --test-dir build -R '^(speech-contract-.*|MiniMaxSpeechSource|AudioPlayer|processor-pipeline)$' --output-on-failure
 ```
 
 默认测试使用模拟源、模拟输出、回环 WebSocket 和无效音频格式的错误路径；真实设备播放及云端合成仍是显式启用的测试，不会因目录整合自动执行。

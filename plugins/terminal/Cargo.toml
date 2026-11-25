@@ -8,14 +8,9 @@ publish.workspace = true
 crate-type = ["cdylib"]
 
 [features]
-default = []
+default = ["kwin-cursor"]
 native = ["dep:layer-shell-probe", "layer-shell-probe/native", "dep:rustix"]
-kwin-cursor = ["native", "rustix/fs", "rustix/process"]
-
-[[bin]]
-name = "deskwaifu-cursor-guard"
-path = "src/kwin_cursor/guard_main.rs"
-required-features = ["kwin-cursor"]
+kwin-cursor = ["native", "rustix/fs"]
 
 [dependencies]
 deskwaifu-sdk.workspace = true

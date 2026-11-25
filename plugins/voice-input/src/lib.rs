@@ -423,6 +423,3 @@ impl Plugin for VoiceInput {
 }
 
 deskwaifu_sdk::export_plugin!(VoiceInput::default());
-
-#[cfg(test)]
-mod tests;

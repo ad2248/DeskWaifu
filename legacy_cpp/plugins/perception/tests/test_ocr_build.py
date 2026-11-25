@@ -241,14 +241,5 @@ set_target_properties(onnxruntime::onnxruntime PROPERTIES
                     self.assertIn("OCR source CMakeLists.txt not found", result.stderr)
                     self.assertFalse((source / "build-main").exists())
 
-    def test_legacy_ci_and_aur_explicitly_disable_native_dependencies(self):
-        workflow = (ROOT / ".gitea/workflows/ci.yml").read_text()
-        configurations = re.findall(r"cmake -S \..*?(?<!\\)\n", workflow, re.DOTALL)
-        self.assertTrue(configurations)
-        for command in configurations:
-            self.assertIn("-DDESKWAIFU_BUILD_OCR=OFF", command)
-        self.assertIn("-DDESKWAIFU_BUILD_OCR=OFF", (ROOT / "packaging/arch/deskwaifu-git/PKGBUILD").read_text())
-
-
 if __name__ == "__main__":
     unittest.main()

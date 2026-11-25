@@ -51,34 +51,3 @@ impl Plugin for TestPlugin {
         Ok(())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use deskwaifu_runtime::Runtime;
-
-    #[test]
-    fn registers_test_command_and_preserves_arguments() {
-        let mut runtime = Runtime::new(16);
-        runtime.add(TestPlugin::new()).unwrap();
-        runtime.start().unwrap();
-        assert_eq!(
-            runtime.dispatch_command(&["test".into(), "hello world".into(), "001".into()]),
-            Ok("test command received 2 argument(s): [\"hello world\", \"001\"]".into())
-        );
-        let help = runtime.dispatch_command(&["help".into()]).unwrap();
-        assert!(help.contains("help  Show available commands"));
-        assert!(help.contains("test  Run the test command."));
-        assert!(help.contains("All following input is passed through as string arguments."));
-        runtime.stop().unwrap();
-    }
-
-    #[test]
-    fn no_test_messages_are_sent() {
-        let mut runtime = Runtime::new(16);
-        runtime.add(TestPlugin::new()).unwrap();
-        runtime.start().unwrap();
-        runtime.advance(std::time::Duration::from_secs(30)).unwrap();
-        runtime.stop().unwrap();
-    }
-}

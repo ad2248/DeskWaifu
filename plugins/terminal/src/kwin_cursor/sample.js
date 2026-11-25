@@ -37,7 +37,7 @@ sampleTimer.timeout.connect(function () {
 });
 sampleTimer.start();
 
-// Backup for a running script if the independent guard itself disappears.
+// A running script cleans itself up if the provider loses its D-Bus connection.
 var watchdog = new QTimer();
 watchdog.interval = 2000;
 watchdog.timeout.connect(function () {

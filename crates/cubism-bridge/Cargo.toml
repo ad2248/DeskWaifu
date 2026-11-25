@@ -8,11 +8,11 @@ publish.workspace = true
 workspace = true
 
 [features]
-native = ["dep:png"]
+native = []
 wayland-window = ["native"]
 
-[dependencies]
-png = { version = "0.18", optional = true }
+[dev-dependencies]
+png = "0.18"
 
 [[example]]
 name = "offscreen"

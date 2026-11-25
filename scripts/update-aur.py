@@ -130,7 +130,7 @@ def update(tag):
         checksums, dependencies = verify_assets(directory, tag, commit)
         current = (recipe / "PKGBUILD").read_text()
         if "deskwaifu-ocr-bin" in current:
-            # Migrate the legacy split recipe only for a new release identity.
+            # A split OCR recipe can use the Rust template for a different tag.
             old_tag = re.search(r"^_tag=(\S+)$", current, re.M).group(1)
             if old_tag == tag:
                 raise ValueError("Cannot replace a legacy release with Rust assets")

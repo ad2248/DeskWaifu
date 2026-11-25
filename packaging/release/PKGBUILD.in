@@ -6,11 +6,11 @@ pkgrel=1
 pkgdesc='DeskWaifu Rust application'
 arch=('x86_64')
 url='https://github.com/ad2248/DeskWaifu'
-# No license grant is inferred from the retired C++ SDK dependencies.
+# The workspace does not declare a license.
 license=('LicenseRef-Unknown')
-depends=('glibc' 'gcc-libs' 'libpipewire' 'wl-clipboard')
-makedepends=('cargo' 'clang' 'pkgconf')
-optdepends=('pipewire: microphone capture daemon' 'wireplumber: default microphone selection')
+depends=(@DEPENDS@)
+makedepends=(@MAKEDEPENDS@)
+optdepends=(@OPTDEPENDS@)
 provides=('deskwaifu')
 conflicts=('deskwaifu')
 options=('!debug' '!lto')
@@ -18,17 +18,19 @@ source=('deskwaifu.tar.gz')
 sha256sums=('@SOURCE_SHA@')
 
 build() {
-  cd "$srcdir/deskwaifu"
-  CARGO_NET_OFFLINE=true bash scripts/build.sh --release
+  cd "$srcdir/deskwaifu" || return
+  CARGO_NET_OFFLINE=true cargo build --workspace --locked --release --target-dir "$srcdir/deskwaifu/target"
 }
 
 package() {
-  install -Dm755 "$srcdir/deskwaifu/target/release/deskwaifu" "$pkgdir/usr/lib/deskwaifu/deskwaifu" || return
-  install -Dm755 "$srcdir/deskwaifu/target/release/deskwaifucli" "$pkgdir/usr/bin/deskwaifucli" || return
-  local plugin
-  for plugin in @PLUGINS@; do
-    install -Dm755 "$srcdir/deskwaifu/target/release/plugins/$plugin" "$pkgdir/usr/lib/deskwaifu/plugins/$plugin" || return
+  local output="$srcdir/deskwaifu/target/release"
+  install -Dm755 "$output/deskwaifu" "$pkgdir/usr/lib/deskwaifu/deskwaifu" || return
+  local binary plugin
+  for binary in @BINARIES@; do
+    install -Dm755 "$output/$binary" "$pkgdir/usr/bin/$binary" || return
   done
-  install -dm755 "$pkgdir/usr/bin"
+  for plugin in @PLUGINS@; do
+    install -Dm755 "$output/$plugin" "$pkgdir/usr/lib/deskwaifu/plugins/$plugin" || return
+  done
   ln -s ../lib/deskwaifu/deskwaifu "$pkgdir/usr/bin/deskwaifu"
 }

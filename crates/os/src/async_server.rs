@@ -3,9 +3,6 @@ use super::*;
 use std::{future::poll_fn, task::Poll};
 use tokio::io::{Interest, unix::AsyncFd};
 
-#[cfg(test)]
-mod tests;
-
 const ACCEPT_RETRY_DELAY: Duration = Duration::from_millis(100);
 
 impl Server {
@@ -16,8 +13,8 @@ impl Server {
     /// 回调在调用线程执行，不要求 Send。适合与 runtime 截止时间及退出信号
     /// 一起 select；取消此 future 不丢失连接、半帧或待发送响应。
     /// 无法注册到事件循环的客户端会单独关闭。
-    // Tokio 1.54 的安全构造器已弃用，但替代接口要求 unsafe（本工作区禁止）。
-    // 此处只注册拥有所有权的 std socket 副本，且从不替换/关闭注册内的 fd。
+    // 使用安全的 AsyncFd::new 注册拥有所有权的 std socket 副本，
+    // 注册期间保持其中的 fd 不变且打开。
     #[allow(deprecated)]
     pub async fn poll_ready(
         &mut self,

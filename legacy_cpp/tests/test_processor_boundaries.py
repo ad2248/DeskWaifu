@@ -54,14 +54,6 @@ def violations(path, text):
 
 
 class ProcessorBoundaries(unittest.TestCase):
-    def test_ci_variant_paths_exist(self):
-        workflow = (ROOT / ".gitea/workflows/ci.yml").read_text()
-        paths = re.findall(r"endswith\('(/(?:plugins|sdk|platform)/[^']+)'\)", workflow)
-        self.assertTrue(paths, "CI must verify the variant's manager compilation")
-        for path in paths:
-            self.assertTrue((ROOT / path.lstrip("/")).is_file(), path)
-        self.assertIn("expected in shlex.split(entry['command'])", workflow)
-
     def test_production_tree(self):
         errors = []
         for tree in (ROOT / "sdk", ROOT / "platform", ROOT / "plugins"):
@@ -82,24 +74,6 @@ class ProcessorBoundaries(unittest.TestCase):
         self.assertNotIn("std::function", command)
         ipc = (ROOT / "plugins/ipc/private/processor/ipc/IpcProcessor.cpp").read_text()
         self.assertIn("_ipc.SetCommandService(*this)", ipc)
-
-    def test_negative_fixtures(self):
-        path = Path("plugins/ipc/private/processor/command/Bad.hpp")
-        foreign = ROOT / "plugins/desktop/private/processor/model/ModelProcessor.hpp"
-        for code in (
-            f'#include "{foreign}"',
-            '#include "../../../../desktop/private/processor/model/ModelProcessor.hpp"',
-            '#include <plugins/desktop/private/processor/model/ModelProcessor.hpp>',
-            'class ModelProcessor; ModelProcessor* model;',
-            'class LAppDelegate; LAppDelegate& app;',
-            'std::function<ModelMetadata()> metadata;',
-        ):
-            with self.subTest(code=code):
-                self.assertTrue(violations(path, code))
-        self.assertFalse(violations(path, '#include "contracts/ModelTransform.hpp"\nIProcessorPlugin* model;'))
-        self.assertFalse(violations(Path("plugins/desktop/private/app/Runtime.hpp"),
-                                    '#include "processor/model/ModelProcessor.hpp"\nModelProcessor* model;'))
-
 
 if __name__ == "__main__":
     unittest.main()

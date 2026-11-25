@@ -2,26 +2,30 @@
 
 The release workflow builds one `deskwaifu-bin-<tag>-1-x86_64.pkg.tar.zst` from the
 exact selected Git tag. The workspace and `Cargo.lock` must live at repository
-root. `CARGO_NET_OFFLINE=true bash scripts/build.sh --release` builds the whole
-workspace with `--locked` without updating the lockfile or accessing the network;
-beforehand, `release-build.sh` runs `cargo fetch --locked` as the temporary build
-user against a separate extraction of the selected source archive. Fetch and
-makepkg share the same fresh `CARGO_HOME`; no dependency cache is required in the
-runner image. Only the fetch phase receives allowlisted proxy settings. The
-subsequent makepkg invocation has `CARGO_NET_OFFLINE=true` and no proxy settings;
-compilation never runs as root and no upload credentials reach either phase.
-The package installs `/usr/lib/deskwaifu/deskwaifu` and its jointly built Rust
-plugins under `/usr/lib/deskwaifu/plugins/`. The trusted release tools select a
-payload from the selected source archive's Cargo workspace: `rust-v1` includes
-`libdeskwaifu_test_plugin.so`; `rust-v2` requires that plugin and
-`libdeskwaifu_voice_input.so` when the workspace declares `plugins/voice-input`.
-Installation and verification use the same plugin list and fail if an expected
-artifact is missing. `/usr/bin/deskwaifu` is symlinked to
-`../lib/deskwaifu/deskwaifu`, and the independent CLI is installed at
-`/usr/bin/deskwaifucli`. The loader searches `plugins/` beside the actual
-executable, not beside the symlink or in the working directory. Runtime
-dependencies are `glibc`, `gcc-libs`, `libpipewire` and `wl-clipboard`. C++ plugins,
-private SDKs, OCR models and installed-test packages are no longer packaged.
+root. The recipe calls `CARGO_NET_OFFLINE=true cargo build --workspace --locked
+--release` with an explicit target directory and installs directly from Cargo's
+`target/release/` outputs. The ordinary release build first runs `cargo fetch
+--locked` as the builder account against a separate extraction of the same
+source archive. Fetch and makepkg share a fresh `CARGO_HOME`; only fetch receives
+allowlisted proxy settings. CI instead uses the locked Cargo sources provisioned
+in the runner image. Compilation runs as the builder account, never as root, and
+no upload credentials reach either phase.
+
+The trusted release tools select the payload using the selected source archive's
+root workspace declarations:
+
+| Payload | Workspace marker | Installed components beyond the host and CLI |
+| --- | --- | --- |
+| `rust-v1` | `plugins/test-plugin` | `libdeskwaifu_test_plugin.so` |
+| `rust-v2` | `plugins/voice-input` | v1 plus `libdeskwaifu_voice_input.so` |
+| `rust-v3` | `apps/terminal-panel` | v2 plus native `libdeskwaifu_terminal.so` and `deskwaifu-terminal-panel` |
+
+The host is installed at `/usr/lib/deskwaifu/deskwaifu`, with a symlink at
+`/usr/bin/deskwaifu`. The independent CLI and, for v3, the panel are installed
+in `/usr/bin/`. The plugin loader searches `plugins/` beside the actual host
+executable, not beside the symlink or in the working directory. Installation and
+verification use the same artifact list; missing outputs and unexpected files
+are rejected. The package does not install model assets or separate SDK files.
 
 Host and plugins must be built together from the same code with the same Rust
 toolchain. The plugin entry point uses Rust ABI, not a stable C ABI; there is no
@@ -35,41 +39,58 @@ start that host and use `deskwaifucli test` in another terminal (the IPC socket 
 fixed at `/tmp/deskwaifu.socket`).
 
 The fixed `deskwaifu-rust` runner provides Cargo, the system toolchain and
-makepkg. A root orchestrator archives the selected source, then invokes makepkg
-as a temporary unprivileged account with a clean environment. The account cannot
-write to the checkout or trusted release-tool snapshot. Upload credentials exist
-only in the final workflow step. Package identity, payload and checksums are
+makepkg. A root orchestrator archives the selected source into a scratch
+directory owned by the `builder` account, then invokes fetch and makepkg as that
+account with a clean environment. Upload credentials exist only in the final
+workflow step. Package identity, payload and checksums are
 verified before upload; different existing remote assets are never overwritten.
 Tag names are passed unchanged to makepkg (Arch-incompatible versions fail rather
-than silently being renamed). Historical C++ tags are not supported by this Rust
-packaging recipe. Notes-only updates still support existing releases.
+than silently being renamed). Builds require a supported Rust workspace. Notes-only updates do not rebuild assets.
 
-The Rust workspace currently declares no license. The package therefore records
-`LicenseRef-Unknown`, not the retired SDK's license; establish a project license
-before public redistribution.
+The package records `LicenseRef-Unknown` because the workspace does not declare a license.
 
-## Private Arch build with Live2D
+## Native build inputs for `rust-v3`
 
-The native plugin requires a local Cubism Native SDK 5-r.5, GLEW sources, a C++ toolchain, CMake and GLVND development headers. For a private package, use the release template with a private package name, add `libglvnd` to `depends` and `cmake` to `makedepends`, and add `libdeskwaifu_terminal.so` to the jointly built plugin list. Invoke `CARGO_TARGET_DIR=target CARGO_NET_OFFLINE=true bash scripts/build.sh --release --native-live2d` in `build()`. Pass `CUBISM_SDK_DIR` and `CUBISM_GLEW_DIR` to the unprivileged build environment, and provide the locked Cargo sources in its offline cache. The SDK and models remain local inputs. Check the applicable Live2D terms before distributing the compiled package.
+Build v3 with a recent Rust toolchain and the Arch base-devel toolchain, CMake,
+and the declared runtime libraries. V3 depends on `libglvnd` and
+`systemd-libs` for the native terminal and its built-in KWin cursor support,
+plus `wayland`, `fontconfig`, `freetype2`, `libxkbcommon`, `libxkbcommon-x11`,
+`libxcb`, `libx11`, and `vulkan-icd-loader` for the panel. A suitable Vulkan
+driver is optional. See [terminal-panel](<../../apps/terminal-panel/README.md>)
+for panel usage.
 
-This variant was built and installed in a private Arch container with its network disabled and vendored Cargo sources. The second local package also uses `--kwin-cursor`, depends on `systemd-libs`, and installs `deskwaifu-cursor-guard` beside the host. The installed CLI started and `ldd -r` resolved the terminal plugin and guard dependencies. The GPUI panel has its own build described in [terminal-panel](<../../apps/terminal-panel/README.md>).
+Provision Cubism Native SDK 5-r.5 and GLEW sources outside the source archive.
+Set `CUBISM_SDK_DIR` and `CUBISM_GLEW_DIR` to their absolute directories in the
+environment of the [release build step](<../../scripts/release-build.sh>).
+The `builder` account must be able to read the inputs and traverse their paths. Only those two SDK variables are added to makepkg's clean environment,
+and only for v3; neither is passed to Cargo fetch. V1 and v2 do not require
+these inputs. The SDK is used at build time and Cubism code is linked into the
+native plugin, but the package ships no separate SDK files or sample models.
+Supply licensed models on the target machine. Before enabling public v3
+releases, confirm that the project and applicable Live2D terms permit
+redistributing the compiled plugin, then set the Gitea repository variable
+`DESKWAIFU_CUBISM_REDISTRIBUTION_APPROVED` to `1`. Without that explicit opt-in,
+the public release workflow stops before building or uploading v3. Private
+builds, pre-v3 releases and notes-only updates are unaffected.
 
 ## AUR
 
-The existing AUR submodule is deliberately unchanged until a new Rust release
-has been published. Run `python3 scripts/update-aur.py <exact-tag>` after release:
-it verifies public assets and their commit/checksums, migrates a legacy split
-recipe using `packaging/aur-template/PKGBUILD`, and generates `.SRCINFO`. Review
-and test that diff before committing the submodule and its parent pointer. It
-refuses to replace the old layout under the same release tag. No workflow commits
-to or automatically publishes the AUR repository.
+Run `python3 scripts/update-aur.py <exact-tag>` after release:
+it verifies public assets and their commit/checksums, upgrades split-package input
+with [the AUR template](<../aur-template/PKGBUILD>), and generates `.SRCINFO`.
+For v3, declare the full runtime dependencies listed above in the consumer recipe
+or the template used for split-package input; the updater rejects missing dependencies.
+Review and test the generated diff before committing the submodule and its parent
+pointer. A package layout change requires a different release tag. No
+workflow commits to or automatically publishes the AUR repository.
 
 ## Verification
 
 Run `python3 -B tests/test_release_packaging.py`. The tests exercise fetch/build
-phase isolation and a real offline Rust host + CLI + cdylib fixture using the
-PKGBUILD's build/package functions, including the installed host symlink, ELF
-plugin, independent CLI and its `--help`.
+the fetch/build environment, the public v3 opt-in, and real offline Cargo builds of three
+workspace fixtures using the recipe's build/package functions. They verify the
+installed host symlink, ELF plugins, CLI `--help`, and v3 panel binary, and reject
+missing outputs or unexpected SDK and model files.
 On Arch with makepkg, bsdtar, fakeroot and Cargo, an additional nonroot integration
-test creates the actual package and verifies its payload, manifest and upload
+test creates the v3 fixture package and verifies its payload, manifest and upload
 checksums. Only the Arch-specific tests are skipped when those tools are absent.

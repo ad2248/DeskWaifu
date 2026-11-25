@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
+# 打包入口：root 编排，用固定的非 root 账户运行 makepkg。
+# CI 的 build 作业和发版工作流共用；调用前需设置 RELEASE_TAG 与 RELEASE_COMMIT。
 set -euo pipefail
 
 if [[ $(id -u) != 0 ]]; then
-    echo 'Release builds require root orchestration and a separate unprivileged build user (no sudo fallback)' >&2
+    echo '打包需要 root 编排，makepkg 由非 root 账户执行' >&2
     exit 1
 fi
 
@@ -13,21 +15,17 @@ tools_root=${RELEASE_TOOLS_DIR:-$root}
 test "$(git rev-parse HEAD)" = "$RELEASE_COMMIT"
 # Release tag selection is enforced by release-source.py. CI may package an
 # untagged commit with an explicit package version using this same entry point.
-test -z "$(git status --porcelain --untracked-files=no)"
-# /tmp is traversable by the temporary nonroot user; RUNNER_TEMP may be below
-# a root-only directory. Do not relax permissions on that directory/workspace.
-# Each job has its own container. A stable path/user also stabilizes ELF paths
-# and makepkg's .BUILDINFO; never reuse a directory left by another invocation.
+if [[ -n $(git status --porcelain --untracked-files=no) ]]; then
+    echo '工作区有未提交的改动，打包只接受干净检出' >&2
+    exit 1
+fi
+
+# Fixed work path so sccache hits across runs; the lock serialises concurrent builds.
 work=/tmp/deskwaifu-package
-mkdir "$work"
-build_user=
-cleanup() {
-    if [[ -n "$build_user" ]]; then
-        userdel "$build_user" || echo "Unable to remove temporary build user $build_user" >&2
-    fi
-    rm -rf -- "$work"
-}
-trap cleanup EXIT
+exec 9>/tmp/deskwaifu-package.lock
+flock 9
+rm -rf -- "$work"
+trap 'rm -rf -- "$work"' EXIT
 mkdir -p "$work/home" "$work/packages"
 
 # The fixed runner image supplies Cargo and the system toolchain. Fetch locked
@@ -38,37 +36,33 @@ SOURCE_DATE_EPOCH=$(git show -s --format=%ct "$RELEASE_COMMIT")
 # Retain the source-selected payload in this shell, not in the build-user directory.
 payload=$(python3 "$tools_root/scripts/release-packaging.py" prepare "$work" "$RELEASE_TAG" "$RELEASE_COMMIT")
 
-# Never grant the build user write access to the checkout or sudo. Only this new
-# scratch directory is chowned; no broad chmod/chown of the runner workspace.
-candidate=dwrel
-useradd --system --user-group --no-create-home --home-dir "$work/home" "$candidate"
-# Record ownership only AFTER successful creation. A collision must never
-# cause cleanup to delete an account that existed before this invocation.
-build_user=$candidate
+build_user=${DESKWAIFU_BUILD_USER:-builder}
+id -u "$build_user" >/dev/null 2>&1 ||
+    useradd --uid 2000 --user-group --no-create-home --home-dir "$work/home" --shell /bin/bash "$build_user"
 chown -R "$build_user:$build_user" "$work"
-# Fail rather than changing checkout permissions if this runner exposes trusted
-# scripts as writable to the build account. They execute later with upload access.
-for trusted in "$root" "$tools_root" "$tools_root/scripts" "$tools_root/scripts/release-"*.py "$tools_root/scripts/release-build.sh"; do
-    runuser -u "$build_user" -- test ! -w "$trusted" || {
-        echo "Build user can modify trusted release tooling: $trusted" >&2
-        exit 1
-    }
-done
-# A writable non-sticky parent would allow replacement of a read-only tree.
-for trusted in "$root" "$tools_root"; do
-    while [[ $trusted != / ]]; do
-        parent=$(dirname "$trusted")
-        if runuser -u "$build_user" -- test -w "$parent" && [[ ! -k $parent ]]; then
-            echo "Build user can replace trusted release tooling through: $parent" >&2
+
+# Public release builds must be authorized before fetching or compiling v3.
+if [[ $payload == rust-v3 && ${DESKWAIFU_PUBLIC_RELEASE:-0} == 1 &&
+      ${DESKWAIFU_CUBISM_REDISTRIBUTION_APPROVED:-0} != 1 ]]; then
+    echo 'Publishing rust-v3 requires confirmed Cubism redistribution authorization' >&2
+    exit 1
+fi
+# Only the rust-v3 payload requires local Cubism and GLEW inputs.
+sdk_env=()
+if [[ $payload == rust-v3 ]]; then
+    for key in CUBISM_SDK_DIR CUBISM_GLEW_DIR; do
+        input=${!key:-}
+        if [[ $input != /* || ! -d $input ]]; then
+            echo "Set $key to an absolute directory" >&2
             exit 1
         fi
-        trusted=$parent
+        sdk_env+=("$key=$input")
     done
-done
-# CI uses the sources bundled in the runner image. Older release tags can
-# still acquire their own locked dependencies before the offline build.
+fi
+# Offline CI uses the runner image's Cargo sources. Otherwise fetch the selected
+# archive's locked dependencies before entering the offline package build.
 if [[ ${DESKWAIFU_CI_OFFLINE:-0} == 1 ]]; then
-    runuser -u "$build_user" -- test -r /opt/deskwaifu-cargo/config.toml || {
+    test -r /opt/deskwaifu-cargo/config.toml || {
         echo 'CI image is missing Cargo dependencies. Rebuild the runner image for this Cargo.lock.' >&2
         exit 1
     }
@@ -92,15 +86,16 @@ fi
 build_command=(makepkg --cleanbuild --noconfirm)
 if [[ ${DESKWAIFU_CI_SCCACHE:-0} == 1 && -z ${RELEASE_TOOLS_DIR:-} ]] && mountpoint -q /cache; then
     cache_dir=/cache/sccache-rust-package
-    if [[ ! -L "$cache_dir" ]] && install -d -m 0755 -o "$build_user" -- "$cache_dir"; then
-        install -m 0644 "$tools_root/scripts/ci-sccache.sh" "$work/ci-sccache.sh"
+    if install -d -m 0775 -o "$build_user" -g "$build_user" -- "$cache_dir"; then
+        install -m 0755 "$tools_root/scripts/ci-sccache.sh" "$work/ci-sccache.sh"
         build_command=(bash "$work/ci-sccache.sh" "$cache_dir" "${build_command[@]}")
     else
         echo 'sccache cache directory unavailable, building without compiler cache'
     fi
 fi
-runuser -u "$build_user" -- env -i PATH=/usr/bin:/bin HOME="$work/home" SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" TZ=UTC LANG=C.UTF-8 \
-    PKGDEST="$work/packages" CARGO_HOME="$work/home/.cargo" CARGO_NET_OFFLINE=true \
+runuser -u "$build_user" -- env -i PATH=/usr/bin:/bin HOME="$work/home" \
+    SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" TZ=UTC LANG=C.UTF-8 \
+    PKGDEST="$work/packages" CARGO_HOME="$work/home/.cargo" CARGO_NET_OFFLINE=true "${sdk_env[@]}" \
     bash -euc 'cd "$1"; shift; exec "$@"' _ "$work" "${build_command[@]}"
 output="$root/release-assets"
 mkdir "$output" # Refuse stale artifacts from another tag/run.

@@ -6,7 +6,6 @@ use std::sync::Mutex;
 static NATIVE_TEST: Mutex<()> = Mutex::new(());
 
 #[test]
-#[ignore = "requires a local Cubism 5-r.5 SDK and an EGL driver"]
 fn toggle_layer_survives_ordinary_expression_timeout() {
     use cubism_bridge::{Runtime, rgba_len};
     use std::{env, path::Path};
@@ -40,14 +39,13 @@ fn toggle_layer_survives_ordinary_expression_timeout() {
 }
 
 #[test]
-#[ignore = "requires a local Cubism 5-r.5 SDK and an EGL driver"]
 fn renders_sample_and_survives_failed_reload() {
     use cubism_bridge::{Runtime, rgba_len};
     use std::{env, path::Path};
 
     let _serial = NATIVE_TEST.lock().unwrap();
     let sdk = env::var_os("CUBISM_SDK_DIR").expect("set CUBISM_SDK_DIR");
-    let json = Path::new(&sdk).join("Samples/Resources/Mark/Mark.model3.json");
+    let json = Path::new(&sdk).join("Samples/Resources/Haru/Haru.model3.json");
     // 通过同线程重建运行时验证全局 Framework 及 EGL 能完整析构。
     for _ in 0..2 {
         let runtime = Runtime::new(256, 256).unwrap();
@@ -58,9 +56,15 @@ fn renders_sample_and_survives_failed_reload() {
         let mut still = vec![0; rgba_len(256, 256).unwrap()];
         model.render(0.0, &mut still).unwrap();
         // 检查透明背景和不透明主体，再对比动作前后的实际像素。
-        assert!(still.chunks_exact(4).any(|p| p[3] == 0));
+        assert!(still.as_chunks::<4>().0.iter().any(|p| p[3] == 0));
         // 要求纹理产生彩色像素，防止缺少 mipmap 时只画出黑色轮廓也能通过。
-        assert!(still.chunks_exact(4).any(|p| p[3] == 255 && p[0] != p[1]));
+        assert!(
+            still
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .any(|p| p[3] == 255 && p[0] != p[1])
+        );
         assert!(model.render(f32::NAN, &mut still).is_err());
         assert!(model.render(0.0, &mut []).is_err());
         assert!(
@@ -74,19 +78,18 @@ fn renders_sample_and_survives_failed_reload() {
             model.render(1.0 / 60.0, &mut animated).unwrap();
         }
         let changed = still
-            .chunks_exact(4)
-            .zip(animated.chunks_exact(4))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(animated.as_chunks::<4>().0)
             .filter(|(a, b)| a != b)
             .count();
         assert!(changed > 200, "only {changed} pixels changed");
-        assert!(model.motion_groups().unwrap().contains(&("Idle".into(), 6)));
-        assert!(model.expressions().unwrap().is_empty());
+        assert!(model.motion_groups().unwrap().contains(&("Idle".into(), 2)));
         drop(model);
 
-        // 用 Haru 的官方表情验证枚举、无效名称和表情更新的实际像素变化。
-        let mut haru = runtime
-            .load(&Path::new(&sdk).join("Samples/Resources/Haru/Haru.model3.json"))
-            .unwrap();
+        // 重新加载 Haru，从无动作的初始状态验证表情像素。
+        let mut haru = runtime.load(&json).unwrap();
         assert!(haru.expressions().unwrap().contains(&"F01".to_owned()));
         assert!(haru.play_expression("missing").is_err());
         haru.render(0.0, &mut still).unwrap();
@@ -102,7 +105,6 @@ fn renders_sample_and_survives_failed_reload() {
 }
 
 #[test]
-#[ignore = "requires a local Cubism 5-r.5 SDK and an EGL driver"]
 fn look_and_lip_sync_compose_with_animation_and_reset() {
     use cubism_bridge::{Model, Runtime, rgba_len};
     use std::path::PathBuf;
@@ -120,8 +122,10 @@ fn look_and_lip_sync_compose_with_animation_and_reset() {
         pixels
     };
     let changed = |left: &[u8], right: &[u8]| {
-        left.chunks_exact(4)
-            .zip(right.chunks_exact(4))
+        left.as_chunks::<4>()
+            .0
+            .iter()
+            .zip(right.as_chunks::<4>().0)
             .filter(|(a, b)| a != b)
             .count()
     };
@@ -171,13 +175,18 @@ fn look_and_lip_sync_compose_with_animation_and_reset() {
     haru.set_look(None).unwrap();
     assert_eq!(changed(&animated, &frame(&mut haru, 0.0)), 0);
 
-    // Mark 的 model3 声明了空 LipSync 组，验证不会回退到任意参数。
-    let mut mark = runtime
-        .load(&resources.join("Mark/Mark.model3.json"))
-        .unwrap();
-    let unchanged = frame(&mut mark, 0.0);
-    mark.set_lip_sync(Some(1.0)).unwrap();
-    assert_eq!(changed(&unchanged, &frame(&mut mark, 0.0)), 0);
+    // Haru 本身有可驱动的嘴部参数。将 LipSync 组置空后，验证不会回退到该参数。
+    let fixture = HaruFixture::new();
+    let empty_lip_sync_path = fixture.model(
+        "empty-lip-sync.model3.json",
+        "",
+        r#", "Groups":[{"Target":"Parameter","Name":"LipSync","Ids":[]}]"#,
+    );
+    let mut empty_lip_sync = runtime.load(&empty_lip_sync_path).unwrap();
+    assert!(empty_lip_sync.expressions().unwrap().is_empty());
+    let unchanged = frame(&mut empty_lip_sync, 0.0);
+    empty_lip_sync.set_lip_sync(Some(1.0)).unwrap();
+    assert_eq!(unchanged, frame(&mut empty_lip_sync, 0.0));
 }
 
 struct HaruFixture(std::path::PathBuf);
@@ -258,7 +267,6 @@ fn settle(model: &mut cubism_bridge::Model<'_>) -> Vec<u8> {
 }
 
 #[test]
-#[ignore = "requires a local Cubism 5-r.5 SDK and an EGL driver"]
 fn skin_cycles_groups_resets_previous_curves_and_falls_back_to_expressions() {
     use cubism_bridge::Runtime;
 
@@ -312,8 +320,7 @@ fn skin_cycles_groups_resets_previous_curves_and_falls_back_to_expressions() {
 }
 
 #[test]
-#[ignore = "requires a local Cubism 5-r.5 SDK and an EGL driver"]
-fn tap_maps_top_down_hit_areas_and_preserves_legacy_fallback() {
+fn tap_maps_top_down_hit_areas_and_falls_back_to_viewport_halves() {
     use cubism_bridge::{Runtime, TapHit};
 
     let _serial = NATIVE_TEST.lock().unwrap();
@@ -378,7 +385,7 @@ fn tap_maps_top_down_hit_areas_and_preserves_legacy_fallback() {
     let mut model = runtime.load(&custom).unwrap();
     assert_eq!(model.tap(0.5, 0.25).unwrap(), TapHit::Miss);
 
-    // 旧版不允许模型在透明动画期间命中，回退分区也遵守此规则。
+    // 模型不完全不透明时不命中，包括使用视口上下分区的模型。
     fixture.motion("opacity.motion3.json", "Model", "Opacity", 0.5);
     let faded = fixture.model(
         "faded.model3.json",
@@ -393,7 +400,6 @@ fn tap_maps_top_down_hit_areas_and_preserves_legacy_fallback() {
 }
 
 #[test]
-#[ignore = "requires a local Cubism 5-r.5 SDK and an EGL driver"]
 fn explicit_device_selection_reports_active_gpu_and_rejects_unknown_devices() {
     use cubism_bridge::{DeviceSelector, Runtime};
     use std::path::Path;
@@ -450,7 +456,7 @@ fn verify_hardware_device(pci: &str, renderer_env: &str) {
     let node = expected.render_node.as_deref().unwrap();
     let by_path = PathBuf::from(format!("/dev/dri/by-path/pci-{pci}-render"));
     let model_path = PathBuf::from(std::env::var_os("CUBISM_SDK_DIR").unwrap())
-        .join("Samples/Resources/Mark/Mark.model3.json");
+        .join("Samples/Resources/Haru/Haru.model3.json");
     let pci_uppercase = pci.to_ascii_uppercase();
     let mut selectors = vec![
         DeviceSelector::Pci(&pci_uppercase),
@@ -461,7 +467,7 @@ fn verify_hardware_device(pci: &str, renderer_env: &str) {
     }
     for selector in selectors {
         let runtime = Runtime::new_on_device(96, 96, selector);
-        // Mesa 曾在同时强制软件渲染和选硬件设备时崩溃。开启该变量应清楚报错。
+        // 强制软件渲染时，显式选择硬件设备必须返回错误。
         if std::env::var("LIBGL_ALWAYS_SOFTWARE").as_deref() == Ok("1") {
             let Err(error) = runtime else {
                 panic!("software override unexpectedly accepted the hardware selector");
@@ -485,12 +491,17 @@ fn verify_hardware_device(pci: &str, renderer_env: &str) {
         let mut model = runtime.load(&model_path).unwrap();
         let mut pixels = vec![0; rgba_len(96, 96).unwrap()];
         model.render(0.0, &mut pixels).unwrap();
-        assert!(pixels.chunks_exact(4).any(|p| p[3] == 255 && p[0] != p[1]));
+        assert!(
+            pixels
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .any(|p| p[3] == 255 && p[0] != p[1])
+        );
     }
 }
 
 #[test]
-#[ignore = "requires a local Cubism 5-r.5 SDK and an EGL driver"]
 fn expression_toggles_fade_expire_and_reset_independently() {
     use cubism_bridge::Runtime;
     use std::path::Path;

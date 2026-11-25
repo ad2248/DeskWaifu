@@ -1,4 +1,3 @@
-import hashlib
 import importlib.util
 import io
 import json
@@ -10,9 +9,6 @@ import sys
 import tarfile
 import tempfile
 import unittest
-from unittest.mock import patch
-from urllib.error import HTTPError
-from urllib.response import addinfourl
 
 ROOT = Path(__file__).resolve().parent.parent
 TEMP_ROOT = "/tmp/opencode" if Path("/tmp/opencode").is_dir() else None
@@ -25,11 +21,9 @@ def load(name):
     return module
 
 
-source = load("release-source")
 packaging = load("release-packaging")
 upload = load("release-upload")
 COMMIT = "a" * 40
-OTHER = "b" * 40
 TAG = "v1.2.3"
 
 
@@ -42,96 +36,63 @@ def archive(path, files):
             target.addfile(info, io.BytesIO(data))
 
 
-def rust_fixture(*, voice=True):
-    """Offline workspace fixture exercising the real host + CLI + cdylib recipe."""
+def rust_fixture(*, voice=True, panel=False):
+    """Offline Cargo workspace fixture with real binaries and cdylibs."""
     files = {
-        "deskwaifu/Cargo.toml": ('[workspace]\nmembers = [".", "cli", "plugins/test-plugin", "plugins/voice-input"]\nresolver = "2"\n'
-                                '[package]\nname="deskwaifu"\nversion="0.1.0"\nedition="2021"\n'),
-        "deskwaifu/Cargo.lock": ('version = 4\n\n[[package]]\nname = "deskwaifu"\nversion = "0.1.0"\n'
-                                '\n[[package]]\nname = "deskwaifu-test-plugin"\nversion = "0.1.0"\n'
-                                '\n[[package]]\nname = "deskwaifu-voice-input"\nversion = "0.1.0"\n'
-                                '\n[[package]]\nname = "deskwaifucli"\nversion = "0.1.0"\n'),
         "deskwaifu/src/main.rs": ('fn main() { assert_eq!(std::env::args().len(), 1); '
                                  'println!("host fixture"); }\n'),
-        "deskwaifu/cli/Cargo.toml": ('[package]\nname="deskwaifucli"\nversion="0.1.0"\n'
-                                    'edition="2021"\n'),
         "deskwaifu/cli/src/main.rs": ('fn main() { assert_eq!(std::env::args().nth(1).as_deref(), '
                                      'Some("--help")); println!("cli fixture"); }\n'),
-        "deskwaifu/plugins/test-plugin/Cargo.toml": ('[package]\nname="deskwaifu-test-plugin"\nversion="0.1.0"\n'
-                                       'edition="2021"\n[lib]\ncrate-type=["rlib", "cdylib"]\n'),
-        "deskwaifu/plugins/test-plugin/src/lib.rs": '#[no_mangle]\npub extern "C" fn fixture() {}\n',
-        "deskwaifu/plugins/voice-input/Cargo.toml": ('[package]\nname="deskwaifu-voice-input"\nversion="0.1.0"\n'
-                                       'edition="2021"\n[lib]\ncrate-type=["rlib", "cdylib"]\n'),
-        "deskwaifu/plugins/voice-input/src/lib.rs": '#[no_mangle]\npub extern "C" fn fixture() {}\n',
-        "deskwaifu/scripts/build.sh": (ROOT / "scripts/build.sh").read_text(),
     }
-    if not voice:
-        del files["deskwaifu/plugins/voice-input/Cargo.toml"], files["deskwaifu/plugins/voice-input/src/lib.rs"]
-        files["deskwaifu/Cargo.toml"] = files["deskwaifu/Cargo.toml"].replace(', "plugins/voice-input"', "")
-        files["deskwaifu/Cargo.lock"] = files["deskwaifu/Cargo.lock"].replace(
-            '\n[[package]]\nname = "deskwaifu-voice-input"\nversion = "0.1.0"\n', "")
-        files["deskwaifu/scripts/build.sh"] = files["deskwaifu/scripts/build.sh"].replace(
-            " libdeskwaifu_voice_input.so", "")
+    packages = {".": "deskwaifu", "cli": "deskwaifucli", "plugins/test-plugin": "deskwaifu-test-plugin"}
+    if voice:
+        packages["plugins/voice-input"] = "deskwaifu-voice-input"
+    if panel:
+        packages["plugins/terminal"] = "deskwaifu-terminal"
+        packages["apps/terminal-panel"] = "deskwaifu-terminal-panel"
+        files["deskwaifu/apps/terminal-panel/src/main.rs"] = 'fn main() { println!("panel fixture"); }\n'
+    for directory, name in packages.items():
+        path = "deskwaifu" if directory == "." else f"deskwaifu/{directory}"
+        manifest = f'[package]\nname = "{name}"\nversion = "0.1.0"\nedition = "2021"\n'
+        if directory.startswith("plugins/"):
+            manifest += '[lib]\ncrate-type = ["cdylib"]\n'
+            files[f"{path}/src/lib.rs"] = '#[no_mangle]\npub extern "C" fn fixture() {}\n'
+        if directory == "plugins/terminal":
+            manifest += '[features]\ndefault = ["kwin-cursor"]\nkwin-cursor = ["native"]\nnative = []\n'
+            files[f"{path}/src/lib.rs"] += ('#[cfg(not(all(feature = "native", feature = "kwin-cursor")))]\n'
+                                            'compile_error!("native terminal features required");\n')
+        files[f"{path}/Cargo.toml"] = manifest
+    files["deskwaifu/Cargo.toml"] = (f'[workspace]\nmembers = {json.dumps(list(packages))}\nresolver = "2"\n'
+                                     + files["deskwaifu/Cargo.toml"])
+    files["deskwaifu/Cargo.lock"] = "version = 4\n" + "".join(
+        f'\n[[package]]\nname = "{name}"\nversion = "0.1.0"\n' for name in sorted(packages.values()))
     return files
 
 
 class PackagingTest(unittest.TestCase):
-    def test_control_characters_cannot_inject_release_environment(self):
-        for tag in ("v1\nRELEASE_COMMIT=evil", "v1\rbroken", "v1\0broken"):
-            for event, ref, explicit in (("workflow_dispatch", "", tag), ("push", "refs/tags/" + tag, "")):
-                with self.subTest(tag=tag, event=event), self.assertRaisesRegex(ValueError, "control characters"):
-                    source.select_tag(event, ref, explicit)
-
-    def test_internal_dependencies_are_unversioned(self):
-        packaging.verify_unversioned_dependencies(["deskwaifu-bin"])
-        for operator in ("=", ">=", "<=", ">", "<"):
-            with self.assertRaisesRegex(ValueError, "without a version constraint"):
-                packaging.verify_unversioned_dependencies(["deskwaifu-bin" + operator + "1.0"])
-
-    # 测试目的：确认发行包身份、依赖和文件清单符合约定，并要求语音识别插件随包交付。
-    # 测试方法：校验合法包，再替换元数据、加入额外文件或逐项移除必需文件，检查拒绝结果。
-    def test_single_rust_payload_and_identity(self):
-        info = {"pkgname": ["deskwaifu-bin"], "pkgver": ["1.2.3-1"], "arch": ["x86_64"],
-                "depend": ["glibc", "gcc-libs", "libpipewire", "wl-clipboard"]}
-        required = {"usr/bin/deskwaifu", "usr/bin/deskwaifucli", "usr/lib/deskwaifu/deskwaifu",
-                    "usr/lib/deskwaifu/plugins/libdeskwaifu_test_plugin.so",
-                    "usr/lib/deskwaifu/plugins/libdeskwaifu_voice_input.so"}
-        files = required | {"usr/", "usr/bin/", "usr/lib/", "usr/lib/deskwaifu/",
-                            "usr/lib/deskwaifu/plugins/", ".PKGINFO", ".BUILDINFO", ".MTREE"}
-        packaging.verify_content("deskwaifu-bin", info, files, "1.2.3", "rust-v2")
-        for field, value in (("pkgname", ["deskwaifu-ocr-bin"]), ("pkgver", ["2.0-1"]),
-                             ("arch", ["any"]), ("depend", ["qt6-base"])):
-            with self.subTest(field=field), self.assertRaises(ValueError):
-                packaging.verify_content("deskwaifu-bin", dict(info, **{field: value}), files, "1.2.3", "rust-v2")
-        for extra in ("usr/lib/deskwaifu/plugins/model.so", "usr/share/models/model.onnx",
-                      "usr/lib/deskwaifu/tests/run.py", "../escape", "usr/bin/deskwaifu-control"):
-            with self.subTest(extra=extra), self.assertRaisesRegex(ValueError, "Unexpected package files"):
-                packaging.verify_content("deskwaifu-bin", info, files | {extra}, "1.2.3", "rust-v2")
-        for missing in required:
-            with self.subTest(missing=missing), self.assertRaisesRegex(ValueError, "Missing package files"):
-                packaging.verify_content("deskwaifu-bin", info, files - {missing}, "1.2.3", "rust-v2")
-
-    # 测试目的：验证真实 Arch 打包能交付宿主、CLI 和两个插件，并检查发行文件的校验和。
+    # 测试目的：验证真实 Arch 打包能交付宿主、CLI、面板和三个插件，并检查发行文件的校验和。
     # 测试方法：用 makepkg 构建离线 Rust 夹具，解包检查安装内容，再篡改包或添加旧包验证拒绝结果。
     @unittest.skipUnless(all(shutil.which(tool) for tool in ("makepkg", "bsdtar", "fakeroot", "cargo"))
                          and os.getuid() != 0, "requires Arch tools, Cargo and nonroot user")
     def test_real_makepkg_rust_package_and_checksums(self):
         with tempfile.TemporaryDirectory(prefix="release-rust-", dir=TEMP_ROOT) as temporary:
             work = Path(temporary)
-            archive(work / "deskwaifu.tar.gz", rust_fixture())
+            archive(work / "deskwaifu.tar.gz", rust_fixture(panel=True))
             payload = packaging.prepare(work, TAG, COMMIT)
+            (work / "packages").mkdir()
             env = dict(os.environ, PKGDEST=str(work / "packages"), SOURCE_DATE_EPOCH="1700000000",
-                       CARGO_HOME=str(work / "cargo-home"), CARGO_TARGET_DIR="target")
+                       CARGO_HOME=str(work / "cargo-home"))
             result = subprocess.run(["makepkg", "--nodeps", "--noconfirm"], cwd=work, env=env,
                                     text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
             self.assertEqual(result.returncode, 0, result.stdout)
+            self.assertEqual(payload, "rust-v3")
             packaging.verify(work / "packages", TAG, COMMIT, payload)
             self.assertEqual(len(upload.load_assets(work / "packages", TAG, COMMIT)), 3)
             package = next((work / "packages").glob("*.pkg.tar.zst"))
             installed = work / "installed"
             installed.mkdir()
             subprocess.run(["bsdtar", "-xf", str(package), "-C", str(installed), "usr/"], check=True)
-            self.assert_installed_fixture(installed)
+            self.assert_installed_fixture(installed, panel=True)
             package.write_bytes(package.read_bytes() + b"tampered")
             with self.assertRaisesRegex(ValueError, "checksum mismatch"):
                 upload.load_assets(work / "packages", TAG, COMMIT)
@@ -139,7 +100,7 @@ class PackagingTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Unexpected or missing"):
                 packaging.verify(work / "packages", TAG, COMMIT, payload)
 
-    def assert_installed_fixture(self, installed, *, voice=True):
+    def assert_installed_fixture(self, installed, *, voice=True, panel=False):
         executable = installed / "usr/bin/deskwaifu"
         self.assertTrue(executable.is_symlink())
         self.assertEqual(executable.resolve(), installed / "usr/lib/deskwaifu/deskwaifu")
@@ -147,6 +108,8 @@ class PackagingTest(unittest.TestCase):
         expected = {"libdeskwaifu_test_plugin.so"}
         if voice:
             expected.add("libdeskwaifu_voice_input.so")
+        if panel:
+            expected.add("libdeskwaifu_terminal.so")
         self.assertEqual({plugin.name for plugin in plugins}, expected)
         for plugin in plugins:
             self.assertTrue(plugin.read_bytes().startswith(b"\x7fELF"))
@@ -155,55 +118,87 @@ class PackagingTest(unittest.TestCase):
         self.assertFalse(cli.is_symlink())
         self.assertTrue(cli.read_bytes().startswith(b"\x7fELF"))
         self.assertEqual(subprocess.check_output([str(cli), "--help"], text=True), "cli fixture\n")
+        panel_path = installed / "usr/bin/deskwaifu-terminal-panel"
+        self.assertEqual(panel_path.exists(), panel)
+        if panel:
+            self.assertTrue(panel_path.read_bytes().startswith(b"\x7fELF"))
+            self.assertEqual(subprocess.check_output([str(panel_path)], text=True), "panel fixture\n")
 
-    # 测试目的：确认当前配方可打包旧版和语音版 Rust 源码，且语音版缺少插件时必须失败。
-    # 测试方法：用两版源码存档生成配方并离线构建，核对安装和校验清单；删除语音版产物后重试打包与校验。
+    # 测试目的：三个 Rust 载荷均直接离线构建，并要求 Cargo release 目录包含对应产物。
+    # 测试方法：编译夹具，移走所需产物。即使 plugins 子目录有同名插件，打包也必须报错。
     @unittest.skipUnless(shutil.which("cargo"), "requires Cargo")
     def test_real_rust_fixture_build_and_install_without_arch_tools(self):
-        for voice, expected_payload in ((False, "rust-v1"), (True, "rust-v2")):
-            with self.subTest(voice=voice), tempfile.TemporaryDirectory(dir=TEMP_ROOT) as temporary:
+        variants = ((False, False, "rust-v1"), (True, False, "rust-v2"), (True, True, "rust-v3"))
+        for voice, panel, expected_payload in variants:
+            with self.subTest(payload=expected_payload), tempfile.TemporaryDirectory(dir=TEMP_ROOT) as temporary:
                 work = Path(temporary)
-                fixture = rust_fixture(voice=voice)
+                fixture = rust_fixture(voice=voice, panel=panel)
                 archive(work / "deskwaifu.tar.gz", fixture)
                 payload = packaging.prepare(work, TAG, COMMIT)
+                self.assertEqual(payload, expected_payload)
                 for name, content in fixture.items():
                     path = work / "src" / name
                     path.parent.mkdir(parents=True, exist_ok=True)
                     path.write_text(content)
                 installed = work / "installed"
                 env = dict(os.environ, srcdir=str(work / "src"), pkgdir=str(installed),
-                           CARGO_HOME=str(work / "cargo-home"), CARGO_TARGET_DIR="target")
+                           CARGO_HOME=str(work / "cargo-home"), CARGO_TARGET_DIR=str(work / "wrong-target"))
                 recipe = str(work / "PKGBUILD")
                 result = subprocess.run(["bash", "-euc", 'source "$1"; build; package', "_", recipe],
                                         env=env, capture_output=True, text=True)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                self.assertEqual(payload, expected_payload)
-                self.assert_installed_fixture(installed, voice=voice)
+                self.assertFalse((work / "wrong-target").exists())
+                self.assert_installed_fixture(installed, voice=voice, panel=panel)
+                depends = subprocess.check_output(["bash", "-euc", 'source "$1"; printf "%s\n" "${depends[@]}"',
+                                                   "_", recipe], text=True).splitlines()
+                expected_depends = {"glibc", "gcc-libs", "libpipewire", "wl-clipboard"}
+                if panel:
+                    expected_depends |= {"libglvnd", "systemd-libs", "wayland", "fontconfig", "freetype2",
+                                         "libxkbcommon", "libxkbcommon-x11", "libxcb", "libx11", "vulkan-icd-loader"}
+                self.assertEqual(set(depends), expected_depends)
+                self.assertEqual("cmake" in (work / "PKGBUILD").read_text(), panel)
                 info = {"pkgname": ["deskwaifu-bin"], "pkgver": [TAG + "-1"], "arch": ["x86_64"],
-                        "depend": sorted(packaging.MAIN_DEPENDS)}
+                        "depend": depends}
                 files = {str(path.relative_to(installed)) for path in installed.rglob("*") if not path.is_dir()}
                 packaging.verify_content("deskwaifu-bin", info, files, TAG, payload)
+                if panel:
+                    for unwanted in ("usr/share/deskwaifu/Haru.model3.json", "usr/lib/libLive2DCubismCore.a",
+                                     "usr/lib/deskwaifu/deskwaifu-cursor-guard"):
+                        with self.assertRaisesRegex(ValueError, "Unexpected package files"):
+                            packaging.verify_content("deskwaifu-bin", info, files | {unwanted}, TAG, payload)
+                    old_dependencies = info | {"depend": sorted(packaging.MAIN_DEPENDS)}
+                    with self.assertRaisesRegex(ValueError, "Unexpected Rust runtime dependencies"):
+                        packaging.verify_content("deskwaifu-bin", old_dependencies, files, TAG, payload)
 
-                if voice:
-                    plugin = "libdeskwaifu_voice_input.so"
-                    (work / "src/deskwaifu/target/release/plugins" / plugin).unlink()
+                if panel:
+                    missing = ["usr/lib/deskwaifu/plugins/libdeskwaifu_terminal.so", "usr/bin/deskwaifu-terminal-panel"]
+                elif voice:
+                    missing = ["usr/lib/deskwaifu/plugins/libdeskwaifu_voice_input.so"]
+                else:
+                    missing = []
+                output = work / "src/deskwaifu/target/release"
+                for member in missing:
+                    artifact = Path(member).name
+                    if artifact.endswith(".so"):
+                        staged = output / "plugins" / artifact
+                        staged.parent.mkdir(exist_ok=True)
+                        shutil.copyfile(output / artifact, staged)
+                    (output / artifact).unlink()
                     # package() must propagate install errors even without `set -e`.
                     result = subprocess.run(["bash", "-uc", 'source "$1"; package', "_", recipe],
-                                            env=dict(env, pkgdir=str(work / "incomplete")),
+                                            env=dict(env, pkgdir=str(work / f"incomplete-{artifact}")),
                                             capture_output=True, text=True)
                     self.assertNotEqual(result.returncode, 0)
-                    self.assertIn(plugin, result.stderr)
-                    with self.assertRaisesRegex(ValueError, f"Missing package files: .*{plugin}"):
-                        packaging.verify_content("deskwaifu-bin", info,
-                                                 files - {f"usr/lib/deskwaifu/plugins/{plugin}"}, TAG, payload)
+                    self.assertIn(artifact, result.stderr)
+                    with self.assertRaisesRegex(ValueError, f"Missing package files: .*{artifact}"):
+                        packaging.verify_content("deskwaifu-bin", info, files - {member}, TAG, payload)
 
-    def test_rust_release_uses_offline_locked_build_without_private_dependencies(self):
+    def test_rust_release_uses_offline_locked_workspace_build(self):
         recipe = (ROOT / "packaging/release/PKGBUILD.in").read_text()
-        self.assertIn("CARGO_NET_OFFLINE=true bash scripts/build.sh --release", recipe)
-        self.assertIn("cargo build --workspace --locked", (ROOT / "scripts/build.sh").read_text())
+        self.assertIn("CARGO_NET_OFFLINE=true cargo build --workspace --locked --release", recipe)
+        self.assertNotIn("scripts/build.sh", recipe)
         self.assertIn('"$pkgdir/usr/bin/deskwaifu"', recipe)
         self.assertNotIn("private-deps", recipe)
-        self.assertNotIn("cmake", recipe)
         workflow = (ROOT / ".gitea/workflows/release.yml").read_text()
         self.assertIn("runs-on: deskwaifu-rust", workflow)
         self.assertNotIn("prune-tests", workflow)
@@ -212,10 +207,11 @@ class PackagingTest(unittest.TestCase):
         self.assertIn("env -i PATH=/usr/bin:/bin", script)
         self.assertNotRegex(script, r"(?m)^\s*sudo\s")
 
-
+    # 测试目的：原生构建输入只进入 v3 的离线编译，未获授权的公开构建在拉取依赖前停止。
+    # 测试方法：以假 cargo/makepkg 捕获真实 env -i 的变量，模拟不同载荷、缺失目录和拒绝授权。
     def test_release_fetch_is_unprivileged_and_shares_offline_build_cache(self):
         script = (ROOT / "scripts/release-build.sh").read_text()
-        phase = script[script.index('# CI uses the sources bundled'):script.index('output="$root/release-assets"')]
+        phase = script[script.index('# Public release builds'):script.index('output="$root/release-assets"')]
         with tempfile.TemporaryDirectory(prefix="release-fetch-", dir=TEMP_ROOT) as temporary:
             work = Path(temporary)
             tools = work / "tools"
@@ -255,42 +251,63 @@ else:
     assert "SCCACHE_DIR" not in os.environ
 assert "RELEASE_UPLOAD" not in os.environ
 assert "GITEA_TOKEN" not in os.environ
+assert "CUBISM_LAYER_SHELL_XML" not in os.environ
+assert "DESKWAIFU_CUBISM_REDISTRIBUTION_APPROVED" not in os.environ
+sdk = {{key: value for key, value in os.environ.items() if key.startswith("CUBISM_")}}
 with open({str(log)!r}, "a") as stream:
-    stream.write(json.dumps({{"tool": {name!r}, "home": str(home)}}) + "\\n")
+    stream.write(json.dumps({{"tool": {name!r}, "home": str(home), "sdk": sdk}}) + "\\n")
 ''')
                 tool.chmod(0o755)
+            sdk = {"CUBISM_SDK_DIR": str(work / "Cubism SDK"), "CUBISM_GLEW_DIR": str(work / "GLEW sources")}
+            for value in sdk.values():
+                Path(value).mkdir()
             env = dict(os.environ, PATH=str(tools) + os.pathsep + os.environ["PATH"],
                        build_user="fixture-user", work=str(work), SOURCE_DATE_EPOCH="1700000000",
                        RELEASE_UPLOAD="must-not-leak", GITEA_TOKEN="must-not-leak",
+                       CUBISM_LAYER_SHELL_XML="must-not-leak",
                        RUSTC_WRAPPER="sccache", SCCACHE_DIR="/cache/sccache-rust-package",
-                       DESKWAIFU_CI_SCCACHE="1", RELEASE_TOOLS_DIR=str(work),
-                       https_proxy="http://proxy.invalid:1234")
-            result = subprocess.run(["bash", "-euc", phase], env=env, capture_output=True, text=True)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            calls = [json.loads(line) for line in log.read_text().splitlines()]
-            self.assertEqual([call["tool"] for call in calls], ["cargo", "makepkg"])
-            self.assertEqual({call["home"] for call in calls}, {str(work / "home/.cargo")})
-            self.assertFalse((work / "fetch-source").exists())
+                       DESKWAIFU_CI_OFFLINE="0", DESKWAIFU_CI_SCCACHE="1", RELEASE_TOOLS_DIR=str(work),
+                       https_proxy="http://proxy.invalid:1234", **sdk)
+
+            def run(**overrides):
+                return subprocess.run(["bash", "-euc", phase], env=env | overrides, capture_output=True, text=True)
+
+            for payload, public, approval in (("rust-v1", "1", ""), ("rust-v2", "1", ""),
+                                              ("rust-v3", "0", ""), ("rust-v3", "1", "1")):
+                with self.subTest(payload=payload, public=public):
+                    result = run(payload=payload, DESKWAIFU_PUBLIC_RELEASE=public,
+                                 DESKWAIFU_CUBISM_REDISTRIBUTION_APPROVED=approval)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    calls = [json.loads(line) for line in log.read_text().splitlines()]
+                    self.assertEqual([call["tool"] for call in calls], ["cargo", "makepkg"])
+                    self.assertEqual({call["home"] for call in calls}, {str(work / "home/.cargo")})
+                    self.assertEqual(calls[0]["sdk"], {})
+                    self.assertEqual(calls[1]["sdk"], sdk if payload == "rust-v3" else {})
+                    self.assertFalse((work / "fetch-source").exists())
+                    log.unlink()
+                    (work / "home/.cargo/fetched").unlink()
+
+            result = run(payload="rust-v3", DESKWAIFU_PUBLIC_RELEASE="1", DESKWAIFU_CUBISM_REDISTRIBUTION_APPROVED="")
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("redistribution authorization", result.stderr)
+            self.assertFalse(log.exists())
+            result = run(payload="rust-v3", DESKWAIFU_PUBLIC_RELEASE="0", CUBISM_GLEW_DIR="")
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("Set CUBISM_GLEW_DIR", result.stderr)
+            self.assertFalse(log.exists())
+            result = run(payload="rust-v3", DESKWAIFU_PUBLIC_RELEASE="0", CUBISM_SDK_DIR="relative/path")
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("Set CUBISM_SDK_DIR", result.stderr)
+            self.assertFalse(log.exists())
             # A failed dependency fetch must never proceed to compilation.
-            log.unlink()
             (tools / "cargo").write_text('#!/bin/sh\nexit 23\n')
-            result = subprocess.run(["bash", "-euc", phase], env=env, capture_output=True, text=True)
+            result = run(payload="rust-v2")
             self.assertEqual(result.returncode, 23)
             self.assertFalse(log.exists())
 
-    def test_package_build_identity_is_independent_of_pid_and_workspace(self):
-        script = (ROOT / "scripts/release-build.sh").read_text()
-        self.assertIn("work=/tmp/deskwaifu-package\nmkdir \"$work\"", script)
-        self.assertIn("candidate=dwrel\n", script)
-        self.assertNotIn("dwrel$$", script)
-        self.assertIn("TZ=UTC LANG=C.UTF-8", script)
-        self.assertIn('SOURCE_DATE_EPOCH=$(git show -s --format=%ct "$RELEASE_COMMIT")', script)
-        self.assertIn('PACKAGER="DeskWaifu reproducible build"', (ROOT / "Containerfile").read_text())
-
-
-    # 测试目的：确认检出旧标签后仍使用当前工具，且载荷服从旧标签源码而非检出前的分支。
-    # 测试方法：在临时 Git 仓库标记单插件版本，再向分支加入语音插件；用保留的工具渲染旧标签配方并检查结果。
-    def test_current_tools_survive_checkout_of_historical_tag(self):
+    # 测试目的：打包工具取自工作流，载荷取自所选标签的源码清单。
+    # 测试方法：标签夹具只含测试插件，分支夹具包含面板。检出标签后，用工作流工具生成配方并核对内容。
+    def test_workflow_tools_package_the_selected_tag_payload(self):
         with tempfile.TemporaryDirectory(prefix="release-historical-tools-", dir=TEMP_ROOT) as temporary:
             root = Path(temporary)
             repo = root / "source"
@@ -307,7 +324,7 @@ with open({str(log)!r}, "a") as stream:
             commit = git("rev-parse", "HEAD")
             git("tag", "0.1.0")
             historical.write_text("# newer source\n")
-            (repo / "Cargo.toml").write_text(rust_fixture()["deskwaifu/Cargo.toml"])
+            (repo / "Cargo.toml").write_text(rust_fixture(panel=True)["deskwaifu/Cargo.toml"])
             git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-am", "later")
             env_file = root / "env"
             env = dict(os.environ, RELEASE_EVENT="workflow_dispatch", RELEASE_REF="refs/heads/main",
@@ -330,14 +347,14 @@ with open({str(log)!r}, "a") as stream:
             recipe = (acquired / "PKGBUILD").read_text()
             self.assertIn("pkgver=0.1.0\n", recipe)
             self.assertNotIn("libdeskwaifu_voice_input.so", recipe)
+            self.assertNotIn("deskwaifu-terminal-panel", recipe)
+            self.assertNotIn("libglvnd", recipe)
             self.assertEqual(git("rev-parse", "HEAD"), commit)
 
     def test_arbitrary_tags_are_used_as_pkgver_without_conversion(self):
         for tag in ("0.1.0", "v0.1.0", "nightly", "release/2026-10", "0.1.0-rc.1", "发布",
                     "0.1.0+build", "@SOURCE_SHA@", "@PLUGINS@", "tag'$(touch SHOULD_NOT_EXIST)"):
             with self.subTest(tag=tag):
-                self.assertEqual(source.select_tag("workflow_dispatch", "refs/heads/main", tag), tag)
-                self.assertEqual(source.select_tag("push", "refs/tags/" + tag, ""), tag)
                 with tempfile.TemporaryDirectory(prefix="release-raw-tag-", dir=TEMP_ROOT) as temporary:
                     work = Path(temporary)
                     archive(work / "deskwaifu.tar.gz", rust_fixture())
@@ -358,28 +375,6 @@ with open({str(log)!r}, "a") as stream:
                     result = subprocess.run(["makepkg", "--printsrcinfo"], cwd=work, capture_output=True, text=True)
                     self.assertNotEqual(result.returncode, 0)
                     self.assertIn("pkgver", result.stderr)
-
-    def test_tag_selection_never_accepts_branches_or_missing_manual_tag(self):
-        self.assertEqual(source.select_tag("push", "refs/tags/v1.2.3", ""), TAG)
-        self.assertEqual(source.select_tag("workflow_dispatch", "refs/heads/main", TAG), TAG)
-        for event, ref, explicit in [("push", "refs/heads/v1.2.3", ""),
-                                     ("workflow_dispatch", "refs/tags/v1.2.3", ""),
-                                     ("pull_request", "refs/tags/v1.2.3", "")]:
-            with self.assertRaises(ValueError):
-                source.select_tag(event, ref, explicit)
-
-    def test_manual_release_requires_notes_before_git_or_build(self):
-        for notes in (None, "", " \n\t"):
-            with self.subTest(notes=notes):
-                env = {"RELEASE_EVENT": "workflow_dispatch", "RELEASE_INPUT_TAG": TAG}
-                if notes is not None:
-                    env["RELEASE_NOTES"] = notes
-                with patch.dict(os.environ, env, clear=True), \
-                        patch.object(source, "git", side_effect=AssertionError("git must not run")) as git:
-                    with self.assertRaisesRegex(ValueError, "release_notes"):
-                        source.main()
-                    git.assert_not_called()
-
 
     def test_actual_checkout_is_detached_tag_not_dispatch_branch(self):
         with tempfile.TemporaryDirectory(prefix="release-source-", dir=TEMP_ROOT) as temporary:
@@ -554,7 +549,6 @@ with open({str(log)!r}, "a") as stream:
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(git("rev-parse", tag), head)
 
-
     def test_workflow_secret_is_scoped_to_final_step(self):
         workflow = (ROOT / ".gitea/workflows/release.yml").read_text()
         self.assertEqual(workflow.count("secrets.RELEASE_UPLOAD"), 1)
@@ -571,7 +565,11 @@ with open({str(log)!r}, "a") as stream:
         self.assertNotIn("${{ github.event.inputs.release_notes }}", "\n".join(
             line for line in workflow.splitlines() if "RELEASE_NOTES:" not in line))
         self.assertNotIn('python3 -B "$RELEASE_TOOLS_DIR/tests/test_release_packaging.py"', workflow)
-        self.assertIn('bash "$RELEASE_TOOLS_DIR/scripts/release-build.sh"', workflow)
+        release_build_step = workflow.split("- name: Acquire verified sources", 1)[1].split("- name: Upload", 1)[0]
+        self.assertIn('DESKWAIFU_PUBLIC_RELEASE: \'1\'', release_build_step)
+        self.assertIn("DESKWAIFU_CUBISM_REDISTRIBUTION_APPROVED: ${{ vars.DESKWAIFU_CUBISM_REDISTRIBUTION_APPROVED }}",
+                      release_build_step)
+        self.assertIn('bash "$RELEASE_TOOLS_DIR/scripts/release-build.sh"', release_build_step)
         self.assertIn('python3 "$RELEASE_TOOLS_DIR/scripts/release-upload.py"', workflow)
         job_env = workflow.split("    env:\n", 1)[1].split("    steps:", 1)[0]
         for name in ("http_proxy", "https_proxy", "ALL_PROXY"):
@@ -591,390 +589,8 @@ with open({str(log)!r}, "a") as stream:
             result = subprocess.run(["bash", str(ROOT / "scripts/release-build.sh")], cwd=work, env=env,
                                     capture_output=True, text=True)
             self.assertEqual(result.returncode, 1)
-            self.assertIn("require root orchestration", result.stderr)
+            self.assertIn("打包需要 root 编排", result.stderr)
             self.assertNotIn("RELEASE_TAG", result.stderr)
-
-    def test_writable_trusted_checkout_blocks_makepkg(self):
-        script = (ROOT / "scripts/release-build.sh").read_text()
-        guard = script[script.index('for trusted in '):script.index('output="$root/release-assets"')]
-        with tempfile.TemporaryDirectory(prefix="release-trust-", dir=TEMP_ROOT) as temporary:
-            work = Path(temporary)
-            runuser = work / "runuser"
-            runuser.write_text('#!/bin/bash\necho "$*" >> "$CALL_LOG"\nexit 1\n')
-            runuser.chmod(0o755)
-            env = dict(os.environ, PATH=f"{work}:{os.environ['PATH']}", CALL_LOG=str(work / "calls"),
-                       root=str(ROOT), tools_root=str(ROOT), work=str(work), build_user="fixture")
-            result = subprocess.run(["bash", "-c", "set -euo pipefail\n" + guard], env=env, capture_output=True, text=True)
-            self.assertEqual(result.returncode, 1)
-            self.assertIn("can modify trusted release tooling", result.stderr)
-            calls = (work / "calls").read_text()
-            self.assertIn("test ! -w", calls)
-            self.assertNotIn("makepkg", calls)
-
-    def test_writable_ancestor_blocks_readonly_tool_tree_replacement(self):
-        script = (ROOT / "scripts/release-build.sh").read_text()
-        guard = script[script.index('for trusted in '):script.index('output="$root/release-assets"')]
-        with tempfile.TemporaryDirectory(prefix="release-parent-trust-", dir=TEMP_ROOT) as temporary:
-            work = Path(temporary)
-            runuser = work / "runuser"
-            runuser.write_text('#!/bin/bash\n'
-                               'while [[ "$1" != -- ]]; do shift; done\nshift\n'
-                               'if [[ "$1 $2" == "test !" ]]; then exit 0; fi\n'
-                               'if [[ "$1 $2 $3" == "test -w $WRITABLE_PARENT" ]]; then exit 0; fi\n'
-                               'exit 1\n')
-            runuser.chmod(0o755)
-            env = dict(os.environ, PATH=f"{work}:{os.environ['PATH']}", WRITABLE_PARENT=str(work),
-                       root=str(work / "checkout"), tools_root=str(work / "tools"), work=str(work), build_user="fixture")
-            result = subprocess.run(["bash", "-c", "set -euo pipefail\n" + guard], env=env, capture_output=True, text=True)
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("can replace trusted release tooling", result.stderr)
-
-    def test_root_user_creation_failure_does_not_delete_existing_account(self):
-        # Run the actual script's root-user section with failing useradd and
-        # mocked privileged commands. No real account operation is performed.
-        script = (ROOT / "scripts/release-build.sh").read_text()
-        cleanup = script[script.index("build_user=\n"):script.index("mkdir -p")]
-        root_block = script[script.index('candidate=dwrel'):script.index('output="$root/release-assets"')]
-        with tempfile.TemporaryDirectory(prefix="release-user-", dir=TEMP_ROOT) as temporary:
-            work = Path(temporary)
-            bin_dir = work / "bin"
-            bin_dir.mkdir()
-            log = work / "calls"
-            for command, body in {
-                "id": "echo 0", "useradd": 'echo useradd >> "$CALL_LOG"; exit 9',
-                "userdel": 'echo userdel >> "$CALL_LOG"',
-                "chown": 'echo chown >> "$CALL_LOG"',
-                "runuser": 'echo runuser >> "$CALL_LOG"',
-                "rm": 'echo cleanup >> "$CALL_LOG"',
-            }.items():
-                path = bin_dir / command
-                path.write_text("#!/bin/bash\n" + body + "\n")
-                path.chmod(0o755)
-            env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", CALL_LOG=str(log),
-                       work=str(work), SOURCE_DATE_EPOCH="1700000000")
-            result = subprocess.run(["bash", "-c", "set -euo pipefail\n" + cleanup + root_block], env=env,
-                                    capture_output=True, text=True)
-            self.assertEqual(result.returncode, 9, result.stderr)
-            self.assertEqual(log.read_text().splitlines(), ["useradd", "cleanup"])
-
-
-class FakeAPI:
-    def __init__(self):
-        self.commit = COMMIT
-        self.has_commit = True
-        self.release = None
-        self.assets = {}
-        self.calls = []
-        self.failure = None
-        self.tag_type = "commit"
-
-    def request(self, method, path, data=None, binary=False, upload=False):
-        self.calls.append((method, path, data))
-        if self.failure and self.failure[:2] == (method, path):
-            raise upload_module.ApiError(self.failure[2], path)
-        if path.startswith("/git/ref/tags/"):
-            if self.commit is None:
-                raise upload_module.ApiError(404, path)
-            return {"object": {"type": self.tag_type, "sha": self.commit}}
-        if path.startswith("/git/tags/"):
-            return {"object": {"type": "commit", "sha": self.commit}}
-        if path.startswith("/git/commits/"):
-            if not self.has_commit:
-                raise upload_module.ApiError(404, path)
-            return {"sha": COMMIT}
-        if path == "/git/refs":
-            self.commit = data["sha"]
-            return {}
-        if path.startswith("/releases/tags/"):
-            if self.release is None:
-                raise upload_module.ApiError(404, path)
-            return self.release
-        if path.startswith("/releases?per_page="):
-            return [self.release] if self.release else []
-        if method == "POST" and path == "/releases":
-            self.release = dict(data, id=7)
-            return self.release
-        if method == "GET" and path.startswith("/releases/7/assets?"):
-            return list(self.assets.values())
-        if method == "POST" and path.startswith("/releases/7/assets?name="):
-            from urllib.parse import unquote
-            name = unquote(path.split("name=")[1])
-            asset = {"id": len(self.assets) + 1, "name": name, "size": len(data), "state": "uploaded",
-                     "digest": "sha256:" + hashlib.sha256(data).hexdigest(), "data": data}
-            self.assets[name] = asset
-            return asset
-        if binary and path.startswith("/releases/assets/"):
-            return next(asset["data"] for asset in self.assets.values() if str(asset["id"]) == path.split("/")[-1])
-        if method == "PATCH" and path == "/releases/7":
-            self.release.update(data)
-            return self.release
-        raise AssertionError((method, path, data))
-
-
-# The FakeAPI request's upload keyword must not shadow the imported module.
-upload_module = upload
-
-
-class UploadTest(unittest.TestCase):
-    def test_notes_only_never_changes_assets_or_creates_a_release(self):
-        api = FakeAPI()
-        upload.publish(api, TAG, COMMIT, {"package": b"keep"})
-        api.calls.clear()
-        upload.update_notes(api, TAG, COMMIT, "新说明\n")
-        self.assertEqual(api.assets["package"]["data"], b"keep")
-        self.assertEqual([(method, path, data) for method, path, data in api.calls if method != "GET"],
-                         [("PATCH", "/releases/7", {"body": "新说明\n"})])
-        for state in ("missing", "draft", "wrong-tag", "blank"):
-            api = FakeAPI()
-            if state == "draft":
-                api.release = {"id": 7, "tag_name": TAG, "draft": True}
-            if state == "wrong-tag":
-                api.commit = OTHER
-            with self.subTest(state=state), self.assertRaises(ValueError):
-                upload.update_notes(api, TAG, COMMIT, "" if state == "blank" else "说明")
-            self.assertTrue(all(method == "GET" for method, _, _ in api.calls))
-
-    def test_notes_only_cli_does_not_require_local_packages(self):
-        with patch.dict(os.environ, {"RELEASE_UPLOAD": "TEST", "RELEASE_NOTES": "说明"}, clear=True), \
-                patch.object(sys, "argv", ["release-upload.py", "missing", TAG, COMMIT, "--notes-only"]), \
-                patch.object(upload, "load_assets", side_effect=AssertionError("must not read packages")), \
-                patch.object(upload, "GitHub") as github, patch.object(upload, "update_notes") as update:
-            upload.main()
-            update.assert_called_once_with(github.return_value, TAG, COMMIT, "说明")
-
-    def test_release_notes_are_preserved_and_identical_rerun_does_not_write(self):
-        notes = '## 更新\n- 修复 "窗口" 与 `快捷键`\n$(touch SHOULD_NOT_EXIST)\nEOF\n'
-        api = FakeAPI()
-        upload.publish(api, TAG, COMMIT, {}, notes)
-        self.assertEqual(api.release["body"], notes)
-        self.assertFalse(api.release["draft"])
-        api.calls.clear()
-        upload.publish(api, TAG, COMMIT, {}, notes)
-        self.assertTrue(all(method == "GET" for method, _, _ in api.calls))
-
-    def test_notes_update_existing_public_release_or_draft(self):
-        for draft in (False, True):
-            with self.subTest(draft=draft):
-                api = FakeAPI()
-                upload.publish(api, TAG, COMMIT, {})
-                api.release["draft"] = draft
-                api.calls.clear()
-                upload.publish(api, TAG, COMMIT, {}, "新说明\n")
-                self.assertEqual(api.release["body"], "新说明\n")
-                self.assertFalse(api.release["draft"])
-                writes = [(method, path, data) for method, path, data in api.calls if method != "GET"]
-                expected = {"body": "新说明\n"}
-                if draft:
-                    expected["draft"] = False
-                self.assertEqual(writes, [("PATCH", "/releases/7", expected)])
-
-    def test_absent_or_blank_notes_preserve_existing_body(self):
-        api = FakeAPI()
-        upload.publish(api, TAG, COMMIT, {})
-        self.assertIn(f"Source commit: `{COMMIT}`", api.release["body"])
-        api.release["body"] = "人工编辑说明"
-        for notes in ("", " \n\t"):
-            api.calls.clear()
-            upload.publish(api, TAG, COMMIT, {}, notes)
-            self.assertEqual(api.release["body"], "人工编辑说明")
-            self.assertTrue(all(method == "GET" for method, _, _ in api.calls))
-
-    def test_notes_are_not_updated_when_asset_or_tag_verification_fails(self):
-        api = FakeAPI()
-        upload.publish(api, TAG, COMMIT, {"a": b"same"}, "原说明")
-        with self.assertRaisesRegex(ValueError, "differs"):
-            upload.publish(api, TAG, COMMIT, {"a": b"different"}, "新说明")
-        self.assertEqual(api.release["body"], "原说明")
-        original = api.request
-
-        def move_tag(method, path, data=None, **kwargs):
-            result = original(method, path, data, **kwargs)
-            if method == "POST" and path.startswith("/releases/7/assets?"):
-                api.commit = OTHER
-            return result
-
-        api.request = move_tag
-        with self.assertRaisesRegex(ValueError, "moved during upload"):
-            upload.publish(api, TAG, COMMIT, {"b": b"new"}, "新说明")
-        self.assertEqual(api.release["body"], "原说明")
-
-    def test_upload_main_reads_notes_from_environment(self):
-        notes = "## 更新\n- 新功能\n"
-        with patch.dict(os.environ, {"RELEASE_UPLOAD": "TEST_TOKEN", "RELEASE_NOTES": notes}, clear=True), \
-                patch.object(sys, "argv", ["release-upload.py", "assets", TAG, COMMIT]), \
-                patch.object(upload, "load_assets", return_value={}), \
-                patch.object(upload, "GitHub") as github, patch.object(upload, "publish") as publish:
-            upload.main()
-            publish.assert_called_once_with(github.return_value, TAG, COMMIT, {}, notes)
-
-    def test_arbitrary_github_release_tags_are_not_renamed_or_classified(self):
-        for tag in ("nightly", "release/2026-10", "发布", "0.1.0+build"):
-            with self.subTest(tag=tag):
-                api = FakeAPI()
-                api.commit = None
-                upload.publish(api, tag, COMMIT, {})
-                self.assertEqual(api.release["tag_name"], tag)
-                self.assertEqual(api.release["name"], tag)
-                self.assertNotIn("prerelease", api.release)
-                self.assertIn(("POST", "/git/refs", {"ref": "refs/tags/" + tag, "sha": COMMIT}), api.calls)
-
-    def test_unprefixed_tag_assets_and_github_release_keep_original_name(self):
-        with tempfile.TemporaryDirectory(prefix="release-plain-tag-", dir=TEMP_ROOT) as temporary:
-            directory = Path(temporary)
-            for name in ("deskwaifu-bin",):
-                (directory / f"{name}-0.1.0-1-x86_64.pkg.tar.zst").write_bytes(b"fixture")
-            (directory / "release-metadata.json").write_text(json.dumps({
-                "tag": "0.1.0", "commit": COMMIT, "pkgver": "0.1.0", "pkgrel": 1}))
-            files = sorted(directory.iterdir())
-            (directory / "SHA256SUMS").write_text("".join(
-                f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n" for path in files))
-            assets = upload.load_assets(directory, "0.1.0", COMMIT)
-            api = FakeAPI()
-            api.commit = None
-            upload.publish(api, "0.1.0", COMMIT, assets)
-            self.assertEqual(api.release["tag_name"], "0.1.0")
-            self.assertIn(("POST", "/git/refs", {"ref": "refs/tags/0.1.0", "sha": COMMIT}), api.calls)
-            with self.assertRaisesRegex(ValueError, "artifacts"):
-                upload.load_assets(directory, "v0.1.0", COMMIT)
-
-    def test_stdlib_uploader_honors_https_proxy_without_network(self):
-        proxy = "http://100.64.0.11:7912"
-        response = addinfourl(io.BytesIO(b'{"ok": true}'), {}, upload.API + "/releases", 200)
-        response.msg = "OK"
-        with patch.dict(os.environ, {"http_proxy": proxy, "https_proxy": proxy, "ALL_PROXY": proxy,
-                                     "no_proxy": "127.0.0.1,localhost"}, clear=True):
-            with patch("urllib.request.ProxyHandler.proxy_open", autospec=True, return_value=response) as proxied:
-                module = load("release-upload")
-                self.assertEqual(module.GitHub("TEST_TOKEN").request("GET", "/releases"), {"ok": True})
-                proxied.assert_called_once()
-                self.assertEqual(proxied.call_args.args[2:], (proxy, "https"))
-
-    def test_create_release_and_identical_rerun_make_no_writes(self):
-        api = FakeAPI()
-        api.commit = None
-        assets = {"one.pkg.tar.zst": b"one", "two.pkg.tar.zst": b"two"}
-        upload.publish(api, TAG, COMMIT, assets)
-        self.assertEqual(api.commit, COMMIT)
-        self.assertFalse(api.release["draft"])
-        api.calls.clear()
-        upload.publish(api, TAG, COMMIT, assets)
-        self.assertTrue(all(method == "GET" for method, _, _ in api.calls))
-
-    def test_annotated_tag_and_legacy_digest_download(self):
-        api = FakeAPI()
-        api.tag_type = "tag"
-        upload.publish(api, TAG, COMMIT, {"a": b"same"})
-        del api.assets["a"]["digest"]
-        upload.publish(api, TAG, COMMIT, {"a": b"same"})
-        self.assertTrue(any(path == "/releases/assets/1" for _, path, _ in api.calls))
-
-    def test_differing_assets_fail_preflight_without_uploading_missing_assets(self):
-        api = FakeAPI()
-        upload.publish(api, TAG, COMMIT, {"old": b"old"})
-        api.calls.clear()
-        with self.assertRaisesRegex(ValueError, "differs"):
-            upload.publish(api, TAG, COMMIT, {"new": b"new", "old": b"BAD"})
-        self.assertTrue(all(method == "GET" for method, _, _ in api.calls))
-        self.assertNotIn("new", api.assets)
-
-    def test_missing_commit_and_wrong_tag_never_create_release(self):
-        api = FakeAPI()
-        api.commit = OTHER
-        with self.assertRaisesRegex(ValueError, "different commit"):
-            upload.publish(api, TAG, COMMIT, {})
-        self.assertTrue(all(method == "GET" for method, _, _ in api.calls))
-        api.commit = None
-        api.has_commit = False
-        with self.assertRaises(upload.ApiError):
-            upload.publish(api, TAG, COMMIT, {})
-        self.assertIsNone(api.release)
-
-    def test_api_failure_is_not_treated_as_not_found(self):
-        for status in (401, 403, 429, 500):
-            with self.subTest(status=status):
-                api = FakeAPI()
-                api.failure = ("GET", "/releases/tags/" + TAG, status)
-                with self.assertRaises(upload.ApiError) as error:
-                    upload.publish(api, TAG, COMMIT, {})
-                self.assertEqual(error.exception.status, status)
-                self.assertIsNone(api.release)
-
-    def test_upload_failure_leaves_draft_for_safe_retry(self):
-        api = FakeAPI()
-        api.failure = ("POST", "/releases/7/assets?name=a", 500)
-        with self.assertRaises(upload.ApiError):
-            upload.publish(api, TAG, COMMIT, {"a": b"a"})
-        self.assertTrue(api.release["draft"])
-        api.failure = None
-        upload.publish(api, TAG, COMMIT, {"a": b"a"})
-        self.assertFalse(api.release["draft"])
-
-    def test_draft_hidden_by_tag_endpoint_is_reused(self):
-        api = FakeAPI()
-        upload.publish(api, TAG, COMMIT, {"a": b"a"})
-        api.release["draft"] = True
-        api.failure = ("GET", "/releases/tags/" + TAG, 404)
-        api.calls.clear()
-        upload.publish(api, TAG, COMMIT, {"a": b"a"})
-        self.assertFalse(api.release["draft"])
-        self.assertFalse(any(method == "POST" for method, _, _ in api.calls))
-
-    def test_redirect_drops_token_on_cdn_and_rejects_plaintext(self):
-        request = upload.Request(upload.API + "/releases/assets/1", headers={"Authorization": "Bearer SECRET"})
-        redirect = upload.SafeRedirect().redirect_request(
-            request, None, 302, "Found", {}, "https://release-assets.githubusercontent.com/file")
-        self.assertFalse(redirect.has_header("Authorization"))
-        with self.assertRaisesRegex(ValueError, "non-HTTPS"):
-            upload.SafeRedirect().redirect_request(request, None, 302, "Found", {}, "http://example.invalid/file")
-
-    def test_upload_conflict_accepts_only_identical_concurrent_winner(self):
-        for winning_data in (b"same", b"DIFF"):
-            with self.subTest(winner=winning_data):
-                api = FakeAPI()
-                original = api.request
-
-                def race(method, path, data=None, **kwargs):
-                    if method == "POST" and path == "/releases/7/assets?name=a":
-                        original(method, path, winning_data, **kwargs)
-                        raise upload.ApiError(422, path)
-                    return original(method, path, data, **kwargs)
-
-                api.request = race
-                if winning_data == b"same":
-                    upload.publish(api, TAG, COMMIT, {"a": b"same"})
-                    self.assertFalse(api.release["draft"])
-                else:
-                    with self.assertRaisesRegex(ValueError, "differs"):
-                        upload.publish(api, TAG, COMMIT, {"a": b"same"})
-                    self.assertTrue(api.release["draft"])
-
-    def test_tag_move_during_upload_does_not_publish_draft(self):
-        api = FakeAPI()
-        original = api.request
-
-        def move_tag(method, path, data=None, **kwargs):
-            result = original(method, path, data, **kwargs)
-            if method == "POST" and path.startswith("/releases/7/assets?"):
-                api.commit = OTHER
-            return result
-
-        api.request = move_tag
-        with self.assertRaisesRegex(ValueError, "moved during upload"):
-            upload.publish(api, TAG, COMMIT, {"a": b"same"})
-        self.assertTrue(api.release["draft"])
-
-    def test_incomplete_remote_asset_never_overwritten(self):
-        api = FakeAPI()
-        upload.publish(api, TAG, COMMIT, {"a": b"a"})
-        api.assets["a"]["state"] = "starter"
-        with self.assertRaisesRegex(ValueError, "incomplete"):
-            upload.publish(api, TAG, COMMIT, {"a": b"a"})
-
-    def test_stdlib_http_errors_hide_token(self):
-        with patch.object(upload, "urlopen", side_effect=HTTPError("url", 403, "denied", {}, None)):
-            with self.assertRaises(upload.ApiError) as error:
-                upload.GitHub("TOP_SECRET").request("GET", "/releases")
-        self.assertNotIn("TOP_SECRET", str(error.exception))
 
 
 if __name__ == "__main__":

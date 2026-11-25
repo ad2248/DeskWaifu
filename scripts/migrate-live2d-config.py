@@ -131,8 +131,8 @@ def crop_region(region):
     fields = ("x", "y", "width", "height")
     if not isinstance(region, dict) or region.keys() - set(fields):
         raise ValueError("model_region must be an object with x, y, width and height")
-    # The legacy x/y default to zero. Retain the requested rectangle (including
-    # negative origins) since both runtimes clip it against the current output.
+    # Missing x/y default to zero. Preserve signed output-local origins so
+    # the terminal overlay can clip the crop against the active output.
     return {
         key: integer(region.get(key, 0), f"model_region.{key}", -(1 << 31) if key in ("x", "y") else 1)
         for key in fields
@@ -192,9 +192,8 @@ def migrate(legacy, model_directory=None, startup_model=None):
     x = number(legacy.get("model_x", 0), "model_x", -F32_MAX, F32_MAX)
     y = number(legacy.get("model_y", 0), "model_y", -F32_MAX, F32_MAX)
     if (x, y, scale) != (0, 0, 1):
-        # Legacy projection scales model-space translation, uses the actual
-        # viewport aspect and has a portrait/model-canvas branch. Native Rust
-        # fits the asset to a fixed base canvas and moves its logical top-left.
+        # Non-default model-space placement requires manual adjustment of
+        # terminal.transform, which positions a logical top-left on a fixed base canvas.
         warnings.append("model_x, model_y and model_scale require manual adjustment in terminal.transform because the render projections differ")
     if "model_region" in legacy:
         terminal["transform"] = {"x": 0.0, "y": 0.0, "zoom": 1.0, "crop": crop_region(legacy["model_region"])}

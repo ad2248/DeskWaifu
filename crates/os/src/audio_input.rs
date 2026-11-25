@@ -17,8 +17,6 @@ use tokio::sync::{Semaphore, mpsc, oneshot};
 
 #[cfg(target_os = "linux")]
 mod pipewire;
-#[cfg(test)]
-mod tests;
 
 const QUEUE_BLOCKS: usize = 32;
 

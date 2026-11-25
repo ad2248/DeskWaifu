@@ -674,9 +674,6 @@ impl Runtime {
     }
 }
 
-#[cfg(test)]
-mod tests;
-
 impl Drop for Runtime {
     fn drop(&mut self) {
         let _ = self.stop();

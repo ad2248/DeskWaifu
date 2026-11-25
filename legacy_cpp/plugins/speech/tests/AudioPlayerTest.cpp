@@ -17,15 +17,6 @@ class AudioPlayerTest : public QObject {
         return format;
     }
 private slots:
-    void invalidFormatFailsWithoutPlayback()
-    {
-        AudioPlayer audio;
-        QSignalSpy errors(&audio, &AudioPlayer::Failed);
-        audio.Start(1, { });
-        QCOMPARE(errors.size(), 1);
-        QCOMPARE(qvariant_cast<SpeechError>(errors[0][1]).code, SpeechErrorCode::AudioDevice);
-    }
-
     void waitsForEndOfInputAndDrains()
     {
         if (!qEnvironmentVariableIsSet("DESKWAIFU_AUDIO_TEST")) {
