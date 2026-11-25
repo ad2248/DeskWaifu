@@ -1,5 +1,7 @@
 """CI 失败时把事件上报给 OpenHands 自动化，由智能体在同一 PR 会话中修复。
 
+由 `ci.yml` 中 build 与 test 各自的 `if: failure()` 步骤调用。两个作业串行且
+test 依赖 build，一次运行最多一个作业失败，所以每次运行最多上报一次。
 只处理 PR 触发的失败：push 到默认分支的失败没有 PR 号，上报会生成无意义的会话。
 """
 
@@ -23,8 +25,8 @@ def sign(body: bytes, secret: bytes) -> str:
 def failed_jobs(env: dict) -> list:
     """列出本次失败涉及的作业。
 
-    ci.yml 只由一个聚合作业上报（否则每个失败作业都会创建一次智能体运行），
-    因此 GITHUB_JOB 恒为 report，必须靠 CI_FAILED_JOBS 传回真实失败作业名。
+    上报步骤用 CI_FAILED_JOBS 传出本作业名（build 或 test）；GITHUB_JOB 是脚本
+    所在的作业，不能用来区分失败来源。
     """
     return [name for name in env.get("CI_FAILED_JOBS", "").split() if name]
 

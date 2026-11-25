@@ -589,7 +589,7 @@ with open({str(log)!r}, "a") as stream:
             result = subprocess.run(["bash", str(ROOT / "scripts/release-build.sh")], cwd=work, env=env,
                                     capture_output=True, text=True)
             self.assertEqual(result.returncode, 1)
-            self.assertIn("require root orchestration", result.stderr)
+            self.assertIn("打包需要 root 编排", result.stderr)
             self.assertNotIn("RELEASE_TAG", result.stderr)
 
 

@@ -30,8 +30,7 @@ podman run --rm --network none -v "$SOURCE_DIR:/source:ro" "$image" bash -ceu '
     pkg-config --exists libsystemd wayland-client freetype2 fontconfig xkbcommon xkbcommon-x11 xcb x11 vulkan
     wl-copy --version
     wl-paste --version
-    command -v fakeroot runuser useradd userdel
-    test ! -S /var/run/docker.sock
+    command -v fakeroot runuser useradd
     cmake --version
     export CARGO_TARGET_DIR=$(mktemp -d)
     cd /source

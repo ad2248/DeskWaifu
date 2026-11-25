@@ -10,154 +10,157 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: deskwaifu-ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  test:
-    name: Rust checks and Arch package
-    # Fixed image ID in runner config, force_pull=false; see rebuild-ci-image.sh.
+  build:
+    name: 构建并打包
     runs-on: deskwaifu-rust
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
-      - name: Verify runner isolation and toolchain
+      - name: Check toolchain and shared directory
         run: |
-          test ! -S /var/run/docker.sock
+          test "$(id -u)" = 0
+          test -d /transfer
           rustc --version
           cargo --version
-      - name: Check out repository
-        uses: https://git.kals.top/actions/checkout@v4
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Format
-        run: cargo fmt --all --check
-      - name: Configure bundled Cargo dependencies
-        run: |
-          test -r /opt/deskwaifu-cargo/config.toml || {
-            echo 'CI image is missing Cargo dependencies. Rebuild the runner image for this Cargo.lock.' >&2
-            exit 1
-          }
-          install -Dm644 /opt/deskwaifu-cargo/config.toml "${CARGO_HOME:-$HOME/.cargo}/config.toml"
-      - name: Build workspace (debug)
-        run: bash scripts/ci-sccache.sh /cache/sccache-rust-test cargo build --workspace --frozen
-      - name: Lint
-        run: cargo clippy --workspace --all-targets --frozen -- -D warnings
-      - name: Test
-        run: |
-          bash scripts/ci-sccache.sh /cache/sccache-rust-test \
-            env -u DISPLAY -u WAYLAND_DISPLAY -u CUBISM_TEST_PCI -u CUBISM_TEST_SECOND_PCI \
-            LIBGL_ALWAYS_SOFTWARE=1 cargo test --workspace --frozen
-      - name: Build workspace (release)
-        run: bash scripts/ci-sccache.sh /cache/sccache-rust-test cargo build --workspace --frozen --release
-      - name: Test release tooling
-        run: python3 -B -m unittest discover -s tests -p 'test_*.py' -v
-      - name: Test plugin deployment tooling
-        run: python3 -B -m unittest discover -s scripts -p 'test_*.py' -v
-      - name: Test review tooling
-        run: python3 -B -m unittest discover -s .gitea/scripts -p 'test_*.py' -v
+          makepkg --version
+          python3 --version
 
-  package:
-    name: Rust Arch package
-    runs-on: deskwaifu-rust
-    timeout-minutes: 30
-    steps:
-      - name: Verify runner isolation
-        run: test ! -S /var/run/docker.sock
+      - name: Prune stale transfers
+        run: find /transfer -mindepth 1 -maxdepth 1 -mtime +1 -exec rm -rf -- {} +
+
       - name: Check out repository
         uses: https://git.kals.top/actions/checkout@v4
         with:
           fetch-depth: 0
           persist-credentials: false
+
       - name: Build Arch package
         env:
           DESKWAIFU_CI_SCCACHE: '1'
           DESKWAIFU_CI_OFFLINE: '1'
         run: |
+          set -o pipefail
+          mkdir -p target/ci-build
           export RELEASE_COMMIT="$(git rev-parse HEAD)"
           export RELEASE_TAG="0.0.0.r$RELEASE_COMMIT"
-          bash scripts/release-build.sh
-      - name: Install package and check artifacts and CLI
+          bash scripts/release-build.sh 2>&1 | tee target/ci-build/build.log
+
+      - name: Publish package to transfer directory
         run: |
-          pacman -U --noconfirm release-assets/deskwaifu-bin-*.pkg.tar.zst
-          test "$(readlink -f /usr/bin/deskwaifu)" = /usr/lib/deskwaifu/deskwaifu
-          test -x /usr/bin/deskwaifu-terminal-panel
-          test -f /usr/lib/deskwaifu/plugins/libdeskwaifu_test_plugin.so
-          test -f /usr/lib/deskwaifu/plugins/libdeskwaifu_voice_input.so
-          test -f /usr/lib/deskwaifu/plugins/libdeskwaifu_terminal.so
-          /usr/bin/deskwaifucli --help
-          test ! -e /tmp/deskwaifu.socket
-          /usr/bin/deskwaifu &
-          host_pid=$!
-          trap 'kill -TERM "$host_pid" 2>/dev/null || true; wait "$host_pid"' EXIT
-          for attempt in {1..100}; do
-            if test -S /tmp/deskwaifu.socket; then break; fi
-            kill -0 "$host_pid"
-            sleep 0.05
-          done
-          help_output=$(/usr/bin/deskwaifucli help)
-          grep -E '^start_voice_input[[:space:]]' <<< "$help_output"
-          grep -E '^terminal[[:space:]]' <<< "$help_output"
-      - name: Clean package artifacts
+          set -- release-assets/*.pkg.tar.zst
+          test "$#" = 1 && test -f "$1" || { echo 'expected exactly one package' >&2; exit 1; }
+          transfer="/transfer/${GITHUB_RUN_ID:-$GITHUB_RUN_NUMBER}-$GITHUB_SHA"
+          mkdir -p "$transfer"
+          cp "$1" release-assets/SHA256SUMS "$transfer/"
+          package=$(basename "$1")
+          digest=$(cd "$transfer" && sha256sum "$package" | cut -d' ' -f1)
+          printf '{"sha":"%s","package":"%s","sha256":"%s"}\n' \
+            "$GITHUB_SHA" "$package" "$digest" > "$transfer/ready.json"
+          ls -l "$transfer"
+
+      - name: Assemble build record
+        if: always()
+        run: |
+          mkdir -p target/ci-build/package
+          { rustc --version; cargo --version; makepkg --version; python3 --version; } \
+            > target/ci-build/toolchain.txt
+          if [[ -f release-assets/SHA256SUMS ]]; then
+            (cd release-assets && sha256sum -c SHA256SUMS) \
+              | tee target/ci-build/package/SHA256SUMS.check.log
+            cp release-assets/SHA256SUMS release-assets/release-metadata.json \
+              target/ci-build/package/
+          fi
+          tar --zstd -cf target/ci-build.tar.zst -C target/ci-build .
+
+      - name: Upload build record
+        if: always()
+        uses: https://github.com/actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ci-build
+          path: target/ci-build.tar.zst
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+      - name: Remove package outputs
         if: always()
         run: rm -rf release-assets
 
-  gui:
-    name: GUI integration and test records
+      - name: Report CI failure to OpenHands
+        if: failure()
+        env:
+          PIPELINE_WEBHOOK_SECRET: ${{ secrets.PIPELINE_WEBHOOK_SECRET }}
+        run: CI_FAILED_JOBS=build python3 -B .gitea/scripts/report-ci-failure.py
+
+  test:
+    name: 安装包验收
+    needs: build
     runs-on: deskwaifu-gui
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
-      - name: Verify runner isolation
-        run: test ! -S /var/run/docker.sock
+      - name: Check root, DRM node and tools
+        run: |
+          test "$(id -u)" = 0
+          test -c /dev/dri/renderD128
+          for tool in pacman bsdtar zstd ffmpeg kwin_wayland plasmashell; do
+            command -v "$tool"
+          done
+
       - name: Check out repository
         uses: https://git.kals.top/actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Build control panel
-        env:
-          CARGO_PROFILE_DEV_DEBUG: '0'
-          CARGO_BUILD_JOBS: '3'
+
+      - name: Verify transfer handshake
         run: |
-          install -Dm644 /opt/deskwaifu-cargo/config.toml "${CARGO_HOME:-$HOME/.cargo}/config.toml"
-          CARGO_TARGET_DIR="$PWD/target" cargo build --frozen -p deskwaifu-terminal-panel
-      - name: Run and record GUI case
-        id: gui_case
-        run: python3 -B tests/gui_panel_open_close.py --bin-dir target/debug --output target/test-records
+          transfer="/transfer/${GITHUB_RUN_ID:-$GITHUB_RUN_NUMBER}-$GITHUB_SHA"
+          python3 -B tests/acceptance/verify_transfer.py "$transfer" "$GITHUB_SHA"
+
+      - name: Install package and run acceptance cases
+        id: suite
+        run: |
+          transfer="/transfer/${GITHUB_RUN_ID:-$GITHUB_RUN_NUMBER}-$GITHUB_SHA"
+          python3 -B tests/acceptance/run_suite.py \
+            --package-dir "$transfer" \
+            --output target/test-records
+
       - name: Archive test records
-        id: archive
-        if: ${{ always() && (steps.gui_case.outcome == 'success' || steps.gui_case.outcome == 'failure') }}
-        run: tar --zstd -cf target/test-records.tzst -C target/test-records .
+        if: always()
+        env:
+          SUITE_OUTCOME: ${{ steps.suite.outcome }}
+        run: |
+          mkdir -p target/test-records
+          if [[ ! -f target/test-records/summary.json ]]; then
+            printf 'suite not started, step outcome: %s\n' "$SUITE_OUTCOME" \
+              > target/test-records/setup-failure.txt
+          fi
+          tar --zstd -cf target/test-records.tar.zst -C target/test-records .
+
       - name: Upload test records
-        if: ${{ always() && steps.archive.outcome == 'success' }}
+        if: always()
         uses: https://github.com/actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: test-records
-          path: target/test-records.tzst
+          path: target/test-records.tar.zst
           if-no-files-found: error
           compression-level: 0
+          retention-days: 30
 
-  report:
-    name: Report CI failure to OpenHands
-    needs: [package, test, gui]
-    # 用 always() 而不是 failure()：漏报一次失败就没人在 PR 上修，
-    # 代价高于多跑一个几秒的空作业。是否真的失败由下面的步骤自己判断。
-    if: always()
-    runs-on: deskwaifu-rust
-    timeout-minutes: 5
-    steps:
-      - name: Check out repository
-        uses: https://git.kals.top/actions/checkout@v4
+      - name: Clean up transfer directory
+        if: always()
+        run: |
+          transfer="/transfer/${GITHUB_RUN_ID:-$GITHUB_RUN_NUMBER}-$GITHUB_SHA"
+          case "$transfer" in
+            /transfer/*) rm -rf -- "$transfer" ;;
+            *) echo "refusing to remove '$transfer'" >&2 ;;
+          esac
 
       - name: Report CI failure to OpenHands
+        if: failure()
         env:
           PIPELINE_WEBHOOK_SECRET: ${{ secrets.PIPELINE_WEBHOOK_SECRET }}
-          PACKAGE_RESULT: ${{ needs.package.result }}
-          TEST_RESULT: ${{ needs.test.result }}
-          GUI_RESULT: ${{ needs.gui.result }}
-        run: |
-          failed=()
-          if [[ "$PACKAGE_RESULT" == "failure" ]]; then failed+=("package"); fi
-          if [[ "$TEST_RESULT" == "failure" ]]; then failed+=("test"); fi
-          if [[ "$GUI_RESULT" == "failure" ]]; then failed+=("gui"); fi
-          if [[ ${#failed[@]} -eq 0 ]]; then
-            echo "CI 未失败，跳过回调"
-            exit 0
-          fi
-          CI_FAILED_JOBS="${failed[*]}" python3 -B .gitea/scripts/report-ci-failure.py
+        run: CI_FAILED_JOBS=test python3 -B .gitea/scripts/report-ci-failure.py
