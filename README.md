@@ -107,4 +107,4 @@ runtime 测试使用手动推进的逻辑时钟。宿主冒烟测试启动真实
 
 ## Arch 安装包与 CI
 
-CI 使用专用 `deskwaifu-rust` runner，执行格式检查、Clippy、测试、release 编译和 Arch 打包。私有 CI 镜像内置 Cubism Native SDK 5-r.5、GLEW 及 Haru、Hiyori、Mao 模型。运行 `bash scripts/rebuild-ci-image.sh` 构建镜像、离线验收 Live2D 并通过 SSH 私下传输，按输出的镜像 ID 更新 runner。发布构建保持非 root makepkg，直接安装 Cargo 产物，生成包含原生 `terminal` 和控制面板的 `deskwaifu-bin` 包。详情见 [打包说明](packaging/release/README.md)。
+CI 使用专用 `deskwaifu-rust` runner 编译并打出 Arch 包，`deskwaifu-gui` runner 安装该包后运行验收用例；两个作业串行，包经宿主机 `/transfer` 目录传递，不接受 artifact 中转。私有 CI 镜像内置 Cubism Native SDK 5-r.5、GLEW 及 Haru、Hiyori、Mao 模型。运行 `bash scripts/rebuild-ci-image.sh` 构建镜像、离线验收 Live2D 并通过 SSH 私下传输，按输出的镜像 ID 更新 runner。发布构建保持非 root makepkg，直接安装 Cargo 产物，生成包含原生 `terminal` 和控制面板的 `deskwaifu-bin` 包。详情见 [打包说明](packaging/release/README.md)。

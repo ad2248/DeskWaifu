@@ -5,11 +5,11 @@ exact selected Git tag. The workspace and `Cargo.lock` must live at repository
 root. The recipe calls `CARGO_NET_OFFLINE=true cargo build --workspace --locked
 --release` with an explicit target directory and installs directly from Cargo's
 `target/release/` outputs. The ordinary release build first runs `cargo fetch
---locked` as the temporary build user against a separate extraction of the same
+--locked` as the builder account against a separate extraction of the same
 source archive. Fetch and makepkg share a fresh `CARGO_HOME`; only fetch receives
 allowlisted proxy settings. CI instead uses the locked Cargo sources provisioned
-in the runner image. Compilation never runs as root and no upload credentials
-reach either phase.
+in the runner image. Compilation runs as the builder account, never as root, and
+no upload credentials reach either phase.
 
 The trusted release tools select the payload using the selected source archive's
 root workspace declarations:
@@ -39,10 +39,10 @@ start that host and use `deskwaifucli test` in another terminal (the IPC socket 
 fixed at `/tmp/deskwaifu.socket`).
 
 The fixed `deskwaifu-rust` runner provides Cargo, the system toolchain and
-makepkg. A root orchestrator archives the selected source, then invokes makepkg
-as a temporary unprivileged account with a clean environment. The account cannot
-write to the checkout or trusted release-tool snapshot. Upload credentials exist
-only in the final workflow step. Package identity, payload and checksums are
+makepkg. A root orchestrator archives the selected source into a scratch
+directory owned by the `builder` account, then invokes fetch and makepkg as that
+account with a clean environment. Upload credentials exist only in the final
+workflow step. Package identity, payload and checksums are
 verified before upload; different existing remote assets are never overwritten.
 Tag names are passed unchanged to makepkg (Arch-incompatible versions fail rather
 than silently being renamed). Builds require a supported Rust workspace. Notes-only updates do not rebuild assets.
@@ -62,8 +62,7 @@ for panel usage.
 Provision Cubism Native SDK 5-r.5 and GLEW sources outside the source archive.
 Set `CUBISM_SDK_DIR` and `CUBISM_GLEW_DIR` to their absolute directories in the
 environment of the [release build step](<../../scripts/release-build.sh>).
-The temporary makepkg user must be able to read the inputs and traverse their
-paths. Only those two SDK variables are added to makepkg's clean environment,
+The `builder` account must be able to read the inputs and traverse their paths. Only those two SDK variables are added to makepkg's clean environment,
 and only for v3; neither is passed to Cargo fetch. V1 and v2 do not require
 these inputs. The SDK is used at build time and Cubism code is linked into the
 native plugin, but the package ships no separate SDK files or sample models.
@@ -88,7 +87,7 @@ workflow commits to or automatically publishes the AUR repository.
 ## Verification
 
 Run `python3 -B tests/test_release_packaging.py`. The tests exercise fetch/build
-phase isolation, the public v3 opt-in, and real offline Cargo builds of three
+the fetch/build environment, the public v3 opt-in, and real offline Cargo builds of three
 workspace fixtures using the recipe's build/package functions. They verify the
 installed host symlink, ELF plugins, CLI `--help`, and v3 panel binary, and reject
 missing outputs or unexpected SDK and model files.
