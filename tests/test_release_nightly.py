@@ -73,16 +73,18 @@ class NightlyTest(unittest.TestCase):
                 ("GET", "/git/refs/tags/nightly"): {"object": {"sha": COMMIT}},
                 ("GET", "/releases/tags/nightly"): {"id": 7, "tag_name": "nightly", "draft": False},
                 ("GET", "/releases/7/assets"): existing,
-                ("DELETE", "/releases/7/assets/1"): {},
-                ("DELETE", "/releases/7/assets/2"): {},
-                ("DELETE", "/releases/7/assets/3"): {},
+                ("DELETE", "/releases/assets/1"): {},
+                ("DELETE", "/releases/assets/2"): {},
+                ("DELETE", "/releases/assets/3"): {},
                 ("POST", "/releases/7/assets"): lambda: {"digest": None},
                 ("PATCH", "/releases/7"): {},
             })
             nightly.publish(api, COMMIT, assets, nightly.release_body(COMMIT, "https://git.example", "2026-11-26 00:00 UTC"))
             deleted = {path for method, path, _ in api.calls if method == "DELETE"}
-            self.assertEqual(deleted, {"/releases/7/assets/1", "/releases/7/assets/2",
-                                       "/releases/7/assets/3"})
+            self.assertEqual(deleted, {"/releases/assets/1", "/releases/assets/2",
+                                       "/releases/assets/3"})
+            # GitHub 只提供 /releases/assets/{id}，带 release id 的删除路由会返回 404。
+            self.assertFalse([path for path in deleted if path.startswith("/releases/7/")])
             uploaded = [payload for method, _, payload in api.calls
                         if method == "POST" and isinstance(payload, bytes)]
             self.assertEqual(len(uploaded), 3)

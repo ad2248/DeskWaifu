@@ -152,7 +152,7 @@ def publish(api, commit, assets, body):
     existing = {asset["name"]: asset for asset in
                 api.request("GET", f"/releases/{release_id}/assets?per_page=100")}
     for name in stale_assets(existing, assets):
-        api.request("DELETE", f"/releases/{release_id}/assets/{existing[name]['id']}")
+        api.request("DELETE", f"/releases/assets/{existing[name]['id']}")
         del existing[name]
     for name, data in assets.items():
         digest = "sha256:" + hashlib.sha256(data).hexdigest()
@@ -161,7 +161,7 @@ def publish(api, commit, assets, body):
             # 同一提交重试时字节相同，直接复用已上传的资产。
             if previous.get("digest") == digest and previous.get("size") == len(data):
                 continue
-            api.request("DELETE", f"/releases/{release_id}/assets/{previous['id']}")
+            api.request("DELETE", f"/releases/assets/{previous['id']}")
         uploaded = api.request(
             "POST", f"/releases/{release_id}/assets?name={quote(name, safe='')}", data, upload=True)
         if uploaded.get("digest") not in (None, digest):
