@@ -57,7 +57,10 @@ class GitHub:
                 body = response.read()
         except HTTPError as error:
             raise ApiError(error.code, path) from None
-        return body if binary else json.loads(body)
+        # 成功删除等请求返回 204，没有响应体可解析。
+        if binary:
+            return body
+        return json.loads(body) if body else None
 
 
 def optional_get(api, path):

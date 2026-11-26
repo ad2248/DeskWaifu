@@ -1,9 +1,11 @@
 import hashlib
+import http.server
 import importlib.util
 import json
 import os
 from pathlib import Path
 import tempfile
+import threading
 import unittest
 import unittest.mock
 
@@ -21,6 +23,15 @@ def load(name):
 
 
 nightly = load("release-nightly")
+
+
+class _NoContentHandler(http.server.BaseHTTPRequestHandler):
+    def do_DELETE(self):
+        self.send_response(204)
+        self.end_headers()
+
+    def log_message(self, *args):
+        pass
 
 
 def _not_found(method=None):
@@ -73,9 +84,10 @@ class NightlyTest(unittest.TestCase):
                 ("GET", "/git/refs/tags/nightly"): {"object": {"sha": COMMIT}},
                 ("GET", "/releases/tags/nightly"): {"id": 7, "tag_name": "nightly", "draft": False},
                 ("GET", "/releases/7/assets"): existing,
-                ("DELETE", "/releases/assets/1"): {},
-                ("DELETE", "/releases/assets/2"): {},
-                ("DELETE", "/releases/assets/3"): {},
+                # GitHub 删除成功返回 204，没有响应体。
+                ("DELETE", "/releases/assets/1"): None,
+                ("DELETE", "/releases/assets/2"): None,
+                ("DELETE", "/releases/assets/3"): None,
                 ("POST", "/releases/7/assets"): lambda: {"digest": None},
                 ("PATCH", "/releases/7"): {},
             })
@@ -107,6 +119,21 @@ class NightlyTest(unittest.TestCase):
         nightly.ensure_github_tag(missing, COMMIT)
         created = [data for method, path, data in missing.calls if method == "POST"]
         self.assertEqual(created, [{"ref": "refs/tags/nightly", "sha": COMMIT}])
+
+    # 测试目的：删除成功时 GitHub 返回 204 无响应体，客户端不能把它当成解析失败。
+    # 测试方法：用真实客户端请求本地 204 端点，确认返回空值而不是抛异常。
+    def test_empty_response_body_is_not_a_parse_error(self):
+        upload = nightly.upload_module()
+        server = http.server.HTTPServer(("127.0.0.1", 0), _NoContentHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            api = upload.GitHub("token")
+            upload.API = f"http://127.0.0.1:{server.server_port}"
+            self.assertIsNone(api.request("DELETE", "/releases/assets/1"))
+        finally:
+            server.shutdown()
+            server.server_close()
 
     # 测试目的：产物摘要不符时不上传，避免把损坏的包发成 nightly。
     # 测试方法：篡改包内容后要求校验失败。
