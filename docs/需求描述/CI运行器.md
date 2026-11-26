@@ -20,11 +20,11 @@ CI 镜像提供 KWin、Plasma Shell、桌面组件和 Mesa 软件渲染。GUI CI
 
 ## 门禁
 
-[Rust CI 工作流](../../.gitea/workflows/ci.yml) 串行运行两段：`build` 编译并打包，`test` 安装该包后运行验收用例。评审工作流独立运行。 [测试与门禁](<测试与门禁.md>)
+[Rust CI 工作流](../../.gitea/workflows/ci.yml) 只在 PR 上串行运行两段：`build` 编译并打包，`test` 安装该包后运行验收用例。合并到 `main` 后由 [nightly 工作流](../../.gitea/workflows/nightly.yml) 只构建并发布 GitHub 预发布，不再运行安装包验收。评审工作流独立运行。 [测试与门禁](<测试与门禁.md>) · [夜间发布](<发布打包.md#夜间构建>)
 
 - `build` 直接以 `cargo build --workspace --frozen` 构建 debug 和 release（加 `--release`），包含 GPUI 控制面板和默认启用 `kwin-cursor`、`native` 的 `terminal` 插件。Cubism 离屏测试使用 Mesa 软件渲染，清除图形会话和硬件 PCI 选择变量。
 - `build` 按当前 commit 归档源码，以固定的 `builder` 账户运行 makepkg，验证单一 `deskwaifu-bin` 安装包及校验和，并把包写入 `/transfer/<run>-<sha>/`；构建日志随 artifact `ci-build` 上传。
-- `test` 在 GUI Runner 上校验 `/transfer` 握手，安装包并记录安装过程，再运行 `tests/acceptance` 中注册的用例。当前只有「无守护进程下开关控制面板」一个用例，需要 DRM 渲染节点。
+- `test` 在 GUI Runner 上校验 `/transfer` 握手，安装包并记录安装过程，再运行 `tests/acceptance` 中注册的用例。当前只有「无守护进程下开关控制面板」一个用例，需要 DRM 渲染节点。`nightly` 不经过 `/transfer`，包只用于上传。
 - 镜像构建通过 `cargo vendor --locked` 收集依赖。`build` 只读取镜像内的 Cargo 源。锁文件新增或更新外部依赖时，先用对应代码重建镜像并更换 Runner 镜像 ID。
 - 缓存使用 runner 已挂载的 `/cache`。Rust 检查使用 `/cache/sccache-rust-test`，Arch CI 打包使用 `/cache/sccache-rust-package`，各限 4 GiB。每个目录同时只运行一个 sccache 服务，抢锁失败或缓存不可用时直接编译。构建日志包含缓存命中统计。
 - 正式 Release 使用独立的隔离构建流程，禁用 CI 共享缓存。详见[打包说明](../../packaging/release/README.md)。

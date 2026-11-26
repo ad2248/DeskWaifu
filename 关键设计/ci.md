@@ -31,7 +31,7 @@
 ## 2. 总体结构
 
 ```
-                 PR opened/reopened/synchronize · push main · dispatch
+                 PR opened/reopened/synchronize · dispatch（PR 阶段）
                                    │
                                    ▼
                       ┌───────────────────────┐
@@ -63,7 +63,7 @@ sequenceDiagram
     participant B as build (deskwaifu-rust)
     participant S as /transfer（st 本地磁盘）
     participant T as test (deskwaifu-gui)
-    G->>B: 触发（PR / main / 手动）
+    G->>B: 触发（PR / 手动）
     B->>B: release-build.sh（离线 cargo + sccache + makepkg）
     B->>S: 包 + SHA256SUMS + ready.json
     B-->>G: ci-build.tar.zst（build.log 等）
@@ -140,8 +140,6 @@ target/ci-build/
 name: DeskWaifu Rust CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
     types: [opened, reopened, synchronize]
   workflow_dispatch:
@@ -356,7 +354,7 @@ jobs:
 | `build` | release 全工作区编译 + makepkg + 归档 | 60 min |
 | `test` | 读共享目录 + `pacman -U` + 用例（约 30 s 视频录制） | 30 min |
 
-串行总时长相对现在并行变长，用 `concurrency.cancel-in-progress` 在 PR 推送新提交时取消旧 run 抵消排队。`main` 的 push 不取消（保留证据）。
+串行总时长相对现在并行变长，用 `concurrency.cancel-in-progress` 在 PR 推送新提交时取消旧 run 抵消排队。`main` 的 push 改由 `nightly.yml` 处理，见 §8。
 
 ---
 
@@ -668,3 +666,21 @@ tar --zstd -cf /tmp/test-records.tar.zst -C /tmp/test-records .
 - `/transfer` 用 `1777`：两个 runner 容器内都以 root 运行，简单且不需要统一属主。
 - `build` 不加任何静态门禁：构建本身就是门禁。
 - artifact 保留 30 天。
+
+
+---
+
+## 8. `main` 的夜间发布
+
+合并到 `main` 后不再安装验收，只构建并发布：[nightly.yml](../.gitea/workflows/nightly.yml) 在同一个 `deskwaifu-rust` runner 上运行 `release-build.sh`，把包发到 GitHub 常驻预发布 `nightly`。
+
+| 决定 | 原因 |
+| --- | --- |
+| 独立工作流而不是给 `test` 加 `if` | `test` 的 `always()` 步骤是 `/transfer` 目录的唯一清理者；跳过它会在共享目录留下残留。独立工作流的构建不写 `/transfer`。 |
+| 复用 `release-build.sh`，`RELEASE_TAG=0.0.0.r<sha>` | 与 PR 阶段同一构建入口，包名带完整提交，pacman 能看出每次升级。 |
+| `nightly` 标签在 Gitea 侧创建 | Gitea 的 push mirror 以 `--mirror --force` 推送，会删除 GitHub 上多出来的标签；只建在 GitHub 的标签下次同步就消失。 |
+| 标签只在缺失时创建，不移动 | 标签移动与强制镜像互相覆盖，且会让并发 run 争用同一 ref。提交身份改由发布正文与资产名携带。 |
+| 资产按名替换，同名摘要一致时复用 | 常驻预发布只保留本次构建的资产；重跑同一提交不重复上传。 |
+| `release.yml` 的 tag 过滤器收窄为 `[0-9]*.[0-9]*.[0-9]*` | 否则 `nightly` 标签每次重建都会触发正式发版流程。 |
+| `nightly` 不设置 `DESKWAIFU_PUBLIC_RELEASE` | 该变量只开启公开 v3 构建的 Cubism 再分发闸门，夜间构建不属于公开正式发布。 |
+| `concurrency.cancel-in-progress: true` | 连续合并时只保留最新构建，旧 run 的中间产物没有保留价值。 |

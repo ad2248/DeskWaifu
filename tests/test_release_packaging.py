@@ -554,7 +554,7 @@ with open({str(log)!r}, "a") as stream:
         self.assertEqual(workflow.count("secrets.RELEASE_UPLOAD"), 1)
         self.assertNotIn("secrets.RELEASE_UPLOAD", workflow.split("- name: Upload verified packages")[0])
         self.assertIn("runs-on: deskwaifu-rust", workflow)
-        self.assertIn("tags: ['**']", workflow)
+        self.assertIn("tags: ['[0-9]*.[0-9]*.[0-9]*']", workflow)
         self.assertIn("https://git.kals.top/actions/checkout@v4", workflow)
         self.assertIn("RELEASE_INPUT_TAG: ${{ github.event.inputs.tag }}", workflow)
         self.assertIn("      release_notes:\n", workflow)

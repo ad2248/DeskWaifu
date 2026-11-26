@@ -1,8 +1,9 @@
 # 本地执行 DeskWaifu Rust CI
 
-- 权威步骤为 `.gitea/workflows/ci.yml`。分别验证 `build` 与 `test` 作业，不把本地检查描述为远端 CI 已通过。
+- 权威步骤为 `.gitea/workflows/ci.yml`（PR：`build` + `test`）和 `.gitea/workflows/nightly.yml`（`main`：构建并发布）。分别验证对应作业，不把本地检查描述为远端 CI 已通过。
 - 从 `st:~/.config/deskwaifu-ci-runner/config.yaml` 与 `st:~/.config/deskwaifu-gui-runner/config.yaml` 读取各自的固定镜像 ID，确认本地镜像存在，不使用漂移的 latest。
 - 先检查工作区，不覆盖用户改动。以 rootless Podman 运行固定镜像：`build` 用 rust 镜像跑 `scripts/release-build.sh`；`test` 用 gui 镜像映射 `/dev/dri/renderD128` 与 `/transfer`，执行 `tests/acceptance/run_suite.py`。
+- `nightly` 在本机验证时用 `python3 -B tests/test_release_nightly.py` 检查发布语义，用 `--directory` 指向已有的 `release-assets`，不重复上传线上资产。
 - 包经宿主 `/srv/cache/deskwaifu-ci/transfer` 传递：`build` 写 `<run>-<sha>/` 与 `ready.json`，`test` 用 `verify_transfer.py` 校验后安装。本地复现时可以用 `run_suite.py --bin-dir` 跳过安装。
 - Cargo 使用 `--frozen`，不在 workflow 临时安装工具或忽略失败。
 - `build` 由容器内 root 编排，`scripts/release-build.sh` 以固定的 `builder` 账户运行 makepkg；源码归档、`CARGO_HOME` 与 `PKGDEST` 都放在该账户可写的临时目录里。

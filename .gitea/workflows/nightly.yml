@@ -1,0 +1,75 @@
+name: DeskWaifu nightly
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: deskwaifu-nightly
+  cancel-in-progress: true
+
+jobs:
+  nightly:
+    name: 构建并发布 nightly
+    runs-on: deskwaifu-rust
+    timeout-minutes: 60
+    steps:
+      - name: Check toolchain
+        run: |
+          test "$(id -u)" = 0
+          rustc --version
+          cargo --version
+          makepkg --version
+          python3 --version
+
+      - name: Check out repository
+        uses: https://git.kals.top/actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Gitea 的 push mirror 会删除 GitHub 上多出来的标签，所以 nightly 标签必须
+      # 先在 Gitea 侧存在；脚本只在缺失时创建，从不移动已有标签。
+      - name: Ensure nightly tag in Gitea
+        env:
+          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
+        run: python3 -B scripts/release-nightly.py tag "$GITHUB_SHA"
+
+      - name: Build Arch package
+        env:
+          DESKWAIFU_CI_SCCACHE: '1'
+          DESKWAIFU_CI_OFFLINE: '1'
+        run: |
+          set -o pipefail
+          mkdir -p target/nightly-build
+          export RELEASE_COMMIT="$(git rev-parse HEAD)"
+          export RELEASE_TAG="0.0.0.r$RELEASE_COMMIT"
+          bash scripts/release-build.sh 2>&1 | tee target/nightly-build/build.log
+
+      - name: Upload build log
+        if: always()
+        uses: https://github.com/actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nightly-build
+          path: target/nightly-build
+          if-no-files-found: warn
+          compression-level: 0
+          retention-days: 14
+
+      # 常驻预发布由每次 main 构建覆盖：资产名与正文都带源码提交。
+      - name: Publish nightly release
+        env:
+          RELEASE_UPLOAD: ${{ secrets.RELEASE_UPLOAD }}
+          BUILT_AT: ${{ github.event.head_commit.timestamp }}
+        run: |
+          args=()
+          if [[ -n "$BUILT_AT" ]]; then args+=(--built-at "$BUILT_AT"); fi
+          python3 -B scripts/release-nightly.py publish "$GITHUB_SHA" "${args[@]}"
+
+      - name: Remove package outputs
+        if: always()
+        run: rm -rf release-assets
