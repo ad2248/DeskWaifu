@@ -9,6 +9,7 @@ CI 作业在固定的私有 Arch 镜像中构建 Cargo workspace。
 - [镜像重建脚本](../../scripts/rebuild-ci-image.sh) 在断网容器里验证工具链、构建根工作区、检查面板产物和原生 `terminal` 插件的链接依赖、运行离屏测试并渲染三个模型。验收通过后通过 SSH 传输到 `${DESKWAIFU_RUNNER_HOST:-st}`，输出 `deskwaifu-rust:docker://sha256:...`。包含专有 SDK 的镜像仅在私有环境使用。
 - 在 `st:~/.config/deskwaifu-ci-runner/config.yaml` 中将 `deskwaifu-rust` 标签指向通过验收的固定镜像，仅更新该标签。
 - 保持 `force_pull: false`、`docker_host: "-"`、`privileged: false`，不暴露宿主 Docker socket。
+- 两个 Runner 的 `container.network` 都设为 `host`，作业容器直接使用宿主机网络栈与解析器，runner 不再为每个作业建网。宿主回环由所有作业共用，sccache 因此按缓存目录使用各自的 UDS，不占用 TCP 端口。
 
 ## 无头 Plasma 会话
 

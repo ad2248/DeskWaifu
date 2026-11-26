@@ -41,12 +41,6 @@ id -u "$build_user" >/dev/null 2>&1 ||
     useradd --uid 2000 --user-group --no-create-home --home-dir "$work/home" --shell /bin/bash "$build_user"
 chown -R "$build_user:$build_user" "$work"
 
-# Public release builds must be authorized before fetching or compiling v3.
-if [[ $payload == rust-v3 && ${DESKWAIFU_PUBLIC_RELEASE:-0} == 1 &&
-      ${DESKWAIFU_CUBISM_REDISTRIBUTION_APPROVED:-0} != 1 ]]; then
-    echo 'Publishing rust-v3 requires confirmed Cubism redistribution authorization' >&2
-    exit 1
-fi
 # Only the rust-v3 payload requires local Cubism and GLEW inputs.
 sdk_env=()
 if [[ $payload == rust-v3 ]]; then

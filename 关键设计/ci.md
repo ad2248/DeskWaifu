@@ -682,5 +682,4 @@ tar --zstd -cf /tmp/test-records.tar.zst -C /tmp/test-records .
 | 标签只在缺失时创建，不移动 | 标签移动与强制镜像互相覆盖，且会让并发 run 争用同一 ref。提交身份改由发布正文与资产名携带。 |
 | 资产按名替换，同名摘要一致时复用 | 常驻预发布只保留本次构建的资产；重跑同一提交不重复上传。 |
 | `release.yml` 的 tag 过滤器收窄为 `[0-9]*.[0-9]*.[0-9]*` | 否则 `nightly` 标签每次重建都会触发正式发版流程。 |
-| `nightly` 不设置 `DESKWAIFU_PUBLIC_RELEASE` | 该变量只开启公开 v3 构建的 Cubism 再分发闸门，夜间构建不属于公开正式发布。 |
 | `concurrency.cancel-in-progress: true` | 连续合并时只保留最新构建，旧 run 的中间产物没有保留价值。 |

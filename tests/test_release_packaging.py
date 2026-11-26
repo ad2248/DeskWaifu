@@ -207,11 +207,11 @@ class PackagingTest(unittest.TestCase):
         self.assertIn("env -i PATH=/usr/bin:/bin", script)
         self.assertNotRegex(script, r"(?m)^\s*sudo\s")
 
-    # 测试目的：原生构建输入只进入 v3 的离线编译，未获授权的公开构建在拉取依赖前停止。
-    # 测试方法：以假 cargo/makepkg 捕获真实 env -i 的变量，模拟不同载荷、缺失目录和拒绝授权。
+    # 测试目的：原生构建输入只进入 v3 的离线编译，其他载荷的构建环境不含 SDK 变量。
+    # 测试方法：以假 cargo/makepkg 捕获真实 env -i 的变量，模拟不同载荷和缺失目录。
     def test_release_fetch_is_unprivileged_and_shares_offline_build_cache(self):
         script = (ROOT / "scripts/release-build.sh").read_text()
-        phase = script[script.index('# Public release builds'):script.index('output="$root/release-assets"')]
+        phase = script[script.index('# Only the rust-v3 payload'):script.index('output="$root/release-assets"')]
         with tempfile.TemporaryDirectory(prefix="release-fetch-", dir=TEMP_ROOT) as temporary:
             work = Path(temporary)
             tools = work / "tools"
@@ -252,7 +252,6 @@ else:
 assert "RELEASE_UPLOAD" not in os.environ
 assert "GITEA_TOKEN" not in os.environ
 assert "CUBISM_LAYER_SHELL_XML" not in os.environ
-assert "DESKWAIFU_CUBISM_REDISTRIBUTION_APPROVED" not in os.environ
 sdk = {{key: value for key, value in os.environ.items() if key.startswith("CUBISM_")}}
 with open({str(log)!r}, "a") as stream:
     stream.write(json.dumps({{"tool": {name!r}, "home": str(home), "sdk": sdk}}) + "\\n")
@@ -272,11 +271,9 @@ with open({str(log)!r}, "a") as stream:
             def run(**overrides):
                 return subprocess.run(["bash", "-euc", phase], env=env | overrides, capture_output=True, text=True)
 
-            for payload, public, approval in (("rust-v1", "1", ""), ("rust-v2", "1", ""),
-                                              ("rust-v3", "0", ""), ("rust-v3", "1", "1")):
-                with self.subTest(payload=payload, public=public):
-                    result = run(payload=payload, DESKWAIFU_PUBLIC_RELEASE=public,
-                                 DESKWAIFU_CUBISM_REDISTRIBUTION_APPROVED=approval)
+            for payload in ("rust-v1", "rust-v2", "rust-v3"):
+                with self.subTest(payload=payload):
+                    result = run(payload=payload)
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                     calls = [json.loads(line) for line in log.read_text().splitlines()]
                     self.assertEqual([call["tool"] for call in calls], ["cargo", "makepkg"])
@@ -287,15 +284,11 @@ with open({str(log)!r}, "a") as stream:
                     log.unlink()
                     (work / "home/.cargo/fetched").unlink()
 
-            result = run(payload="rust-v3", DESKWAIFU_PUBLIC_RELEASE="1", DESKWAIFU_CUBISM_REDISTRIBUTION_APPROVED="")
-            self.assertEqual(result.returncode, 1)
-            self.assertIn("redistribution authorization", result.stderr)
-            self.assertFalse(log.exists())
-            result = run(payload="rust-v3", DESKWAIFU_PUBLIC_RELEASE="0", CUBISM_GLEW_DIR="")
+            result = run(payload="rust-v3", CUBISM_GLEW_DIR="")
             self.assertEqual(result.returncode, 1)
             self.assertIn("Set CUBISM_GLEW_DIR", result.stderr)
             self.assertFalse(log.exists())
-            result = run(payload="rust-v3", DESKWAIFU_PUBLIC_RELEASE="0", CUBISM_SDK_DIR="relative/path")
+            result = run(payload="rust-v3", CUBISM_SDK_DIR="relative/path")
             self.assertEqual(result.returncode, 1)
             self.assertIn("Set CUBISM_SDK_DIR", result.stderr)
             self.assertFalse(log.exists())
@@ -566,9 +559,8 @@ with open({str(log)!r}, "a") as stream:
             line for line in workflow.splitlines() if "RELEASE_NOTES:" not in line))
         self.assertNotIn('python3 -B "$RELEASE_TOOLS_DIR/tests/test_release_packaging.py"', workflow)
         release_build_step = workflow.split("- name: Acquire verified sources", 1)[1].split("- name: Upload", 1)[0]
-        self.assertIn('DESKWAIFU_PUBLIC_RELEASE: \'1\'', release_build_step)
-        self.assertIn("DESKWAIFU_CUBISM_REDISTRIBUTION_APPROVED: ${{ vars.DESKWAIFU_CUBISM_REDISTRIBUTION_APPROVED }}",
-                      release_build_step)
+        self.assertNotIn("DESKWAIFU_PUBLIC_RELEASE", release_build_step)
+        self.assertNotIn("DESKWAIFU_CUBISM_REDISTRIBUTION_APPROVED", workflow)
         self.assertIn('bash "$RELEASE_TOOLS_DIR/scripts/release-build.sh"', release_build_step)
         self.assertIn('python3 "$RELEASE_TOOLS_DIR/scripts/release-upload.py"', workflow)
         job_env = workflow.split("    env:\n", 1)[1].split("    steps:", 1)[0]
@@ -576,6 +568,33 @@ with open({str(log)!r}, "a") as stream:
             self.assertIn(f"{name}: http://100.64.0.11:7912", job_env)
         self.assertIn("no_proxy: 127.0.0.1,localhost", job_env)
         subprocess.run(["bash", "-n", str(ROOT / "scripts/release-build.sh")], check=True)
+
+    # 测试目的：host 网络下并发作业共用宿主回环，sccache 必须按缓存目录隔离，不抢 TCP 端口。
+    # 测试方法：以假 sccache 记录启动参数，确认服务地址取自各缓存目录且不会落到默认端口。
+    def test_sccache_server_is_isolated_per_cache_directory(self):
+        script = (ROOT / "scripts/ci-sccache.sh").read_text()
+        with tempfile.TemporaryDirectory(prefix="sccache-", dir=TEMP_ROOT) as temporary:
+            work = Path(temporary)
+            tools = work / "tools"
+            tools.mkdir()
+            record = work / "record"
+            fake = tools / "sccache"
+            fake.write_text(f'''#!{sys.executable}
+import os, pathlib, sys
+with open({str(record)!r}, "a") as stream:
+    stream.write(os.environ.get("SCCACHE_SERVER_UDS", "<unset>") + "\\n")
+''')
+            fake.chmod(0o755)
+            env = dict(os.environ, PATH=str(tools) + os.pathsep + os.environ["PATH"])
+            first, second = work / "rust", work / "package"
+            for cache in (first, second):
+                result = subprocess.run(["bash", str(ROOT / "scripts/ci-sccache.sh"), str(cache),
+                                         "true"], env=env, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            sockets = set(record.read_text().splitlines())
+            self.assertEqual(sockets, {str(first / "sccache.sock"), str(second / "sccache.sock")})
+            self.assertNotIn("4226", script)
+            self.assertIn("flock -n", script)
 
     def test_nonroot_release_orchestration_fails_before_acquisition(self):
         with tempfile.TemporaryDirectory(prefix="release-nonroot-", dir=TEMP_ROOT) as temporary:

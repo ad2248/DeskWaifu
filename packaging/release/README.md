@@ -66,12 +66,9 @@ The `builder` account must be able to read the inputs and traverse their paths. 
 and only for v3; neither is passed to Cargo fetch. V1 and v2 do not require
 these inputs. The SDK is used at build time and Cubism code is linked into the
 native plugin, but the package ships no separate SDK files or sample models.
-Supply licensed models on the target machine. Before enabling public v3
-releases, confirm that the project and applicable Live2D terms permit
-redistributing the compiled plugin, then set the Gitea repository variable
-`DESKWAIFU_CUBISM_REDISTRIBUTION_APPROVED` to `1`. Without that explicit opt-in,
-the public release workflow stops before building or uploading v3. Private
-builds, pre-v3 releases and notes-only updates are unaffected.
+Supply licensed models on the target machine. The build links Cubism into the
+native plugin and has no redistribution authorization switch: every payload,
+public release or nightly, builds as soon as the SDK inputs are present.
 
 ## AUR
 
@@ -86,8 +83,8 @@ workflow commits to or automatically publishes the AUR repository.
 
 ## Verification
 
-Run `python3 -B tests/test_release_packaging.py`. The tests exercise fetch/build
-the fetch/build environment, the public v3 opt-in, and real offline Cargo builds of three
+Run `python3 -B tests/test_release_packaging.py`. The tests exercise
+the fetch/build environment, and real offline Cargo builds of three
 workspace fixtures using the recipe's build/package functions. They verify the
 installed host symlink, ELF plugins, CLI `--help`, and v3 panel binary, and reject
 missing outputs or unexpected SDK and model files.

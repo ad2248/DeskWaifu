@@ -18,6 +18,9 @@ fi
 
 # Keep the lock outside the entries that sccache can evict.
 export SCCACHE_DIR="$cache_dir/entries" SCCACHE_CACHE_SIZE=4G
+# Every job shares the host loopback under host networking, so each cache dir
+# gets its own socket instead of racing for the default TCP port.
+export SCCACHE_SERVER_UDS="$cache_dir/sccache.sock"
 if ! mkdir -p -- "$SCCACHE_DIR" || ! sccache --start-server; then
     echo 'sccache server unavailable, building without compiler cache'
     exec {cache_lock}>&-
